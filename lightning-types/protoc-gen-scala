@@ -1,0 +1,1 @@
+java -jar /home/fabrice/code/acinq/eclair/lightning-types/target/scalapb-tmp-1.0-SNAPSHOT.jar
