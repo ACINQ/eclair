@@ -19,6 +19,11 @@
             <artifactId>bitcoin-lib_2.11</artifactId>
         </dependency>
         <dependency>
+            <groupId>fr.acinq</groupId>
+            <artifactId>lightning-types_2.11</artifactId>
+            <version>${parent.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.trueaccord.scalapb</groupId>
             <artifactId>scalapb-runtime_2.11</artifactId>
         </dependency>
