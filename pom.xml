@@ -137,12 +137,12 @@
         <dependencies>
             <dependency>
                 <groupId>fr.acinq</groupId>
-                <artifactId>bitcoin-lib_2.11</artifactId>
+                <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
                 <version>0.9.4-SNAPSHOT</version>
             </dependency>
             <dependency>
                 <groupId>com.trueaccord.scalapb</groupId>
-                <artifactId>scalapb-runtime_2.11</artifactId>
+                <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
                 <version>0.4.16</version>
             </dependency>
             <dependency>
@@ -152,7 +152,7 @@
             </dependency>
             <dependency>
                 <groupId>com.trueaccord.lenses</groupId>
-                <artifactId>lenses_2.11</artifactId>
+                <artifactId>lenses_${scala.version.short}</artifactId>
                 <version>0.4</version>
             </dependency>
             <dependency>
@@ -177,7 +177,7 @@
         </dependency>
         <dependency>
             <groupId>org.scalatest</groupId>
-            <artifactId>scalatest_2.11</artifactId>
+            <artifactId>scalatest_${scala.version.short}</artifactId>
             <version>2.2.5</version>
             <scope>test</scope>
         </dependency>

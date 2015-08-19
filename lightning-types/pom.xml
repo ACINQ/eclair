@@ -55,7 +55,7 @@
     <dependencies>
         <dependency>
             <groupId>com.trueaccord.scalapb</groupId>
-            <artifactId>scalapb-runtime_2.11</artifactId>
+            <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
         </dependency>
     </dependencies>
 </project>

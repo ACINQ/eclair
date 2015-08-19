@@ -16,16 +16,16 @@
     <dependencies>
         <dependency>
             <groupId>fr.acinq</groupId>
-            <artifactId>bitcoin-lib_2.11</artifactId>
+            <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
         </dependency>
         <dependency>
             <groupId>fr.acinq</groupId>
-            <artifactId>lightning-types_2.11</artifactId>
+            <artifactId>lightning-types_${scala.version.short}</artifactId>
             <version>${parent.version}</version>
         </dependency>
         <dependency>
             <groupId>com.trueaccord.scalapb</groupId>
-            <artifactId>scalapb-runtime_2.11</artifactId>
+            <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
         </dependency>
         <dependency>
             <groupId>com.google.protobuf</groupId>
@@ -33,7 +33,7 @@
         </dependency>
         <dependency>
             <groupId>com.trueaccord.lenses</groupId>
-            <artifactId>lenses_2.11</artifactId>
+            <artifactId>lenses_${scala.version.short}</artifactId>
         </dependency>
     </dependencies>
 </project>
