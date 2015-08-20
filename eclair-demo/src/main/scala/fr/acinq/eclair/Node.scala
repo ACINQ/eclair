@@ -35,17 +35,17 @@ class Node extends LoggingFSM[State, Data] {
   }
 
   when(OPEN_WAIT_FOR_ANCHOR) {
-    case Event(open_anchor(txid, outputIndex, amount: Long, commitSig), params@ChannelParams(revocationHash, _)) =>
+    case Event(open_anchor(txid, outputIndex, amount, commitSig), params@ChannelParams(revocationHash, _)) =>
       // TODO : sign commitment tx
       // TODO : reply with commit tx sig
       // TODO : register for confirmations of anchor tx on the bitcoin network
-      goto(OPEN_WAITING) using params
+      goto(OPEN_WAITING)
   }
 
   when(OPEN_WAITING) {
     case Event(TxConfirmed(confirmations), params@ChannelParams(_, minDepth)) if confirmations < minDepth =>
       log.info(s"got $confirmations confirmations for anchor tx")
-      stay using params
+      stay
     case Event(TxConfirmed(confirmations), params@ChannelParams(_, minDepth)) if confirmations >= minDepth =>
       log.info(s"got $confirmations confirmations for anchor tx, minDepth reached")
       //TODO : send open complete message
