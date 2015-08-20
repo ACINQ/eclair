@@ -37,4 +37,22 @@ object Boot extends App {
     blockid = Some(sha256_hash(1, 1, 1, 1))
   )
 
+  node ! update_add_htlc(
+    revocationHash = sha256_hash(1, 1, 1, 1),
+    amount = 1000,
+    rHash = sha256_hash(1, 1, 1, 1),
+    expiry = locktime(Blocks(4)))
+
+  node ! update_signature(
+    sig = signature(1, 1, 1, 1, 0, 0, 0, 0),
+    revocationPreimage = sha256_hash(1, 1, 1, 1))
+
+  // this is sent by the next node
+  node ! update_complete_htlc(
+    revocationHash = sha256_hash(1, 1, 1, 1),
+    r = sha256_hash(1, 1, 1, 1))
+
+  node ! update_signature(
+    sig = signature(1, 1, 1, 1, 0, 0, 0, 0),
+    revocationPreimage = sha256_hash(1, 1, 1, 1))
 }
