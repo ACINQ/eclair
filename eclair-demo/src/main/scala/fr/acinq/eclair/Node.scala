@@ -19,7 +19,6 @@ sealed trait Data
 case object Uninitialized extends Data
 final case class ChannelParams(revocationHash: sha256_hash, minDepth: Int) extends Data
 
-
 //blockchain events
 sealed trait BlockchainEvent
 final case class TxConfirmed(confirmations: Int)
@@ -44,10 +43,10 @@ class Node extends LoggingFSM[State, Data] {
 
   when(OPEN_WAITING) {
     case Event(TxConfirmed(confirmations), params@ChannelParams(_, minDepth)) if confirmations < minDepth =>
-      log.info(s"got $confirmations confirmations for anchor tx")
+      log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
     case Event(TxConfirmed(confirmations), params@ChannelParams(_, minDepth)) if confirmations >= minDepth =>
-      log.info(s"got $confirmations confirmations for anchor tx, minDepth reached")
+      log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       //TODO : send open complete message
       goto(OPEN_WAIT_FOR_COMPLETE)
   }
