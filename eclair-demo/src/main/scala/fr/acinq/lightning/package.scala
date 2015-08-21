@@ -80,7 +80,7 @@ package object lightning {
 
   def pay2sh(script: Seq[ScriptElt]) = OP_HASH160 :: OP_PUSHDATA(hash160(Script.write(script))) :: OP_EQUAL :: Nil
 
-  def anchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {
+  def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {
     val scriptPubKey = Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
     val tx = Transaction(version = 1,
       txIn = TxIn(outPoint = previousTxOutput, signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
@@ -92,7 +92,7 @@ package object lightning {
 
   def redeemSecretOrDelay(delayedKey: BinaryData, lockTime: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
-    OP_HASH160 :: OP_PUSHDATA(hash160(hashOfSecret)) :: OP_EQUAL ::
+    OP_HASH160 :: OP_PUSHDATA(ripemd160(hashOfSecret)) :: OP_EQUAL ::
     OP_IF ::
       OP_PUSHDATA(keyIfSecretKnown) ::
     OP_ELSE ::
@@ -105,8 +105,8 @@ package object lightning {
   def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, value: Long, htlc_abstimeout: Long, locktime: Long, commit_revoke: BinaryData, rhash: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_DUP ::
-    OP_PUSHDATA(hash160(rhash)) :: OP_EQUAL :: OP_SWAP ::
-    OP_PUSHDATA(hash160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
+    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL :: OP_SWAP ::
+    OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
     OP_IF ::
       OP_PUSHDATA(theirkey) ::
     OP_ELSE ::
@@ -132,7 +132,7 @@ package object lightning {
     // @formatter:on
   }
 
-  def commitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, rhash: BinaryData, channelState: ChannelState): Transaction = {
+  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, rhash: BinaryData, channelState: ChannelState): Transaction = {
     val txIn = TxIn(OutPoint(sha2562bin(anchor.txid), anchor.outputIndex), Array.emptyByteArray, 0xffffffffL)
     val redeemScript = redeemSecretOrDelay(ours.finalKey, theirs.delay, theirs.finalKey, rhash)
 
@@ -153,5 +153,13 @@ package object lightning {
     })
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
     tx1
+  }
+
+  def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR
+
+  def initialFunding(a: open_channel, b: open_channel, anchor: open_anchor, fee: Long): ChannelState = {
+    require(isFunder(a) ^ isFunder(b))
+    val (c1, c2) = ChannelOneSide(pay = anchor.amount - fee, fee = fee, Seq.empty[update_add_htlc]) -> ChannelOneSide(0, 0, Seq.empty[update_add_htlc])
+    if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 }

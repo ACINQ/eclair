@@ -1,13 +1,13 @@
 package fr.acinq.lightning
 
+import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
+import lightning._
 import lightning.locktime.Locktime.Blocks
 import lightning.open_channel.anchor_offer
-import lightning._
 import org.junit.runner.RunWith
 import org.scalatest.FlatSpec
 import org.scalatest.junit.JUnitRunner
-import Crypto._
 
 @RunWith(classOf[JUnitRunner])
 class ProtocolSpec extends FlatSpec {
@@ -35,7 +35,7 @@ class ProtocolSpec extends FlatSpec {
 
   "Protocol" should "implement anchor tx" in {
 
-    val anchor = anchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
+    val anchor = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
 
     val spending = Transaction(version = 1,
       txIn = TxIn(OutPoint(anchor, 0), Array.emptyByteArray, 0xffffffffL) :: Nil,
@@ -52,29 +52,49 @@ class ProtocolSpec extends FlatSpec {
     Transaction.correctlySpends(signedTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
   it should "implement commit tx" in {
-    val anchor = anchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
+    val anchor = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
     val ours = open_channel(
       delay = locktime(Blocks(100)),
       revocationHash = Alice.H,
       commitKey = Alice.commitPubKey,
-      finalKey = Alice.finalKey,
+      finalKey = Alice.finalPubKey,
       anch = anchor_offer.WILL_CREATE_ANCHOR,
       commitmentFee = 1)
     val theirs = open_channel(
       delay = locktime(Blocks(100)),
       revocationHash = Bob.H,
       commitKey = Bob.commitPubKey,
-      finalKey = Bob.finalKey,
+      finalKey = Bob.finalPubKey,
       anch = anchor_offer.WONT_CREATE_ANCHOR,
       commitmentFee = 1)
+
     // we assume that Alice knows Bob's H
-    val openAnchor = open_anchor(anchor.hash, 0, 5, new Array[Byte](32))
-    val channelState = ChannelState(ChannelOneSide(5, 0, Seq.empty[update_add_htlc]), ChannelOneSide(0, 0, Seq.empty[update_add_htlc]))
-    val tx = commitTx(ours, theirs, openAnchor, Bob.H, channelState)
-    val sig = Transaction.signInput(tx, 0, Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey)), SIGHASH_ALL, Alice.commitPubKey)
-    val sigScript =
-    val openAnchor1 = openAnchor.copy(commitSig = sig)
+    val openAnchor = open_anchor(anchor.hash, 0, 10, signature.defaultInstance) // commit sig will be computed later
+    val channelState = initialFunding(ours, theirs, openAnchor, fee = 0)
+    val tx = makeCommitTx(ours, theirs, openAnchor, Bob.H, channelState)
+    val sigA = Transaction.signInput(tx, 0, Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey)), SIGHASH_ALL, Alice.commitKey)
+    val openAnchor1 = openAnchor.copy(commitSig = sigA)
 
+    // now Bob receives open anchor and wants to check that Alice's commit sig is valid
+    val sigB = Transaction.signInput(tx, 0, Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey)), SIGHASH_ALL, Bob.commitKey)
+    val scriptSig = Script.write(OP_0 :: OP_PUSHDATA(sigA) :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey))) :: Nil)
+    val commitTx = tx.updateSigScript(0, scriptSig)
+    Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
+    // how do we spend our commit tx ?
+
+    // we can spend it by providing Bob's R and his signature
+    val spendingTx = {
+      val tx = Transaction(version = 1,
+        txIn = TxIn(OutPoint(commitTx, 0), Array.emptyByteArray, 0xffffffffL) :: Nil,
+        txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash160(Bob.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+        lockTime = 0)
+      val redeemScript = redeemSecretOrDelay(ours.finalKey, theirs.delay, theirs.finalKey, Bob.H)
+      val sig = Transaction.signInput(tx, 0, Script.write(redeemScript), SIGHASH_ALL, Bob.finalKey)
+      val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Bob.R) :: OP_PUSHDATA(Script.write(redeemScript)) :: Nil
+      tx.updateSigScript(0, Script.write(sigScript))
+    }
+
+    Transaction.correctlySpends(spendingTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
   }
 }
