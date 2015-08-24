@@ -18,8 +18,8 @@ object Boot extends App {
   node ! open_channel(
     delay = locktime(Blocks(1)),
     revocationHash = sha256_hash(1, 1, 1, 1),
-    commitKey = bitcoin_pubkey(ByteString.copyFromUtf8("")),
-    finalKey = bitcoin_pubkey(ByteString.copyFromUtf8("")),
+    commitKey = bitcoin_pubkey(ByteString.copyFromUtf8("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")),
+    finalKey = bitcoin_pubkey(ByteString.copyFromUtf8("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")),
     anch = WILL_CREATE_ANCHOR,
     minDepth = Some(2),
     commitmentFee = 100)
