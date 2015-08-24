@@ -95,6 +95,8 @@ class ProtocolSpec extends FlatSpec {
       tx.updateSigScript(0, Script.write(sigScript))
     }
 
+    // or
+
     Transaction.correctlySpends(spendingTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
   }
 }
