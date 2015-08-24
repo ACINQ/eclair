@@ -21,3 +21,4 @@ project/plugins/project/
 target/
 project/target
 DeleteMe*.scala
+*~

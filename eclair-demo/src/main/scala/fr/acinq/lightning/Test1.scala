@@ -23,25 +23,6 @@ object Test1 extends App {
     val R = "this is Bob's R".getBytes("UTF-8")
   }
 
-  def bin2sha256(in: BinaryData): lightning.sha256_hash = {
-    require(in.size == 32)
-    val bis = new ByteArrayInputStream(in)
-    lightning.sha256_hash(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
-  }
-
-  def sha2562bin(in: lightning.sha256_hash): Array[Byte] = {
-    val bos = new ByteArrayOutputStream()
-    Protocol.writeUInt64(in.a, bos)
-    Protocol.writeUInt64(in.b, bos)
-    Protocol.writeUInt64(in.c, bos)
-    Protocol.writeUInt64(in.d, bos)
-    bos.toByteArray
-  }
-
-  def bin2pubkey(in: BinaryData) = lightning.bitcoin_pubkey(ByteString.copyFrom(in))
-
-  def pubkey2bin(in: lightning.bitcoin_pubkey): Array[Byte] = in.key.toByteArray
-
   val foo = "foobar".getBytes("UTF-8")
   val hash: BinaryData = Crypto.sha256(foo)
   val p = bin2sha256(hash)
