@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true" debug="false">
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
+                <expression>return logger.contains("Node");</expression>
+            </evaluator>
+            <OnMatch>DENY</OnMatch>
+            <OnMismatch>ACCEPT</OnMismatch>
+        </filter>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %msg%ex{12}%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="ALICE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
+                <expression>return ((String) mdc.get("akkaSource")).contains("alice");</expression>
+            </evaluator>
+            <OnMismatch>DENY</OnMismatch>
+            <OnMatch>ACCEPT</OnMatch>
+        </filter>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %blue(%msg) %ex{12}%n</pattern>
+        </encoder>
+    </appender>
+
+    <appender name="BOB" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
+                <expression>return ((String) mdc.get("akkaSource")).contains("bob");</expression>
+            </evaluator>
+            <OnMismatch>DENY</OnMismatch>
+            <OnMatch>ACCEPT</OnMatch>
+        </filter>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %red(%msg) %ex{12}%n</pattern>
+        </encoder>
+    </appender>
+
+    <root level="DEBUG">
+        <appender-ref ref="ALICE"/>
+        <appender-ref ref="BOB"/>
+        <appender-ref ref="CONSOLE"/>
+
+    </root>
+
+</configuration>

@@ -35,6 +35,9 @@ package object lightning {
     bos.toByteArray
   }
 
+  // TODO : redundant with above, needed for seamless Crypto.sha256(sha256_hash)
+  implicit def sha2562seq(in: sha256_hash): Seq[Byte] = sha2562bin(in)
+
   implicit def bin2pubkey(in: BinaryData) = bitcoin_pubkey(ByteString.copyFrom(in))
 
   implicit def array2pubkey(in: Array[Byte]) = bin2pubkey(in)
@@ -132,24 +135,28 @@ package object lightning {
     // @formatter:on
   }
 
-  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, rhash: BinaryData, channelState: ChannelState): Transaction = {
-    val txIn = TxIn(OutPoint(sha2562bin(anchor.txid), anchor.outputIndex), Array.emptyByteArray, 0xffffffffL)
-    val redeemScript = redeemSecretOrDelay(ours.finalKey, theirs.delay, theirs.finalKey, rhash)
+  //TODO : do we really need this ?
+  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, rhash: BinaryData, channelState: ChannelState): Transaction =
+    makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, rhash, channelState)
+
+  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, rhash: BinaryData, channelState: ChannelState): Transaction = {
+    val txIn = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL)
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey, rhash)
 
     val tx = Transaction(
       version = 1,
-      txIn = TxIn(OutPoint(sha2562bin(anchor.txid), anchor.outputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txIn = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil,
       txOut = Seq(
         TxOut(amount = channelState.a.pay, publicKeyScript = pay2sh(redeemScript)),
-        TxOut(amount = channelState.b.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirs.finalKey) :: OP_CHECKSIG :: Nil))
+        TxOut(amount = channelState.b.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
       ),
       lockTime = 0)
 
     val sendOuts = channelState.a.htlcs.map(htlc => {
-      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcSend(ours.finalKey, theirs.finalKey, htlc.amount, htlc.expiry, theirs.delay, rhash, htlc.revocationHash)))
+      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, rhash, htlc.revocationHash)))
     })
     val receiveOuts = channelState.b.htlcs.map(htlc => {
-      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ours.finalKey, theirs.finalKey, htlc.amount, htlc.expiry, theirs.delay, rhash, htlc.revocationHash)))
+      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, rhash, htlc.revocationHash)))
     })
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
     tx1
@@ -163,3 +170,5 @@ package object lightning {
     if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 }
+
+
