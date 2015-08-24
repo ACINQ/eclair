@@ -72,14 +72,25 @@ class ProtocolSpec extends FlatSpec {
     val openAnchor = open_anchor(anchor.hash, 0, 10, signature.defaultInstance) // commit sig will be computed later
     val channelState = initialFunding(ours, theirs, openAnchor, fee = 0)
     val tx = makeCommitTx(ours, theirs, openAnchor, Bob.H, channelState)
-    val sigA = Transaction.signInput(tx, 0, Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey)), SIGHASH_ALL, Alice.commitKey)
+    val redeemScript = if (isLess(Alice.commitPubKey, Bob.commitPubKey))
+      Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey))
+    else
+      Script.createMultiSigMofN(2, Seq(Bob.commitPubKey, Alice.commitPubKey))
+    val sigA = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Alice.commitKey)
     val openAnchor1 = openAnchor.copy(commitSig = sigA)
 
     // now Bob receives open anchor and wants to check that Alice's commit sig is valid
-    val sigB = Transaction.signInput(tx, 0, Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey)), SIGHASH_ALL, Bob.commitKey)
-    val scriptSig = Script.write(OP_0 :: OP_PUSHDATA(sigA) :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey))) :: Nil)
+    // Bob can sign too and check that he can spend the anchox tx
+    val sigB = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Bob.commitKey)
+    val scriptSig = if (isLess(Alice.commitPubKey, Bob.commitPubKey))
+      Script.write(OP_0 :: OP_PUSHDATA(sigA) :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(redeemScript) :: Nil)
+    else
+      Script.write(OP_0 :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(sigA) :: OP_PUSHDATA(redeemScript) :: Nil)
     val commitTx = tx.updateSigScript(0, scriptSig)
     Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    // or Bob can just check that Alice's sig is valid
+    val hash = Transaction.hashForSigning(commitTx, 0, redeemScript, SIGHASH_ALL)
+    assert(Crypto.verifySignature(hash, Crypto.decodeSignature(sigA.dropRight(1)), Alice.commitPubKey))
 
     // how do we spend our commit tx ?
 
@@ -98,5 +109,11 @@ class ProtocolSpec extends FlatSpec {
     // or
 
     Transaction.correctlySpends(spendingTx, Seq(commitTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
+  }
+  it should "sort binary data" in {
+    assert(!isLess(Array.emptyByteArray, Array.emptyByteArray))
+    assert(isLess(fromHexString("aa"), fromHexString("bb")))
+    assert(isLess(fromHexString("aabbcc"), fromHexString("bbbbcc")))
+    assert(isLess(fromHexString("aa"), fromHexString("11aa")))
   }
 }
