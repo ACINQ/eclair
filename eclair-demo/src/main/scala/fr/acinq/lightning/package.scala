@@ -96,6 +96,17 @@ package object lightning {
     }
   }
 
+  def multiSig2of2(pubkey1: Array[Byte], pubkey2: Array[Byte]) : Array[Byte] = if (isLess(pubkey1, pubkey2))
+    Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
+  else
+    Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
+
+
+  def sigScript2of2(sig1: Array[Byte], sig2: Array[Byte], pubkey1: Array[Byte], pubkey2: Array[Byte]) = if (isLess(pubkey1, pubkey2))
+    Script.write(OP_0 :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil)
+  else
+    Script.write(OP_0 :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil)
+
   def pay2sh(script: Seq[ScriptElt]) = OP_HASH160 :: OP_PUSHDATA(hash160(Script.write(script))) :: OP_EQUAL :: Nil
 
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {

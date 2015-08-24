@@ -72,20 +72,14 @@ class ProtocolSpec extends FlatSpec {
     val openAnchor = open_anchor(anchor.hash, 0, 10, signature.defaultInstance) // commit sig will be computed later
     val channelState = initialFunding(ours, theirs, openAnchor, fee = 0)
     val tx = makeCommitTx(ours, theirs, openAnchor, Bob.H, channelState)
-    val redeemScript = if (isLess(Alice.commitPubKey, Bob.commitPubKey))
-      Script.createMultiSigMofN(2, Seq(Alice.commitPubKey, Bob.commitPubKey))
-    else
-      Script.createMultiSigMofN(2, Seq(Bob.commitPubKey, Alice.commitPubKey))
+    val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)
     val sigA = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Alice.commitKey)
     val openAnchor1 = openAnchor.copy(commitSig = sigA)
 
     // now Bob receives open anchor and wants to check that Alice's commit sig is valid
     // Bob can sign too and check that he can spend the anchox tx
     val sigB = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Bob.commitKey)
-    val scriptSig = if (isLess(Alice.commitPubKey, Bob.commitPubKey))
-      Script.write(OP_0 :: OP_PUSHDATA(sigA) :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(redeemScript) :: Nil)
-    else
-      Script.write(OP_0 :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(sigA) :: OP_PUSHDATA(redeemScript) :: Nil)
+    val scriptSig = sigScript2of2(sigA, sigB, Alice.commitPubKey, Bob.commitPubKey)
     val commitTx = tx.updateSigScript(0, scriptSig)
     Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // or Bob can just check that Alice's sig is valid
