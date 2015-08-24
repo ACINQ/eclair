@@ -2,7 +2,6 @@ package fr.acinq.eclair
 
 import akka.actor.{ActorRef, LoggingFSM}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
 import fr.acinq.lightning._
 import lightning._
@@ -49,7 +48,7 @@ final case class SendHtlcUpdate(amount: Long, finalPayee: String, rHash: sha256_
 sealed trait Data
 case object Uninitialized extends Data
 final case class ChannelParams(delay: locktime, commitKey: bitcoin_pubkey, finalKey: bitcoin_pubkey, minDepth: Int, commitmentFee: Long)
-final case class Anchor(txid: sha256_hash, outputIndex: Int, amount: Long, pubKeyScript: Seq[ScriptElt])
+final case class Anchor(txid: sha256_hash, outputIndex: Int, amount: Long)
 final case class CommitmentTx(tx: Transaction, ourRevocationPreimage: sha256_hash)
 final case class DATA_OPEN_WAIT_FOR_OPEN_NOANCHOR(ourParams: ChannelParams, ourRevocationPreimage: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams: ChannelParams, ourRevocationPreimage: sha256_hash) extends Data
@@ -103,31 +102,30 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val init
   when(OPEN_WAIT_FOR_OPEN_WITHANCHOR) {
     case Event(open_channel(delay, revocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams, ourRevocationHashPreimage)) =>
       val theirParams = ChannelParams(delay, commitKey, finalKey, minDepth.get, commitmentFee)
-      // TODO create the anchor
-      val anchor = Anchor(sha256_hash(1, 2, 3, 4), 0, 100000, OP_HASH160 :: OP_PUSHDATA(hash160(Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey))))) :: OP_EQUAL :: Nil)
+      // TODO create the anchor (without publishing it !)
+      val anchor = Anchor(sha256_hash(1, 2, 3, 4), 0, 100000)
       // then we build their commitment tx and sign it
       val state = ChannelState(ChannelOneSide(anchor.amount, 0, Seq()), ChannelOneSide(0, 0, Seq()))
       val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchor.txid, anchor.outputIndex, Crypto.sha256(ourRevocationHashPreimage), state.copy(a = state.b, b = state.a))
-      val ourSig = bin2signature(Transaction.signInput(theirCommitTx, 0, Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey))), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
-      sender ! open_anchor(anchor.txid, anchor.outputIndex, anchor.amount, ourSig)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      sender ! open_anchor(anchor.txid, anchor.outputIndex, anchor.amount, ourSigForThem)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchor, ourRevocationHashPreimage, revocationHash)
   }
 
   when(OPEN_WAIT_FOR_ANCHOR) {
-    case Event(open_anchor(txid, outputIndex, amount, commitSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, ourRevocationHashPreimage, theirRevocationHash)) =>
-      val anchor = Anchor(txid, outputIndex, amount, OP_HASH160 :: OP_PUSHDATA(hash160(Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey))))) :: OP_EQUAL :: Nil)
+    case Event(open_anchor(txid, outputIndex, amount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, ourRevocationHashPreimage, theirRevocationHash)) =>
+      val anchor = Anchor(txid, outputIndex, amount)
       val state = ChannelState(ChannelOneSide(amount, 0, Seq()), ChannelOneSide(0, 0, Seq()))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchor.txid, anchor.outputIndex, theirRevocationHash, state)
-      val sigB = Transaction.signInput(ourCommitTx, 0, Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey))), SIGHASH_ALL, pubkey2bin(commitPrivKey))
-      val scriptSig = Script.write(OP_0 :: OP_PUSHDATA(commitSig) :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey)))) :: Nil)
-      val signedCommitTx = ourCommitTx.updateSigScript(0, scriptSig)
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(txid, outputIndex) -> BinaryData(Script.write(anchor.pubKeyScript))), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey))
+      val signedCommitTx = ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(txid, outputIndex) -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
       // then we build their commitment tx and sign it
       val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchor.txid, anchor.outputIndex, Crypto.sha256(ourRevocationHashPreimage), state.copy(a = state.b, b = state.a))
-      val ourSig = bin2signature(Transaction.signInput(theirCommitTx, 0, Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey))), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
-      sender ! open_commit_sig(ourSig)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      sender ! open_commit_sig(ourSigForThem)
       // TODO : register for confirmations of anchor tx on the bitcoin network
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, anchor, CommitmentTx(ourCommitTx, ourRevocationHashPreimage), false)
   }
@@ -137,22 +135,20 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val init
       val state = ChannelState(ChannelOneSide(anchor.amount, 0, Seq()), ChannelOneSide(0, 0, Seq()))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchor.txid, anchor.outputIndex, theirRevocationHash, state)
-      val sigB = Transaction.signInput(ourCommitTx, 0, Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey))), SIGHASH_ALL, pubkey2bin(commitPrivKey))
-      val scriptSig = Script.write(OP_0 :: OP_PUSHDATA(theirSig) :: OP_PUSHDATA(sigB) :: OP_PUSHDATA(Script.createMultiSigMofN(2, Seq(pubkey2bin(theirParams.commitKey), pubkey2bin(ourParams.commitKey)))) :: Nil)
-      val signedCommitTx = ourCommitTx.updateSigScript(0, scriptSig)
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchor.txid, anchor.outputIndex) -> BinaryData(Script.write(anchor.pubKeyScript))), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey))
+      val signedCommitTx = ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchor.txid, anchor.outputIndex) -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
+      // TODO : publish the anchor
       goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, anchor, CommitmentTx(ourCommitTx, ourRevocationHashPreimage), false)
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
     case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _, _, _)) if confirmations < ourParams.minDepth =>
-      // TODO : check anchor pub key script
       log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
 
     case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _, _, false)) if confirmations >= ourParams.minDepth =>
-      // TODO : check anchor pub key script
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
       goto(OPEN_WAIT_FOR_COMPLETE) using DATA_NORMAL(d.ourParams, d.theirParams, d.anchor, d.commitmentTx)
@@ -169,12 +165,10 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val init
 
   when(OPEN_WAITING_OURANCHOR) {
     case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _, _, _)) if confirmations < ourParams.minDepth =>
-      // TODO : check anchor pub key script
       log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
 
     case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _, _, false)) if confirmations >= ourParams.minDepth =>
-      // TODO : check anchor pub key script
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
       goto(OPEN_WAIT_FOR_COMPLETE) using DATA_NORMAL(d.ourParams, d.theirParams, d.anchor, d.commitmentTx)
