@@ -9,6 +9,8 @@ import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
 
+import scala.annotation.tailrec
+
 package lightning {
 
 case class ChannelOneSide(pay: Long, fee: Long, htlcs: Seq[update_add_htlc])
@@ -78,10 +80,30 @@ package object lightning {
     case locktime(Seconds(seconds)) => seconds
   }
 
+  def isLess(a: Seq[Byte], b: Seq[Byte]) : Boolean = {
+    val a1 = a.dropWhile(_ == 0)
+    val b1 = b.dropWhile(_ == 0)
+    if (a1.length != b1.length)
+      a1.length <= b1.length
+    else {
+      @tailrec
+      def isLess0(x: List[Byte], y: List[Byte]) : Boolean = (x, y) match {
+        case (Nil, Nil) => false
+        case (hx :: tx, hy :: ty) if (hx == hy) => isLess0(tx, ty)
+        case (hx :: _, hy :: _) => ((hx & 0xff) < (hy & 0xff))
+      }
+      isLess0(a1.toList, b1.toList)
+    }
+  }
+
   def pay2sh(script: Seq[ScriptElt]) = OP_HASH160 :: OP_PUSHDATA(hash160(Script.write(script))) :: OP_EQUAL :: Nil
 
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {
-    val scriptPubKey = Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
+    val scriptPubKey = if (isLess(pubkey1, pubkey2))
+      Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
+    else
+      Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
+
     val tx = Transaction(version = 1,
       txIn = TxIn(outPoint = previousTxOutput, signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
       txOut = TxOut(amount, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(hash160(scriptPubKey)) :: OP_EQUAL :: Nil) :: Nil,
