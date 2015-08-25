@@ -141,12 +141,12 @@ package object lightning {
   def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, value: Long, htlc_abstimeout: Long, locktime: Long, commit_revoke: BinaryData, rhash: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_DUP ::
-    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL :: OP_SWAP ::
-    OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
+    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
+    OP_SWAP :: OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
     OP_IF ::
       OP_PUSHDATA(theirkey) ::
     OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(htlc_abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(Script.encodeNumber(locktime)) :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      OP_PUSHDATA(Script.encodeNumber(htlc_abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(Script.encodeNumber(locktime)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -154,11 +154,12 @@ package object lightning {
 
   def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, value: Long, htlc_abstimeout: Long, locktime: Long, commit_revoke: BinaryData, rhash: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
-    OP_HASH160 :: OP_DUP :: OP_PUSHDATA(hash160(rhash)) :: OP_EQUAL ::
+    OP_HASH160 :: OP_DUP ::
+    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
     OP_IF ::
-      OP_PUSHDATA(Script.encodeNumber(locktime)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP ::
+      OP_PUSHDATA(Script.encodeNumber(locktime)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ELSE ::
-      OP_PUSHDATA(hash160(commit_revoke)) :: OP_EQUAL ::
+      OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL ::
       OP_NOTIF ::
         OP_PUSHDATA(Script.encodeNumber(htlc_abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
       OP_ENDIF ::
