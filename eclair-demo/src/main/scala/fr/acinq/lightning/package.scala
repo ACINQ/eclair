@@ -173,13 +173,17 @@ package object lightning {
   def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, rhash: BinaryData, channelState: ChannelState): Transaction =
     makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, rhash, channelState)
 
-  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, rhash: BinaryData, channelState: ChannelState): Transaction = {
-    val txIn = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL)
+
+  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, rhash: BinaryData, channelState: ChannelState): Transaction =
+    makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, rhash, channelState)
+
+  // this way it is easy to reuse the inputTx of an existing commitmentTx
+  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, rhash: BinaryData, channelState: ChannelState): Transaction = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey, rhash)
 
     val tx = Transaction(
       version = 1,
-      txIn = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txIn = inputs,
       txOut = Seq(
         TxOut(amount = channelState.a.pay, publicKeyScript = pay2sh(redeemScript)),
         TxOut(amount = channelState.b.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))

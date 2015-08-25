@@ -28,4 +28,8 @@ object Boot extends App {
   alice ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
   bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
 
+  Thread.sleep(2000)
+
+  alice ! CMD_SEND_UPDATE
+
 }
