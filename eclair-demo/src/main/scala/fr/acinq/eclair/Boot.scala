@@ -38,9 +38,11 @@ object Boot extends App {
   alice ! CMD_SEND_HTLC_UPDATE(100000, rHash, locktime(Blocks(4)))
 
   Thread.sleep(1000)
-  alice ! CMD_SEND_HTLC_COMPLETE(r)
+  bob ! CMD_SEND_HTLC_COMPLETE(r)
 
   Thread.sleep(1000)
   alice ! CMD_SEND_UPDATE
+
+
 
 }

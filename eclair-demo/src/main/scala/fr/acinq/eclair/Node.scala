@@ -35,6 +35,7 @@ case object WAIT_FOR_UPDATE_SIG extends State
 case object WAIT_FOR_UPDATE_COMPLETE extends State
 case object WAIT_FOR_HTLC_ACCEPT extends State
 case object WAIT_FOR_CLOSE_ACK extends State
+case object WAIT_FOR_CLOSE_COMPLETE extends State
 case object CLOSE_WAIT_CLOSE extends State
 case object CLOSED extends State
 
@@ -49,6 +50,7 @@ sealed trait Command
 case object CMD_SEND_UPDATE extends Command
 final case class CMD_SEND_HTLC_UPDATE(amount: Long, rHash: sha256_hash, expiry: locktime) extends Command
 final case class CMD_SEND_HTLC_COMPLETE(r: sha256_hash) extends Command
+final case class CMD_CLOSE(fee: Long) extends Command
 
 // DATA
 
@@ -254,7 +256,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       goto(WAIT_FOR_UPDATE_SIG) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, p, CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
     case Event(CMD_SEND_HTLC_COMPLETE(r), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      val htlc = previousState.them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).getOrElse(throw new RuntimeException(s"could not find corresponding htlc (r=$r)"))
+      val htlc = previousState.us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).getOrElse(throw new RuntimeException(s"could not find corresponding htlc (r=$r)"))
       val newState = previousState.copy(them = previousState.them.copy(htlcs = previousState.them.htlcs.filterNot(_ == htlc)))
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
@@ -262,7 +264,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       goto(WAIT_FOR_HTLC_ACCEPT) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
     case Event(update_complete_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      val htlc = previousState.us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).getOrElse(throw new RuntimeException(s"could not find corresponding htlc (r=$r)"))
+      val htlc = previousState.them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).getOrElse(throw new RuntimeException(s"could not find corresponding htlc (r=$r)"))
       val newState = previousState.copy(us = previousState.us.copy(htlcs = previousState.us.htlcs.filterNot(_ == htlc)))
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
@@ -274,9 +276,16 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       them ! update_accept(ourSigForThem, ourRevocationHash)
       goto(WAIT_FOR_UPDATE_SIG) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, p, CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
+    case Event(CMD_CLOSE(fee), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
+      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val ourSigForThem = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      them ! close_channel(ourSigForThem, fee)
+      goto(WAIT_FOR_CLOSE_COMPLETE)
+
     case Event(close_channel(theirSig, closeFee), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
       val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
       val ourSigForThem = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      // TODO : make sure the final tx is now spendable (should we spend it right now ?)
       them ! close_channel_complete(ourSigForThem)
       goto(WAIT_FOR_CLOSE_ACK)
   }
@@ -325,6 +334,15 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       assert(new BinaryData(previousCommitmentTx.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage)), s"the revocation preimage they gave us is wrong! hash=${previousCommitmentTx.theirRevocationHash} preimage=$theirRevocationPreimage")
       goto(NORMAL) using DATA_NORMAL(ourParams, theirParams, newCommitmentTx)
     }
+  }
+
+  when(WAIT_FOR_CLOSE_COMPLETE) {
+    case Event(close_channel(theirSig, closeFee), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
+      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val ourSigForThem = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      them ! close_channel_complete(ourSigForThem)
+      goto(CLOSE_WAIT_CLOSE)
+
   }
 
   when(WAIT_FOR_CLOSE_ACK) {

@@ -29,7 +29,7 @@ case class ChannelState(them: ChannelOneSide, us: ChannelOneSide) {
    */
   def fold: (ChannelState, Long) = {
     val delta = us.htlcs.map(_.amount).sum - them.htlcs.map(_.amount).sum
-    val newState = this.copy(them = them.copy(pay = them.pay - delta, htlcs = Seq()), us = us.copy(pay = us.pay, htlcs = Seq()))
+    val newState = this.copy(them = them.copy(pay = them.pay - delta, htlcs = Seq()), us = us.copy(pay = us.pay + delta, htlcs = Seq()))
     (newState, delta)
   }
 }
@@ -197,16 +197,16 @@ package object lightning {
   }
 
   //TODO : do we really need this ?
-  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, rhash: BinaryData, channelState: ChannelState): Transaction =
-    makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, rhash, channelState)
+  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, channelState: ChannelState): Transaction =
+    makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, channelState)
 
 
-  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, rhash: BinaryData, channelState: ChannelState): Transaction =
-    makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, rhash, channelState)
+  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, channelState: ChannelState): Transaction =
+    makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, channelState)
 
   // this way it is easy to reuse the inputTx of an existing commitmentTx
-  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, rhash: BinaryData, channelState: ChannelState): Transaction = {
-    val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey, rhash)
+  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, channelState: ChannelState): Transaction = {
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey)
 
     val tx = Transaction(
       version = 1,
@@ -218,10 +218,10 @@ package object lightning {
       lockTime = 0)
 
     val sendOuts = channelState.them.htlcs.map(htlc => {
-      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, rhash, htlc.revocationHash)))
+      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
     })
     val receiveOuts = channelState.us.htlcs.map(htlc => {
-      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, rhash, htlc.revocationHash)))
+      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
     })
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
     tx1
@@ -243,7 +243,7 @@ package object lightning {
       txIn = inputs,
       txOut = Seq(
         TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
+        TxOut(amount = channelState.us.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
       lockTime = 0)
   }
 
