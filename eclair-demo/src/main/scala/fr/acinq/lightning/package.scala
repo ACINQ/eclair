@@ -2,6 +2,7 @@ package fr.acinq
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.math.BigInteger
+import java.security.SecureRandom
 
 import _root_.lightning._
 import _root_.lightning.locktime.Locktime.{Blocks, Seconds}
@@ -15,11 +16,37 @@ package lightning {
 
 case class ChannelOneSide(pay: Long, fee: Long, htlcs: Seq[update_add_htlc])
 
-case class ChannelState(a: ChannelOneSide, b: ChannelOneSide)
+case class ChannelState(them: ChannelOneSide, us: ChannelOneSide) {
+  /**
+   * Because each party needs to be able to compute the other party's commitment tx
+   * @return the channel state as seen by the other party
+   */
+  def reverse: ChannelState = this.copy(them = us, us = them)
+
+  /**
+   * Remove all pending htlc and compute a delta as seen by us
+   * @return the new channel state and the delta
+   */
+  def fold: (ChannelState, Long) = {
+    val delta = us.htlcs.map(_.amount).sum - them.htlcs.map(_.amount).sum
+    val newState = this.copy(them = them.copy(pay = them.pay - delta, htlcs = Seq()), us = us.copy(pay = us.pay, htlcs = Seq()))
+    (newState, delta)
+  }
+}
 
 }
 
 package object lightning {
+
+  val random = new SecureRandom()
+
+  // TODO : should generate them in a deterministic fashion ?
+  def randomsha256(): sha256_hash = {
+    val bytes = new Array[Byte](32)
+    random.nextBytes(bytes)
+    bin2sha256(bytes)
+  }
+
   implicit def bin2sha256(in: BinaryData): sha256_hash = {
     require(in.size == 32)
     val bis = new ByteArrayInputStream(in)
@@ -185,19 +212,39 @@ package object lightning {
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.a.pay, publicKeyScript = pay2sh(redeemScript)),
-        TxOut(amount = channelState.b.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
+        TxOut(amount = channelState.them.pay, publicKeyScript = pay2sh(redeemScript)),
+        TxOut(amount = channelState.us.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
       ),
       lockTime = 0)
 
-    val sendOuts = channelState.a.htlcs.map(htlc => {
+    val sendOuts = channelState.them.htlcs.map(htlc => {
       TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, rhash, htlc.revocationHash)))
     })
-    val receiveOuts = channelState.b.htlcs.map(htlc => {
+    val receiveOuts = channelState.us.htlcs.map(htlc => {
       TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, rhash, htlc.revocationHash)))
     })
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
     tx1
+  }
+
+  /**
+   * This is a simple tx with a multisig input and two pay2pk output
+   * @param inputs
+   * @param ourFinalKey
+   * @param theirFinalKey
+   * @param channelState
+   * @return
+   */
+  def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
+    // TODO : is this the proper behaviour ?
+    assert(channelState.them.htlcs.isEmpty && channelState.us.htlcs.isEmpty, s"cannot close a channel with pending htlcs (not sure this is in the specs)")
+    Transaction(
+      version = 1,
+      txIn = inputs,
+      txOut = Seq(
+        TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
+      lockTime = 0)
   }
 
   def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR

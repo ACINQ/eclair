@@ -2,7 +2,9 @@ package fr.acinq.eclair
 
 import akka.actor.{Props, ActorSystem}
 import fr.acinq.bitcoin._
-import lightning.sha256_hash
+import fr.acinq.lightning._
+import lightning.locktime.Locktime.Blocks
+import lightning.{locktime, sha256_hash}
 import org.bouncycastle.util.encoders.Hex
 
 /**
@@ -20,16 +22,25 @@ object Boot extends App {
   bob.tell(INPUT_NONE, alice)
   alice.tell(INPUT_NONE, bob)
 
-  Thread.sleep(3000)
+  Thread.sleep(500)
   alice ! TxConfirmed(sha256_hash(1, 2, 3, 4), 1)
   bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 1)
 
-  Thread.sleep(2000)
+  Thread.sleep(500)
   alice ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
   bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
 
-  Thread.sleep(2000)
+  Thread.sleep(1000)
 
+  val r = sha256_hash(7, 7, 7, 7)
+  val rHash = Crypto.sha256(r)
+
+  alice ! CMD_SEND_HTLC_UPDATE(100000, rHash, locktime(Blocks(4)))
+
+  Thread.sleep(1000)
+  alice ! CMD_SEND_HTLC_COMPLETE(r)
+
+  Thread.sleep(1000)
   alice ! CMD_SEND_UPDATE
 
 }
