@@ -1,6 +1,6 @@
 package fr.acinq.eclair
 
-import akka.actor.{ActorRef, LoggingFSM}
+import akka.actor.{Stash, ActorRef, LoggingFSM}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.lightning._
@@ -77,7 +77,7 @@ final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: ChannelParams, theirPa
 
 // @formatter:on
 
-class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minDepth: Int, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] {
+class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minDepth: Int, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
 
   val DEFAULT_delay = locktime(Blocks(10))
   val DEFAULT_commitmentFee = 100
@@ -174,12 +174,12 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
     case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
+      unstashAll()
       goto(OPEN_WAIT_FOR_COMPLETE) using DATA_NORMAL(d.ourParams, d.theirParams, d.commitmentTx)
 
     case Event(msg@open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _)) =>
       log.info(s"received their open_complete, deferring message")
-      setTimer("defer", msg, 1 second, false)
-      self ! msg
+      stash()
       stay
   }
 
@@ -191,11 +191,12 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
     case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
+      unstashAll()
       goto(OPEN_WAIT_FOR_COMPLETE) using DATA_NORMAL(d.ourParams, d.theirParams, d.commitmentTx)
 
     case Event(msg@open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _)) =>
       log.info(s"received their open_complete, deferring message")
-      setTimer("defer", msg, 1 second, false)
+      stash()
       stay
   }
 

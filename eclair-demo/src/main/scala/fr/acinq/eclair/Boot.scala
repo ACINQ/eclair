@@ -27,7 +27,6 @@ object Boot extends App {
   bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 1)
 
   Thread.sleep(500)
-  alice ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
   bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
 
   Thread.sleep(1000)
