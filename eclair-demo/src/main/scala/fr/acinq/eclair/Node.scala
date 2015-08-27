@@ -11,6 +11,7 @@ import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
 import org.bouncycastle.util.encoders.Hex
 
 import scala.util.Try
+import scala.concurrent.duration._
 
 /**
  * Created by PM on 20/08/2015.
@@ -66,7 +67,7 @@ final case class DATA_OPEN_WAIT_FOR_OPEN_NOANCHOR(ourParams: ChannelParams, ourR
 final case class DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams: ChannelParams, anchorInput: AnchorInput, ourRevocationPreimage: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR(ourParams: ChannelParams, theirParams: ChannelParams, ourRevocationPreimage: sha256_hash, theirRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: ChannelParams, theirParams: ChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, newCommitmentTxUnsigned: CommitmentTx) extends Data
-final case class DATA_OPEN_WAITING(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx, otherPartyOpen: Boolean = false) extends Data
+final case class DATA_OPEN_WAITING(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx) extends Data
 final case class DATA_NORMAL(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx) extends Data
 //TODO : create SignedTransaction
 final case class DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentTxSigned: CommitmentTx, updateProposal: UpdateProposal) extends Data
@@ -76,10 +77,9 @@ final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: ChannelParams, theirPa
 
 // @formatter:on
 
-class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] {
+class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minDepth: Int, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] {
 
   val DEFAULT_delay = locktime(Blocks(10))
-  val DEFAULT_minDepth = 2
   val DEFAULT_commitmentFee = 100
 
   val commitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(commitPrivKey.key.toByteArray)))
@@ -96,7 +96,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
   when(INIT_NOANCHOR) {
     case Event(INPUT_NONE, _) =>
       them = sender
-      val ourParams = ChannelParams(DEFAULT_delay, commitPubKey, finalPubKey, DEFAULT_minDepth, DEFAULT_commitmentFee)
+      val ourParams = ChannelParams(DEFAULT_delay, commitPubKey, finalPubKey, minDepth, DEFAULT_commitmentFee)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       them ! open_channel(ourParams.delay, ourRevocationHash, ourParams.commitKey, ourParams.finalKey, WONT_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
@@ -106,7 +106,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
   when(INIT_WITHANCHOR) {
     case Event(INPUT_NONE, anchorInput: AnchorInput) =>
       them = sender
-      val ourParams = ChannelParams(DEFAULT_delay, commitPubKey, finalPubKey, DEFAULT_minDepth, DEFAULT_commitmentFee)
+      val ourParams = ChannelParams(DEFAULT_delay, commitPubKey, finalPubKey, minDepth, DEFAULT_commitmentFee)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       them ! open_channel(ourParams.delay, ourRevocationHash, ourParams.commitKey, ourParams.finalKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
@@ -152,7 +152,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
       them ! open_commit_sig(ourSigForThem)
       // TODO : register for confirmations of anchor tx on the bitcoin network
-      goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, CommitmentTx(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash), false)
+      goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, CommitmentTx(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
   }
 
   when(OPEN_WAIT_FOR_COMMIT_SIG) {
@@ -163,47 +163,40 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTx.hash, anchorOutputIndex) -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
       log.info(s"publishing anchor tx ${new BinaryData(Transaction.write(anchorTx))}")
-      goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx), false)
+      goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx))
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
-    case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _, _)) if confirmations < ourParams.minDepth =>
+    case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _)) if confirmations < ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
 
-    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _, false)) if confirmations >= ourParams.minDepth =>
+    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
       goto(OPEN_WAIT_FOR_COMPLETE) using DATA_NORMAL(d.ourParams, d.theirParams, d.commitmentTx)
 
-    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _, true)) if confirmations >= ourParams.minDepth =>
-      log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached, and already received their open_complete")
-      them ! open_complete(Some(blockId))
-      goto(NORMAL) using DATA_NORMAL(d.ourParams, d.theirParams, d.commitmentTx)
-
-    case Event(open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _, _)) =>
-      log.info(s"received their open_complete, blockId=${blockId_opt.map(x => Hex.toHexString(sha2562bin(x))).getOrElse("unknown")}")
-      stay using d.copy(otherPartyOpen = true)
+    case Event(msg@open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _)) =>
+      log.info(s"received their open_complete, deferring message")
+      setTimer("defer", msg, 1 second, false)
+      self ! msg
+      stay
   }
 
   when(OPEN_WAITING_OURANCHOR) {
-    case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _, _)) if confirmations < ourParams.minDepth =>
+    case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _)) if confirmations < ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
 
-    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _, false)) if confirmations >= ourParams.minDepth =>
+    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
       goto(OPEN_WAIT_FOR_COMPLETE) using DATA_NORMAL(d.ourParams, d.theirParams, d.commitmentTx)
 
-    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _, true)) if confirmations >= ourParams.minDepth =>
-      log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached, and already received their open_complete")
-      them ! open_complete(Some(blockId))
-      goto(NORMAL) using DATA_NORMAL(d.ourParams, d.theirParams, d.commitmentTx)
-
-    case Event(open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _, _)) =>
-      log.info(s"received their open_complete, blockId=${blockId_opt.map(x => Hex.toHexString(sha2562bin(x))).getOrElse("unknown")}")
-      stay using d.copy(otherPartyOpen = true)
+    case Event(msg@open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _)) =>
+      log.info(s"received their open_complete, deferring message")
+      setTimer("defer", msg, 1 second, false)
+      stay
   }
 
   when(OPEN_WAIT_FOR_COMPLETE) {
