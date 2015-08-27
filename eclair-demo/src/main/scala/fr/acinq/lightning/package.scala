@@ -14,9 +14,28 @@ import scala.annotation.tailrec
 
 package lightning {
 
+
+/*
+
+BOB POV !!
+
+ChannelState(ALICE:  ChannelOneSide(pay = 500, fee: Long, htlcs: Seq()), BOB:  ChannelOneSide(pay = 500, fee: Long, htlcs = Seq()))
+
+bob received update_add_htlc(100)
+
+OPTION 1 ChannelState(ALICE:  ChannelOneSide(pay = 500, fee: Long, htlcs: Seq(update_add_htlc(-100))), BOB:  ChannelOneSide(pay = 500, fee: Long, htlcs = Seq(update_add_htlc(100))))
+
+OPTION 2 ChannelState(ALICE:  ChannelOneSide(pay = 400, fee: Long, htlcs: Seq()), BOB:  ChannelOneSide(pay = 500, fee: Long, htlcs = Seq(update_add_htlc(100))))
+
+bob received r from CAROL and sends a update_complete_htlc to ALICE
+
+ChannelState(ALICE:  ChannelOneSide(pay = 400, fee: Long, htlcs: Seq()), BOB:  ChannelOneSide(pay = 600, fee: Long, htlcs = Seq()))
+
+ */
+
 case class ChannelOneSide(pay: Long, fee: Long, htlcs: Seq[update_add_htlc])
 
-case class ChannelState(them: ChannelOneSide, us: ChannelOneSide) {
+case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
   /**
    * Because each party needs to be able to compute the other party's commitment tx
    * @return the channel state as seen by the other party
@@ -24,14 +43,41 @@ case class ChannelState(them: ChannelOneSide, us: ChannelOneSide) {
   def reverse: ChannelState = this.copy(them = us, us = them)
 
   /**
-   * Remove all pending htlc and compute a delta as seen by us
-   * @return the new channel state and the delta
+   * Update the channel
+   * @param delta as seen by us, if delta > 0 we increase our balance
+   * @return the update channel state
    */
-  def fold: (ChannelState, Long) = {
-    val delta = us.htlcs.map(_.amount).sum - them.htlcs.map(_.amount).sum
-    val newState = this.copy(them = them.copy(pay = them.pay - delta, htlcs = Seq()), us = us.copy(pay = us.pay + delta, htlcs = Seq()))
-    (newState, delta)
+  def update(delta: Long): ChannelState = this.copy(them = them.copy(pay = them.pay - delta), us = us.copy(pay = us.pay + delta))
+
+  /**
+   * Update our state when we send an htlc
+   * @param htlc
+   * @return
+   */
+  def htlc_receive(htlc: update_add_htlc): ChannelState = this.copy(them = them.copy(pay = them.pay - htlc.amount), us = us.copy(htlcs = us.htlcs :+ htlc))
+
+  /**
+   * Update our state when we receive an htlc
+   * @param htlc
+   * @return
+   */
+  def htlc_send(htlc: update_add_htlc): ChannelState = this.copy(them = them.copy(htlcs = them.htlcs :+ htlc), us = us.copy(pay = us.pay - htlc.amount))
+
+  def htlc_complete(r: sha256_hash): ChannelState = {
+    if (us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).isDefined) {
+      // TODO not optimized
+      val htlc = us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).get
+      // we were the receiver of this htlc
+      this.copy(us = us.copy(pay = us.pay + htlc.amount, htlcs = us.htlcs.filterNot(_ == htlc)))
+    } else if (them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).isDefined) {
+      // TODO not optimized
+      val htlc = them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).get
+      // we were the sender of this htlc
+      this.copy(them = them.copy(pay = them.pay + htlc.amount, htlcs = them.htlcs.filterNot(_ == htlc)))
+    } else throw new RuntimeException(s"could not find corresponding htlc (r=$r)")
   }
+
+  def prettyString(): String = s"pay_us=${us.pay} htlcs_us=${us.htlcs.map(_.amount).sum} pay_them=${them.pay} htlcs_them=${them.htlcs.map(_.amount).sum} total=${us.pay + us.htlcs.map(_.amount).sum + them.pay + them.htlcs.map(_.amount).sum}"
 }
 
 }
@@ -89,7 +135,7 @@ package object lightning {
 
   implicit def array2signature(in: Array[Byte]): signature = bin2signature(in)
 
-  implicit def signature2bin(in: signature) : BinaryData = {
+  implicit def signature2bin(in: signature): BinaryData = {
     val rbos = new ByteArrayOutputStream()
     Protocol.writeUInt64(in.r1, rbos)
     Protocol.writeUInt64(in.r2, rbos)
@@ -110,14 +156,14 @@ package object lightning {
     case locktime(Seconds(seconds)) => seconds
   }
 
-  def isLess(a: Seq[Byte], b: Seq[Byte]) : Boolean = {
+  def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = {
     val a1 = a.dropWhile(_ == 0)
     val b1 = b.dropWhile(_ == 0)
     if (a1.length != b1.length)
       a1.length <= b1.length
     else {
       @tailrec
-      def isLess0(x: List[Byte], y: List[Byte]) : Boolean = (x, y) match {
+      def isLess0(x: List[Byte], y: List[Byte]): Boolean = (x, y) match {
         case (Nil, Nil) => false
         case (hx :: tx, hy :: ty) if (hx == hy) => isLess0(tx, ty)
         case (hx :: _, hy :: _) => ((hx & 0xff) < (hy & 0xff))
@@ -126,7 +172,7 @@ package object lightning {
     }
   }
 
-  def multiSig2of2(pubkey1: BinaryData, pubkey2: BinaryData) : BinaryData = if (isLess(pubkey1, pubkey2))
+  def multiSig2of2(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
     BinaryData(Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2)))
   else
     BinaryData(Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1)))

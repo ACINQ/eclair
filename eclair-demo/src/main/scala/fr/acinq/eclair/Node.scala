@@ -45,10 +45,10 @@ case object CLOSED extends State
 case object INPUT_NONE
 sealed trait BlockchainEvent
 final case class TxConfirmed(blockId: sha256_hash, confirmations: Int) extends BlockchainEvent
-final case class BITCOIN_CLOSE_DONE()
+case object BITCOIN_CLOSE_DONE
 
 sealed trait Command
-case object CMD_SEND_UPDATE extends Command
+final case class CMD_SEND_UPDATE(delta: Long) extends Command
 final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime) extends Command
 final case class CMD_SEND_HTLC_COMPLETE(r: sha256_hash) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
@@ -212,16 +212,17 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
   }
 
   when(NORMAL) {
-    case Event(CMD_SEND_UPDATE, DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      val (newState, delta) = previousState.fold
+    case Event(CMD_SEND_UPDATE(delta), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
+      val newState = previousState.update(delta)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       them ! update(ourRevocationHash, delta)
       goto(WAIT_FOR_UPDATE_ACCEPT) using DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
     case Event(update(theirRevocationHash, theirDelta), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      val (newState, delta) = previousState.fold
-      assert(delta == -theirDelta, s"delta mismatch, ours=$delta theirs=$theirDelta")
+      // ourDelta = -theirDelta
+      // TODO : we should also make sure that funds are sufficient
+      val newState = previousState.update(-theirDelta)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       // we build our side of the new commitment tx
@@ -236,19 +237,17 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry)
-      val newState = previousState.copy(them = previousState.them.copy(htlcs = previousState.them.htlcs :+ htlc))
+      val newState = previousState.htlc_send(htlc)
       them ! htlc
       goto(WAIT_FOR_HTLC_ACCEPT) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(m@update_add_htlc(theirRevocationHash, amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
+    case Event(htlc@update_add_htlc(theirRevocationHash, amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
       // TODO : we should check that we can reach the next node (which can be the final payee) using routing info that will be provided in the msg
       // them ! update_decline_htlc(CannotRoute)
       // TODO : we should also make sure that funds are sufficient
       // them ! update_decline_htlc(InsufficientFunds)
-      // if one of the above is false, then reply with update_decline_htlc
       // the receiver of this message will have its balance increased : it is the receiver of the htlc
-      // TODO : can the amount be negative ?
-      val newState = previousState.copy(us = previousState.us.copy(htlcs = previousState.us.htlcs :+ m))
+      val newState = previousState.htlc_receive(htlc)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       // we build our side of the new commitment tx
@@ -262,8 +261,8 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       goto(WAIT_FOR_UPDATE_SIG) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, p, CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
     case Event(CMD_SEND_HTLC_COMPLETE(r), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      val htlc = previousState.us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).getOrElse(throw new RuntimeException(s"could not find corresponding htlc (r=$r)"))
-      val newState = previousState.copy(them = previousState.them.copy(htlcs = previousState.them.htlcs.filterNot(_ == htlc)))
+      // we paid upstream in exchange for r, now lets gets paid
+      val newState = previousState.htlc_complete(r)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       // Complete your HTLC: I have the R value, pay me!
@@ -271,10 +270,8 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       goto(WAIT_FOR_HTLC_ACCEPT) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
     case Event(update_complete_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      // they are requesting that we pay them in the channel
-      val htlc = previousState.them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).getOrElse(throw new RuntimeException(s"could not find corresponding htlc (r=$r)"))
-      // TODO : following is probably wrong
-      val newState = previousState.copy(them = previousState.them.copy(pay = previousState.them.pay + htlc.amount), us = previousState.us.copy(pay = previousState.us.pay, htlcs = previousState.us.htlcs.filterNot(_ == htlc)))
+      // they are requesting that we pay them in the channel in exchange for r
+      val newState = previousState.htlc_complete(r)
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       // we build our side of the new commitment tx
@@ -292,11 +289,20 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
     case Event(close_channel(theirSig, closeFee), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
-      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
-      val ourSigForThem = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
-      // TODO : make sure the final tx is now spendable (should we spend it right now ?)
+      // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      val ourFinalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val ourSig = bin2signature(Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      val signedFinaltx = ourFinalTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+      log.debug(s"final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
+      // ok now we can broadcast the final tx if we want
       them ! close_channel_complete(ourSigForThem)
       goto(WAIT_FOR_CLOSE_ACK)
+  }
+
+  onTransition {
+    case _ -> NORMAL => log.debug(s"my state is now ${nextStateData.asInstanceOf[DATA_NORMAL].commitmentTx.state.prettyString()}")
   }
 
   when(WAIT_FOR_UPDATE_ACCEPT) {
@@ -347,12 +353,22 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
     case Event(close_channel(theirSig, closeFee), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
-      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
-      val ourSigForThem = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      //the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      val ourFinalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val ourSig = bin2signature(Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      val signedFinaltx = ourFinalTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+      log.debug(s"final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
+      // ok now we can broadcast the final tx if we want
       them ! close_channel_ack()
       goto(CLOSE_WAIT_CLOSE)
 
-    case Event(close_channel_complete(theirSig), _) =>
+    case Event(close_channel_complete(theirSig), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
+      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey))
+      val signedFinaltx = finalTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+      log.debug(s"final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
       // ok now we can broadcast the final tx if we want
       them ! close_channel_ack()
       goto(CLOSE_WAIT_CLOSE)
@@ -366,6 +382,10 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val anch
   when(CLOSE_WAIT_CLOSE) {
     case Event(BITCOIN_CLOSE_DONE, _) =>
       goto(CLOSED)
+  }
+
+  when(CLOSED) {
+    case _ => stay
   }
 
 }
