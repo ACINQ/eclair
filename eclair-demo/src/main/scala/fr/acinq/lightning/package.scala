@@ -197,16 +197,16 @@ package object lightning {
   }
 
   //TODO : do we really need this ?
-  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, channelState: ChannelState): Transaction =
-    makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, channelState)
+  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, revocationHash: BinaryData, channelState: ChannelState): Transaction =
+    makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, revocationHash, channelState)
 
 
-  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, channelState: ChannelState): Transaction =
-    makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, channelState)
+  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, channelState: ChannelState): Transaction =
+    makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, revocationHash, channelState)
 
   // this way it is easy to reuse the inputTx of an existing commitmentTx
-  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, channelState: ChannelState): Transaction = {
-    val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey)
+  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, revocationHash: BinaryData, channelState: ChannelState): Transaction = {
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey, revocationHash: BinaryData)
 
     val tx = Transaction(
       version = 1,
