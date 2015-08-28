@@ -179,6 +179,7 @@ package object lightning {
       txOut = TxOut(amount, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(hash160(scriptPubKey)) :: OP_EQUAL :: Nil) :: Nil,
       lockTime = 0)
     val signedTx = Transaction.sign(tx, Seq(signData))
+    // we don't permute outputs because by convention the multisig output as index = 0
     signedTx
   }
 
@@ -253,7 +254,7 @@ package object lightning {
       TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
     })
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
-    tx1
+    permuteOutputs(tx1)
   }
 
   /**
@@ -267,13 +268,13 @@ package object lightning {
   def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
     // TODO : is this the proper behaviour ?
     assert(channelState.them.htlcs.isEmpty && channelState.us.htlcs.isEmpty, s"cannot close a channel with pending htlcs (not sure this is in the specs)")
-    Transaction(
+    permuteOutputs(Transaction(
       version = 1,
       txIn = inputs,
       txOut = Seq(
         TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
         TxOut(amount = channelState.us.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
-      lockTime = 0)
+      lockTime = 0))
   }
 
   def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR
