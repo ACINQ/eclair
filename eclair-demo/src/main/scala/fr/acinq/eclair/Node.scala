@@ -11,7 +11,6 @@ import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
 import org.bouncycastle.util.encoders.Hex
 
 import scala.util.Try
-import scala.concurrent.duration._
 
 /**
  * Created by PM on 20/08/2015.
@@ -45,7 +44,7 @@ case object CLOSED extends State
 
 case object INPUT_NONE
 sealed trait BlockchainEvent
-final case class TxConfirmed(blockId: sha256_hash, confirmations: Int) extends BlockchainEvent
+final case class BITCOIN_TX_CONFIRMED(blockId: sha256_hash, confirmations: Int) extends BlockchainEvent
 case object BITCOIN_CLOSE_DONE
 
 sealed trait Command
@@ -77,10 +76,10 @@ final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: ChannelParams, theirPa
 
 // @formatter:on
 
-class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minDepth: Int, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
+class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minDepth: Int, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
 
   val DEFAULT_delay = locktime(Blocks(10))
-  val DEFAULT_commitmentFee = 100
+  val DEFAULT_commitmentFee = 100000
 
   val commitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(commitPrivKey.key.toByteArray)))
   val finalPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(finalPrivKey.key.toByteArray)))
@@ -123,10 +122,11 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams, anchorInput, ourRevocationHashPreimage)) =>
       val theirParams = ChannelParams(delay, commitKey, finalKey, minDepth.get, commitmentFee)
       val anchorTx = makeAnchorTx(ourParams.commitKey, theirParams.commitKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
+      log.info(s"anchor txid=${anchorTx.hash}")
       //TODO : anchorOutputIndex might not always be zero if there are multiple outputs
       val anchorOutputIndex = 0
       // we fund the channel with the anchor tx, so the money is ours
-      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - DEFAULT_commitmentFee, 0, Seq()))
       // we build our commitment tx, leaving it unsigned
       val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state)
       // then we build their commitment tx and sign it
@@ -139,7 +139,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxid, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, ourRevocationHashPreimage, theirRevocationHash)) =>
       // they fund the channel with their anchor tx, so the money is theirs
-      val state = ChannelState(them = ChannelOneSide(anchorAmount, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide(anchorAmount - DEFAULT_commitmentFee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTxid, anchorOutputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
       // TODO : Transaction.sign(...) should handle multisig
@@ -151,7 +151,7 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
       val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTxid, anchorOutputIndex, theirRevocationHash, state.reverse)
       val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
       them ! open_commit_sig(ourSigForThem)
-      // TODO : register for confirmations of anchor tx on the bitcoin network
+      blockchain ! Watch(anchorTxid)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, CommitmentTx(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
   }
 
@@ -162,16 +162,17 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
       val signedCommitTx = newCommitTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTx.hash, anchorOutputIndex) -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
-      log.info(s"publishing anchor tx ${new BinaryData(Transaction.write(anchorTx))}")
+      blockchain ! Watch(anchorTx.hash)
+      blockchain ! Publish(anchorTx)
       goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx))
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
-    case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _)) if confirmations < ourParams.minDepth =>
+    case Event(BITCOIN_TX_CONFIRMED(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _)) if confirmations < ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
 
-    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
+    case Event(BITCOIN_TX_CONFIRMED(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
       unstashAll()
@@ -184,11 +185,11 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
   }
 
   when(OPEN_WAITING_OURANCHOR) {
-    case Event(TxConfirmed(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _)) if confirmations < ourParams.minDepth =>
+    case Event(BITCOIN_TX_CONFIRMED(blockId, confirmations), DATA_OPEN_WAITING(ourParams, _, _)) if confirmations < ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx")
       stay
 
-    case Event(TxConfirmed(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
+    case Event(BITCOIN_TX_CONFIRMED(blockId, confirmations), d@DATA_OPEN_WAITING(ourParams, _, _)) if confirmations >= ourParams.minDepth =>
       log.info(s"got $confirmations confirmation(s) for anchor tx, minDepth reached")
       them ! open_complete(Some(blockId))
       unstashAll()
@@ -277,8 +278,9 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
       goto(WAIT_FOR_UPDATE_SIG) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, p, CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
     case Event(CMD_CLOSE(fee), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
-      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
-      val ourSigForThem = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(commitmentTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
       them ! close_channel(ourSigForThem, fee)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
@@ -287,9 +289,9 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
       val theirFinalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state.reverse)
       val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
       val ourFinalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
-      val ourSig = bin2signature(Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
+      val ourSig = Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey))
       val signedFinaltx = ourFinalTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
-      log.debug(s"final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
+      log.debug(s"*** final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
       // ok now we can broadcast the final tx if we want
       them ! close_channel_complete(ourSigForThem)
       goto(WAIT_FOR_CLOSE_ACK)
@@ -380,6 +382,13 @@ class Node(val commitPrivKey: BinaryData, val finalPrivKey: BinaryData, val minD
 
   when(CLOSED) {
     case _ => stay
+  }
+
+  whenUnhandled {
+    case Event(e@BITCOIN_TX_CONFIRMED(_, confirmations), _) =>
+      log.debug(s"dropped $e")
+      // drops silently, we don't care for confirmations above minDepth
+      stay
   }
 
 }

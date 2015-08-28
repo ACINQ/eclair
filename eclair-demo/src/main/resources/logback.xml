@@ -6,7 +6,7 @@
         <withJansi>false</withJansi>
         <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
             <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
-                <expression>return logger.contains("Node");</expression>
+                <expression>return logger.contains("Node") || logger.contains("BlockchainWatcher");</expression>
             </evaluator>
             <OnMatch>DENY</OnMatch>
             <OnMismatch>ACCEPT</OnMismatch>
@@ -46,9 +46,25 @@
         </encoder>
     </appender>
 
+    <appender name="BLOCKCHAIN" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
+            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
+                <expression>return ((String) mdc.get("akkaSource")).contains("blockchain");</expression>
+            </evaluator>
+            <OnMismatch>DENY</OnMismatch>
+            <OnMatch>ACCEPT</OnMatch>
+        </filter>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %boldGreen(%msg) %ex{12}%n</pattern>
+        </encoder>
+    </appender>
+
     <root level="DEBUG">
         <appender-ref ref="ALICE"/>
         <appender-ref ref="BOB"/>
+        <appender-ref ref="BLOCKCHAIN"/>
         <appender-ref ref="CONSOLE"/>
 
     </root>

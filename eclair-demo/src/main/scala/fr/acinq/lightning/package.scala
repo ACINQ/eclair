@@ -15,24 +15,6 @@ import scala.annotation.tailrec
 package lightning {
 
 
-/*
-
-BOB POV !!
-
-ChannelState(ALICE:  ChannelOneSide(pay = 500, fee: Long, htlcs: Seq()), BOB:  ChannelOneSide(pay = 500, fee: Long, htlcs = Seq()))
-
-bob received update_add_htlc(100)
-
-OPTION 1 ChannelState(ALICE:  ChannelOneSide(pay = 500, fee: Long, htlcs: Seq(update_add_htlc(-100))), BOB:  ChannelOneSide(pay = 500, fee: Long, htlcs = Seq(update_add_htlc(100))))
-
-OPTION 2 ChannelState(ALICE:  ChannelOneSide(pay = 400, fee: Long, htlcs: Seq()), BOB:  ChannelOneSide(pay = 500, fee: Long, htlcs = Seq(update_add_htlc(100))))
-
-bob received r from CAROL and sends a update_complete_htlc to ALICE
-
-ChannelState(ALICE:  ChannelOneSide(pay = 400, fee: Long, htlcs: Seq()), BOB:  ChannelOneSide(pay = 600, fee: Long, htlcs = Seq()))
-
- */
-
 case class ChannelOneSide(pay: Long, fee: Long, htlcs: Seq[update_add_htlc])
 
 case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
@@ -148,7 +130,7 @@ package object lightning {
     Protocol.writeUInt64(in.s3, sbos)
     Protocol.writeUInt64(in.s4, sbos)
     val s = new BigInteger(1, sbos.toByteArray)
-    Crypto.encodeSignature(r, s)
+    Crypto.encodeSignature(r, s) :+ SIGHASH_ALL.toByte
   }
 
   implicit def locktime2long(in: locktime): Long = in match {

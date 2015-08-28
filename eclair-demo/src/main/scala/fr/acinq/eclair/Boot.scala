@@ -14,20 +14,19 @@ object Boot extends App {
 
   val system = ActorSystem()
 
-  val anchorInput = AnchorInput(1000L, OutPoint("bff676222800bf24bbf32f5a0fc83c4ddd5782f6ba23b4b352b3a6ddf0fe0b95", 0), SignData("76a914763518984abc129ab5825b8c14b6f4c8fa16f9c988ac", Base58Check.decode("cRqkWfx32NcfJjkutHqLrfbuY8HhTeCNLa7NLBpWy4bpk7bEYQYg")._2))
+  val anchorInput = AnchorInput(100100000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))
 
-  val alice = system.actorOf(Props(new Node(Hex.decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), Hex.decode("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), 1, Some(anchorInput))), name = "alice")
-  val bob = system.actorOf(Props(new Node(Hex.decode("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"), Hex.decode("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"), 2, None)), name = "bob")
+  val alice_commit_priv = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")._2
+  val alice_final_priv = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")._2
+  val bob_commit_priv = Base58Check.decode("cSUwLtdZ2tht9ZmHhdQue48pfe7tY2GT2TGWJDtjoZgo6FHrubGk")._2
+  val bob_final_priv = Base58Check.decode("cPR7ZgXpUaDPA3GwGceMDS5pfnSm955yvks3yELf3wMJwegsdGTg")._2
+
+  val blockchain = system.actorOf(Props(new BlockchainWatcher), name = "blockchain")
+  val alice = system.actorOf(Props(new Node(blockchain, alice_commit_priv, alice_final_priv, 1, Some(anchorInput))), name = "alice")
+  val bob = system.actorOf(Props(new Node(blockchain, bob_commit_priv, bob_final_priv, 2, None)), name = "bob")
 
   bob.tell(INPUT_NONE, alice)
   alice.tell(INPUT_NONE, bob)
-
-  Thread.sleep(500)
-  alice ! TxConfirmed(sha256_hash(1, 2, 3, 4), 1)
-  bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 1)
-
-  Thread.sleep(500)
-  bob ! TxConfirmed(sha256_hash(1, 2, 3, 4), 2)
 
   Thread.sleep(1000)
 
