@@ -139,17 +139,17 @@ package object lightning {
   }
 
   @tailrec
-  def memcmp(a: Seq[Byte], b: Seq[Byte]): Int = (a, b) match {
+  def memcmp(a: List[Byte], b: List[Byte]): Int = (a, b) match {
     case (x, y) if (x.length != y.length) => x.length - y.length
     case (Nil, Nil) => 0
     case (ha :: ta, hb :: tb) if ha == hb => memcmp(ta, tb)
     case (ha :: ta, hb :: tb) => (ha & 0xff) - (hb & 0xff)
   }
 
-  def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0), b.dropWhile(_ == 0)) < 0
+  def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0).toList, b.dropWhile(_ == 0).toList) < 0
 
   def lessThan(output1: TxOut, output2: TxOut) : Boolean = (output1, output2) match {
-    case (TxOut(amount1, script1), TxOut(amount2, script2)) if amount1 == amount2 => memcmp(script1, script2) < 0
+    case (TxOut(amount1, script1), TxOut(amount2, script2)) if amount1 == amount2 => memcmp(script1.toList, script2.toList) < 0
     case (TxOut(amount1, _), TxOut(amount2, _)) => amount1 < amount2
   }
 
