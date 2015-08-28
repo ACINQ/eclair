@@ -162,6 +162,7 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val signedCommitTx = newCommitTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTx.hash, anchorOutputIndex) -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
+      if (!ok) log.error(s"invalid sig")
       blockchain ! Watch(anchorTx.hash)
       blockchain ! Publish(anchorTx)
       goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx))
@@ -310,6 +311,7 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val signedCommitTx = newCommitmentTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previous.tx.txIn(0).outPoint -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
+      if (!ok) log.error(s"invalid sig")
       them ! update_signature(ourSig, previous.ourRevocationPreimage)
       goto(WAIT_FOR_UPDATE_COMPLETE) using DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, previous, CommitmentTx(signedCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
   }
@@ -323,6 +325,7 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val signedCommitTx = newCommitmentTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previous.tx.txIn(0).outPoint -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
+      if (!ok) log.error(s"invalid sig")
       them ! update_signature(ourSig, previous.ourRevocationPreimage)
       goto(WAIT_FOR_UPDATE_COMPLETE) using DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, previous, CommitmentTx(signedCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
   }
@@ -336,6 +339,7 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val signedCommitTx = newCommitmentTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitmentTx.tx.txIn(0).outPoint -> multiSig2of2(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       // TODO : return Error and close channel if !ok
+      if (!ok) log.error(s"invalid sig")
       them ! update_complete(previousCommitmentTx.ourRevocationPreimage)
       goto(NORMAL) using DATA_NORMAL(ourParams, theirParams, newCommitmentTx.copy(tx = signedCommitTx))
   }
