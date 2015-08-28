@@ -156,21 +156,22 @@ package object lightning {
     case locktime(Seconds(seconds)) => seconds
   }
 
-  def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = {
-    val a1 = a.dropWhile(_ == 0)
-    val b1 = b.dropWhile(_ == 0)
-    if (a1.length != b1.length)
-      a1.length <= b1.length
-    else {
-      @tailrec
-      def isLess0(x: List[Byte], y: List[Byte]): Boolean = (x, y) match {
-        case (Nil, Nil) => false
-        case (hx :: tx, hy :: ty) if (hx == hy) => isLess0(tx, ty)
-        case (hx :: _, hy :: _) => ((hx & 0xff) < (hy & 0xff))
-      }
-      isLess0(a1.toList, b1.toList)
-    }
+  @tailrec
+  def memcmp(a: Seq[Byte], b: Seq[Byte]): Int = (a, b) match {
+    case (x, y) if (x.length != y.length) => x.length - y.length
+    case (Nil, Nil) => 0
+    case (ha :: ta, hb :: tb) if ha == hb => memcmp(ta, tb)
+    case (ha :: ta, hb :: tb) => (ha & 0xff) - (hb & 0xff)
   }
+
+  def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0), b.dropWhile(_ == 0)) < 0
+
+  def lessThan(output1: TxOut, output2: TxOut) : Boolean = (output1, output2) match {
+    case (TxOut(amount1, script1), TxOut(amount2, script2)) if amount1 == amount2 => memcmp(script1, script2) < 0
+    case (TxOut(amount1, _), TxOut(amount2, _)) => amount1 < amount2
+  }
+
+  def permuteOutputs(tx: Transaction) : Transaction = tx.copy(txOut = tx.txOut.sortWith(lessThan))
 
   def multiSig2of2(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
     BinaryData(Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2)))
