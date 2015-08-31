@@ -39,9 +39,6 @@ object Boot extends App {
   bob ! CMD_SEND_HTLC_COMPLETE(r)
 
   Thread.sleep(1000)
-  bob ! CMD_SEND_UPDATE(200)
-
-  Thread.sleep(1000)
   alice ! CMD_CLOSE(0)
 
   Thread.sleep(1000)

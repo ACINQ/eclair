@@ -48,7 +48,6 @@ final case class BITCOIN_TX_CONFIRMED(blockId: sha256_hash, confirmations: Int) 
 case object BITCOIN_CLOSE_DONE
 
 sealed trait Command
-final case class CMD_SEND_UPDATE(delta: Long) extends Command
 final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime) extends Command
 final case class CMD_SEND_HTLC_COMPLETE(r: sha256_hash) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
@@ -208,27 +207,6 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   }
 
   when(NORMAL) {
-    case Event(CMD_SEND_UPDATE(delta), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      val newState = previousState.update(delta)
-      val ourRevocationHashPreimage = randomsha256()
-      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-      them ! update(ourRevocationHash, delta)
-      goto(WAIT_FOR_UPDATE_ACCEPT) using DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
-
-    case Event(update(theirRevocationHash, theirDelta), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
-      // ourDelta = -theirDelta
-      // TODO : we should also make sure that funds are sufficient
-      val newState = previousState.update(-theirDelta)
-      val ourRevocationHashPreimage = randomsha256()
-      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-      // we build our side of the new commitment tx
-      val ourCommitTx = makeCommitTx(previousCommitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
-      // we build their commitment tx and sign it
-      val theirCommitTx = makeCommitTx(previousCommitmentTx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
-      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, pubkey2bin(commitPrivKey)))
-      them ! update_accept(ourSigForThem, ourRevocationHash)
-      goto(WAIT_FOR_UPDATE_SIG) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, p, CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
-
     case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)

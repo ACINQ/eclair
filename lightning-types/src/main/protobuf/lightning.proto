@@ -100,6 +100,8 @@ message open_complete {
   // FIXME: add a merkle proof plus block headers here?
 }
 
+/*
+This will be removed soon
 // Let's spend some money in the channel!
 message update {
   // Hash for which I will supply preimage to revoke this.
@@ -107,6 +109,7 @@ message update {
   // Change in current payment to-me (implies reverse to-you).
   required sint64 delta = 2;
 }
+*/
 
 // Start a new commitment tx to add an HTLC me -> you.
 message update_add_htlc {
@@ -209,7 +212,7 @@ message pkt {
     open_commit_sig open_commit_sig = 22;
     open_complete open_complete = 23;
     // Updating (most common)
-    update update = 1;
+    //update update = 1;
     update_add_htlc update_add_htlc = 2;
     update_accept update_accept = 3;
     update_signature update_signature = 4;
