@@ -71,7 +71,8 @@ class ShaChainSpec extends FunSuite {
 			chain = ShaChain.addHash(chain, expect(i), i)
 			for(j <- 0 to i) {
 				val hash = ShaChain.getHash(chain, j)
-				assert(hash == Some(expect(j)))
+				val expected = expect(j)
+				assert(hash == Some(expected))
 			}
 			assert(ShaChain.getHash(chain, i + 1) == None)
 		}

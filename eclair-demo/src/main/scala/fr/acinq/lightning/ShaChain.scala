@@ -28,13 +28,16 @@ object ShaChain {
 
   def addHash(chain: ShaChain, hash: BinaryData, index: Long) : ShaChain = {
     require(index == chain.maxIndex + 1 || (index == 0 && chain.knownHashes.isEmpty))
-    chain.knownHashes.zipWithIndex.find {case (k, i) => canDerive(index, k.index) } match {
-      case Some((KnownHash(h, i), pos)) =>
+
+    def updateKnownHashes(knowHashes: Seq[KnownHash], acc: Seq[KnownHash] = Seq.empty[KnownHash]) : Seq[KnownHash] = knowHashes match {
+      case Nil => acc :+ KnownHash(hash, index)
+      case KnownHash(h, i) :: tail if canDerive(index, i) =>
         val expected: BinaryData = derive(hash, index, i)
         require(h == expected)
-        chain.copy(maxIndex = index, knownHashes = chain.knownHashes.updated(pos, KnownHash(hash, index)).take(pos + 1))
-      case None => chain.copy(maxIndex = index, knownHashes = chain.knownHashes :+ KnownHash(hash, index))
+        acc :+ KnownHash(hash, index)
+      case head :: tail => updateKnownHashes(tail, acc :+ head)
     }
+    chain.copy(maxIndex = index, knownHashes = updateKnownHashes(chain.knownHashes))
   }
 
   def getHash(chain: ShaChain, index: Long) : Option[BinaryData] = {
