@@ -52,10 +52,9 @@ object Boot extends App {
 
   alice ! CMD_CLOSE(0)
 
-  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != CLOSE_WAIT_CLOSE) Thread.sleep(200)
-  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != CLOSE_WAIT_CLOSE) Thread.sleep(200)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(200)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(200)
 
-  alice ! BITCOIN_CLOSE_DONE
-  bob ! BITCOIN_CLOSE_DONE
+  system.shutdown()
 
 }
