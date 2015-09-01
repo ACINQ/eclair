@@ -1,11 +1,16 @@
 package fr.acinq.eclair
 
 import akka.actor.{Props, ActorSystem}
+import akka.pattern.ask
+import akka.util.Timeout
+import scala.concurrent.duration._
 import fr.acinq.bitcoin._
 import fr.acinq.lightning._
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, sha256_hash}
 import org.bouncycastle.util.encoders.Hex
+
+import scala.concurrent.Await
 
 /**
  * Created by PM on 20/08/2015.
@@ -13,6 +18,7 @@ import org.bouncycastle.util.encoders.Hex
 object Boot extends App {
 
   val system = ActorSystem()
+  implicit val timeout = Timeout(30 seconds)
 
   val anchorInput = AnchorInput(100100000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))
 
@@ -28,20 +34,27 @@ object Boot extends App {
   bob.tell(INPUT_NONE, alice)
   alice.tell(INPUT_NONE, bob)
 
-  Thread.sleep(1000)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(200)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(200)
 
   val r = sha256_hash(7, 7, 7, 7)
   val rHash = Crypto.sha256(r)
 
   alice ! CMD_SEND_HTLC_UPDATE(100, rHash, locktime(Blocks(4)))
 
-  Thread.sleep(1000)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(200)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(200)
+
   bob ! CMD_SEND_HTLC_COMPLETE(r)
 
-  Thread.sleep(1000)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(200)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(200)
+
   alice ! CMD_CLOSE(0)
 
-  Thread.sleep(1000)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != CLOSE_WAIT_CLOSE) Thread.sleep(200)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != CLOSE_WAIT_CLOSE) Thread.sleep(200)
+
   alice ! BITCOIN_CLOSE_DONE
   bob ! BITCOIN_CLOSE_DONE
 
