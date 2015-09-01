@@ -392,28 +392,38 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       them ! update_decline_htlc(CannotRoute(true))
       goto(NORMAL(priority.invert))
 
-    case Event(pkt: update_add_htlc, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val (newCommitmentTx, updateAccept) = handle_pkt_update_add_htlc(pkt, ourParams, theirParams, commitmentTx)
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+      val newState = commitmentTx.state.htlc_receive(htlc)
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
       them ! updateAccept
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
-    case Event(cmd: CMD_SEND_HTLC_ROUTEFAIL, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val (updateProposal, res) = handle_cmd_send_htlc_routefail(cmd)
-      them ! res
-      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, updateProposal)
+    case Event(CMD_SEND_HTLC_ROUTEFAIL(rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+      // we couldn't reach upstream node, so we update the commitment tx, removing the corresponding htlc
+      val ourRevocationHashPreimage = randomsha256()
+      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+      val newState = commitmentTx.state.htlc_remove(rHash)
+      them ! update_routefail_htlc(ourRevocationHash, rHash)
+      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(pkt: update_routefail_htlc, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val (newCommitmentTx, res) = handle_pkt_update_routefail_htlc(pkt)
+    case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+      val newState = commitmentTx.state.htlc_remove(rHash)
+      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
       them ! res
-      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
-    case Event(cmd: CMD_SEND_HTLC_TIMEDOUT, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val (updateProposal, res) = handle_cmd_send_htlc_timedout(cmd)
-      them ! res
-      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, updateProposal)
+    case Event(CMD_SEND_HTLC_TIMEDOUT(rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+      // the upstream node didn't provide the r value in time
+      // we couldn't reach upstream node, so we update the commitment tx, removing the corresponding htlc
+      val ourRevocationHashPreimage = randomsha256()
+      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+      val newState = commitmentTx.state.htlc_remove(rHash)
+      them ! update_timedout_htlc(ourRevocationHash, rHash)
+      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(pkt: update_timedout_htlc, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val (newCommitmentTx, res) = handle_pkt_update_timedout_htlc(pkt)
+    case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+      val newState = commitmentTx.state.htlc_remove(rHash)
+      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
       them ! res
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
@@ -501,18 +511,21 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       them ! update_decline_htlc(CannotRoute(true))
       goto(NORMAL_HIGHPRIO) using DATA_NORMAL(ourParams, theirParams, commitmentTx)
 
-    case Event(htlc@update_add_htlc(theirRevocationHash, amount, rHash, expiry), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val (newCommitmentTx, res) = handle_pkt_update_add_htlc(htlc, ourParams, theirParams, commitmentTx)
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
+      val newState = commitmentTx.state.htlc_receive(htlc)
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
+      them ! updateAccept
+      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+
+    case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
+      val newState = commitmentTx.state.htlc_remove(rHash)
+      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
       them ! res
       goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
-    case Event(pkt: update_routefail_htlc, DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val (newCommitmentTx, res) = handle_pkt_update_routefail_htlc(pkt)
-      them ! res
-      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
-
-    case Event(pkt: update_timedout_htlc, DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val (newCommitmentTx, res) = handle_pkt_update_timedout_htlc(pkt)
+    case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
+      val newState = commitmentTx.state.htlc_remove(rHash)
+      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
       them ! res
       goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
   })
@@ -902,40 +915,15 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   HANDLERS
    */
 
-  def handle_pkt_update_add_htlc(pkt: update_add_htlc, ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx): (CommitmentTx, update_accept) = {
-    // TODO : we should check that we can reach the next node (which can be the final payee) using routing info that will be provided in the msg
-    // them ! update_decline_htlc(CannotRoute)
-    // TODO : we should also make sure that funds are sufficient
-    // them ! update_decline_htlc(InsufficientFunds)
-    // the receiver of this message will have its balance increased : it is the receiver of the htlc
-    val newState = commitmentTx.state.htlc_receive(pkt)
+  def accept_new_commitment_tx(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx, newState: ChannelState, theirRevocationHash: sha256_hash): (CommitmentTx, update_accept) = {
     val ourRevocationHashPreimage = randomsha256()
     val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-    val theirRevocationHash = pkt.revocationHash
     // we build our side of the new commitment tx
     val ourCommitTx = makeCommitTx(commitmentTx.tx.txIn, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
     // we build their commitment tx and sign it
     val theirCommitTx = makeCommitTx(commitmentTx.tx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
-    // note that this tx increases our balance so there is no risk in signing it
-    // TODO : send update_add_htlc(revocationHash, amount, rHash, expiry - 1) *to the next node*
     (CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash), update_accept(ourSigForThem, ourRevocationHash))
-  }
-
-  def handle_cmd_send_htlc_routefail(cmd: CMD_SEND_HTLC_ROUTEFAIL): (UpdateProposal, update_routefail_htlc) = {
-    null
-  }
-
-  def handle_pkt_update_routefail_htlc(pkt: update_routefail_htlc): (CommitmentTx, update_accept) = {
-    null
-  }
-
-  def handle_cmd_send_htlc_timedout(cmd: CMD_SEND_HTLC_TIMEDOUT): (UpdateProposal, update_timedout_htlc) = {
-    null
-  }
-
-  def handle_pkt_update_timedout_htlc(pkt: update_timedout_htlc): (CommitmentTx, update_accept) = {
-    null
   }
 
   def handle_pkt_update_complete(pkt: update_complete_htlc, ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx): (CommitmentTx, update_accept) = {

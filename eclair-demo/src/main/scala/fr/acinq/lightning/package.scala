@@ -45,6 +45,25 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
    */
   def htlc_send(htlc: update_add_htlc): ChannelState = this.copy(them = them.copy(htlcs = them.htlcs :+ htlc), us = us.copy(pay = us.pay - htlc.amount))
 
+  /**
+   * We remove an existing htlc (can be because of a timeout, or a routing failure)
+   * @param rHash
+   * @return
+   */
+  def htlc_remove(rHash: sha256_hash): ChannelState = {
+    if (us.htlcs.find(_.rHash == rHash).isDefined) {
+      // TODO not optimized
+      val htlc = us.htlcs.find(_.rHash == rHash).get
+      // we were the receiver of this htlc
+      this.copy(them = them.copy(pay = them.pay - htlc.amount), us = us.copy(htlcs = us.htlcs.filterNot(_ == htlc)))
+    } else if (them.htlcs.find(_.rHash == rHash).isDefined) {
+      // TODO not optimized
+      val htlc = them.htlcs.find(_.rHash == rHash).get
+      // we were the sender of this htlc
+      this.copy(them = them.copy(htlcs = them.htlcs.filterNot(_ == htlc)), us = us.copy(pay = us.pay + htlc.amount))
+    } else throw new RuntimeException(s"could not find corresponding htlc (rHash=$rHash)")
+  }
+
   def htlc_complete(r: sha256_hash): ChannelState = {
     if (us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).isDefined) {
       // TODO not optimized
