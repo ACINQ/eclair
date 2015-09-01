@@ -408,8 +408,8 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
 
     case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
       val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! res
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
+      them ! updateAccept
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
     case Event(CMD_SEND_HTLC_TIMEDOUT(rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
@@ -423,8 +423,8 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
 
     case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
       val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! res
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
+      them ! updateAccept
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
     case Event(CMD_SEND_HTLC_COMPLETE(r), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
@@ -436,8 +436,9 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       them ! update_complete_htlc(ourRevocationHash, r)
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(pkt: update_complete_htlc, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val (newCommitmentTx, updateAccept) = handle_pkt_update_complete(pkt, ourParams, theirParams, commitmentTx)
+    case Event(update_complete_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+      val newState = commitmentTx.state.htlc_complete(r)
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
       them ! updateAccept
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
@@ -519,14 +520,20 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
 
     case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
       val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! res
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
+      them ! updateAccept
       goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
 
     case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
       val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, res) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! res
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
+      them ! updateAccept
+      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+
+    case Event(update_complete_htlc(theirRevocationHash, r), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
+      val newState = commitmentTx.state.htlc_complete(r)
+      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
+      them ! updateAccept
       goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
   })
 
@@ -918,20 +925,6 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   def accept_new_commitment_tx(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx, newState: ChannelState, theirRevocationHash: sha256_hash): (CommitmentTx, update_accept) = {
     val ourRevocationHashPreimage = randomsha256()
     val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-    // we build our side of the new commitment tx
-    val ourCommitTx = makeCommitTx(commitmentTx.tx.txIn, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
-    // we build their commitment tx and sign it
-    val theirCommitTx = makeCommitTx(commitmentTx.tx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
-    val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
-    (CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash), update_accept(ourSigForThem, ourRevocationHash))
-  }
-
-  def handle_pkt_update_complete(pkt: update_complete_htlc, ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx): (CommitmentTx, update_accept) = {
-    // they are requesting that we pay them in the channel in exchange for r
-    val newState = commitmentTx.state.htlc_complete(pkt.r)
-    val ourRevocationHashPreimage = randomsha256()
-    val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-    val theirRevocationHash = pkt.revocationHash
     // we build our side of the new commitment tx
     val ourCommitTx = makeCommitTx(commitmentTx.tx.txIn, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
     // we build their commitment tx and sign it
