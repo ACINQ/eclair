@@ -168,6 +168,8 @@ package object lightning {
 
   def pay2sh(script: Seq[ScriptElt]) = OP_HASH160 :: OP_PUSHDATA(hash160(Script.write(script))) :: OP_EQUAL :: Nil
 
+  def pay2sh(script: BinaryData) = OP_HASH160 :: OP_PUSHDATA(hash160(script)) :: OP_EQUAL :: Nil
+
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {
     val scriptPubKey = if (isLess(pubkey1, pubkey2))
       Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
@@ -182,6 +184,8 @@ package object lightning {
     // we don't permute outputs because by convention the multisig output as index = 0
     signedTx
   }
+
+  def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData) : BinaryData = Script.write(pay2sh(multiSig2of2(pubkey1, pubkey2)))
 
   def redeemSecretOrDelay(delayedKey: BinaryData, lockTime: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
     // @formatter:off

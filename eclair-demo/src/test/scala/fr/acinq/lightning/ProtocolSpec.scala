@@ -79,7 +79,7 @@ class ProtocolSpec extends FlatSpec {
     // now Bob receives open anchor and wants to check that Alice's commit sig is valid
     // Bob can sign too and check that he can spend the anchox tx
     val sigB = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Bob.commitKey)
-    val scriptSig = sigScript2of2(sigA, sigB, Alice.commitPubKey, Bob.commitPubKey)
+    val scriptSig = sigScript2of2(openAnchor1.commitSig, sigB, Alice.commitPubKey, Bob.commitPubKey)
     val commitTx = tx.updateSigScript(0, scriptSig)
     Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     // or Bob can just check that Alice's sig is valid
