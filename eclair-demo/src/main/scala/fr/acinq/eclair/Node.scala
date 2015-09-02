@@ -132,20 +132,20 @@ sealed trait Data
 case object Nothing extends Data
 final case class AnchorInput(amount: Long, previousTxOutput: OutPoint, signData: SignData) extends Data
 final case class ChannelParams(delay: locktime, commitKey: bitcoin_pubkey, finalKey: bitcoin_pubkey, minDepth: Int, commitmentFee: Long)
-final case class CommitmentTx(tx: Transaction, state: ChannelState, ourRevocationPreimage: sha256_hash, theirRevocationHash: sha256_hash)
+final case class Commitment(tx: Transaction, state: ChannelState, ourRevocationPreimage: sha256_hash, theirRevocationHash: sha256_hash)
 final case class UpdateProposal(state: ChannelState, ourRevocationPreimage: sha256_hash)
 
 final case class DATA_OPEN_WAIT_FOR_OPEN_NOANCHOR(ourParams: ChannelParams, ourRevocationPreimage: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams: ChannelParams, anchorInput: AnchorInput, ourRevocationPreimage: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR(ourParams: ChannelParams, theirParams: ChannelParams, ourRevocationPreimage: sha256_hash, theirRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: ChannelParams, theirParams: ChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, newCommitmentTxUnsigned: CommitmentTx) extends Data
-final case class DATA_OPEN_WAITING(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx) extends Data
-final case class DATA_NORMAL(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx) extends Data
+final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: ChannelParams, theirParams: ChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, newCommitmentUnsigned: Commitment) extends Data
+final case class DATA_OPEN_WAITING(ourParams: ChannelParams, theirParams: ChannelParams, commitment: Commitment) extends Data
+final case class DATA_NORMAL(ourParams: ChannelParams, theirParams: ChannelParams, commitment: Commitment) extends Data
 //TODO : create SignedTransaction
-final case class DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentTxSigned: CommitmentTx, updateProposal: UpdateProposal) extends Data
-final case class DATA_WAIT_FOR_HTLC_ACCEPT(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentTxSigned: CommitmentTx, updateProposal: UpdateProposal) extends Data
-final case class DATA_WAIT_FOR_UPDATE_SIG(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentTxSigned: CommitmentTx, newCommitmentTxUnsigned: CommitmentTx) extends Data
-final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentTxSigned: CommitmentTx, newCommitmentTxUnsigned: CommitmentTx) extends Data
+final case class DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentSigned: Commitment, updateProposal: UpdateProposal) extends Data
+final case class DATA_WAIT_FOR_HTLC_ACCEPT(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentSigned: Commitment, updateProposal: UpdateProposal) extends Data
+final case class DATA_WAIT_FOR_UPDATE_SIG(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentSigned: Commitment, newCommitmentUnsigned: Commitment) extends Data
+final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: ChannelParams, theirParams: ChannelParams, previousCommitmentSigned: Commitment, newCommitmentTxUnsigned: Commitment) extends Data
 final case class DATA_WAIT_FOR_CLOSE_ACK(finalTx: Transaction) extends Data
 
 // @formatter:on
@@ -210,15 +210,9 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val anchorOutputIndex = 0
       // we fund the channel with the anchor tx, so the money is ours
       val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - DEFAULT_commitmentFee, 0, Seq()))
-      // we build our commitment tx, leaving it unsigned
-      val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
-      //val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state)
-      // then we build their commitment tx and sign it
-      val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state.reverse)
-      //val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, Crypto.sha256(ourRevocationHashPreimage), state.reverse)
-      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHashPreimage, theirRevocationHash)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, anchorInput.amount, ourSigForThem)
-      goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, CommitmentTx(ourCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
+      goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, Commitment(ourCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
@@ -228,32 +222,25 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       // they fund the channel with their anchor tx, so the money is theirs
       val state = ChannelState(them = ChannelOneSide(anchorAmount - DEFAULT_commitmentFee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTxid, anchorOutputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
-      // TODO : Transaction.sign(...) should handle multisig
-      val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-      val signedCommitTx = ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTxid, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHashPreimage, theirRevocationHash)
+      val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx, theirSig)
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTxid, anchorOutputIndex) -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       ok match {
         case false =>
           them ! error(Some("Bad signature"))
           stay
         case true =>
-          // then we build their commitment tx and sign it
-          val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTxid, anchorOutputIndex, theirRevocationHash, state.reverse)
-          val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
           them ! open_commit_sig(ourSigForThem)
           blockchain ! Watch(self, anchorTxid, Anchor, ourParams.minDepth)
-          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, CommitmentTx(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
+          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, Commitment(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_COMMIT_SIG) {
-    case Event(open_commit_sig(theirSig), DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, newCommitTx)) =>
-      // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourSig = Transaction.signInput(newCommitTx.tx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-      val signedCommitTx = newCommitTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+    case Event(open_commit_sig(theirSig), DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, commitment)) =>
+      val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, commitment.tx, theirSig)
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTx.hash, anchorOutputIndex) -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       ok match {
         case false =>
@@ -262,17 +249,17 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
         case true =>
           blockchain ! Watch(self, anchorTx.hash, Anchor, ourParams.minDepth)
           blockchain ! Publish(anchorTx)
-          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx))
+          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, commitment.copy(tx = signedCommitTx))
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
-    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, commitmentTx)) =>
+    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
       them ! open_complete(None)
       unstashAll()
-      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(ourParams, theirParams, commitmentTx)
+      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(ourParams, theirParams, commitment)
 
     case Event(msg@open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _)) =>
       log.info(s"received their open_complete, deferring message")
@@ -283,12 +270,12 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       them ! error(Some("Anchor timed out"))
       goto(ERR_ANCHOR_TIMEOUT)
 
-    case Event(cmd: CMD_CLOSE, DATA_OPEN_WAITING(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)
+    case Event(cmd: CMD_CLOSE, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
+      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(pkt: close_channel, DATA_OPEN_WAITING(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -303,22 +290,22 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   }
 
   when(OPEN_WAITING_OURANCHOR) {
-    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, commitmentTx)) =>
+    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
       them ! open_complete(None)
       unstashAll()
-      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, commitmentTx)
+      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, commitment)
 
     case Event(msg@open_complete(blockId_opt), d@DATA_OPEN_WAITING(ourParams, _, _)) =>
       log.info(s"received their open_complete, deferring message")
       stash()
       stay
 
-    case Event(cmd: CMD_CLOSE, DATA_OPEN_WAITING(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)
+    case Event(cmd: CMD_CLOSE, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
+      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(pkt: close_channel, DATA_OPEN_WAITING(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -336,12 +323,12 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       goto(NORMAL_LOWPRIO) using d
 
-    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)
+    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -359,12 +346,12 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       goto(NORMAL_HIGHPRIO) using d
 
-    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)
+    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -379,7 +366,7 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   }
 
   def NORMAL_handler: StateFunction = {
-    case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
+    case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
       val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry)
@@ -387,47 +374,50 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       them ! htlc
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), d@DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
+    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), d@DATA_NORMAL(ourParams, theirParams, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
       them ! update_decline_htlc(CannotRoute(true))
       goto(NORMAL(priority.invert))
 
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val newState = commitmentTx.state.htlc_receive(htlc)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      val newState = commitment.state.htlc_receive(htlc)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(CMD_SEND_HTLC_ROUTEFAIL(rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+    case Event(CMD_SEND_HTLC_ROUTEFAIL(rHash), DATA_NORMAL(ourParams, theirParams, commitment)) =>
       // we couldn't reach upstream node, so we update the commitment tx, removing the corresponding htlc
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-      val newState = commitmentTx.state.htlc_remove(rHash)
+      val newState = commitment.state.htlc_remove(rHash)
       them ! update_routefail_htlc(ourRevocationHash, rHash)
-      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, UpdateProposal(newState, ourRevocationHashPreimage))
+      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      val newState = commitment.state.htlc_remove(rHash)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(CMD_SEND_HTLC_TIMEDOUT(rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
+    case Event(CMD_SEND_HTLC_TIMEDOUT(rHash), DATA_NORMAL(ourParams, theirParams, commitment)) =>
       // the upstream node didn't provide the r value in time
       // we couldn't reach upstream node, so we update the commitment tx, removing the corresponding htlc
       val ourRevocationHashPreimage = randomsha256()
       val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
-      val newState = commitmentTx.state.htlc_remove(rHash)
+      val newState = commitment.state.htlc_remove(rHash)
       them ! update_timedout_htlc(ourRevocationHash, rHash)
-      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, UpdateProposal(newState, ourRevocationHashPreimage))
+      goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      val newState = commitment.state.htlc_remove(rHash)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(CMD_SEND_HTLC_COMPLETE(r), DATA_NORMAL(ourParams, theirParams, p@CommitmentTx(previousCommitmentTx, previousState, _, _))) =>
+    case Event(CMD_SEND_HTLC_COMPLETE(r), DATA_NORMAL(ourParams, theirParams, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
       // we paid upstream in exchange for r, now lets gets paid
       val newState = previousState.htlc_complete(r)
       val ourRevocationHashPreimage = randomsha256()
@@ -436,18 +426,19 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       them ! update_complete_htlc(ourRevocationHash, r)
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, p, UpdateProposal(newState, ourRevocationHashPreimage))
 
-    case Event(update_complete_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      val newState = commitmentTx.state.htlc_complete(r)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(update_complete_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      val newState = commitment.state.htlc_complete(r)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)
+    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, commitmentTx)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, commitment)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -466,35 +457,31 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   when(NORMAL_LOWPRIO)(NORMAL_handler)
 
   onTransition {
-    case _ -> NORMAL_HIGHPRIO => log.debug(s"my state is now ${nextStateData.asInstanceOf[DATA_NORMAL].commitmentTx.state.prettyString()}")
-    case _ -> NORMAL_LOWPRIO => log.debug(s"my state is now ${nextStateData.asInstanceOf[DATA_NORMAL].commitmentTx.state.prettyString()}")
+    case _ -> NORMAL_HIGHPRIO => log.debug(s"my state is now ${nextStateData.asInstanceOf[DATA_NORMAL].commitment.state.prettyString()}")
+    case _ -> NORMAL_LOWPRIO => log.debug(s"my state is now ${nextStateData.asInstanceOf[DATA_NORMAL].commitment.state.prettyString()}")
   }
 
   def WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler: StateFunction = {
-    case Event(update_accept(theirSig, theirRevocationHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, previous, UpdateProposal(newState, ourRevocationHashPreimage))) =>
+    case Event(update_accept(theirSig, theirRevocationHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, previousCommitment, UpdateProposal(newState, ourRevocationHashPreimage))) =>
       // counterparty replied with the signature for the new commitment tx
-      // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val newCommitmentTx = makeCommitTx(previous.tx.txIn, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
-      val ourSig = Transaction.signInput(newCommitmentTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-      val signedCommitTx = newCommitmentTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previous.tx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx, theirSig)
+      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       ok match {
         case false =>
           them ! error(Some("Bad signature"))
           stay
         case true =>
-          val theirCommitmentTx = makeCommitTx(previous.tx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
-          val ourSigForThem = Transaction.signInput(theirCommitmentTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-          them ! update_signature(ourSigForThem, previous.ourRevocationPreimage)
-          goto(WAIT_FOR_UPDATE_COMPLETE(priority)) using DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, previous, CommitmentTx(signedCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
+          them ! update_signature(ourSigForThem, previousCommitment.ourRevocationPreimage)
+          goto(WAIT_FOR_UPDATE_COMPLETE(priority)) using DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, previousCommitment, Commitment(signedCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
       }
 
-    case Event(update_decline_htlc(reason), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, previous, _)) =>
+    case Event(update_decline_htlc(reason), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, previousCommitmentTx, _)) =>
       log.info(s"counterparty declined htlc update with reason=$reason")
-      goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, previous)
+      goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, previousCommitmentTx)
 
-    case Event(pkt: close_channel, DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, _)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -511,55 +498,58 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   when(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler)
 
   when(WAIT_FOR_HTLC_ACCEPT_LOWPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler orElse {
-    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
+    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, _)) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
       them ! update_decline_htlc(CannotRoute(true))
-      goto(NORMAL_HIGHPRIO) using DATA_NORMAL(ourParams, theirParams, commitmentTx)
+      goto(NORMAL_HIGHPRIO) using DATA_NORMAL(ourParams, theirParams, commitment)
 
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val newState = commitmentTx.state.htlc_receive(htlc)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, _)) =>
+      val newState = commitment.state.htlc_receive(htlc)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(update_routefail_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, _)) =>
+      val newState = commitment.state.htlc_remove(rHash)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val newState = commitmentTx.state.htlc_remove(rHash)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(update_timedout_htlc(theirRevocationHash, rHash), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, _)) =>
+      val newState = commitment.state.htlc_remove(rHash)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
 
-    case Event(update_complete_htlc(theirRevocationHash, r), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitmentTx, _)) =>
-      val newState = commitmentTx.state.htlc_complete(r)
-      val (newCommitmentTx, updateAccept) = accept_new_commitment_tx(ourParams, theirParams, commitmentTx, newState, theirRevocationHash)
-      them ! updateAccept
-      goto(WAIT_FOR_UPDATE_SIG_LOWPRIO) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, newCommitmentTx)
+    case Event(update_complete_htlc(theirRevocationHash, r), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, commitment, _)) =>
+      val newState = commitment.state.htlc_complete(r)
+      val ourRevocationHashPreimage = randomsha256()
+      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHashPreimage, theirRevocationHash)
+      them ! update_accept(ourSigForThem, Crypto.sha256(ourRevocationHashPreimage))
+      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, Commitment(newCommitmentTx, newState, ourRevocationHashPreimage, theirRevocationHash))
   })
 
   def WAIT_FOR_UPDATE_SIG_handler: StateFunction = {
-    case Event(update_signature(theirSig, theirRevocationPreimage), DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, previousCommitmentTx, newCommitmentTx)) =>
+    case Event(update_signature(theirSig, theirRevocationPreimage), DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, previousCommitment, newCommitment)) =>
       // counterparty replied with the signature for its new commitment tx, and revocationPreimage
-      assert(new BinaryData(previousCommitmentTx.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage)), s"the revocation preimage they gave us is wrong! hash=${previousCommitmentTx.theirRevocationHash} preimage=$theirRevocationPreimage")
+      assert(new BinaryData(previousCommitment.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage)), s"the revocation preimage they gave us is wrong! hash=${previousCommitment.theirRevocationHash} preimage=$theirRevocationPreimage")
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourSig = Transaction.signInput(newCommitmentTx.tx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-      val signedCommitTx = newCommitmentTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitmentTx.tx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, newCommitment.tx, theirSig)
+      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       ok match {
         case false =>
           them ! error(Some("Bad signature"))
           stay
         case true =>
-          them ! update_complete(previousCommitmentTx.ourRevocationPreimage)
-          goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, newCommitmentTx.copy(tx = signedCommitTx))
+          them ! update_complete(previousCommitment.ourRevocationPreimage)
+          goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, newCommitment)
       }
 
-    case Event(cmd: CMD_CLOSE, DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, _)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)
+    case Event(cmd: CMD_CLOSE, DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitment, _)) =>
+      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -582,8 +572,8 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       assert(new BinaryData(previousCommitmentTx.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage)), s"the revocation preimage they gave us is wrong! hash=${previousCommitmentTx.theirRevocationHash} preimage=$theirRevocationPreimage")
       goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, newCommitmentTx)
 
-    case Event(pkt: close_channel, DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, commitmentTx, _)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitmentTx)
+    case Event(pkt: close_channel, DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, commitment, _)) =>
+      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND, _) =>
@@ -603,15 +593,20 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
 
-    case Event(close_channel_complete(theirSig), DATA_NORMAL(ourParams, theirParams, CommitmentTx(commitmentTx, state, _, _))) =>
-      val finalTx = makeFinalTx(commitmentTx.txIn, ourParams.finalKey, theirParams.finalKey, state)
-      val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-      val signedFinaltx = finalTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
-      log.debug(s"final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
-      them ! close_channel_ack()
-      blockchain ! Watch(self, signedFinaltx.hash, Final, 1)
-      blockchain ! Publish(signedFinaltx)
-      goto(CLOSE_WAIT_CLOSE)
+    case Event(close_channel_complete(theirSig), DATA_NORMAL(ourParams, theirParams, Commitment(commitment, state, _, _))) =>
+      val finalTx = makeFinalTx(commitment.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val signedFinalTx = sign_our_commitment_tx(ourParams, theirParams, finalTx, theirSig)
+      val ok = Try(Transaction.correctlySpends(signedFinalTx, Map(signedFinalTx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      ok match {
+        case false =>
+          them ! error(Some("Bad signature"))
+          stay
+        case true =>
+          them ! close_channel_ack()
+          blockchain ! Watch(self, signedFinalTx.hash, Final, 1)
+          blockchain ! Publish(signedFinalTx)
+          goto(CLOSE_WAIT_CLOSE)
+      }
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
@@ -922,34 +917,37 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   HANDLERS
    */
 
-  def accept_new_commitment_tx(ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx, newState: ChannelState, theirRevocationHash: sha256_hash): (CommitmentTx, update_accept) = {
-    val ourRevocationHashPreimage = randomsha256()
-    val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+  def sign_their_commitment_tx(ourParams: ChannelParams, theirParams: ChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHashPreimage: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
     // we build our side of the new commitment tx
-    val ourCommitTx = makeCommitTx(commitmentTx.tx.txIn, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
+    val ourCommitTx = makeCommitTx(inputs, ourParams.finalKey, theirParams.finalKey, theirParams.delay, Crypto.sha256(ourRevocationHashPreimage), newState)
     // we build their commitment tx and sign it
-    val theirCommitTx = makeCommitTx(commitmentTx.tx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
+    val theirCommitTx = makeCommitTx(inputs, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
-    (CommitmentTx(ourCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash), update_accept(ourSigForThem, ourRevocationHash))
+    (ourCommitTx, ourSigForThem)
   }
 
-  def handle_cmd_close(cmd: CMD_CLOSE, ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx): close_channel = {
+  def sign_our_commitment_tx(ourParams: ChannelParams, theirParams: ChannelParams, ourCommitTx: Transaction, theirSig: signature): Transaction = {
+    // TODO : Transaction.sign(...) should handle multisig
+    val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
+    ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
+  }
+
+  def handle_cmd_close(cmd: CMD_CLOSE, ourParams: ChannelParams, theirParams: ChannelParams, commitment: Commitment): close_channel = {
     // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-    val theirFinalTx = makeFinalTx(commitmentTx.tx.txIn, theirParams.finalKey, ourParams.finalKey, commitmentTx.state.reverse)
+    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalKey, ourParams.finalKey, commitment.state.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
     close_channel(ourSigForThem, cmd.fee)
   }
 
-  def handle_pkt_close(pkt: close_channel, ourParams: ChannelParams, theirParams: ChannelParams, commitmentTx: CommitmentTx): close_channel_complete = {
+  def handle_pkt_close(pkt: close_channel, ourParams: ChannelParams, theirParams: ChannelParams, commitment: Commitment): close_channel_complete = {
     // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-    val theirFinalTx = makeFinalTx(commitmentTx.tx.txIn, ourParams.finalKey, theirParams.finalKey, commitmentTx.state.reverse)
+    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalKey, ourParams.finalKey, commitment.state.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
-    val ourFinalTx = makeFinalTx(commitmentTx.tx.txIn, ourParams.finalKey, theirParams.finalKey, commitmentTx.state)
+    val ourFinalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalKey, theirParams.finalKey, commitment.state)
     val ourSig = Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-    val signedFinaltx = ourFinalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitKey, ourParams.commitKey))
-    log.debug(s"*** final tx : ${Hex.toHexString(Transaction.write(signedFinaltx))}")
-    blockchain ! Watch(self, signedFinaltx.hash, Final, 1)
-    blockchain ! Publish(signedFinaltx)
+    val signedFinalTx = ourFinalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitKey, ourParams.commitKey))
+    blockchain ! Watch(self, signedFinalTx.hash, Final, 1)
+    blockchain ! Publish(signedFinalTx)
     close_channel_complete(ourSigForThem)
   }
 
