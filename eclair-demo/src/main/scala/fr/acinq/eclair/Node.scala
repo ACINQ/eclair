@@ -592,7 +592,6 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   when(WAIT_FOR_UPDATE_COMPLETE_LOWPRIO)(WAIT_FOR_UPDATE_COMPLETE_handler)
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
-
     case Event(close_channel_complete(theirSig), DATA_NORMAL(ourParams, theirParams, Commitment(commitment, state, _, _))) =>
       val finalTx = makeFinalTx(commitment.txIn, ourParams.finalKey, theirParams.finalKey, state)
       val signedFinalTx = sign_our_commitment_tx(ourParams, theirParams, finalTx, theirSig)
