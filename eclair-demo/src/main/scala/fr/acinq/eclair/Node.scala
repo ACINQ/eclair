@@ -233,13 +233,18 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
       val signedCommitTx = ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTxid, anchorOutputIndex) -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      // TODO : return Error and close channel if !ok
-      // then we build their commitment tx and sign it
-      val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTxid, anchorOutputIndex, theirRevocationHash, state.reverse)
-      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
-      them ! open_commit_sig(ourSigForThem)
-      blockchain ! Watch(self, anchorTxid, Anchor, ourParams.minDepth)
-      goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, CommitmentTx(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
+      ok match {
+        case false =>
+          them ! error(Some("Bad signature"))
+          stay
+        case true =>
+          // then we build their commitment tx and sign it
+          val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTxid, anchorOutputIndex, theirRevocationHash, state.reverse)
+          val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+          them ! open_commit_sig(ourSigForThem)
+          blockchain ! Watch(self, anchorTxid, Anchor, ourParams.minDepth)
+          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, CommitmentTx(signedCommitTx, state, ourRevocationHashPreimage, theirRevocationHash))
+      }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
@@ -250,11 +255,15 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val ourSig = Transaction.signInput(newCommitTx.tx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
       val signedCommitTx = newCommitTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTx.hash, anchorOutputIndex) -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      // TODO : return Error and close channel if !ok
-      if (!ok) log.error(s"invalid sig")
-      blockchain ! Watch(self, anchorTx.hash, Anchor, ourParams.minDepth)
-      blockchain ! Publish(anchorTx)
-      goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx))
+      ok match {
+        case false =>
+          them ! error(Some("Bad signature"))
+          stay
+        case true =>
+          blockchain ! Watch(self, anchorTx.hash, Anchor, ourParams.minDepth)
+          blockchain ! Publish(anchorTx)
+          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, newCommitTx.copy(tx = signedCommitTx))
+      }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
@@ -469,12 +478,16 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val ourSig = Transaction.signInput(newCommitmentTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
       val signedCommitTx = newCommitmentTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previous.tx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      // TODO : return Error and close channel if !ok
-      if (!ok) log.error(s"invalid sig")
-      val theirCommitmentTx = makeCommitTx(previous.tx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
-      val ourSigForThem = Transaction.signInput(theirCommitmentTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
-      them ! update_signature(ourSigForThem, previous.ourRevocationPreimage)
-      goto(WAIT_FOR_UPDATE_COMPLETE(priority)) using DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, previous, CommitmentTx(signedCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
+      ok match {
+        case false =>
+          them ! error(Some("Bad signature"))
+          stay
+        case true =>
+          val theirCommitmentTx = makeCommitTx(previous.tx.txIn, theirParams.finalKey, ourParams.finalKey, ourParams.delay, theirRevocationHash, newState.reverse)
+          val ourSigForThem = Transaction.signInput(theirCommitmentTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
+          them ! update_signature(ourSigForThem, previous.ourRevocationPreimage)
+          goto(WAIT_FOR_UPDATE_COMPLETE(priority)) using DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, previous, CommitmentTx(signedCommitTx, newState, ourRevocationHashPreimage, theirRevocationHash))
+      }
 
     case Event(update_decline_htlc(reason), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, previous, _)) =>
       log.info(s"counterparty declined htlc update with reason=$reason")
@@ -536,10 +549,14 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
       val ourSig = Transaction.signInput(newCommitmentTx.tx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey)
       val signedCommitTx = newCommitmentTx.tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitKey, ourParams.commitKey))
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitmentTx.tx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      // TODO : return Error and close channel if !ok
-      if (!ok) log.error(s"invalid sig")
-      them ! update_complete(previousCommitmentTx.ourRevocationPreimage)
-      goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, newCommitmentTx.copy(tx = signedCommitTx))
+      ok match {
+        case false =>
+          them ! error(Some("Bad signature"))
+          stay
+        case true =>
+          them ! update_complete(previousCommitmentTx.ourRevocationPreimage)
+          goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, newCommitmentTx.copy(tx = signedCommitTx))
+      }
 
     case Event(cmd: CMD_CLOSE, DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, commitmentTx, _)) =>
       them ! handle_cmd_close(cmd, ourParams, theirParams, commitmentTx)

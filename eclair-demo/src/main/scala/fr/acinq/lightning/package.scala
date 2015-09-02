@@ -189,6 +189,7 @@ package object lightning {
 
   def pay2sh(script: BinaryData) = OP_HASH160 :: OP_PUSHDATA(hash160(script)) :: OP_EQUAL :: Nil
 
+  //TODO : this function does not hendle the case where the anchor tx does not spend all previous tx output (meaning there is change)
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {
     val scriptPubKey = if (isLess(pubkey1, pubkey2))
       Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
