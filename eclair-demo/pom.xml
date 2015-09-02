@@ -56,5 +56,10 @@
             <artifactId>janino</artifactId>
             <version>2.5.10</version>
         </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-testkit_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+        </dependency>
     </dependencies>
 </project>
