@@ -316,6 +316,169 @@ class ChannelOpenSpec(_system: ActorSystem) extends TestKit(_system) with Implic
       expectMsg(CLOSED)
     }
 
+    "handle PKT_CLOSE in OPEN_WAITING_THEIRANCHOR" in {
+      val node = system.actorOf(Props(new Node(self, bob_commit_priv, bob_final_priv, 2, None)))
+      node ! INPUT_NONE
+      val their_open_channel = expectMsgClass(classOf[open_channel])
+      val theirParams = ChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
+      val theirRevocationHash = their_open_channel.revocationHash
+      val ourRevocationHashPreimage = sha256_hash(4, 3, 2, 1)
+      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+      node ! open_channel(ourParams.delay, ourRevocationHash, ourParams.commitKey, ourParams.finalKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
+      val anchorTx = makeAnchorTx(ourParams.commitKey, theirParams.commitKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
+      val anchorOutputIndex = 0
+      // we fund the channel with the anchor tx, so the money is ours
+      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - our_commitment_fee, 0, Seq()))
+      // we build our commitment tx, leaving it unsigned
+      val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
+      // then we build their commitment tx and sign it
+      val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! open_anchor(anchorTx.hash, 0, anchorInput.amount, ourSigForThem)
+      expectMsgClass(classOf[open_commit_sig])
+      expectMsgClass(classOf[Watch])
+      node ! CMD_GETSTATE
+      expectMsg(OPEN_WAITING_THEIRANCHOR)
+      // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! close_channel(ourFinalSigForThem, 0)
+      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[Publish])
+      expectMsgClass(classOf[close_channel_complete])
+      node ! CMD_GETSTATE
+      expectMsg(WAIT_FOR_CLOSE_ACK)
+      node ! close_channel_ack()
+      node ! CMD_GETSTATE
+      expectMsg(CLOSE_WAIT_CLOSE)
+      node ! BITCOIN_CLOSE_DONE
+      node ! CMD_GETSTATE
+      expectMsg(CLOSED)
+    }
+
+    "handle PKT_CLOSE in OPEN_WAITING_OURANCHOR" in {
+      val node = system.actorOf(Props(new Node(self, bob_commit_priv, bob_final_priv, 2, Some(anchorInput))))
+      node ! INPUT_NONE
+      val their_open_channel = expectMsgClass(classOf[open_channel])
+      val theirParams = ChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
+      val theirRevocationHash = their_open_channel.revocationHash
+      val ourRevocationHashPreimage = sha256_hash(4, 3, 2, 1)
+      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+      node ! open_channel(ourParams.delay, ourRevocationHash, ourParams.commitKey, ourParams.finalKey, WONT_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
+      val their_open_anchor = expectMsgClass(classOf[open_anchor])
+      // we fund the channel with the anchor tx, so the money is ours
+      val state = ChannelState(them = ChannelOneSide(their_open_anchor.amount - our_commitment_fee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+      // we build our commitment tx, leaving it unsigned
+      val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, their_open_anchor.txid, their_open_anchor.outputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
+      // then we build their commitment tx and sign it
+      val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, their_open_anchor.txid, their_open_anchor.outputIndex, theirRevocationHash, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! open_commit_sig(ourSigForThem)
+      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[Publish])
+      node ! CMD_GETSTATE
+      expectMsg(OPEN_WAITING_OURANCHOR)
+      // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! close_channel(ourFinalSigForThem, 0)
+      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[Publish])
+      expectMsgClass(classOf[close_channel_complete])
+      node ! CMD_GETSTATE
+      expectMsg(WAIT_FOR_CLOSE_ACK)
+      node ! close_channel_ack()
+      node ! CMD_GETSTATE
+      expectMsg(CLOSE_WAIT_CLOSE)
+      node ! BITCOIN_CLOSE_DONE
+      node ! CMD_GETSTATE
+      expectMsg(CLOSED)
+    }
+
+    "handle PKT_CLOSE in OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR" in {
+      val node = system.actorOf(Props(new Node(self, bob_commit_priv, bob_final_priv, 2, None)))
+      node ! INPUT_NONE
+      val their_open_channel = expectMsgClass(classOf[open_channel])
+      val theirParams = ChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
+      val theirRevocationHash = their_open_channel.revocationHash
+      val ourRevocationHashPreimage = sha256_hash(4, 3, 2, 1)
+      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+      node ! open_channel(ourParams.delay, ourRevocationHash, ourParams.commitKey, ourParams.finalKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
+      val anchorTx = makeAnchorTx(ourParams.commitKey, theirParams.commitKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
+      val anchorOutputIndex = 0
+      // we fund the channel with the anchor tx, so the money is ours
+      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - our_commitment_fee, 0, Seq()))
+      // we build our commitment tx, leaving it unsigned
+      val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
+      // then we build their commitment tx and sign it
+      val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! open_anchor(anchorTx.hash, 0, anchorInput.amount, ourSigForThem)
+      expectMsgClass(classOf[open_commit_sig])
+      expectMsgClass(classOf[Watch])
+      node ! BITCOIN_ANCHOR_DEPTHOK
+      expectMsgClass(classOf[open_complete])
+      node ! CMD_GETSTATE
+      expectMsg(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
+      // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! close_channel(ourFinalSigForThem, 0)
+      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[Publish])
+      expectMsgClass(classOf[close_channel_complete])
+      node ! CMD_GETSTATE
+      expectMsg(WAIT_FOR_CLOSE_ACK)
+      node ! close_channel_ack()
+      node ! CMD_GETSTATE
+      expectMsg(CLOSE_WAIT_CLOSE)
+      node ! BITCOIN_CLOSE_DONE
+      node ! CMD_GETSTATE
+      expectMsg(CLOSED)
+    }
+
+    "handle PKT_CLOSE in OPEN_WAIT_FOR_COMPLETE_OURANCHOR" in {
+      val node = system.actorOf(Props(new Node(self, bob_commit_priv, bob_final_priv, 2, Some(anchorInput))))
+      node ! INPUT_NONE
+      val their_open_channel = expectMsgClass(classOf[open_channel])
+      val theirParams = ChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
+      val theirRevocationHash = their_open_channel.revocationHash
+      val ourRevocationHashPreimage = sha256_hash(4, 3, 2, 1)
+      val ourRevocationHash = Crypto.sha256(ourRevocationHashPreimage)
+      node ! open_channel(ourParams.delay, ourRevocationHash, ourParams.commitKey, ourParams.finalKey, WONT_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
+      val their_open_anchor = expectMsgClass(classOf[open_anchor])
+      // we fund the channel with the anchor tx, so the money is ours
+      val state = ChannelState(them = ChannelOneSide(their_open_anchor.amount - our_commitment_fee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+      // we build our commitment tx, leaving it unsigned
+      val ourCommitTx = makeCommitTx(ourParams.finalKey, theirParams.finalKey, theirParams.delay, their_open_anchor.txid, their_open_anchor.outputIndex, Crypto.sha256(ourRevocationHashPreimage), state)
+      // then we build their commitment tx and sign it
+      val theirCommitTx = makeCommitTx(theirParams.finalKey, ourParams.finalKey, ourParams.delay, their_open_anchor.txid, their_open_anchor.outputIndex, theirRevocationHash, state.reverse)
+      val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! open_commit_sig(ourSigForThem)
+      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[Publish])
+      node ! BITCOIN_ANCHOR_DEPTHOK
+      expectMsgClass(classOf[open_complete])
+      node ! CMD_GETSTATE
+      expectMsg(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
+      // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      node ! close_channel(ourFinalSigForThem, 0)
+      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[Publish])
+      expectMsgClass(classOf[close_channel_complete])
+      node ! CMD_GETSTATE
+      expectMsg(WAIT_FOR_CLOSE_ACK)
+      node ! close_channel_ack()
+      node ! CMD_GETSTATE
+      expectMsg(CLOSE_WAIT_CLOSE)
+      node ! BITCOIN_CLOSE_DONE
+      node ! CMD_GETSTATE
+      expectMsg(CLOSED)
+    }
+
+
   }
 
 }
