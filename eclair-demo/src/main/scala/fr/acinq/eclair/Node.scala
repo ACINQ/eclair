@@ -592,6 +592,21 @@ class Node(val blockchain: ActorRef, val commitPrivKey: BinaryData, val finalPri
   when(WAIT_FOR_UPDATE_COMPLETE_LOWPRIO)(WAIT_FOR_UPDATE_COMPLETE_handler)
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
+    case Event(close_channel_complete(theirSig), DATA_OPEN_WAITING(ourParams, theirParams, Commitment(commitment, state, _, _))) =>
+      val finalTx = makeFinalTx(commitment.txIn, ourParams.finalKey, theirParams.finalKey, state)
+      val signedFinalTx = sign_our_commitment_tx(ourParams, theirParams, finalTx, theirSig)
+      val ok = Try(Transaction.correctlySpends(signedFinalTx, Map(signedFinalTx.txIn(0).outPoint -> anchorPubkeyScript(ourParams.commitKey, theirParams.commitKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      ok match {
+        case false =>
+          them ! error(Some("Bad signature"))
+          stay
+        case true =>
+          them ! close_channel_ack()
+          blockchain ! Watch(self, signedFinalTx.hash, Final, 1)
+          blockchain ! Publish(signedFinalTx)
+          goto(CLOSE_WAIT_CLOSE)
+      }
+
     case Event(close_channel_complete(theirSig), DATA_NORMAL(ourParams, theirParams, Commitment(commitment, state, _, _))) =>
       val finalTx = makeFinalTx(commitment.txIn, ourParams.finalKey, theirParams.finalKey, state)
       val signedFinalTx = sign_our_commitment_tx(ourParams, theirParams, finalTx, theirSig)
