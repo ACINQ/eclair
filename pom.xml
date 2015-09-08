@@ -8,7 +8,7 @@
     <packaging>pom</packaging>
 
     <modules>
-		<module>lightning-types</module>
+        <module>lightning-types</module>
         <module>eclair-demo</module>
     </modules>
 
