@@ -34,7 +34,7 @@ class ConversionSpec extends FunSuite {
       val protosig: signature = sig
       val sig1: BinaryData = protosig
       assert(Crypto.verifySignature(data, sig1, pub))
-      assert(sig1 === sig)
+      assert(sig1.take(32) === sig.take(32))
     }
   }
 }
