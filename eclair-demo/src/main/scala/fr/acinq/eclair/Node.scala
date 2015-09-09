@@ -973,7 +973,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       case None =>
         // it has to be one of the revoked tx
         // one way is to use the main revocation hash, and rebuild the pub script we signed
-        (0L until commitment.index)
+        (commitment.index - 1 to 0L by -1)
           .find { i =>
           val theirRevocationHash = Crypto.sha256(ShaChain.getHash(shaChain, i).get)
           publishedTx.txOut.exists(o => o.publicKeyScript.data.toArray.deep == Script.write(pay2sh(redeemSecretOrDelay(theirParams.finalPubKey, ourParams.delay, ourFinalPubKey, theirRevocationHash))).deep)
