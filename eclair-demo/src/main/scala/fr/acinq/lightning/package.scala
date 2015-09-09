@@ -85,15 +85,6 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
 
 package object lightning {
 
-  val random = new SecureRandom()
-
-  // TODO : should generate them in a deterministic fashion ?
-  def randomsha256(): sha256_hash = {
-    val bytes = new Array[Byte](32)
-    random.nextBytes(bytes)
-    bin2sha256(bytes)
-  }
-
   implicit def bin2sha256(in: BinaryData): sha256_hash = {
     require(in.size == 32)
     val bis = new ByteArrayInputStream(in)

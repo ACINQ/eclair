@@ -48,14 +48,14 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle CMD_CLOSE in OPEN_WAITING_THEIRANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_NOANCHOR(OPEN_WAITING_THEIRANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_NOANCHOR(OPEN_WAITING_THEIRANCHOR)
       node ! CMD_CLOSE(0)
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
       expectMsgClass(classOf[Watch])
@@ -68,14 +68,14 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle CMD_CLOSE in OPEN_WAITING_OURANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_WITHANCHOR(OPEN_WAITING_OURANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_WITHANCHOR(OPEN_WAITING_OURANCHOR)
       node ! CMD_CLOSE(0)
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
       expectMsgClass(classOf[Watch])
@@ -88,14 +88,14 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle CMD_CLOSE in OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_NOANCHOR(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_NOANCHOR(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
       node ! CMD_CLOSE(0)
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
       expectMsgClass(classOf[Watch])
@@ -108,14 +108,14 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle CMD_CLOSE in OPEN_WAIT_FOR_COMPLETE_OURANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_WITHANCHOR(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_WITHANCHOR(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
       node ! CMD_CLOSE(0)
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
       expectMsgClass(classOf[Watch])
@@ -128,10 +128,10 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle PKT_CLOSE in OPEN_WAITING_THEIRANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_NOANCHOR(OPEN_WAITING_THEIRANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_NOANCHOR(OPEN_WAITING_THEIRANCHOR)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
@@ -147,10 +147,10 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle PKT_CLOSE in OPEN_WAITING_OURANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_WITHANCHOR(OPEN_WAITING_OURANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_WITHANCHOR(OPEN_WAITING_OURANCHOR)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
@@ -166,10 +166,10 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle PKT_CLOSE in OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_NOANCHOR(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_NOANCHOR(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
@@ -185,10 +185,10 @@ class ChannelOpenSpec extends TestHelper() {
     }
 
     "handle PKT_CLOSE in OPEN_WAIT_FOR_COMPLETE_OURANCHOR" in {
-      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(ourCommitTx, state, _, _)))) = reachState_WITHANCHOR(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
+      val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_WITHANCHOR(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
       // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalKey, ourParams.finalKey, state.reverse)
-      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourParams.commitKey, theirParams.commitKey), SIGHASH_ALL, commitPrivKey))
+      val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
+      val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])

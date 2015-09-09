@@ -27,9 +27,12 @@ object Boot extends App {
   val bob_commit_priv = Base58Check.decode("cSUwLtdZ2tht9ZmHhdQue48pfe7tY2GT2TGWJDtjoZgo6FHrubGk")._2
   val bob_final_priv = Base58Check.decode("cPR7ZgXpUaDPA3GwGceMDS5pfnSm955yvks3yELf3wMJwegsdGTg")._2
 
+  val alice_params = OurChannelParams(locktime(Blocks(10)), alice_commit_priv, alice_final_priv, 1, 100000, "alice-seed".getBytes())
+  val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes())
+
   val blockchain = system.actorOf(Props(new BlockchainWatcher), name = "blockchain")
-  val alice = system.actorOf(Props(new Node(blockchain, alice_commit_priv, alice_final_priv, 1, Some(anchorInput))), name = "alice")
-  val bob = system.actorOf(Props(new Node(blockchain, bob_commit_priv, bob_final_priv, 2, None)), name = "bob")
+  val alice = system.actorOf(Props(new Node(blockchain, alice_params, Some(anchorInput))), name = "alice")
+  val bob = system.actorOf(Props(new Node(blockchain, bob_params, None)), name = "bob")
 
   bob.tell(INPUT_NONE, alice)
   alice.tell(INPUT_NONE, bob)
