@@ -3,10 +3,13 @@ package fr.acinq.eclair
 import fr.acinq.bitcoin._
 import fr.acinq.lightning._
 import lightning._
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
 
 /**
  * Created by PM on 02/09/2015.
  */
+@RunWith(classOf[JUnitRunner])
 class ChannelOpenSpec extends TestHelper() {
 
   "Node" must {

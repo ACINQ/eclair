@@ -1,15 +1,16 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{ScriptFlags, Transaction, Crypto}
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.lightning._
 import lightning.locktime.Locktime.Blocks
 import lightning._
-
-import scala.util.Try
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
 
 /**
  * Created by PM on 08/09/2015.
  */
+@RunWith(classOf[JUnitRunner])
 class TheirCommitSpec extends TestHelper {
 
   "Node" must {

@@ -4,12 +4,15 @@ import fr.acinq.bitcoin.{ScriptFlags, Transaction, Crypto}
 import fr.acinq.lightning._
 import lightning.locktime.Locktime.Blocks
 import lightning._
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
 
 import scala.util.Try
 
 /**
  * Created by PM on 08/09/2015.
  */
+@RunWith(classOf[JUnitRunner])
 class HTLCUpdateSpec extends TestHelper {
 
   "Node" must {
