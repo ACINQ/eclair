@@ -371,7 +371,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), d@DATA_NORMAL(ourParams, theirParams, shaChain, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
       them ! update_decline_htlc(CannotRoute(true))
-      goto(NORMAL(priority.invert))
+      goto(NORMAL(priority))
 
     case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       val newState = commitment.state.htlc_receive(htlc)
@@ -471,7 +471,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
 
     case Event(update_decline_htlc(reason), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, previousCommitmentTx, _)) =>
       log.info(s"counterparty declined htlc update with reason=$reason")
-      goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, shaChain, previousCommitmentTx)
+      goto(NORMAL(priority)) using DATA_NORMAL(ourParams, theirParams, shaChain, previousCommitmentTx)
 
     case Event(pkt: close_channel, DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
       them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
@@ -494,7 +494,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
       them ! update_decline_htlc(CannotRoute(true))
-      goto(NORMAL_HIGHPRIO) using DATA_NORMAL(ourParams, theirParams, shaChain, commitment)
+      goto(NORMAL_LOWPRIO) using DATA_NORMAL(ourParams, theirParams, shaChain, commitment)
 
     case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
       val newState = commitment.state.htlc_receive(htlc)
