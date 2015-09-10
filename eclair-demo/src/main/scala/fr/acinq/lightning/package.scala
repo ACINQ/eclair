@@ -241,11 +241,6 @@ package object lightning {
     // @formatter:on
   }
 
-  //TODO : do we really need this ?
-  def makeCommitTx(ours: open_channel, theirs: open_channel, anchor: open_anchor, revocationHash: BinaryData, channelState: ChannelState): Transaction =
-    makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, anchor.txid, anchor.outputIndex, revocationHash, channelState)
-
-
   def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, channelState: ChannelState): Transaction =
     makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, revocationHash, channelState)
 

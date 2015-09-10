@@ -71,7 +71,7 @@ class ProtocolSpec extends FlatSpec {
     // we assume that Alice knows Bob's H
     val openAnchor = open_anchor(anchor.hash, 0, 10, signature.defaultInstance) // commit sig will be computed later
     val channelState = initialFunding(ours, theirs, openAnchor, fee = 0)
-    val tx = makeCommitTx(ours, theirs, openAnchor, Bob.H, channelState)
+    val tx = makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, openAnchor.txid, openAnchor.outputIndex, Bob.H, channelState)
     val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)
     val sigA = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Alice.commitKey)
     val openAnchor1 = openAnchor.copy(commitSig = sigA)
