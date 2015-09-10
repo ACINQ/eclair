@@ -100,8 +100,6 @@ message open_complete {
   // FIXME: add a merkle proof plus block headers here?
 }
 
-/*
-This will be removed soon
 // Let's spend some money in the channel!
 message update {
   // Hash for which I will supply preimage to revoke this.
@@ -109,14 +107,13 @@ message update {
   // Change in current payment to-me (implies reverse to-you).
   required sint64 delta = 2;
 }
-*/
 
 // Start a new commitment tx to add an HTLC me -> you.
 message update_add_htlc {
   // Hash for which I will supply preimage to revoke this commitment tx.
   required sha256_hash revocation_hash = 1;
   // Amount for htlc
-  required int32 amount = 2;
+  required uint32 amount = 2;
   // Hash for HTLC R value.
   required sha256_hash r_hash = 3;
   // Time at which HTLC expires (absolute)
@@ -133,7 +130,7 @@ message update_decline_htlc {
 }
 
 // Complete your HTLC: I have the R value, pay me!
-message update_complete_htlc {
+message update_fulfill_htlc {
   // Hash for which I will supply preimage to revoke this commitment tx.
   required sha256_hash revocation_hash = 1;
   // HTLC R value.
@@ -212,13 +209,13 @@ message pkt {
     open_commit_sig open_commit_sig = 22;
     open_complete open_complete = 23;
     // Updating (most common)
-    //update update = 1;
+    update update = 1;
     update_add_htlc update_add_htlc = 2;
     update_accept update_accept = 3;
     update_signature update_signature = 4;
     update_complete update_complete = 5;
     update_decline_htlc update_decline_htlc = 6;
-    update_complete_htlc update_complete_htlc = 7;
+    update_fulfill_htlc update_fulfill_htlc = 7;
     update_timedout_htlc update_timedout_htlc = 8;
     update_routefail_htlc update_routefail_htlc = 9;
     // Closing

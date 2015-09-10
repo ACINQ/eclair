@@ -48,7 +48,7 @@ object Boot extends App {
   while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(200)
   while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(200)
 
-  bob ! CMD_SEND_HTLC_COMPLETE(r)
+  bob ! CMD_SEND_HTLC_FULFILL(r)
 
   while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(200)
   while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(200)

@@ -118,7 +118,7 @@ case object BITCOIN_CLOSE_DONE
 
 sealed trait Command
 final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime) extends Command
-final case class CMD_SEND_HTLC_COMPLETE(r: sha256_hash) extends Command
+final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
 final case class CMD_SEND_HTLC_ROUTEFAIL(h: sha256_hash) extends Command
 final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
@@ -409,16 +409,16 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! update_accept(ourSigForThem, ourRevocationHash)
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
 
-    case Event(CMD_SEND_HTLC_COMPLETE(r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
+    case Event(CMD_SEND_HTLC_FULFILL(r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
       // we paid upstream in exchange for r, now lets gets paid
-      val newState = previousState.htlc_complete(r)
+      val newState = previousState.htlc_fulfill(r)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       // Complete your HTLC: I have the R value, pay me!
-      them ! update_complete_htlc(ourRevocationHash, r)
+      them ! update_fulfill_htlc(ourRevocationHash, r)
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, UpdateProposal(commitment.index + 1, newState))
 
-    case Event(update_complete_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      val newState = commitment.state.htlc_complete(r)
+    case Event(update_fulfill_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
+      val newState = commitment.state.htlc_fulfill(r)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
       them ! update_accept(ourSigForThem, ourRevocationHash)
@@ -517,8 +517,8 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! update_accept(ourSigForThem, ourRevocationHash)
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
 
-    case Event(update_complete_htlc(theirRevocationHash, r), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
-      val newState = commitment.state.htlc_complete(r)
+    case Event(update_fulfill_htlc(theirRevocationHash, r), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
+      val newState = commitment.state.htlc_fulfill(r)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
       them ! update_accept(ourSigForThem, ourRevocationHash)
@@ -529,6 +529,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     case Event(update_signature(theirSig, theirRevocationPreimage), DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, previousCommitment, newCommitment)) =>
       // counterparty replied with the signature for its new commitment tx, and revocationPreimage
       assert(new BinaryData(previousCommitment.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage)), s"the revocation preimage they gave us is wrong! hash=${previousCommitment.theirRevocationHash} preimage=$theirRevocationPreimage")
+      // TODO if wrong we should close the channel
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, newCommitment.tx, theirSig)
       val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
@@ -564,6 +565,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   def WAIT_FOR_UPDATE_COMPLETE_handler: StateFunction = {
     case Event(update_complete(theirRevocationPreimage), DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, shaChain, previousCommitment, newCommitment)) =>
       assert(new BinaryData(previousCommitment.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage)), s"the revocation preimage they gave us is wrong! hash=${previousCommitment.theirRevocationHash} preimage=$theirRevocationPreimage")
+      // TODO if wrong we should close the channel
       goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, ShaChain.addHash(shaChain, theirRevocationPreimage, previousCommitment.index), newCommitment)
 
     case Event(pkt: close_channel, DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, shaChain, commitment, _)) =>

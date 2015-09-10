@@ -64,7 +64,7 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
     } else throw new RuntimeException(s"could not find corresponding htlc (rHash=$rHash)")
   }
 
-  def htlc_complete(r: sha256_hash): ChannelState = {
+  def htlc_fulfill(r: sha256_hash): ChannelState = {
     if (us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).isDefined) {
       // TODO not optimized
       val htlc = us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).get
