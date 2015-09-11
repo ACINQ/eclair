@@ -972,12 +972,11 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       case Some(txOut) =>
         log.warning(s"they published their commitment tx !")
         // there are several kind of outputs :
-        // a) our 'regular' output going to our final key, immediately spendable
-        // b) their 'regular' output going to their final key, spendable after a delay
-        // c) the htlc outputs we paid, spendable by us using our final key after a delay
-        // d) the hltc outputs that they paid, spendable by them using their final key after adelay
-        // what we should do is wait for max(delay) and spend all available outputs to our final key
-        // TODO : let's make the final tx, and publish it later
+        // a) our 'regular' output, immediately spendable by us using our final key
+        // b) their 'regular' output, that they can spend after a delay using their final key
+        // c) the htlc outputs we paid, spendable by us using our final key after a timeout + delay (they may steal it if they have the r)
+        // d) the hltc outputs they paid, spendable by them using their final key after a timeout + delay (we can steal it if we have the r)
+        // TODO : spend as much money as possible
       case None =>
         // it has to be one of the revoked tx
         // one way is to use the main revocation hash, and rebuild the pub script we signed
@@ -989,11 +988,12 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
           case Some(revokedCommitment) =>
             log.warning(s"they published a revoked tx !")
           // there are several kind of outputs :
-          // a) our 'regular' output going to our final key, immediately spendable
-          // b) their 'regular' output going to our final key and the revocation key, that we can steal
-          // c) all the htlc outputs, paid by both of us, going to our final key and the revocation key, that we can steal
-          // we should steal all the money immediately !
-          // TODO : let's steal all the money
+          // a) our 'regular' output, immediately spendable by us using our final key
+          // b) their 'regular' output, immediately spendable by us using the revocation key and our final key
+          // c) the htlc outputs we paid, spendable by us after a timeout + delay (but they will probably steal it first using the revocation key and their final key)
+          // d) the hltc outputs they paid, immediately spendable by us using the revocation key and our final key
+          // we should steal as much money as possible !
+          // TODO : spend as much money as possible
           case None =>
             //  should NEVER happen (really)
             ???
