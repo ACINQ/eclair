@@ -89,7 +89,7 @@ case object CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_SPENDOURS extends State
 case object CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT extends State
 case object CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS extends State
 case object CLOSED extends State
-case object ERROR_ANCHOR_LOST extends State
+case object ERR_ANCHOR_LOST extends State
 case object ERR_ANCHOR_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
 
@@ -661,7 +661,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -677,7 +677,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -689,7 +689,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDTHEM) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -699,7 +699,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   when(CLOSE_WAIT_CLOSE) {
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -712,7 +712,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
 
   when(CLOSE_WAIT_CLOSE_OURCOMMIT) {
 
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -730,7 +730,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -742,7 +742,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDTHEM_CLOSE) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -750,7 +750,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDTHEM_CLOSE_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
       handle_btc_anchor_ourcommit_delaypassed()
@@ -762,7 +762,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDTHEM_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -770,7 +770,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDTHEM_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
       handle_btc_anchor_ourcommit_delaypassed()
@@ -782,7 +782,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_SPENDTHEM_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -790,7 +790,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -802,7 +802,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_CLOSE) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -814,7 +814,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_CLOSE_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -830,7 +830,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -842,7 +842,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -858,7 +858,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
@@ -870,7 +870,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDTHEM) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -878,7 +878,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -886,7 +886,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
       handle_btc_anchor_ourcommit_delaypassed()
@@ -898,7 +898,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
@@ -906,7 +906,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
       handle_btc_anchor_ourcommit_delaypassed()
@@ -918,7 +918,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERROR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
       handle_btc_anchor_otherspend()
