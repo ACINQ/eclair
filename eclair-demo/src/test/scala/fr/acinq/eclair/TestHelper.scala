@@ -11,6 +11,8 @@ import lightning.locktime.Locktime.Blocks
 import org.bouncycastle.util.encoders.Hex
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 
+import scala.util.Random
+
 /**
  * Created by PM on 08/09/2015.
  */
@@ -115,6 +117,100 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     ???
   }
+
+  val random = new Random()
+
+  def random_r = sha256_hash(random.nextLong(), random.nextLong(), random.nextLong(), random.nextLong())
+
+  def send_htlc(node: ActorRef, channelDesc: ChannelDesc, amount: Int): (ChannelDesc, sha256_hash) = {
+    val ChannelDesc(Some(ourParams), Some(theirParams), Some(previousCommitment)) = channelDesc
+    val ourRevocationHash1 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index + 1))
+    val r = random_r
+    val rHash = Crypto.sha256(r)
+    val htlc = update_add_htlc(ourRevocationHash1, amount, rHash, locktime(Blocks(4)))
+    val state1 = previousCommitment.state.htlc_send(htlc)
+
+    node ! htlc
+    val update_accept(theirSig1, theirRevocationHash1) = expectMsgClass(classOf[update_accept])
+    val (ourCommitTx1, ourSigForThem1) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, state1, ourRevocationHash1, theirRevocationHash1)
+    val signedCommitTx1 = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx1, theirSig1)
+    Transaction.correctlySpends(signedCommitTx1, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    node ! update_signature(ourSigForThem1, ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index))
+    val update_complete(theirRevocationPreimage0) = expectMsgClass(classOf[update_complete])
+    assert(Crypto.sha256(theirRevocationPreimage0).deep === sha2562bin(previousCommitment.theirRevocationHash).data.toArray.deep)
+
+    (channelDesc.copy(ourCommitment = Some(Commitment(previousCommitment.index + 1, signedCommitTx1, state1, theirRevocationHash1))), r)
+  }
+
+  def send_fulfill_htlc(node: ActorRef, channelDesc: ChannelDesc, r: sha256_hash): ChannelDesc = {
+    val ChannelDesc(Some(ourParams), Some(theirParams), Some(previousCommitment)) = channelDesc
+
+    val ourRevocationHash2 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index + 1))
+    val state2 = previousCommitment.state.htlc_fulfill(r)
+
+    node ! update_fulfill_htlc(ourRevocationHash2, r)
+    val update_accept(theirSig2, theirRevocationHash2) = expectMsgClass(classOf[update_accept])
+    val (ourCommitTx2, ourSigForThem2) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, state2, ourRevocationHash2, theirRevocationHash2)
+    val signedCommitTx2 = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx2, theirSig2)
+    Transaction.correctlySpends(signedCommitTx2, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    node ! update_signature(ourSigForThem2, ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index))
+    val update_complete(theirRevocationPreimage1) = expectMsgClass(classOf[update_complete])
+    assert(Crypto.sha256(theirRevocationPreimage1).deep === sha2562bin(previousCommitment.theirRevocationHash).data.toArray.deep)
+
+    channelDesc.copy(ourCommitment = Some(Commitment(previousCommitment.index + 1, signedCommitTx2, state2, theirRevocationHash2)))
+  }
+
+  def receive_htlc(node: ActorRef, channelDesc: ChannelDesc, amount: Int): (ChannelDesc, sha256_hash) = {
+    val ChannelDesc(Some(ourParams), Some(theirParams), Some(previousCommitment)) = channelDesc
+    val state0 = previousCommitment.state
+    val theirRevocationHash0 = previousCommitment.theirRevocationHash
+
+    val their_r = random_r
+    val their_rHash = Crypto.sha256(their_r)
+    node ! CMD_SEND_HTLC_UPDATE(amount, their_rHash, locktime(Blocks(4)))
+
+    val htlc@update_add_htlc(theirRevocationHash1, amount_, rHash, expiry) = expectMsgClass(classOf[update_add_htlc])
+    assert(amount === amount_)
+    val state1 = state0.htlc_receive(htlc)
+    val ourRevocationHash1 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index + 1))
+    val (ourCommitTx1, ourSigForThem1) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, state1, ourRevocationHash1, theirRevocationHash1)
+
+    node ! update_accept(ourSigForThem1, ourRevocationHash1)
+    val update_signature(theirSig1, theirRevocationPreimage0) = expectMsgClass(classOf[update_signature])
+    assert(Crypto.sha256(theirRevocationPreimage0).deep === sha2562bin(theirRevocationHash0).data.toArray.deep)
+    val signedCommitTx1 = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx1, theirSig1)
+    Transaction.correctlySpends(signedCommitTx1, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    node ! update_complete(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index))
+
+    (channelDesc.copy(ourCommitment = Some(Commitment(previousCommitment.index + 1, signedCommitTx1, state1, theirRevocationHash1))), their_r)
+  }
+
+  def receive_fulfill_htlc(node: ActorRef, channelDesc: ChannelDesc, r: sha256_hash): ChannelDesc = {
+    val ChannelDesc(Some(ourParams), Some(theirParams), Some(previousCommitment)) = channelDesc
+    val state1 = previousCommitment.state
+    val theirRevocationHash1 = previousCommitment.theirRevocationHash
+
+    node ! CMD_SEND_HTLC_FULFILL(r)
+    val update_fulfill_htlc(theirRevocationHash2, r_) = expectMsgClass(classOf[update_fulfill_htlc])
+    assert(r === r_)
+    val state2 = previousCommitment.state.htlc_fulfill(r)
+    val ourRevocationHash2 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index + 1))
+    val (ourCommitTx2, ourSigForThem2) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, state2, ourRevocationHash2, theirRevocationHash2)
+
+    node ! update_accept(ourSigForThem2, ourRevocationHash2)
+    val update_signature(theirSig2, theirRevocationPreimage1) = expectMsgClass(classOf[update_signature])
+    assert(Crypto.sha256(theirRevocationPreimage1).deep === sha2562bin(previousCommitment.theirRevocationHash).data.toArray.deep)
+    val signedCommitTx2 = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx2, theirSig2)
+    Transaction.correctlySpends(signedCommitTx2, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+    node ! update_complete(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index))
+
+    channelDesc.copy(ourCommitment = Some(Commitment(previousCommitment.index + 1, signedCommitTx2, state2, theirRevocationHash2)))
+  }
+
 
   def sign_their_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHash: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
     // we build our side of the new commitment tx
