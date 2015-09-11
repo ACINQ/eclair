@@ -11,8 +11,6 @@ class HTLCUpdateSpec extends TestHelper {
 
   "Node" must {
 
-    // TODO : some of these tests should not work because balance is < 0
-
     "successfully receive an htlc in NORMAL_LOWPRIO" in {
       val (node, channelDesc0) = reachState_NOANCHOR(NORMAL_LOWPRIO)
 
@@ -25,34 +23,10 @@ class HTLCUpdateSpec extends TestHelper {
       expectMsg(NORMAL_LOWPRIO)
     }
 
-    "successfully receive an htlc in NORMAL_HIGHPRIO" in {
-      val (node, channelDesc0) = reachState_WITHANCHOR(NORMAL_HIGHPRIO)
-
-      val (channelDesc1, r) = send_htlc(node, channelDesc0, 40000000)
-      node ! CMD_GETSTATE
-      expectMsg(NORMAL_LOWPRIO)
-
-      val channelDesc2 = send_fulfill_htlc(node, channelDesc1, r)
-      node ! CMD_GETSTATE
-      expectMsg(NORMAL_HIGHPRIO)
-    }
-
-    "successfully send an htlc in NORMAL_LOWPRIO" in {
-      val (node, channelDesc0) = reachState_NOANCHOR(NORMAL_LOWPRIO)
-
-      val (channelDesc1, r) = receive_htlc(node, channelDesc0, 40000000)
-      node ! CMD_GETSTATE
-      expectMsg(NORMAL_HIGHPRIO)
-
-      val channelDesc2 = receive_fulfill_htlc(node, channelDesc1, r)
-      node ! CMD_GETSTATE
-      expectMsg(NORMAL_LOWPRIO)
-    }
-
     "successfully send an htlc in NORMAL_HIGHPRIO" in {
       val (node, channelDesc0) = reachState_WITHANCHOR(NORMAL_HIGHPRIO)
 
-      val (channelDesc1, r) = send_htlc(node, channelDesc0, 40000000)
+      val (channelDesc1, r) = receive_htlc(node, channelDesc0, 40000000)
       node ! CMD_GETSTATE
       expectMsg(NORMAL_LOWPRIO)
 

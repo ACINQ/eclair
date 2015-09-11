@@ -214,7 +214,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxid, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>
       // they fund the channel with their anchor tx, so the money is theirs
-      val state = ChannelState(them = ChannelOneSide(anchorAmount -  ourParams.commitmentFee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide(anchorAmount - ourParams.commitmentFee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTxid, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
@@ -365,8 +365,10 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry)
       val newState = previousState.htlc_send(htlc)
+      // for now we don't care if we don't have the money, in that case they will decline the request
       them ! htlc
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, UpdateProposal(commitment.index + 1, newState))
+
 
     case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), d@DATA_NORMAL(ourParams, theirParams, shaChain, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
@@ -374,11 +376,17 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       goto(NORMAL(priority))
 
     case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      val newState = commitment.state.htlc_receive(htlc)
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
-      val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
-      them ! update_accept(ourSigForThem, ourRevocationHash)
-      goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
+      commitment.state.htlc_receive(htlc) match {
+        case newState if (newState.them.pay < 0) =>
+          // insufficient funds
+          them ! update_decline_htlc(InsufficientFunds(funding(None)))
+          stay
+        case newState =>
+          val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
+          val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
+          them ! update_accept(ourSigForThem, ourRevocationHash)
+          goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
+      }
 
     case Event(CMD_SEND_HTLC_ROUTEFAIL(rHash), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       // we couldn't reach upstream node, so we update the commitment tx, removing the corresponding htlc
@@ -971,12 +979,12 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     publishedTx.txOut.find(_.publicKeyScript.data.toArray.deep == Script.write(pay2sh(redeemSecretOrDelay(theirParams.finalPubKey, ourParams.delay, ourFinalPubKey, commitment.theirRevocationHash))).deep) match {
       case Some(txOut) =>
         log.warning(s"they published their commitment tx !")
-        // there are several kind of outputs :
-        // a) our 'regular' output, immediately spendable by us using our final key
-        // b) their 'regular' output, that they can spend after a delay using their final key
-        // c) the htlc outputs we paid, spendable by us using our final key after a timeout + delay (they may steal it if they have the r)
-        // d) the hltc outputs they paid, spendable by them using their final key after a timeout + delay (we can steal it if we have the r)
-        // TODO : spend as much money as possible
+      // there are several kind of outputs :
+      // a) our 'regular' output, immediately spendable by us using our final key
+      // b) their 'regular' output, that they can spend after a delay using their final key
+      // c) the htlc outputs we paid, spendable by us using our final key after a timeout + delay (they may steal it if they have the r)
+      // d) the hltc outputs they paid, spendable by them using their final key after a timeout + delay (we can steal it if we have the r)
+      // TODO : spend as much money as possible
       case None =>
         // it has to be one of the revoked tx
         // one way is to use the main revocation hash, and rebuild the pub script we signed

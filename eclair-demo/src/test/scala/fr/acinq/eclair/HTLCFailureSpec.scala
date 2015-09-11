@@ -45,17 +45,13 @@ class HTLCFailureSpec extends TestHelper {
     }
 
     "handle an update_routefail_htlc when in NORMAL_HIGHPRIO" in {
-      // TODO
-    }
-
-    "handle an update_routefail_htlc when in NORMAL_LOWPRIO" in {
-      val (node, channelDesc0) = reachState_WITHANCHOR(NORMAL_HIGHPRIO)
+      val (node, channelDesc0) = reachState_NOANCHOR(NORMAL_LOWPRIO)
 
       val (channelDesc1@ChannelDesc(Some(ourParams), Some(theirParams), Some(previousCommitment)), r) = send_htlc(node, channelDesc0, 40000000)
       val state1 = previousCommitment.state
       val their_rHash = Crypto.sha256(r)
       node ! CMD_GETSTATE
-      expectMsg(NORMAL_LOWPRIO)
+      expectMsg(NORMAL_HIGHPRIO)
 
       val state2 = state1.htlc_remove(their_rHash)
       val ourRevocationHash2 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 2))
@@ -66,12 +62,12 @@ class HTLCFailureSpec extends TestHelper {
       val signedCommitTx2 = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx2, theirSig2)
       Transaction.correctlySpends(signedCommitTx2, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       node ! CMD_GETSTATE
-      expectMsg(WAIT_FOR_UPDATE_SIG_LOWPRIO)
+      expectMsg(WAIT_FOR_UPDATE_SIG_HIGHPRIO)
 
       node ! update_signature(ourSigForThem2, ShaChain.shaChainFromSeed(ourParams.shaSeed, 1))
       val update_complete(theirRevocationPreimage1) = expectMsgClass(classOf[update_complete])
       node ! CMD_GETSTATE
-      expectMsg(NORMAL_HIGHPRIO)
+      expectMsg(NORMAL_LOWPRIO)
     }
 
     "handle an update_routefail_htlc when in WAIT_FOR_HTLC_ACCEPT_LOWPRIO" in {
