@@ -1,13 +1,7 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{ScriptFlags, Transaction, Crypto}
-import fr.acinq.lightning._
-import lightning.locktime.Locktime.Blocks
-import lightning._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-
-import scala.util.Try
 
 /**
  * Created by PM on 08/09/2015.
@@ -16,6 +10,8 @@ import scala.util.Try
 class HTLCUpdateSpec extends TestHelper {
 
   "Node" must {
+
+    // TODO : some of these tests should not work because balance is < 0
 
     "successfully receive an htlc in NORMAL_LOWPRIO" in {
       val (node, channelDesc0) = reachState_NOANCHOR(NORMAL_LOWPRIO)
