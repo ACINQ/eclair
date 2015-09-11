@@ -55,7 +55,7 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
       // TODO not optimized
       val htlc = us.htlcs.find(_.rHash == rHash).get
       // we were the receiver of this htlc
-      this.copy(them = them.copy(pay = them.pay - htlc.amount), us = us.copy(htlcs = us.htlcs.filterNot(_ == htlc)))
+      this.copy(them = them.copy(pay = them.pay + htlc.amount), us = us.copy(htlcs = us.htlcs.filterNot(_ == htlc)))
     } else if (them.htlcs.find(_.rHash == rHash).isDefined) {
       // TODO not optimized
       val htlc = them.htlcs.find(_.rHash == rHash).get
