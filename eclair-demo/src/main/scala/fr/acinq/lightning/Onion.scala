@@ -7,7 +7,7 @@ import javax.crypto.{Cipher, KeyAgreement}
 import javax.crypto.spec.{SecretKeySpec, IvParameterSpec}
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import org.bouncycastle.crypto.digests.{SHA512Digest, SHA256Digest}
+import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.jce.ECNamedCurveTable
@@ -30,8 +30,8 @@ object Onion extends App {
   println(s"decoded: '${new String(decoded)}'")
 
   def decode(buf: BinaryData): (BinaryData, BinaryData) = {
-      val sig = BinaryData(msg.takeRight(32))
-      val pub = BinaryData(0x2.toByte +: msg.takeRight(64).take(32))
+    val sig = BinaryData(msg.takeRight(32))
+    val pub = BinaryData(0x2.toByte +: msg.takeRight(64).take(32))
     val ecdh_key = ecdh(pub, priv_node)
     val secrets = generate_secrets(ecdh_key)
 
@@ -52,25 +52,16 @@ object Onion extends App {
     Security.addProvider(new BouncyCastleProvider())
     val ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1")
     val curve = ecSpec.getCurve
-
-    val priKeySpec = new ECPrivateKeySpec(
-      new BigInteger(priv), // d
-      ecSpec)
-    val pubKeySpec = new ECPublicKeySpec(
-      curve.decodePoint(pub), // Q
-      ecSpec)
-
+    val priKeySpec = new ECPrivateKeySpec(new BigInteger(priv), ecSpec)
+    val pubKeySpec = new ECPublicKeySpec(curve.decodePoint(pub), ecSpec)
     val fact = KeyFactory.getInstance("ECDSA", "BC")
-
     val a = fact.generatePrivate(priKeySpec)
     val B = fact.generatePublic(pubKeySpec)
-
     val agreement = KeyAgreement.getInstance("ECDH", "BC")
     agreement.init(a)
     agreement.doPhase(B, true)
     //TODO prepend with 02/03 depending on y parity
     val key = BinaryData(0x03.toByte +: agreement.generateSecret())
-
     key
   }
 
@@ -106,24 +97,24 @@ object Onion extends App {
   }
 
   def aesEncrypt(data: Array[Byte], key: Array[Byte], iv: Array[Byte]): BinaryData = {
-    val ivSpec  = new IvParameterSpec(iv)
+    val ivSpec = new IvParameterSpec(iv)
     val cipher = Cipher.getInstance("AES/CTR/NoPadding ", "BC")
     val secretKeySpec = new SecretKeySpec(key, "AES")
     cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec);
     val encrypted = new Array[Byte](cipher.getOutputSize(data.length))
-    val ctLength = cipher.update(data, 0, data.length, encrypted,0)
-    cipher.doFinal (encrypted, ctLength)
+    val ctLength = cipher.update(data, 0, data.length, encrypted, 0)
+    cipher.doFinal(encrypted, ctLength)
     encrypted
   }
 
   def aesDecrypt(data: Array[Byte], key: Array[Byte], iv: Array[Byte]): BinaryData = {
-    val ivSpec  = new IvParameterSpec(iv)
+    val ivSpec = new IvParameterSpec(iv)
     val cipher = Cipher.getInstance("AES/CTR/NoPadding ", "BC")
     val secretKeySpec = new SecretKeySpec(key, "AES")
     cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, ivSpec)
     val decrypted = new Array[Byte](cipher.getOutputSize(data.length))
     val ptLength = cipher.update(data, 0, data.length, decrypted, 0)
-    cipher.doFinal (decrypted, ptLength)
+    cipher.doFinal(decrypted, ptLength)
     decrypted
   }
 
