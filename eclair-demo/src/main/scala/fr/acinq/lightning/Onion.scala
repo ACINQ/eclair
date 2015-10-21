@@ -2,7 +2,7 @@ package fr.acinq.lightning
 
 import java.math.BigInteger
 import java.nio.file.{FileSystems, Files}
-import java.security.Security
+import java.security.{SecureRandom, Security}
 import javax.crypto.Cipher
 import javax.crypto.spec.{SecretKeySpec, IvParameterSpec}
 
@@ -19,6 +19,12 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
  */
 object Onion extends App {
   Security.addProvider(new BouncyCastleProvider())
+
+  /*for (i <- 0 to 20) {
+    val priv = generatePrivateKey()
+    val pub = BinaryData(Crypto.publicKeyFromPrivateKey(priv :+ 0x01.toByte))
+    println(s"$priv\t$pub")
+  }*/
 
   val client_priv = BinaryData("5B1D31B60D34800419D6944B4BF8533FA40E1A19534D4F77E2E1DA56F2BE4A2A")
   val client_pub = BinaryData("0204FCE508DF2836842F4EE0AF6E0CDAB7544E9D3A1F9652B65C536157B61FD694")
@@ -40,7 +46,35 @@ object Onion extends App {
     val (decoded_2, newmsg_2) = decode(newmsg_1, node_priv_2)
     println(s"decoded: '${new String(decoded_2)}'")*/
 
-  val hops = List(
+  val node_keys = List(
+    ("665af9917fbbd9758fd53352275f9b555296ee16e20a73a069931959c0980935", "0204053aed6a50fd4062331fc951d5da830ba64c02bfd7a64571fe16a7c46befa8"),
+    ("277ada60ef0f16492325e8624ba0737c1b0e737360f640385079d8f7873fb60f", "02b270abbe82d184d808ea8dfab38b65e86e10a3c3ba97ebc1d67b2a6cea823fe6"),
+    ("ae497fa5035c0700d5f2166386c09625c5f9f426d707190866d7125a788f0304", "026f6c65b7352c5803c753909da1fc97e0fceee032e22002797c917f7377dc7217"),
+    ("76e37adf50762fd334c2161ee7bd7e728b621d0c2131af9175be5b867ec908fc", "024393f0f8db63b8d3371995436d28d2f10b91117cfc7e9779d2b5b4a6702102ab"),
+    ("0c35bc64589c7b6aecd14213dafb196d40f54264ccec173edf0b9d2df6d69dfd", "026551b360902375757424304b87f8fb690b11c74f698625d31807d526cf9891b4"),
+    ("e34853d16b71b22a85b2373b3f231b73d4d4a4d4852c56aa0f92ea5f337c7b93", "020bc61f4511d1d3086c78eebf976cc3cd24e06632fa0258d130c6518135b42270"),
+    ("b337ffe24504553a62e6df3c4447b91e7590e0789e3dce1429048298dcd8ca90", "028ad1d53cf4a2deca83793810f520a309a638afa25478a47e552439d44fe9436c"),
+    ("c3310054174dd03e250a548799a92f9e0c5d03954d5c884b483da7de248f686e", "027bb15dc88014a9c4c08bb8b738d7ab66e90c854a18818901399088f229149a7a"),
+    ("2c46588a9f385a9ac497a65b742d05817d225424ffaafd6b314a058aeac8d0b2", "022702c77cf82f564063cb270da5a87cb11a9c2eb59b504cc210bd287dd25d90f1"),
+    ("51867838ac3d615f9f59e5ec9dacd0b2d43ab20d9834eb107968f073e29088f6", "0212edd75e97f592203eeec63fd69543e506eaf83da507e401c1cfc34621cff7a0"),
+    ("a6e26869e95f561757d3984e70546730e15d4375824057e6f4d358603ad34106", "0206fd8c64dc0a5938824c16f138d035a0352b306d58d780bf49707a5c53dd9824"),
+    ("61d7ca7f49b20aa9b2d422dda27c03a02c218db39acf083b22d356ea98a9108f", "0283b9835aecf52c4bd00342908aceda48552184cb21b205e39ef53468aef81c00"),
+    ("7dc338e19fe37a2dd366973f16b4caa5e78320dcee49bcf4949e8532aca4cd5c", "02f82b6e7b6d624a4844c5adb946fdd52afac9b7bcabca302daaa902581141cbc8"),
+    ("96ff5474a560fac0b76a34e908ec34b93ec632ecbc273ba959e631b1e539e91c", "02dfce8efa9c4a6b99ccb370647ebd4d6b8af1311bdea796bf5308c55452582c02"),
+    ("e659eff61eb1f7006a4c4e912a24bc2d73c88bf624e120f94d1ca45cf484f688", "025fd9085645789803a6c5a861dfe78182a117f0a201f86dbcccd4ab84e466bf57"),
+    ("afc8052bddb104c6957e07b21afeddbacf21e8418e3709a47ea8e24ade220157", "0260227a20adb45e1f69ca21dfccfe0261f84714a7b206a5b8190e0f09b5ab3ad1"),
+    ("9c1f364a849985b21c1f95ba5d719c4f6be2b1e0a38cd9694fdcb59925cf2129", "02ba42326cc6862b0c8ab613cfa396fa5f79190222dd73df2aaff9c0e8acc6cb16"),
+    ("67bba93600a6af7b68021513d2a82c3e40206fdae3bcf15e111e8165a1213bd1", "023dcde8ef89511259b0f97108adebb8de78501402845590a45396d030b5826d1d"),
+    ("e949e2275e1201ddb02fa71780d112e28d0e2b3c4eb107c0cdc8969066574639", "02ccff5504f13c26c76c095c7d096391687d01d91224db1aa8f82d7a10945286e9"),
+    ("7c658eaf5532f5b1227b492f79e32bde474e03454f596066ded64a9e7805d5a3", "028e3d32443d5a927226a3c1959abd21fd7425687a65d39da4d00d19d60bd3dac7")
+    )
+    var msg: (BinaryData, BinaryData) = (null, BinaryData(Files.readAllBytes(FileSystems.getDefault().getPath("msg20"))))
+    for (node_key <- node_keys) {
+      msg = decode(msg._2, node_key._1)
+      println(s"decoded: '${new String(msg._1)}'")
+    }
+
+  /*val hops = List(
     Hop(node_pub_1, ("First message".getBytes ++ Array.fill[Byte](128)(0x00)).take(128)),
     Hop(node_pub_2, ("Second message".getBytes ++ Array.fill[Byte](128)(0x00)).take(128)))
   .map(hop => HopWithSecrets(client_priv, client_pub, hop.their_pub, generate_secrets(ecdh(hop.their_pub, client_priv)), hop.msg))
@@ -50,12 +84,12 @@ object Onion extends App {
   println(s"decoded: '${new String(decoded_1)}'")
   assert(newmsg_1.length == 3840)
   val (decoded_2, newmsg_2) = decode(newmsg_1, node_priv_2)
-  println(s"decoded: '${new String(decoded_2)}'")
+  println(s"decoded: '${new String(decoded_2)}'")*/
 
   case class Hop(their_pub: BinaryData, msg: BinaryData)
   case class HopWithSecrets(our_priv: BinaryData, our_pub: BinaryData, their_pub: BinaryData, secrets: Secrets, msg: BinaryData)
 
-  def encodeMulti(hops: Seq[HopWithSecrets]): BinaryData = {
+  /*def encodeMulti(hops: Seq[HopWithSecrets]): BinaryData = {
     assert(hops.size <= 20, s"there shouldn't be more than 20 hops (${hops.size})")
 
     // first we generate the padding
@@ -72,7 +106,7 @@ object Onion extends App {
         encrypted ++ hop.our_pub.takeRight(32) ++ sig
     }
 
-  }
+  }*/
 
   def encode(our_priv: BinaryData, their_pub: BinaryData): BinaryData = {
     val ecdh_key = ecdh(their_pub, our_priv)
@@ -163,6 +197,15 @@ object Onion extends App {
     val secretKeySpec = new SecretKeySpec(key, "AES")
     cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, ivSpec)
     cipher.doFinal(data)
+  }
+
+  lazy val rand = new SecureRandom()
+  def generatePrivateKey(): BinaryData = {
+    val key = new Array[Byte](32)
+    do {
+      rand.nextBytes(key)
+    } while (Crypto.publicKeyFromPrivateKey(key :+ 0x01.toByte)(0) != 0x02)
+    key
   }
 
 }
