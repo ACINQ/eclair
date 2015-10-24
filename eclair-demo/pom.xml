@@ -61,5 +61,11 @@
             <artifactId>akka-testkit_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>18.0</version>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 </project>
