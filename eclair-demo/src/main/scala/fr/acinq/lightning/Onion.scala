@@ -1,17 +1,9 @@
 package fr.acinq.lightning
 
-import java.math.BigInteger
-import java.nio.file.{FileSystems, Files}
-import java.security.{SecureRandom, Security}
-import javax.crypto.Cipher
-import javax.crypto.spec.{IvParameterSpec, SecretKeySpec}
+import java.security.SecureRandom
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import org.bouncycastle.crypto.digests.SHA256Digest
-import org.bouncycastle.crypto.macs.HMac
-import org.bouncycastle.crypto.params.KeyParameter
-import org.bouncycastle.jce.ECNamedCurveTable
-import org.bouncycastle.jce.provider.BouncyCastleProvider
+import fr.acinq.lightning.LightningCrypto._
 
 
 /**
@@ -51,7 +43,6 @@ object Onion extends App {
   }
 
   def makeFirstMessage(clientPrivateKeys: Seq[BinaryData], nodePublicKeys: Seq[BinaryData], plaintext: Seq[BinaryData]) : BinaryData = {
-    Security.addProvider(new BouncyCastleProvider())
     val size = clientPrivateKeys.length
     val secrets = for (i <- 0 until size) yield generate_secrets(ecdh(nodePublicKeys(i), clientPrivateKeys(i)))
     val lastMessage = makeLastMessage(clientPrivateKeys, nodePublicKeys, plaintext)
@@ -82,27 +73,9 @@ object Onion extends App {
 
   case class Secrets(aes_key: BinaryData, hmac_key: BinaryData, iv: BinaryData, pad_iv: BinaryData)
 
-  def ecdh(pub: BinaryData, priv: BinaryData): BinaryData = {
-    val ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1")
-    val pubPoint = ecSpec.getCurve.decodePoint(pub)
-    val mult = pubPoint.multiply(new BigInteger(1, priv)).normalize()
-    val x = mult.getXCoord.toBigInteger.toByteArray.takeRight(32)
-    val prefix = if (mult.getYCoord.toBigInteger.testBit(0)) 0x03.toByte else 0x02.toByte
-    BinaryData(prefix +: x)
-  }
-
   def generate_secrets(ecdh_key: BinaryData): Secrets = {
 
     val key_hash = Crypto.sha256(ecdh_key)
-
-    def tweak_hash(buf: Array[Byte], tweak: Byte): Array[Byte] = {
-      val digest = new SHA256Digest
-      digest.update(key_hash, 0, key_hash.length)
-      digest.update(tweak)
-      val out = new Array[Byte](digest.getDigestSize)
-      digest.doFinal(out, 0)
-      out
-    }
 
     val enckey = tweak_hash(key_hash, 0x00).take(16)
     val hmac = tweak_hash(key_hash, 0x01)
@@ -111,31 +84,6 @@ object Onion extends App {
     val pad_iv = ivs.takeRight(16)
 
     Secrets(enckey, hmac, iv, pad_iv)
-  }
-
-  def hmac256(key: Seq[Byte], data: Seq[Byte]): BinaryData = {
-    val mac = new HMac(new SHA256Digest())
-    mac.init(new KeyParameter(key.toArray))
-    mac.update(data.toArray, 0, data.length)
-    val out = new Array[Byte](mac.getMacSize)
-    mac.doFinal(out, 0)
-    out
-  }
-
-  def aesEncrypt(data: Array[Byte], key: Array[Byte], iv: Array[Byte]): BinaryData = {
-    val ivSpec = new IvParameterSpec(iv)
-    val cipher = Cipher.getInstance("AES/CTR/NoPadding ", "BC")
-    val secretKeySpec = new SecretKeySpec(key, "AES")
-    cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec)
-    cipher.doFinal(data)
-  }
-
-  def aesDecrypt(data: Array[Byte], key: Array[Byte], iv: Array[Byte]): BinaryData = {
-    val ivSpec = new IvParameterSpec(iv)
-    val cipher = Cipher.getInstance("AES/CTR/NoPadding ", "BC")
-    val secretKeySpec = new SecretKeySpec(key, "AES")
-    cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, ivSpec)
-    cipher.doFinal(data)
   }
 
   lazy val rand = new SecureRandom()
