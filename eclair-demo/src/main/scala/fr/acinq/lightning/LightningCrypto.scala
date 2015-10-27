@@ -1,11 +1,11 @@
 package fr.acinq.lightning
 
 import java.math.BigInteger
-import java.security.Security
+import java.security.{SecureRandom, Security}
 import javax.crypto.Cipher
 import javax.crypto.spec.{SecretKeySpec, IvParameterSpec}
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{Crypto, BinaryData}
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
@@ -62,6 +62,15 @@ object LightningCrypto {
     cipher.doFinal(data)
   }
 
+  case class KeyPair(pub: BinaryData, priv: BinaryData)
+
+  lazy val rand = new SecureRandom()
+
+  def randomKeyPair(): KeyPair = {
+    val key = new Array[Byte](32)
+    rand.nextBytes(key)
+    KeyPair(pub = Crypto.publicKeyFromPrivateKey(key :+ 0x01.toByte), priv = key)
+  }
 
 
 }
