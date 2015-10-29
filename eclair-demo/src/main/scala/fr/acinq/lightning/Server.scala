@@ -13,7 +13,7 @@ class Server extends Actor with ActorLogging {
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Bind(self, new InetSocketAddress("localhost", 0))
+  IO(Tcp) ! Bind(self, new InetSocketAddress("localhost", 57776))
 
   def receive = {
     case b @ Bound(localAddress) =>
