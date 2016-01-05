@@ -277,7 +277,7 @@ package object lightning {
    */
   def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
     // TODO : is this the proper behaviour ?
-    assert(channelState.them.htlcs.isEmpty && channelState.us.htlcs.isEmpty, s"cannot close a channel with pending htlcs (not sure this is in the specs)")
+    assert(channelState.them.htlcs.isEmpty && channelState.us.htlcs.isEmpty, s"cannot close a channel with pending htlcs (see rusty's state_types.h line 103)")
     permuteOutputs(Transaction(
       version = 1,
       txIn = inputs,
