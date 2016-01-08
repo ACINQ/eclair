@@ -114,6 +114,9 @@ case object BITCOIN_ANCHOR_TIMEOUT
 final case class BITCOIN_ANCHOR_THEIRSPEND(tx: Transaction)
 case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
 case object BITCOIN_ANCHOR_OTHERSPEND
+case object BITCOIN_SPEND_THEIRS_DONE
+case object BITCOIN_SPEND_OURS_DONE
+case object BITCOIN_STEAL_DONE
 case object BITCOIN_CLOSE_DONE
 
 sealed trait Command
@@ -973,6 +976,9 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     close_channel_complete(ourSigForThem)
   }
 
+  /**
+    * They published their current commitment transaction
+    */
   def handle_btc_anchor_theirspend(publishedTx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment): error = {
     // let's find out which pubscript was used (as a P2SH it is not 'in clear' in the blockchain)
     // is it the latest commitment ?
@@ -1003,6 +1009,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
           // we should steal as much money as possible !
           // TODO : spend as much money as possible
           case None =>
+            log.error(s"coudln't find the corresponding tx")
             //  should NEVER happen (really)
             ???
         }
