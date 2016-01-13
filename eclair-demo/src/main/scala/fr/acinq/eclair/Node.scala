@@ -11,8 +11,8 @@ import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
 import scala.util.Try
 
 /**
- * Created by PM on 20/08/2015.
- */
+  * Created by PM on 20/08/2015.
+  */
 
 // @formatter:off
 
@@ -63,31 +63,7 @@ case object WAIT_FOR_UPDATE_COMPLETE_HIGHPRIO extends State with HighPriority
 case object WAIT_FOR_UPDATE_COMPLETE_LOWPRIO extends State with LowPriority
 case object WAIT_FOR_CLOSE_ACK extends State
 case object WAIT_FOR_CLOSE_COMPLETE extends State
-case object CLOSE_WAIT_CLOSE extends State
-case object CLOSE_WAIT_OURCOMMIT extends State
-case object CLOSE_WAIT_THEIRCOMMIT extends State
-case object CLOSE_WAIT_CLOSE_OURCOMMIT extends State
-case object CLOSE_WAIT_CLOSE_THEIRCOMMIT extends State
-case object CLOSE_WAIT_CLOSE_SPENDOURS extends State
-case object CLOSE_WAIT_SPENDOURS extends State
-case object CLOSE_WAIT_SPENDTHEM extends State
-case object CLOSE_WAIT_SPENDTHEM_CLOSE extends State
-case object CLOSE_WAIT_SPENDTHEM_CLOSE_OURCOMMIT extends State
-case object CLOSE_WAIT_SPENDTHEM_CLOSE_SPENDOURS extends State
-case object CLOSE_WAIT_SPENDTHEM_OURCOMMIT extends State
-case object CLOSE_WAIT_SPENDTHEM_SPENDOURS extends State
-case object CLOSE_WAIT_STEAL extends State
-case object CLOSE_WAIT_STEAL_CLOSE extends State
-case object CLOSE_WAIT_STEAL_CLOSE_OURCOMMIT extends State
-case object CLOSE_WAIT_STEAL_CLOSE_SPENDOURS extends State
-case object CLOSE_WAIT_STEAL_OURCOMMIT extends State
-case object CLOSE_WAIT_STEAL_SPENDOURS extends State
-case object CLOSE_WAIT_STEAL_SPENDTHEM extends State
-case object CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE extends State
-case object CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_OURCOMMIT extends State
-case object CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_SPENDOURS extends State
-case object CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT extends State
-case object CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS extends State
+case object CLOSING extends State
 case object CLOSED extends State
 case object ERR_ANCHOR_LOST extends State
 case object ERR_ANCHOR_TIMEOUT extends State
@@ -107,17 +83,23 @@ sealed trait LowPriority extends State
 // EVENTS
 
 case object INPUT_NONE
+case object INPUT_NO_MORE_HTLCS
+// when requesting a mutual close, we wait for as much as this timeout, then unilateral close
+case object INPUT_CLOSE_COMPLETE_TIMEOUT
+
 sealed trait BlockchainEvent
 case object BITCOIN_ANCHOR_DEPTHOK
 case object BITCOIN_ANCHOR_UNSPENT
 case object BITCOIN_ANCHOR_TIMEOUT
 final case class BITCOIN_ANCHOR_THEIRSPEND(tx: Transaction)
 case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
-case object BITCOIN_ANCHOR_OTHERSPEND
 case object BITCOIN_SPEND_THEIRS_DONE
 case object BITCOIN_SPEND_OURS_DONE
 case object BITCOIN_STEAL_DONE
 case object BITCOIN_CLOSE_DONE
+
+case class BITCOIN_ANCHOR_SPENT(tx: Transaction)
+
 
 sealed trait Command
 final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime) extends Command
@@ -137,18 +119,26 @@ final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, f
 final case class Commitment(index: Long, tx: Transaction, state: ChannelState, theirRevocationHash: sha256_hash)
 final case class UpdateProposal(index: Long, state: ChannelState)
 
+trait CurrentCommitment {
+  def ourParams: OurChannelParams
+  def theirParams: TheirChannelParams
+  def commitment: Commitment
+}
+
 final case class DATA_OPEN_WAIT_FOR_OPEN_NOANCHOR(ourParams: OurChannelParams) extends Data
 final case class DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams: OurChannelParams, anchorInput: AnchorInput) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, newCommitmentUnsigned: Commitment) extends Data
-final case class DATA_OPEN_WAITING(ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment) extends Data
-final case class DATA_NORMAL(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment) extends Data
+final case class DATA_OPEN_WAITING(ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment) extends Data with CurrentCommitment
+final case class DATA_NORMAL(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment) extends Data with CurrentCommitment
 //TODO : create SignedTransaction
-final case class DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, previousCommitmentSigned: Commitment, updateProposal: UpdateProposal) extends Data
-final case class DATA_WAIT_FOR_HTLC_ACCEPT(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, previousCommitmentSigned: Commitment, updateProposal: UpdateProposal) extends Data
-final case class DATA_WAIT_FOR_UPDATE_SIG(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, previousCommitmentSigned: Commitment, newCommitmentUnsigned: Commitment) extends Data
-final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, previousCommitmentSigned: Commitment, newCommitmentTxUnsigned: Commitment) extends Data
+final case class DATA_WAIT_FOR_UPDATE_ACCEPT(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, updateProposal: UpdateProposal) extends Data with CurrentCommitment
+final case class DATA_WAIT_FOR_HTLC_ACCEPT(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, updateProposal: UpdateProposal) extends Data with CurrentCommitment
+final case class DATA_WAIT_FOR_UPDATE_SIG(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, newCommitmentUnsigned: Commitment) extends Data with CurrentCommitment
+final case class DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, newCommitmentTxUnsigned: Commitment) extends Data with CurrentCommitment
 final case class DATA_WAIT_FOR_CLOSE_ACK(finalTx: Transaction) extends Data
+final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment,
+                              mutualClosePublished: Option[Transaction], ourCommitPublished: Option[Transaction], theirCommitPublished: Option[Transaction], revokedPublished: Seq[Transaction]) extends Data
 
 // @formatter:on
 
@@ -170,6 +160,17 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     case None => startWith(INIT_NOANCHOR, Nothing)
     case Some(anchorData) => startWith(INIT_WITHANCHOR, anchorData)
   }
+
+  /*
+    8888888 888b    888 8888888 88888888888
+      888   8888b   888   888       888
+      888   88888b  888   888       888
+      888   888Y88b 888   888       888
+      888   888 Y88b888   888       888
+      888   888  Y88888   888       888
+      888   888   Y8888   888       888
+    8888888 888    Y888 8888888     888
+   */
 
   when(INIT_NOANCHOR) {
     case Event(INPUT_NONE, _) =>
@@ -268,23 +269,25 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! error(Some("Anchor timed out"))
       goto(ERR_ANCHOR_TIMEOUT)
 
-    case Event(cmd: CMD_CLOSE, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)
-
-    case Event(pkt: close_channel, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, ShaChain.init, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
+      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
+      goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
+
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
       handle_btc_anchor_otherspend()
       goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
 
   when(OPEN_WAITING_OURANCHOR) {
@@ -298,70 +301,88 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       stash()
       stay
 
-    case Event(cmd: CMD_CLOSE, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)
-
-    case Event(pkt: close_channel, DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, ShaChain.init, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
+      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
+      goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
+
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
       handle_btc_anchor_otherspend()
       goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       goto(NORMAL_LOWPRIO) using d
 
-    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, _, commitment)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)
-
-    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, _, commitment)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
+      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
+      goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
+
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
       handle_btc_anchor_otherspend()
       goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       goto(NORMAL_HIGHPRIO) using d
 
-    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, _, commitment)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)
-
-    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, _, commitment)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
+      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
+      goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
+
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
       handle_btc_anchor_otherspend()
       goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
+
+
+  /*
+    888b     d888        d8888 8888888 888b    888      888      .d88888b.   .d88888b.  8888888b.
+    8888b   d8888       d88888   888   8888b   888      888     d88P" "Y88b d88P" "Y88b 888   Y88b
+    88888b.d88888      d88P888   888   88888b  888      888     888     888 888     888 888    888
+    888Y88888P888     d88P 888   888   888Y88b 888      888     888     888 888     888 888   d88P
+    888 Y888P 888    d88P  888   888   888 Y88b888      888     888     888 888     888 8888888P"
+    888  Y8P  888   d88P   888   888   888  Y88888      888     888     888 888     888 888
+    888   "   888  d8888888888   888   888   Y8888      888     Y88b. .d88P Y88b. .d88P 888
+    888       888 d88P     888 8888888 888    Y888      88888888 "Y88888P"   "Y88888P"  888
+   */
 
   def NORMAL_handler: StateFunction = {
     case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
@@ -435,23 +456,25 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! update_accept(ourSigForThem, ourRevocationHash)
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
 
-    case Event(cmd: CMD_CLOSE, DATA_NORMAL(ourParams, theirParams, _, commitment)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)
-
-    case Event(pkt: close_channel, DATA_NORMAL(ourParams, theirParams, _, commitment)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
+      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
+      goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      them ! handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+      handle_btc_anchor_otherspend()
+      goto(ERR_INFORMATION_LEAK)
+
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
 
   when(NORMAL_HIGHPRIO)(NORMAL_handler)
@@ -484,19 +507,21 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       log.info(s"counterparty declined htlc update with reason=$reason")
       goto(NORMAL(priority)) using DATA_NORMAL(ourParams, theirParams, shaChain, previousCommitmentTx)
 
-    case Event(pkt: close_channel, DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      them ! handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL)
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+      handle_btc_anchor_otherspend()
+      goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
 
   when(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler)
@@ -554,19 +579,22 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
           goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, ShaChain.addHash(shaChain, theirRevocationPreimage, previousCommitment.index), newCommitment)
       }
 
-    case Event(cmd: CMD_CLOSE, DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, _)) =>
-      them ! handle_cmd_close(cmd, ourParams, theirParams, commitment)
+    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
+      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      them ! handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL)
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+      handle_btc_anchor_otherspend()
+      goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
+
   }
 
   when(WAIT_FOR_UPDATE_SIG_HIGHPRIO)(WAIT_FOR_UPDATE_SIG_handler)
@@ -579,24 +607,37 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       // TODO if wrong we should close the channel
       goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, ShaChain.addHash(shaChain, theirRevocationPreimage, previousCommitment.index), newCommitment)
 
-    case Event(pkt: close_channel, DATA_WAIT_FOR_UPDATE_COMPLETE(ourParams, theirParams, shaChain, commitment, _)) =>
-      them ! handle_pkt_close(pkt, ourParams, theirParams, commitment)
+    case Event(pkt: close_channel, d: CurrentCommitment) =>
+      them ! handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_ACK)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      them ! handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL)
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+      handle_btc_anchor_otherspend()
+      goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_OURCOMMIT)
+    case Event(pkt: error, _) =>
+      handle_btc_anchor_ourcommit()
+      goto(CLOSING)
   }
 
   when(WAIT_FOR_UPDATE_COMPLETE_HIGHPRIO)(WAIT_FOR_UPDATE_COMPLETE_handler)
 
   when(WAIT_FOR_UPDATE_COMPLETE_LOWPRIO)(WAIT_FOR_UPDATE_COMPLETE_handler)
+
+  /*
+     .d8888b.  888      .d88888b.   .d8888b. 8888888 888b    888  .d8888b.
+    d88P  Y88b 888     d88P" "Y88b d88P  Y88b  888   8888b   888 d88P  Y88b
+    888    888 888     888     888 Y88b.       888   88888b  888 888    888
+    888        888     888     888  "Y888b.    888   888Y88b 888 888
+    888        888     888     888     "Y88b.  888   888 Y88b888 888  88888
+    888    888 888     888     888       "888  888   888  Y88888 888    888
+    Y88b  d88P 888     Y88b. .d88P Y88b  d88P  888   888   Y8888 Y88b  d88P
+     "Y8888P"  88888888 "Y88888P"   "Y8888P" 8888888 888    Y888  "Y8888P88
+   */
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
     case Event(close_channel_complete(theirSig), DATA_OPEN_WAITING(ourParams, theirParams, Commitment(_, commitment, state, _))) =>
@@ -611,7 +652,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
           them ! close_channel_ack()
           blockchain ! Watch(self, signedFinalTx.hash, Final, 1)
           blockchain ! Publish(signedFinalTx)
-          goto(CLOSE_WAIT_CLOSE)
+          goto(CLOSING)
       }
 
     case Event(close_channel_complete(theirSig), DATA_NORMAL(ourParams, theirParams, shaChain, Commitment(_, commitment, state, _))) =>
@@ -626,306 +667,96 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
           them ! close_channel_ack()
           blockchain ! Watch(self, signedFinalTx.hash, Final, 1)
           blockchain ! Publish(signedFinalTx)
-          goto(CLOSE_WAIT_CLOSE)
+          goto(CLOSING)
       }
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_OPEN_WAITING(ourParams, theirParams, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, ShaChain.init, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
       handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_CLOSE)
+      goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, _) => stay
   }
 
+  /**
+    * In this state the closing tx has already been published
+    */
   when(WAIT_FOR_CLOSE_ACK) {
     case Event(close_channel_ack(), _) =>
-      goto(CLOSE_WAIT_CLOSE)
+      goto(CLOSING)
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
-    case Event(pkt: error, _) => goto(CLOSE_WAIT_CLOSE)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx)) =>
+      them ! handle_btc_anchor_theirspend(tx, d.ourParams, d.theirParams, ShaChain.init, d.commitment)
+      goto(CLOSING)
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
+    case Event(BITCOIN_ANCHOR_SPENT, _) =>
       handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_CLOSE)
+      goto(ERR_INFORMATION_LEAK)
+
+    case Event(pkt: error, _) => goto(CLOSING)
   }
 
-  when(CLOSE_WAIT_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
+  /**
+    * We enter this state when the anchor is spent by at least one tx
+    * We leave this state when one spending tx is buried deep enough in the blockchain
+    * TODO : we should check that state data has at least one published tx
+    */
+  when(CLOSING) {
 
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE_OURCOMMIT)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_OURCOMMIT)
-  }
-
-  when(CLOSE_WAIT_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDOURS)
-  }
-
-  when(CLOSE_WAIT_SPENDTHEM) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM)
-  }
-
-  when(CLOSE_WAIT_CLOSE) {
-    case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
-
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_CLOSE)
-  }
-
-  when(CLOSE_WAIT_CLOSE_OURCOMMIT) {
-
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE_OURCOMMIT)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_CLOSE_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_CLOSE_OURCOMMIT)
-
-    case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
-  }
-
-  when(CLOSE_WAIT_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_CLOSE_SPENDOURS)
-  }
-
-  when(CLOSE_WAIT_SPENDTHEM_CLOSE) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE)
-  }
-
-  when(CLOSE_WAIT_SPENDTHEM_CLOSE_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_SPENDTHEM_CLOSE_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_OURCOMMIT)
-  }
-
-  when(CLOSE_WAIT_SPENDTHEM_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_SPENDOURS)
-  }
-
-  when(CLOSE_WAIT_SPENDTHEM_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_SPENDTHEM_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT)
-  }
-
-  when(CLOSE_WAIT_SPENDTHEM_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS)
-  }
-
-  when(CLOSE_WAIT_STEAL) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL)
-  }
-
-  when(CLOSE_WAIT_STEAL_CLOSE) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
+    case Event(INPUT_NO_MORE_HTLCS, Nothing) =>
+      // what should we do ???
       stay
-  }
 
-  when(CLOSE_WAIT_STEAL_CLOSE_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_OURCOMMIT)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_STEAL_CLOSE_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
+    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, DATA_CLOSING(ourParams, theirParams, _, _, _, Some(ourCommitPublished), _, _)) =>
+      // spend ours
+      // wait for BITCOIN_SPEND_OURS_DONE
       stay
-  }
 
-  when(CLOSE_WAIT_STEAL_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_STEAL_CLOSE_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
+    case Event(BITCOIN_ANCHOR_SPENT(tx), Nothing) if (isMutualClose(tx)) =>
       stay
-  }
 
-  when(CLOSE_WAIT_STEAL_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_STEAL_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
+    case Event(BITCOIN_ANCHOR_SPENT(tx), Nothing) if (isOurCommit(tx)) =>
+      // if (HTLCs)
+      //    handle them (how ???)
+      // else
+      //    wait for BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
       stay
-  }
 
-  when(CLOSE_WAIT_STEAL_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_THEIRSPEND(tx), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      them ! handle_btc_anchor_theirspend(tx, ourParams, theirParams, shaChain, commitment)
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
+    case Event(BITCOIN_ANCHOR_SPENT(tx), Nothing) if (isTheirCommit(tx)) =>
+      // if (HTLCs)
+      //    handle them (how ???)
+      // else
+      //    spend theirs
+      //    wait for BITCOIN_STEAL_DONE
       stay
-  }
 
-  when(CLOSE_WAIT_STEAL_SPENDTHEM) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
+    case Event(BITCOIN_ANCHOR_SPENT(tx), Nothing) if (isRevokedCommit(tx)) =>
+      // steal immediately
+      // wait for BITCOIN_SPEND_THEIRS_DONE
       stay
-  }
 
-  when(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_SPENT(tx), Nothing) =>
+      // somebody managed to spend the anchor...
+      // we're fucked
+      goto(ERR_INFORMATION_LEAK)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      stay
-  }
+    case Event(BITCOIN_CLOSE_DONE, _) =>
+      goto(CLOSED)
 
-  when(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
+    case Event(BITCOIN_SPEND_OURS_DONE, _) =>
+      goto(CLOSED)
 
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_SPENDOURS)
+    case Event(BITCOIN_SPEND_THEIRS_DONE, _) =>
+      goto(CLOSED)
 
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      stay
-  }
-
-  when(CLOSE_WAIT_STEAL_SPENDTHEM_CLOSE_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      stay
-  }
-
-  when(CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED, _) =>
-      handle_btc_anchor_ourcommit_delaypassed()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      goto(CLOSE_WAIT_STEAL_SPENDTHEM_OURCOMMIT)
-  }
-
-  when(CLOSE_WAIT_STEAL_SPENDTHEM_SPENDOURS) {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
-
-    case Event(BITCOIN_ANCHOR_OTHERSPEND, _) =>
-      handle_btc_anchor_otherspend()
-      stay
+    case Event(BITCOIN_STEAL_DONE, _) =>
+      goto(CLOSED)
   }
 
   when(CLOSED) {
@@ -939,8 +770,23 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   /*
-  HANDLERS
-   */
+    888    888 8888888888 888      8888888b.  8888888888 8888888b.   .d8888b.
+    888    888 888        888      888   Y88b 888        888   Y88b d88P  Y88b
+    888    888 888        888      888    888 888        888    888 Y88b.
+    8888888888 8888888    888      888   d88P 8888888    888   d88P  "Y888b.
+    888    888 888        888      8888888P"  888        8888888P"      "Y88b.
+    888    888 888        888      888        888        888 T88b         "888
+    888    888 888        888      888        888        888  T88b  Y88b  d88P
+    888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
+  */
+
+  def isMutualClose(tx: Transaction): Boolean = ???
+
+  def isOurCommit(tx: Transaction): Boolean = ???
+
+  def isTheirCommit(tx: Transaction): Boolean = ???
+
+  def isRevokedCommit(tx: Transaction): Boolean = ???
 
   def sign_their_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHash: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
     // we build our side of the new commitment tx
@@ -976,6 +822,8 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     close_channel_complete(ourSigForThem)
   }
 
+  def handle_btc_anchor_ourcommit(): error = ???
+
   /**
     * They published their current commitment transaction
     */
@@ -996,9 +844,9 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
         // one way is to use the main revocation hash, and rebuild the pub script we signed
         (commitment.index - 1 to 0L by -1)
           .find { i =>
-          val theirRevocationHash = Crypto.sha256(ShaChain.getHash(shaChain, i).get)
-          publishedTx.txOut.exists(o => o.publicKeyScript.data.toArray.deep == Script.write(pay2sh(redeemSecretOrDelay(theirParams.finalPubKey, ourParams.delay, ourFinalPubKey, theirRevocationHash))).deep)
-        } match {
+            val theirRevocationHash = Crypto.sha256(ShaChain.getHash(shaChain, i).get)
+            publishedTx.txOut.exists(o => o.publicKeyScript.data.toArray.deep == Script.write(pay2sh(redeemSecretOrDelay(theirParams.finalPubKey, ourParams.delay, ourFinalPubKey, theirRevocationHash))).deep)
+          } match {
           case Some(revokedCommitment) =>
             log.warning(s"they published a revoked tx !")
           // there are several kind of outputs :

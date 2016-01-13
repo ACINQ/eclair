@@ -64,7 +64,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -84,7 +84,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -104,7 +104,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -124,7 +124,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsgClass(classOf[Watch])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -143,7 +143,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsg(WAIT_FOR_CLOSE_ACK)
       node ! close_channel_ack()
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -162,7 +162,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsg(WAIT_FOR_CLOSE_ACK)
       node ! close_channel_ack()
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -181,7 +181,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsg(WAIT_FOR_CLOSE_ACK)
       node ! close_channel_ack()
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
@@ -200,7 +200,7 @@ class ChannelOpenSpec extends TestHelper() {
       expectMsg(WAIT_FOR_CLOSE_ACK)
       node ! close_channel_ack()
       node ! CMD_GETSTATE
-      expectMsg(CLOSE_WAIT_CLOSE)
+      expectMsg(CLOSING)
       node ! BITCOIN_CLOSE_DONE
       node ! CMD_GETSTATE
       expectMsg(CLOSED)
