@@ -8,11 +8,10 @@ import scala.collection.mutable
 
 // @formatter:off
 
-sealed trait TxType
-case object Anchor extends TxType
-case object Final extends TxType
-final case class Watch(channel: ActorRef, txId: BinaryData, t: TxType, minDepth: Int)
+final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef)
+final case class WatchSpent(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef)
 final case class TxConfirmed(txId: BinaryData, blockId: BinaryData, confirmations: Int)
+final case class TxSpent(txId: BinaryData, blockId: BinaryData, confirmations: Int)
 final case class Publish(tx: Transaction)
 
 // @formatter:on
@@ -26,8 +25,8 @@ class BlockchainWatcher extends Actor with ActorLogging {
 
   override def receive: Receive = ???
 
-  def watching(watches: Set[Watch]): Receive = {
-    case w@Watch(channel, txId, typ, minDepth) =>
+  def watching(watches: Set[WatchConfirmed]): Receive = {
+    case w@WatchConfirmed(channel, txId, minDepth, _) =>
       log.info(s"watching tx $txId for $sender")
       // TODO : for testing
       import scala.concurrent.ExecutionContext.Implicits.global
@@ -37,11 +36,8 @@ class BlockchainWatcher extends Actor with ActorLogging {
     case TxConfirmed(txId, blockId, confirmations) =>
       log.info(s"got $confirmations confirmation(s) for tx $txId")
       watches.filter(_.txId == txId).foreach(w => w match {
-         case Watch(channel, _, Anchor, minDepth) if confirmations >= minDepth =>
-           channel ! BITCOIN_ANCHOR_DEPTHOK
-           context.become(watching(watches - w))
-         case Watch(channel, _, Final, minDepth) if confirmations >= minDepth =>
-           channel ! BITCOIN_CLOSE_DONE
+         case WatchConfirmed(channel, _, minDepth, event) if confirmations >= minDepth =>
+           channel ! event
            context.become(watching(watches - w))
          case _ => {}
        })

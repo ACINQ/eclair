@@ -35,10 +35,10 @@ class ProtocolSpec extends FlatSpec {
 
   "Protocol" should "implement anchor tx" in {
 
-    val anchor = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
+    val (anchor, anchorOutputIndex) = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
 
     val spending = Transaction(version = 1,
-      txIn = TxIn(OutPoint(anchor, 0), Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txIn = TxIn(OutPoint(anchor, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil,
       txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash160(Alice.commitPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = 0)
 
@@ -52,7 +52,7 @@ class ProtocolSpec extends FlatSpec {
     Transaction.correctlySpends(signedTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
   it should "implement commit tx" in {
-    val anchor = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
+    val (anchor, anchorOutputIndex) = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
     val ours = open_channel(
       delay = locktime(Blocks(100)),
       revocationHash = Alice.H,
@@ -69,7 +69,7 @@ class ProtocolSpec extends FlatSpec {
       commitmentFee = 1)
 
     // we assume that Alice knows Bob's H
-    val openAnchor = open_anchor(anchor.hash, 0, 10, signature.defaultInstance) // commit sig will be computed later
+    val openAnchor = open_anchor(anchor.hash, anchorOutputIndex, 10, signature.defaultInstance) // commit sig will be computed later
     val channelState = initialFunding(ours, theirs, openAnchor, fee = 0)
     val tx = makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, openAnchor.txid, openAnchor.outputIndex, Bob.H, channelState)
     val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)

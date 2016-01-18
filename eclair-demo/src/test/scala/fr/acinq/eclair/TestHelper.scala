@@ -52,8 +52,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     channelDesc = channelDesc.copy(ourParams = Some(ourParams))
     node ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
-    val anchorTx = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
-    val anchorOutputIndex = 0
+    val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
     // we fund the channel with the anchor tx, so the money is ours
     val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - ourParams.commitmentFee, 0, Seq()))
     // we build our commitment tx, leaving it unsigned

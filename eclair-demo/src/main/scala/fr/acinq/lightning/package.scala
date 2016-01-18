@@ -180,8 +180,8 @@ package object lightning {
 
   def pay2sh(script: BinaryData) = OP_HASH160 :: OP_PUSHDATA(hash160(script)) :: OP_EQUAL :: Nil
 
-  //TODO : this function does not hendle the case where the anchor tx does not spend all previous tx output (meaning there is change)
-  def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): Transaction = {
+  //TODO : this function does not handle the case where the anchor tx does not spend all previous tx output (meaning there is change)
+  def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): (Transaction, Int) = {
     val scriptPubKey = if (isLess(pubkey1, pubkey2))
       Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
     else
@@ -192,8 +192,8 @@ package object lightning {
       txOut = TxOut(amount, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(hash160(scriptPubKey)) :: OP_EQUAL :: Nil) :: Nil,
       lockTime = 0)
     val signedTx = Transaction.sign(tx, Seq(signData))
-    // we don't permute outputs because by convention the multisig output as index = 0
-    signedTx
+    // we don't permute outputs because by convention the multisig output has index = 0
+    (signedTx, 0)
   }
 
   def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData) : BinaryData = Script.write(pay2sh(multiSig2of2(pubkey1, pubkey2)))
