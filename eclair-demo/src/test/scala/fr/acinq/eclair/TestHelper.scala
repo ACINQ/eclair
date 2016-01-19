@@ -65,7 +65,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     node ! open_anchor(anchorTx.hash, 0, anchorInput.amount, ourSigForThem)
     expectMsgClass(classOf[open_commit_sig])
-    expectMsgClass(classOf[Watch])
+    expectMsgClass(classOf[WatchConfirmed])
     node ! CMD_GETSTATE // node is in OPEN_WAITING_THEIRANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     node ! BITCOIN_ANCHOR_DEPTHOK
@@ -103,7 +103,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     node ! CMD_GETSTATE // node is in OPEN_WAIT_FOR_COMMIT_SIG
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     node ! open_commit_sig(ourSigForThem)
-    expectMsgClass(classOf[Watch])
+    expectMsgClass(classOf[WatchConfirmed])
     expectMsgClass(classOf[Publish])
     node ! CMD_GETSTATE // node is in OPEN_WAITING_OURANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)

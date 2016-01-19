@@ -108,14 +108,12 @@ sealed trait BlockchainEvent
 case object BITCOIN_ANCHOR_DEPTHOK
 case object BITCOIN_ANCHOR_UNSPENT
 case object BITCOIN_ANCHOR_TIMEOUT
-final case class BITCOIN_ANCHOR_THEIRSPEND(tx: Transaction)
+case class BITCOIN_ANCHOR_SPENT(tx: Transaction)
 case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
 case object BITCOIN_SPEND_THEIRS_DONE
 case object BITCOIN_SPEND_OURS_DONE
 case object BITCOIN_STEAL_DONE
 case object BITCOIN_CLOSE_DONE
-
-case class BITCOIN_ANCHOR_SPENT(tx: Transaction)
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
@@ -320,10 +318,6 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
-      goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
-
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
       goto(ERR_INFORMATION_LEAK)
 
@@ -356,10 +350,6 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
-      goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
-
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
       goto(ERR_INFORMATION_LEAK)
 
@@ -385,10 +375,6 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
-      goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
-
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
       goto(ERR_INFORMATION_LEAK)
 
@@ -413,10 +399,6 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
-
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
-      goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
       goto(ERR_INFORMATION_LEAK)
@@ -841,7 +823,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   when(CLOSED) {
-    case null => stay
+    case _ if false => stay // we don't want this to match so that whenUnhandled works
   }
 
   whenUnhandled {
@@ -850,6 +832,9 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
     case Event(CMD_GETSTATE, _) =>
       sender ! stateName
       stay
+
+  // TODO : them ! error(Some("Unexpected message")) ?
+
   }
 
   /*

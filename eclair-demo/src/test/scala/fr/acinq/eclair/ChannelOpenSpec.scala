@@ -61,7 +61,7 @@ class ChannelOpenSpec extends TestHelper() {
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
       expectMsg(CLOSING)
@@ -81,7 +81,7 @@ class ChannelOpenSpec extends TestHelper() {
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
       expectMsg(CLOSING)
@@ -101,7 +101,7 @@ class ChannelOpenSpec extends TestHelper() {
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
       expectMsg(CLOSING)
@@ -121,7 +121,7 @@ class ChannelOpenSpec extends TestHelper() {
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel_complete(ourFinalSigForThem)
       expectMsgClass(classOf[close_channel_ack])
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       node ! CMD_GETSTATE
       expectMsg(CLOSING)
@@ -136,7 +136,7 @@ class ChannelOpenSpec extends TestHelper() {
       val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       expectMsgClass(classOf[close_channel_complete])
       node ! CMD_GETSTATE
@@ -155,7 +155,7 @@ class ChannelOpenSpec extends TestHelper() {
       val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       expectMsgClass(classOf[close_channel_complete])
       node ! CMD_GETSTATE
@@ -174,7 +174,7 @@ class ChannelOpenSpec extends TestHelper() {
       val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       expectMsgClass(classOf[close_channel_complete])
       node ! CMD_GETSTATE
@@ -193,7 +193,7 @@ class ChannelOpenSpec extends TestHelper() {
       val theirFinalTx = makeFinalTx(ourCommitTx.txIn, theirParams.finalPubKey, ourFinalPubKey, state.reverse)
       val ourFinalSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
       node ! close_channel(ourFinalSigForThem, 0)
-      expectMsgClass(classOf[Watch])
+      expectMsgClass(classOf[WatchConfirmed])
       expectMsgClass(classOf[Publish])
       expectMsgClass(classOf[close_channel_complete])
       node ! CMD_GETSTATE
