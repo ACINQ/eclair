@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import akka.actor.{ActorRef, Actor, ActorLogging}
-import fr.acinq.bitcoin.{Transaction, BinaryData}
+import fr.acinq.bitcoin.{TxOut, Transaction, BinaryData}
 import scala.concurrent.duration._
 
 import scala.collection.mutable
@@ -9,7 +9,9 @@ import scala.collection.mutable
 // @formatter:off
 
 final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef)
+final case class WatchConfirmedBasedOnOutputs(channel: ActorRef, txIdSpent: BinaryData, txOut: Seq[TxOut], minDepth: Int, event: AnyRef)
 final case class WatchSpent(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef)
+
 final case class TxConfirmed(txId: BinaryData, blockId: BinaryData, confirmations: Int)
 final case class TxSpent(txId: BinaryData, blockId: BinaryData, confirmations: Int)
 final case class Publish(tx: Transaction)
