@@ -53,6 +53,7 @@ class ChannelOpenSpec extends TestHelper() {
     "handle CMD_CLOSE in OPEN_WAITING_THEIRANCHOR" in {
       val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_NOANCHOR(OPEN_WAITING_THEIRANCHOR)
       node ! CMD_CLOSE(0)
+      expectMsgClass(classOf[WatchConfirmedBasedOnOutputs])
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
@@ -73,6 +74,7 @@ class ChannelOpenSpec extends TestHelper() {
     "handle CMD_CLOSE in OPEN_WAITING_OURANCHOR" in {
       val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_WITHANCHOR(OPEN_WAITING_OURANCHOR)
       node ! CMD_CLOSE(0)
+      expectMsgClass(classOf[WatchConfirmedBasedOnOutputs])
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
@@ -93,6 +95,7 @@ class ChannelOpenSpec extends TestHelper() {
     "handle CMD_CLOSE in OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR" in {
       val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_NOANCHOR(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
       node ! CMD_CLOSE(0)
+      expectMsgClass(classOf[WatchConfirmedBasedOnOutputs])
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)
@@ -113,6 +116,7 @@ class ChannelOpenSpec extends TestHelper() {
     "handle CMD_CLOSE in OPEN_WAIT_FOR_COMPLETE_OURANCHOR" in {
       val (node, ChannelDesc(Some(ourParams), Some(theirParams), Some(Commitment(_, ourCommitTx, state, _)))) = reachState_WITHANCHOR(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
       node ! CMD_CLOSE(0)
+      expectMsgClass(classOf[WatchConfirmedBasedOnOutputs])
       expectMsgClass(classOf[close_channel])
       node ! CMD_GETSTATE
       expectMsg(WAIT_FOR_CLOSE_COMPLETE)

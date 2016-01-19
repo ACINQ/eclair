@@ -11,6 +11,7 @@ import scala.collection.mutable
 final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef)
 final case class WatchConfirmedBasedOnOutputs(channel: ActorRef, txIdSpent: BinaryData, txOut: Seq[TxOut], minDepth: Int, event: AnyRef)
 final case class WatchSpent(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef)
+final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Int, event: AnyRef) // notify me if confirmation number gets below minDepth
 
 final case class TxConfirmed(txId: BinaryData, blockId: BinaryData, confirmations: Int)
 final case class TxSpent(txId: BinaryData, blockId: BinaryData, confirmations: Int)

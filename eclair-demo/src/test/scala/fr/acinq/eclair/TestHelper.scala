@@ -41,7 +41,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
 
   def reachState_NOANCHOR(targetState: State): (ActorRef, ChannelDesc) = {
     var channelDesc = ChannelDesc()
-    val node = system.actorOf(Props(new Node(self, bob_params, None)))
+    val node = system.actorOf(Props(new Channel(self, bob_params, None)))
     node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
     val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
@@ -66,9 +66,11 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     node ! open_anchor(anchorTx.hash, 0, anchorInput.amount, ourSigForThem)
     expectMsgClass(classOf[open_commit_sig])
     expectMsgClass(classOf[WatchConfirmed])
+    expectMsgClass(classOf[WatchSpent])
     node ! CMD_GETSTATE // node is in OPEN_WAITING_THEIRANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     node ! BITCOIN_ANCHOR_DEPTHOK
+    expectMsgClass(classOf[WatchLost])
     expectMsgClass(classOf[open_complete])
     node ! CMD_GETSTATE // node is in OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
@@ -80,7 +82,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
 
   def reachState_WITHANCHOR(targetState: State): (ActorRef, ChannelDesc) = {
     var channelDesc = ChannelDesc()
-    val node = system.actorOf(Props(new Node(self, bob_params, Some(anchorInput))))
+    val node = system.actorOf(Props(new Channel(self, bob_params, Some(anchorInput))))
     node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
     val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
@@ -104,10 +106,12 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     node ! open_commit_sig(ourSigForThem)
     expectMsgClass(classOf[WatchConfirmed])
+    expectMsgClass(classOf[WatchSpent])
     expectMsgClass(classOf[Publish])
     node ! CMD_GETSTATE // node is in OPEN_WAITING_OURANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     node ! BITCOIN_ANCHOR_DEPTHOK
+    expectMsgClass(classOf[WatchLost])
     expectMsgClass(classOf[open_complete])
     node ! CMD_GETSTATE // node is in OPEN_WAIT_FOR_COMPLETE_OURANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)

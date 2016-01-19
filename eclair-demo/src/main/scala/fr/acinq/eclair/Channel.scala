@@ -106,7 +106,7 @@ case object INPUT_CLOSE_COMPLETE_TIMEOUT
 
 sealed trait BlockchainEvent
 case object BITCOIN_ANCHOR_DEPTHOK
-case object BITCOIN_ANCHOR_UNSPENT
+case object BITCOIN_ANCHOR_LOST
 case object BITCOIN_ANCHOR_TIMEOUT
 case class BITCOIN_ANCHOR_SPENT(tx: Transaction)
 case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
@@ -178,7 +178,7 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 
 // @formatter:on
 
-class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
+class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(params.commitPrivKey.key.toByteArray)))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(params.finalPrivKey.key.toByteArray)))
@@ -282,7 +282,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
           goto(CLOSED)
         case true =>
           blockchain ! WatchConfirmed(self, anchorTx.hash, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTx.hash, 1, BITCOIN_ANCHOR_SPENT)
+          blockchain ! WatchSpent(self, anchorTx.hash, 0, BITCOIN_ANCHOR_SPENT)
           blockchain ! Publish(anchorTx)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, commitment.copy(tx = signedCommitTx))
       }
@@ -292,6 +292,8 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
 
   when(OPEN_WAITING_THEIRANCHOR) {
     case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, shaChain, commitment)) =>
+      val anchorTxId = commitment.tx.txIn(0).outPoint.hash // commit tx only has 1 input, which is the anchor
+      blockchain ! WatchLost(self, anchorTxId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       unstashAll()
       goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, commitment)
@@ -328,6 +330,8 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
 
   when(OPEN_WAITING_OURANCHOR) {
     case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, shaChain, commitment)) =>
+      val anchorTxId = commitment.tx.txIn(0).outPoint.hash // commit tx only has 1 input, which is the anchor
+      blockchain ! WatchLost(self, anchorTxId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       unstashAll()
       goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, commitment)
@@ -827,7 +831,7 @@ class Node(val blockchain: ActorRef, val params: OurChannelParams, val anchorDat
   }
 
   whenUnhandled {
-    case Event(BITCOIN_ANCHOR_UNSPENT, _) => goto(ERR_ANCHOR_LOST)
+    case Event(BITCOIN_ANCHOR_LOST, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(CMD_GETSTATE, _) =>
       sender ! stateName

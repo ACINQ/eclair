@@ -31,8 +31,8 @@ object Boot extends App {
   val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes())
 
   val blockchain = system.actorOf(Props(new BlockchainWatcher), name = "blockchain")
-  val alice = system.actorOf(Props(new Node(blockchain, alice_params, Some(anchorInput))), name = "alice")
-  val bob = system.actorOf(Props(new Node(blockchain, bob_params, None)), name = "bob")
+  val alice = system.actorOf(Props(new Channel(blockchain, alice_params, Some(anchorInput))), name = "alice")
+  val bob = system.actorOf(Props(new Channel(blockchain, bob_params, None)), name = "bob")
 
   bob.tell(INPUT_NONE, alice)
   alice.tell(INPUT_NONE, bob)
@@ -58,6 +58,6 @@ object Boot extends App {
   while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(200)
   while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(200)
 
-  system.shutdown()
+  system.terminate()
 
 }
