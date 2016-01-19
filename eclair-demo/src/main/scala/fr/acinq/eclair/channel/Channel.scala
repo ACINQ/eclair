@@ -267,7 +267,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
         case true =>
           them ! open_commit_sig(ourSigForThem)
           blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTxid, 1, BITCOIN_ANCHOR_SPENT)
+          blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 1, BITCOIN_ANCHOR_SPENT)
           goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, Commitment(0, signedCommitTx, state, theirRevocationHash))
       }
 
@@ -284,7 +284,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
           goto(CLOSED)
         case true =>
           blockchain ! WatchConfirmed(self, anchorTx.hash, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTx.hash, 0, BITCOIN_ANCHOR_SPENT)
+          blockchain ! WatchSpent(self, anchorTx.hash, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           blockchain ! Publish(anchorTx)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, commitment.copy(tx = signedCommitTx))
       }
