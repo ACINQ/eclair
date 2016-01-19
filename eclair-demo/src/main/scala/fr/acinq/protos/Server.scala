@@ -1,9 +1,10 @@
-package fr.acinq.lightning
+package fr.acinq.protos
 
 import java.net.InetSocketAddress
 
 import akka.actor.{ActorSystem, Props, ActorLogging, Actor}
 import akka.io.{IO, Tcp}
+import fr.acinq.eclair.crypto.AuthHandler
 
 /**
  * Created by PM on 27/10/2015.

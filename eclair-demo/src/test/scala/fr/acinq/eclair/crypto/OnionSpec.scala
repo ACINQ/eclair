@@ -1,7 +1,8 @@
-package fr.acinq.lightning
+package fr.acinq.eclair.crypto
 
 import com.google.common.io.ByteStreams
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.ProtocolSpec
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

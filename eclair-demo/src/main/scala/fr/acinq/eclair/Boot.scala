@@ -3,9 +3,10 @@ package fr.acinq.eclair
 import akka.actor.{Props, ActorSystem}
 import akka.pattern.ask
 import akka.util.Timeout
+import fr.acinq.eclair.blockchain.BlockchainWatcher
+import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
 import fr.acinq.bitcoin._
-import fr.acinq.lightning._
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, sha256_hash}
 import org.bouncycastle.util.encoders.Hex

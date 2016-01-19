@@ -1,4 +1,4 @@
-package fr.acinq.lightning
+package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._

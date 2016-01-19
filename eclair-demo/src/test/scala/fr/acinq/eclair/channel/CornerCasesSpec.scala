@@ -1,11 +1,6 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.channel
 
-
-import fr.acinq.bitcoin._
-import fr.acinq.lightning._
-import lightning.locktime.Locktime.Blocks
-import lightning.update_decline_htlc.Reason.CannotRoute
-import lightning._
+import fr.acinq.eclair._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

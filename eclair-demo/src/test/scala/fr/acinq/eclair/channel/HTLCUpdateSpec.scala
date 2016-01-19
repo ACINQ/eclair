@@ -1,5 +1,6 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.channel
 
+import fr.acinq.eclair._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

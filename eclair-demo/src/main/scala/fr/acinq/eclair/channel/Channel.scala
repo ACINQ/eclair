@@ -1,13 +1,15 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.channel
 
-
-import akka.actor.{Stash, ActorRef, LoggingFSM}
+import akka.actor.{ActorRef, LoggingFSM, Stash}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
-import fr.acinq.lightning._
+import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
+
 import scala.util.Try
 
 /**
@@ -951,3 +953,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
   }
 
 }
+
+
+
+

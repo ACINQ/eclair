@@ -1,11 +1,11 @@
-package fr.acinq.lightning
+package fr.acinq.eclair.crypto
 
 import java.math.BigInteger
 import java.security.{SecureRandom, Security}
 import javax.crypto.Cipher
-import javax.crypto.spec.{SecretKeySpec, IvParameterSpec}
+import javax.crypto.spec.{IvParameterSpec, SecretKeySpec}
 
-import fr.acinq.bitcoin.{Crypto, BinaryData}
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter

@@ -1,9 +1,9 @@
-package fr.acinq.lightning
+package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Crypto, BinaryData}
-import lightning.{signature, sha256_hash}
+import fr.acinq.bitcoin.{BinaryData, Crypto}
+import lightning.{sha256_hash, signature}
 import org.junit.runner.RunWith
-import org.scalatest.{FunSuite, FlatSpec}
+import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
 import scala.util.Random

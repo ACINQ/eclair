@@ -1,13 +1,11 @@
-package fr.acinq.lightning
+package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.BinaryData
-import fr.acinq.lightning.LightningCrypto._
+import fr.acinq.eclair.crypto.AuthHandler._
+import fr.acinq.eclair.crypto.LightningCrypto._
 import lightning.{error, pkt}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-
-import AuthHandler._
 
 /**
  * Created by PM on 27/10/2015.

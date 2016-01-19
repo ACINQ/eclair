@@ -1,10 +1,9 @@
-package fr.acinq.lightning
+package fr.acinq.eclair.crypto
 
+import fr.acinq.bitcoin._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-
-import fr.acinq.bitcoin._
 
 @RunWith(classOf[JUnitRunner])
 class ShaChainSpec extends FunSuite {

@@ -1,4 +1,4 @@
-package fr.acinq.lightning
+package fr.acinq.protos
 
 import fr.acinq.bitcoin._
 

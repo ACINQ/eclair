@@ -1,13 +1,15 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.channel
 
-import akka.actor.{ActorSystem, Props, ActorRef}
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{ImplicitSender, TestKit}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
-import fr.acinq.lightning._
-import lightning.open_channel.anchor_offer.{WONT_CREATE_ANCHOR, WILL_CREATE_ANCHOR}
+import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed, WatchLost, WatchSpent}
+import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 import lightning.locktime.Locktime.Blocks
+import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 import org.bouncycastle.util.encoders.Hex
 import org.scalatest.{BeforeAndAfterAll, Matchers, WordSpecLike}
 

@@ -1,9 +1,7 @@
-package fr.acinq.lightning
+package fr.acinq.protos
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
-
-import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
+import fr.acinq.eclair._
 
 object Test1 extends App {
   // tx used for funding

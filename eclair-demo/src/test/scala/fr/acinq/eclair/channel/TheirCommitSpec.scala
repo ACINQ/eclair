@@ -1,9 +1,10 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.lightning._
-import lightning.locktime.Locktime.Blocks
+import fr.acinq.eclair._
+import fr.acinq.eclair.crypto.ShaChain
 import lightning._
+import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

@@ -1,7 +1,6 @@
-package fr.acinq.lightning
+package fr.acinq.eclair
 
 import fr.acinq.bitcoin._
-
 import org.junit.runner.RunWith
 import org.scalatest.FlatSpec
 import org.scalatest.junit.JUnitRunner

@@ -1,10 +1,11 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{ScriptFlags, Transaction, Crypto}
-import fr.acinq.lightning._
-import lightning.locktime.Locktime.Blocks
-import lightning.update_decline_htlc.Reason.{InsufficientFunds, CannotRoute}
+import fr.acinq.bitcoin.{Crypto, ScriptFlags, Transaction}
+import fr.acinq.eclair._
+import fr.acinq.eclair.crypto.ShaChain
 import lightning._
+import lightning.locktime.Locktime.Blocks
+import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

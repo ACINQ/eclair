@@ -1,11 +1,10 @@
-package fr.acinq.lightning
+package fr.acinq.eclair.crypto
 
 import akka.actor._
 import akka.io.Tcp.{Received, Write}
 import akka.util.ByteString
-
+import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
 import LightningCrypto._
-import fr.acinq.bitcoin.{BinaryData, Protocol, Crypto}
 import lightning.{error, pkt}
 
 import scala.annotation.tailrec
@@ -28,7 +27,8 @@ object AuthHandler {
 
   /**
    * Rounds up to a factor of 16
-   * @param l
+    *
+    * @param l
    * @return
    */
   def round16(l: Int) = l % 16 match {
@@ -47,7 +47,8 @@ object AuthHandler {
 
   /**
    * splits buffer in separate msg
-   * @param data raw data received (possibly one, multiple or fractions of messages)
+    *
+    * @param data raw data received (possibly one, multiple or fractions of messages)
    * @param totlen_prev
    * @param f will be applied to full messages
    * @return rest of the buffer (incomplete msg)
