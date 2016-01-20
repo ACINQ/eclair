@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import akka.actor.{Props, ActorSystem}
 import akka.pattern.ask
 import akka.util.Timeout
-import fr.acinq.eclair.blockchain.BlockchainWatcher
+import fr.acinq.eclair.blockchain.PollingWatcher
 import fr.acinq.eclair.channel._
 import scala.concurrent.duration._
 import fr.acinq.bitcoin._
@@ -31,7 +31,8 @@ object Boot extends App {
   val alice_params = OurChannelParams(locktime(Blocks(10)), alice_commit_priv, alice_final_priv, 1, 100000, "alice-seed".getBytes())
   val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes())
 
-  val blockchain = system.actorOf(Props(new BlockchainWatcher), name = "blockchain")
+  val coreClient = new BitcoinJsonRPCClient("foo", "bar")
+  val blockchain = system.actorOf(Props(new PollingWatcher(coreClient)), name = "blockchain")
   val alice = system.actorOf(Props(new Channel(blockchain, alice_params, Some(anchorInput))), name = "alice")
   val bob = system.actorOf(Props(new Channel(blockchain, bob_params, None)), name = "bob")
 

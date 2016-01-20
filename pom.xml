@@ -19,6 +19,7 @@
         <scala.version>2.11.7</scala.version>
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.4.1</akka.version>
+        <acinqtools.version>1.2-RC7</acinqtools.version>
     </properties>
 
     <build>

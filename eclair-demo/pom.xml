@@ -29,6 +29,11 @@
             <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
         </dependency>
         <dependency>
+            <groupId>fr.acinq.acinq-tools</groupId>
+            <artifactId>bitcoin-async-api_${scala.version.short}</artifactId>
+            <version>${acinqtools.version}</version>
+        </dependency>
+        <dependency>
             <groupId>fr.acinq.eclair</groupId>
             <artifactId>lightning-types_${scala.version.short}</artifactId>
             <version>${project.parent.version}</version>
