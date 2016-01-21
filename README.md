@@ -4,15 +4,14 @@ A scala implementation of the Lightning Network. Eclair is french for Lightning.
 
 More precisely, this is an implementation of Rusty's [deployable lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf). In particular it uses the same wire protocol, and almost the same state machine.
 
+## Overview
+The general idea is to have an actor per channel, everything being non-blocking.
+
+A "blockchain watcher" is responsible for monitoring the blockchain, and sending events (eg. when the anchor is spent).
+
 ## Modules
 * lightning-types: scala code generation using protobuf's compiler (wire protocol)
 * lightning-core: actual implementation
-
-## Overview
-
-The general idea is to have an actor per channel, everything beeing non-blocking.
-
-A "blockchain watcher" is responsible for monitoring the blockchain, and sending events (eg. when the anchor is spent).
 
 ## Usage
 Run `Demo.scala` to have an example of:
