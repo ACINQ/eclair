@@ -135,6 +135,7 @@ final case class CMD_CLOSE(fee: Long) extends Command
 final case class CMD_SEND_HTLC_ROUTEFAIL(h: sha256_hash) extends Command
 final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
 case object CMD_GETSTATE extends Command
+case object CMD_GETSTATEDATA extends Command
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -512,7 +513,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
@@ -564,7 +565,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
@@ -645,7 +646,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
@@ -684,7 +685,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
@@ -737,7 +738,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
@@ -763,7 +764,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
@@ -798,7 +799,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       stay using d.copy(theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_CLOSING) if (isRevokedCommit(tx)) =>
-      handle_revoked()
+      them ! handle_revoked(tx)
       stay using d.copy(revokedPublished = tx +: d.revokedPublished)
 
     case Event(BITCOIN_ANCHOR_SPENT(tx), _) =>
@@ -839,7 +840,11 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       sender ! stateName
       stay
 
-  // TODO : them ! error(Some("Unexpected message")) ?
+    case Event(CMD_GETSTATEDATA, _) =>
+      sender ! stateData
+      stay
+
+    // TODO : them ! error(Some("Unexpected message")) ?
 
   }
 
@@ -872,7 +877,11 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
     tx.txOut == theirCommitTx.txOut
   }
 
-  def isRevokedCommit(tx: Transaction): Boolean = ???
+  def isRevokedCommit(tx: Transaction): Boolean = {
+    // TODO : for now we assume that every published tx which is none of (mutualclose, ourcommit, theircommit) is a revoked commit
+    // which means ERR_INFORMATION_LEAK will never occur
+    true
+  }
 
   def sign_their_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHash: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
     // we build our side of the new commitment tx
@@ -946,7 +955,8 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
     error(Some("Commit tx noticed"))
   }
 
-  def handle_revoked(): error = {
+  def handle_revoked(publishedTx: Transaction): error = {
+    log.info(s"revoked commit detected: $publishedTx")
     // steal immediately
     // wait for BITCOIN_STEAL_DONE
     error(Some("Otherspend noticed"))

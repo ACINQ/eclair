@@ -31,19 +31,19 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
           getTxConfirmations(client, txId.toString).map(_ match {
             case Some(confirmations) if confirmations >= minDepth =>
               channel ! event
-              self ! ('remove, w)
+              ('remove, w)
             case _ => {}
           })
         case w@WatchSpent(channel, txId, outputIndex, minDepth, event) =>
           isUnspent(client, txId.toString, outputIndex).map(_ match {
             case false =>
-              // NOTE : assuming isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
+              // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
               channel ! event
-              self ! ('remove, w)
+              ('remove, w)
             case _ => {}
           })
       })
-      context.become(watching(watches + Tuple2(w, cancellable)))
+      context.become(watching(watches + (w -> cancellable)))
 
     case ('remove, w: Watch) if watches.contains(w) =>
       watches(w).cancel()
