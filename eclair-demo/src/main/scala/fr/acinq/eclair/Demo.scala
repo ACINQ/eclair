@@ -1,22 +1,25 @@
 package fr.acinq.eclair
 
+import javax.swing.JList
+
 import akka.actor.{Props, ActorSystem}
 import akka.pattern.ask
 import akka.util.Timeout
 import fr.acinq.eclair.blockchain.PollingWatcher
 import fr.acinq.eclair.channel._
+import org.json4s.JsonAST.{JInt, JObject, JValue}
 import scala.concurrent.duration._
 import fr.acinq.bitcoin._
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, sha256_hash}
 import org.bouncycastle.util.encoders.Hex
 
-import scala.concurrent.Await
+import scala.concurrent.{Future, Await}
 
 /**
  * Created by PM on 20/08/2015.
  */
-object Boot extends App {
+object Demo extends App {
 
   val system = ActorSystem()
   implicit val timeout = Timeout(30 seconds)
@@ -31,16 +34,22 @@ object Boot extends App {
   val alice_params = OurChannelParams(locktime(Blocks(10)), alice_commit_priv, alice_final_priv, 1, 100000, "alice-seed".getBytes())
   val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes())
 
-  val coreClient = new BitcoinJsonRPCClient("foo", "bar")
-  val blockchain = system.actorOf(Props(new PollingWatcher(coreClient)), name = "blockchain")
+  val mockCoreClient = new BitcoinJsonRPCClient("foo", "bar") {
+    override def invoke(method: String, params: Any*): Future[JValue] = method match {
+      case "getrawtransaction" => Future.successful(JObject(("confirmations", JInt(100))))
+      case "gettxout" => Future.successful(JObject())
+      case _ => ???
+    }
+  }
+  val blockchain = system.actorOf(Props(new PollingWatcher(mockCoreClient)), name = "blockchain")
   val alice = system.actorOf(Props(new Channel(blockchain, alice_params, Some(anchorInput))), name = "alice")
   val bob = system.actorOf(Props(new Channel(blockchain, bob_params, None)), name = "bob")
 
   bob.tell(INPUT_NONE, alice)
   alice.tell(INPUT_NONE, bob)
 
-  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(200)
-  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(200)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != NORMAL_HIGHPRIO) Thread.sleep(1000)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != NORMAL_LOWPRIO) Thread.sleep(1000)
 
   val r = sha256_hash(7, 7, 7, 7)
   val rHash = Crypto.sha256(r)
@@ -57,9 +66,10 @@ object Boot extends App {
 
   alice ! CMD_CLOSE(0)
 
-  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(200)
-  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(200)
+  while (Await.result(alice ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(1000)
+  while (Await.result(bob ? CMD_GETSTATE, 5 seconds) != CLOSED) Thread.sleep(1000)
 
   system.terminate()
+  mockCoreClient.client.close()
 
 }

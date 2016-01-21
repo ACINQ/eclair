@@ -26,23 +26,23 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
 
     case w: Watch if !watches.contains(w) =>
       log.info(s"adding watch $w for $sender")
-      val cancellable = context.system.scheduler.schedule(1 seconds, 2 minutes, self, w match {
-        case w@WatchConfirmed(channel, txId, minDepth, event) =>
-          getTxConfirmations(client, txId.toString).map(_ match {
-            case Some(confirmations) if confirmations >= minDepth =>
-              channel ! event
-              ('remove, w)
-            case _ => {}
-          })
-        case w@WatchSpent(channel, txId, outputIndex, minDepth, event) =>
-          isUnspent(client, txId.toString, outputIndex).map(_ match {
-            case false =>
-              // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
-              channel ! event
-              ('remove, w)
-            case _ => {}
-          })
-      })
+      val cancellable = context.system.scheduler.schedule(2 seconds, 2 minutes)(w match {
+          case w@WatchConfirmed(channel, txId, minDepth, event) =>
+            getTxConfirmations(client, txId.toString).map(_ match {
+              case Some(confirmations) if confirmations >= minDepth =>
+                channel ! event
+                self !('remove, w)
+              case _ => {}
+            })
+          case w@WatchSpent(channel, txId, outputIndex, minDepth, event) =>
+            isUnspent(client, txId.toString, outputIndex).map(_ match {
+              case false =>
+                // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
+                channel ! event
+                self !('remove, w)
+              case _ => {}
+            })
+        })
       context.become(watching(watches + (w -> cancellable)))
 
     case ('remove, w: Watch) if watches.contains(w) =>
