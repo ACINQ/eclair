@@ -12,7 +12,32 @@
         <module>eclair-demo</module>
     </modules>
 
+    <description>A scala implementation of the Lightning Network</description>
+    <url>https://github.com/ACINQ/eclair</url>
     <name>${project.artifactId}</name>
+
+    <licenses>
+        <license>
+            <url>https://raw.githubusercontent.com/ACINQ/eclair/master/LICENSE</url>
+            <name>Apache License</name>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:git@github.com:ACINQ/eclair.git</connection>
+        <developerConnection>scm:git:git@github.com:ACINQ/eclair.git</developerConnection>
+        <url>git@github.com:ACINQ/eclair.git</url>
+    </scm>
+
+    <developers>
+        <developer>
+            <id>sstone</id>
+        </developer>
+        <developer>
+            <id>pm47</id>
+        </developer>
+    </developers>
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
@@ -20,7 +45,7 @@
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.4.1</akka.version>
         <bitcoinlib.version>0.9.4</bitcoinlib.version>
-        <acinqtools.version>1.2-RC7</acinqtools.version>
+        <acinqtools.version>1.2</acinqtools.version>
     </properties>
 
     <build>
@@ -49,6 +74,12 @@
                         <goals>
                             <goal>compile</goal>
                             <goal>testCompile</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>doc-jar</goal>
                         </goals>
                     </execution>
                 </executions>
@@ -114,40 +145,12 @@
                 </configuration>
             </plugin>
         </plugins>
-        <extensions>
-            <extension>
-                <groupId>com.github.sstone</groupId>
-                <artifactId>aws-maven</artifactId>
-                <version>5.1.0.1</version>
-            </extension>
-        </extensions>
     </build>
-
-    <distributionManagement>
-        <repository>
-            <id>aws-releases</id>
-            <name>AWS Release Repository</name>
-            <url>s3://acinq-mvn-repo/releases</url>
-        </repository>
-        <snapshotRepository>
-            <id>aws-snapshots</id>
-            <name>AWS Snapshot Repository</name>
-            <url>s3://acinq-mvn-repo/snapshots</url>
-        </snapshotRepository>
-    </distributionManagement>
 
     <repositories>
         <repository>
             <id>sonatype snapshots</id>
             <url>https://oss.sonatype.org/content/repositories/snapshots/</url>
-        </repository>
-        <repository>
-            <id>aws-releases</id>
-            <url>s3://acinq-mvn-repo/releases</url>
-        </repository>
-        <repository>
-            <id>aws-snapshots</id>
-            <url>s3://acinq-mvn-repo/snapshots</url>
         </repository>
     </repositories>
 
