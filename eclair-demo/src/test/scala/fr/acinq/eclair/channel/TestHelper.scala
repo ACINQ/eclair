@@ -7,6 +7,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed, WatchLost, WatchSpent}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.channel.Scripts._
 import lightning._
 import lightning.locktime.Locktime.Blocks
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}

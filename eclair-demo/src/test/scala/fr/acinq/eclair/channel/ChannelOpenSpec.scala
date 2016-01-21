@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Scripts._
 import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed, WatchConfirmedBasedOnOutputs}
 import lightning._
 import org.junit.runner.RunWith

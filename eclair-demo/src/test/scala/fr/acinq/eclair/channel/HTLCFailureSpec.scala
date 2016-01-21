@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Scripts._
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 import lightning.locktime.Locktime.Blocks

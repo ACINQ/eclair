@@ -6,6 +6,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.crypto.ShaChain
+import Scripts._
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
