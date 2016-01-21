@@ -26,6 +26,7 @@ Run `Demo.scala` to have an example of:
 - [X] HTLC Scripts
 - [ ] Relaying Payment
 - [X] Blockchain watcher
+- [ ] Database
 
 ## Ressources
 
