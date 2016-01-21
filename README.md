@@ -11,7 +11,7 @@ A "blockchain watcher" is responsible for monitoring the blockchain, and sending
 
 ## Modules
 * lightning-types: scala code generation using protobuf's compiler (wire protocol)
-* lightning-core: actual implementation
+* eclair: actual implementation
 
 ## Usage
 Run `Demo.scala` to have an example of:
