@@ -24,9 +24,10 @@ Run `Demo.scala` to have an example of:
 - [ ] Routing
 - [X] Channel state machine
 - [X] HTLC Scripts
+- [ ] Unilateral close handling
 - [ ] Relaying Payment
 - [X] Blockchain watcher
-- [ ] Database
+- [ ] Storing states in a database
 
 ## Ressources
 
