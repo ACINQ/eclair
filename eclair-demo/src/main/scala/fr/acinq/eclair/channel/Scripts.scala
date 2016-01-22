@@ -111,10 +111,10 @@ object Scripts {
       lockTime = 0)
 
     val sendOuts = channelState.them.htlcs.map(htlc => {
-      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
+      TxOut(htlc.amountMsat, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amountMsat, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
     })
     val receiveOuts = channelState.us.htlcs.map(htlc => {
-      TxOut(htlc.amount, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amount, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
+      TxOut(htlc.amountMsat, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amountMsat, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
     })
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
     permuteOutputs(tx1)

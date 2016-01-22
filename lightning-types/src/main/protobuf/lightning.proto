@@ -1,3 +1,5 @@
+syntax = "proto2";
+
 // The outer layer handles encryption, authentication and message
 // boundaries.
 
@@ -48,6 +50,14 @@ message funding {
 //
 // Packet Types
 //
+
+// Set channel params.
+message authenticate {
+  // Which node this is.
+  required bitcoin_pubkey node_id = 1;
+  // Signature of your session key. */
+  required signature session_sig = 2;
+};
 
 // Set channel params.
 message open_channel {
@@ -105,15 +115,15 @@ message update {
   // Hash for which I will supply preimage to revoke this.
   required sha256_hash revocation_hash = 1;
   // Change in current payment to-me (implies reverse to-you).
-  required sint64 delta = 2;
+  required sint64 delta_msat = 2;
 }
 
 // Start a new commitment tx to add an HTLC me -> you.
 message update_add_htlc {
   // Hash for which I will supply preimage to revoke this commitment tx.
   required sha256_hash revocation_hash = 1;
-  // Amount for htlc
-  required uint32 amount = 2;
+  // Amount for htlc (millisatoshi)
+  required uint32 amount_msat = 2;
   // Hash for HTLC R value.
   required sha256_hash r_hash = 3;
   // Time at which HTLC expires (absolute)
@@ -195,7 +205,7 @@ message close_channel_complete {
 message close_channel_ack {
 }
 
-// This means we're going to hang up; it's to help diagnose only! 
+// This means we're going to hang up; it's to help diagnose only!
 message error {
   optional string problem = 1;
 }
@@ -203,6 +213,8 @@ message error {
 // This is the union which defines all of them
 message pkt {
   oneof pkt {
+    // Start of connection
+    authenticate auth = 50;
     // Opening
     open_channel open = 20;
     open_anchor open_anchor = 21;
