@@ -1,7 +1,5 @@
 package fr.acinq.eclair
 
-import javax.swing.JList
-
 import akka.actor.{Props, ActorSystem}
 import akka.pattern.ask
 import akka.util.Timeout
