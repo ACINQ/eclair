@@ -49,7 +49,7 @@ package object eclair {
   implicit def bin2signature(in: BinaryData): signature = {
     val (r, s) = Crypto.decodeSignature(in)
     val (ar, as) = (r.toByteArray, s.toByteArray)
-    val (ar1, as1) = (fixSize(ar), fixSize(as))
+    val (ar1, as1) = (fixSize(ar).reverse, fixSize(as).reverse)
     val (rbis, sbis) = (new ByteArrayInputStream(ar1), new ByteArrayInputStream(as1))
     signature(Protocol.uint64(rbis), Protocol.uint64(rbis), Protocol.uint64(rbis), Protocol.uint64(rbis), Protocol.uint64(sbis), Protocol.uint64(sbis), Protocol.uint64(sbis), Protocol.uint64(sbis))
   }
@@ -62,13 +62,13 @@ package object eclair {
     Protocol.writeUInt64(in.r2, rbos)
     Protocol.writeUInt64(in.r3, rbos)
     Protocol.writeUInt64(in.r4, rbos)
-    val r = new BigInteger(1, rbos.toByteArray)
+    val r = new BigInteger(1, rbos.toByteArray.reverse)
     val sbos = new ByteArrayOutputStream()
     Protocol.writeUInt64(in.s1, sbos)
     Protocol.writeUInt64(in.s2, sbos)
     Protocol.writeUInt64(in.s3, sbos)
     Protocol.writeUInt64(in.s4, sbos)
-    val s = new BigInteger(1, sbos.toByteArray)
+    val s = new BigInteger(1, sbos.toByteArray.reverse)
     Crypto.encodeSignature(r, s) :+ SIGHASH_ALL.toByte
   }
 
