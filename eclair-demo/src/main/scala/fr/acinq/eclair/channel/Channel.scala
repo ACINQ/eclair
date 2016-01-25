@@ -187,6 +187,9 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(params.commitPrivKey.key.toByteArray)))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(params.finalPrivKey.key.toByteArray)))
 
+  log.info(s"commit pubkey: ${BinaryData(Crypto.publicKeyFromPrivateKey(params.commitPrivKey.key.toByteArray))}")
+  log.info(s"final pubkey: ${BinaryData(Crypto.publicKeyFromPrivateKey(params.finalPrivKey.key.toByteArray))}")
+
   // TODO
   var them: ActorRef = null
 
@@ -873,7 +876,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   def isTheirCommit(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
     // we rebuild their commitment tx
-    val theirCommitTx = makeCommitTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, ourParams.delay, commitment.theirRevocationHash, commitment.state.reverse)
+    val theirCommitTx = makeCommitTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, theirParams.delay, commitment.theirRevocationHash, commitment.state.reverse)
     // and only compare the outputs
     tx.txOut == theirCommitTx.txOut
   }
@@ -886,9 +889,9 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   def sign_their_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHash: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
     // we build our side of the new commitment tx
-    val ourCommitTx = makeCommitTx(inputs, ourFinalPubKey, theirParams.finalPubKey, theirParams.delay, ourRevocationHash, newState)
+    val ourCommitTx = makeCommitTx(inputs, ourFinalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, newState)
     // we build their commitment tx and sign it
-    val theirCommitTx = makeCommitTx(inputs, theirParams.finalPubKey, ourFinalPubKey, ourParams.delay, theirRevocationHash, newState.reverse)
+    val theirCommitTx = makeCommitTx(inputs, theirParams.finalPubKey, ourFinalPubKey, theirParams.delay, theirRevocationHash, newState.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
     (ourCommitTx, ourSigForThem)
   }
