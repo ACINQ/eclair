@@ -25,7 +25,7 @@ object LightningCrypto {
     val mult = pubPoint.multiply(new BigInteger(1, priv)).normalize()
     val x = mult.getXCoord.toBigInteger.toByteArray.takeRight(32)
     val prefix = if (mult.getYCoord.toBigInteger.testBit(0)) 0x03.toByte else 0x02.toByte
-    BinaryData(prefix +: x)
+    Crypto.sha256(prefix +: x)
   }
 
   def hmac256(key: Seq[Byte], data: Seq[Byte]): BinaryData = {

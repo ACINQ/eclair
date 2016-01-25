@@ -3,9 +3,13 @@ package fr.acinq.eclair.crypto
 import akka.actor._
 import akka.io.Tcp.{Received, Write}
 import akka.util.ByteString
-import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
+import fr.acinq.bitcoin.{Base58Check, BinaryData, Crypto, Protocol}
+import fr.acinq.eclair._
 import LightningCrypto._
-import lightning.{error, pkt}
+import lightning.locktime.Locktime.Blocks
+import lightning.open_channel.anchor_offer.WONT_CREATE_ANCHOR
+import lightning.pkt.Pkt.{Open, Auth}
+import lightning._
 
 import scala.annotation.tailrec
 
@@ -63,8 +67,9 @@ object AuthHandler {
       if (data.length < 32 + 8 + enclen) (data, totlen_prev)
       else {
         val splitted = data.splitAt(32 + 8 + enclen)
-        val refsig = data.take(32)
-        val sig = hmac256(secrets.hmac_key, data.slice(32, 32 + 8 + enclen).toArray)
+        val refsig = BinaryData(data.take(32))
+        val payload = BinaryData(data.slice(32, 32 + 8 + enclen))
+        val sig = hmac256(secrets.hmac_key, payload)
         assert(sig.data.sameElements(refsig), "sig mismatch!")
         val dec = aesDecrypt(data.slice(32 + 8, 32 + 8 + enclen).toArray, secrets.aes_key, secrets.aes_iv)
         f(dec.take(len))
@@ -90,36 +95,54 @@ class AuthHandler(them: ActorRef) extends Actor with ActorLogging {
       val secrets_in = generate_secrets(ecdh(theirpub, session_key.priv), theirpub)
       val secrets_out = generate_secrets(ecdh(theirpub, session_key.priv), session_key.pub)
       log.info(s"generated secrets_in=$secrets_in secrets_out=$secrets_out")
-      self ! pkt().withError(error(Some("hello 1")))
-      self ! pkt().withError(error(Some("hello 2")))
-      self ! pkt().withError(error(Some("hello 3")))
-      self ! pkt().withError(error(Some("hello 4")))
-      self ! pkt().withError(error(Some("hello 5")))
-      self ! pkt().withError(error(Some("hello 6")))
-      self ! pkt().withError(error(Some("hello 7")))
-      self ! pkt().withError(error(Some("hello 8")))
-      self ! pkt().withError(error(Some("hello 9")))
-      context.become(mainloop(them, secrets_in, secrets_out, 0, 0, BinaryData(Seq())))
+      val mynodeid = randomKeyPair()
+      val (d, new_totlen_out) = writeMsg(pkt(Auth(lightning.authenticate(mynodeid.pub, bin2signature(Crypto.encodeSignature(Crypto.sign(Crypto.hash256(theirpub), mynodeid.priv)))))), secrets_out, 0)
+      them ! Write(ByteString.fromArray(d))
+      context.become(authenticate(them, theirpub, secrets_in, secrets_out, 0, new_totlen_out, BinaryData(Seq())))
     case other =>
       log.warning(s"ignored $other")
   }
 
-  def mainloop(them: ActorRef, secrets_in: Secrets, secrets_out: Secrets, totlen_in: Long, totlen_out: Long, acc_in: BinaryData): Receive = {
+  def authenticate(them: ActorRef, theirpub: BinaryData, secrets_in: Secrets, secrets_out: Secrets, totlen_in: Long, totlen_out: Long, acc_in: BinaryData): Receive = {
+    case Received(chunk) =>
+      log.info(s"received chunk=${BinaryData(chunk)}")
+      val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, totlen_in, m => self ! pkt.parseFrom(m))
+      context.become(authenticate(them, theirpub, secrets_in, secrets_out, new_totlen_in, totlen_out, rest))
+
+    case auth: pkt if auth.pkt.isAuth =>
+      log.info(s"received authenticate: $auth")
+      log.info(s"nodeid: ${BinaryData(auth.getAuth.nodeId.key.toByteArray)}")
+      log.info(s"sig: ${BinaryData(signature2bin(auth.getAuth.sessionSig))}")
+      //assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.getAuth.sessionSig), pubkey2bin(auth.getAuth.nodeId)), "auth failed")
+
+      val alice_commit_priv = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")._2
+      val alice_final_priv = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")._2
+      val ourCommitPubKey = bitcoin_pubkey(com.google.protobuf.ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(alice_commit_priv.key.toByteArray)))
+      val ourFinalPubKey = bitcoin_pubkey(com.google.protobuf.ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(alice_final_priv.key.toByteArray)))
+      val rev = sha256_hash(7, 7, 7, 7)
+      val revHash = Crypto.sha256(rev)
+      self ! pkt(Open(open_channel(locktime(Blocks(10)), revHash, alice_commit_priv, ourFinalPubKey, WONT_CREATE_ANCHOR, Some(10), 10000)))
+      context.become(mainloop(them, auth.getAuth.nodeId, theirpub, secrets_in, secrets_out, totlen_in, totlen_out, acc_in))
+
+    case msg => log.warning(s"unhandled $msg")
+  }
+
+  def mainloop(them: ActorRef, nodeid: bitcoin_pubkey, theirpub: BinaryData, secrets_in: Secrets, secrets_out: Secrets, totlen_in: Long, totlen_out: Long, acc_in: BinaryData): Receive = {
     case Received(chunk) =>
       log.info(s"received chunk=${BinaryData(chunk)}")
       val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, totlen_in, m => self ! m)
-      context.become(mainloop(them, secrets_in, secrets_out, new_totlen_in, totlen_out, rest))
+      context.become(mainloop(them, nodeid, theirpub, secrets_in, secrets_out, new_totlen_in, totlen_out, rest))
 
     case data: BinaryData =>
       val msg = pkt.parseFrom(data)
       log.info(s"received $msg")
-      context.become(mainloop(them, secrets_in, secrets_out, totlen_in, totlen_out, acc_in))
+      context.become(mainloop(them, nodeid, theirpub, secrets_in, secrets_out, totlen_in, totlen_out, acc_in))
 
     case msg: pkt =>
       log.info(s"sending msg=$msg")
       val (data, new_totlen_out) = writeMsg(msg, secrets_out, totlen_out)
       them ! Write(ByteString.fromArray(data))
-      context.become(mainloop(them, secrets_in, secrets_out, totlen_in, new_totlen_out, acc_in))
+      context.become(mainloop(them, nodeid, theirpub, secrets_in, secrets_out, totlen_in, new_totlen_out, acc_in))
   }
 
 }
