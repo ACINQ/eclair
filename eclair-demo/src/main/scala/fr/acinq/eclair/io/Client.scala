@@ -23,7 +23,7 @@ class Client(remote: InetSocketAddress) extends Actor with ActorLogging {
     case c@Connected(remote, local) =>
       log.info(s"connected to $remote")
       val connection = sender()
-      val handler = context.actorOf(Props(classOf[AuthHandler], Boot.blockchain, connection))
+      val handler = context.actorOf(Props(classOf[AuthHandler], connection, Boot.blockchain, true))
       connection ! Register(handler)
   }
 }
