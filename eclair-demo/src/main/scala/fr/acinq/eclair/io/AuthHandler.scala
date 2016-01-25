@@ -138,7 +138,7 @@ class AuthHandler(them: ActorRef) extends LoggingFSM[State, Data] with Stash {
       log.info(s"sig: ${BinaryData(signature2bin(auth.getAuth.sessionSig))}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.getAuth.sessionSig), pubkey2bin(auth.getAuth.nodeId)), "auth failed")
       log.info(s"initializing channel actor")
-      val anchorInput = AnchorInput(100100000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))
+      val anchorInput = AnchorInput(1000000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))
       val alice_commit_priv = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")._2
       val alice_final_priv = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")._2
       val alice_params = OurChannelParams(locktime(Seconds(86400)), alice_commit_priv, alice_final_priv, 1, 50000, "alice-seed".getBytes())
