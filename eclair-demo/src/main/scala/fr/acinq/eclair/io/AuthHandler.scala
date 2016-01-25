@@ -14,7 +14,7 @@ import fr.acinq.eclair.crypto.LightningCrypto._
 import fr.acinq.eclair.io.AuthHandler.Secrets
 import lightning._
 import lightning.locktime.Locktime.{Seconds, Blocks}
-import lightning.pkt.Pkt.{OpenCommitSig, OpenAnchor, Open, Auth}
+import lightning.pkt.Pkt._
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST.{JInt, JObject, JValue}
 
@@ -132,11 +132,11 @@ class AuthHandler(them: ActorRef) extends LoggingFSM[State, Data] with Stash {
       val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
       stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
 
-    case Event(auth: pkt, s: SessionData) if auth.pkt.isAuth =>
+    case Event(pkt(Auth(auth)), s: SessionData) =>
       log.info(s"received authenticate: $auth")
-      log.info(s"nodeid: ${BinaryData(auth.getAuth.nodeId.key.toByteArray)}")
-      log.info(s"sig: ${BinaryData(signature2bin(auth.getAuth.sessionSig))}")
-      assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.getAuth.sessionSig), pubkey2bin(auth.getAuth.nodeId)), "auth failed")
+      log.info(s"nodeid: ${BinaryData(auth.nodeId.key.toByteArray)}")
+      log.info(s"sig: ${BinaryData(signature2bin(auth.sessionSig))}")
+      assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
       log.info(s"initializing channel actor")
       val anchorInput = AnchorInput(1000000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))
       val alice_commit_priv = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")._2
@@ -165,7 +165,22 @@ class AuthHandler(them: ActorRef) extends LoggingFSM[State, Data] with Stash {
       log.info(s">>>>>> $packet")
       packet.pkt match {
         case Open(o) => channel ! o
+        case OpenAnchor(o) => channel ! o
         case OpenCommitSig(o) => channel ! o
+        case OpenComplete(o) => channel ! o
+        case Update(o) => channel ! o
+        case UpdateAddHtlc(o) => channel ! o
+        case UpdateAccept(o) => channel ! o
+        case UpdateSignature(o) => channel ! o
+        case UpdateComplete(o) => channel ! o
+        case UpdateDeclineHtlc(o) => channel ! o
+        case UpdateFulfillHtlc(o) => channel ! o
+        case UpdateTimedoutHtlc(o) => channel ! o
+        case UpdateRoutefailHtlc(o) => channel ! o
+        case Close(o) => channel ! o
+        case CloseComplete(o) => channel ! o
+        case CloseAck(o) => channel ! o
+        case Error(o) => channel ! o
       }
       stay
 
@@ -173,6 +188,21 @@ class AuthHandler(them: ActorRef) extends LoggingFSM[State, Data] with Stash {
       val packet = msg match {
         case o: open_channel => pkt(Open(o))
         case o: open_anchor => pkt(OpenAnchor(o))
+        case o: open_commit_sig => pkt(OpenCommitSig(o))
+        case o: open_complete => pkt(OpenComplete(o))
+        case o: update => pkt(Update(o))
+        case o: update_add_htlc => pkt(UpdateAddHtlc(o))
+        case o: update_accept => pkt(UpdateAccept(o))
+        case o: update_signature => pkt(UpdateSignature(o))
+        case o: update_complete => pkt(UpdateComplete(o))
+        case o: update_decline_htlc => pkt(UpdateDeclineHtlc(o))
+        case o: update_fulfill_htlc => pkt(UpdateFulfillHtlc(o))
+        case o: update_timedout_htlc => pkt(UpdateTimedoutHtlc(o))
+        case o: update_routefail_htlc => pkt(UpdateRoutefailHtlc(o))
+        case o: close_channel => pkt(Close(o))
+        case o: close_channel_complete => pkt(CloseComplete(o))
+        case o: close_channel_ack => pkt(CloseAck(o))
+        case o: error => pkt(Error(o))
       }
       log.info(s"<<<<<< $packet")
       val (data, new_totlen_out) = writeMsg(packet, secrets_out, cipher_out, totlen_out)
