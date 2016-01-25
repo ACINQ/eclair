@@ -105,8 +105,8 @@ object Scripts {
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.them.pay, publicKeyScript = pay2sh(redeemScript)),
-        TxOut(amount = channelState.us.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
+        TxOut(amount = channelState.us.pay, publicKeyScript = pay2sh(redeemScript)),
+        TxOut(amount = channelState.them.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
       ),
       lockTime = 0)
 
