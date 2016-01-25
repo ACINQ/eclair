@@ -4,9 +4,10 @@ import com.google.common.io.ByteStreams
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.ProtocolSpec
 import org.junit.runner.RunWith
-import org.scalatest.FunSuite
+import org.scalatest.{Ignore, FunSuite}
 import org.scalatest.junit.JUnitRunner
 
+@Ignore
 @RunWith(classOf[JUnitRunner])
 class OnionSpec extends FunSuite {
   val payloads = List(
