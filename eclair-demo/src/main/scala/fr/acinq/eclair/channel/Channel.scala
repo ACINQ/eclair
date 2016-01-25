@@ -153,7 +153,7 @@ sealed trait Data
 case object Nothing extends Data
 final case class AnchorInput(amount: Long, previousTxOutput: OutPoint, signData: SignData) extends Data
 final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, commitmentFee: Long, shaSeed: BinaryData)
-final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Int, commitmentFee: Long)
+final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], commitmentFee: Long)
 final case class Commitment(index: Long, tx: Transaction, state: ChannelState, theirRevocationHash: sha256_hash)
 final case class UpdateProposal(index: Long, state: ChannelState)
 
@@ -232,7 +232,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   when(OPEN_WAIT_FOR_OPEN_NOANCHOR) {
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN_NOANCHOR(ourParams)) =>
-      val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth.get, commitmentFee)
+      val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, commitmentFee)
       goto(OPEN_WAIT_FOR_ANCHOR) using DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -240,7 +240,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   when(OPEN_WAIT_FOR_OPEN_WITHANCHOR) {
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams, anchorInput)) =>
-      val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth.get, commitmentFee)
+      val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, commitmentFee)
       val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
       log.info(s"anchor txid=${anchorTx.hash}")
       // we fund the channel with the anchor tx, so the money is ours

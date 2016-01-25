@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import akka.actor._
 import akka.io.{IO, Tcp}
-import fr.acinq.eclair.crypto.AuthHandler
+import fr.acinq.eclair.io.AuthHandler
 
 /**
  * Created by PM on 27/10/2015.
@@ -25,11 +25,10 @@ class Client(remote: InetSocketAddress) extends Actor with ActorLogging {
       val connection = sender()
       val handler = context.actorOf(Props(classOf[AuthHandler], connection))
       connection ! Register(handler)
-      handler ! 'init
   }
 }
 
 object Client extends App {
   implicit val system = ActorSystem("system")
-  val client = system.actorOf(Props(classOf[Client], new InetSocketAddress("localhost", 57776)), "server")
+  val client = system.actorOf(Props(classOf[Client], new InetSocketAddress("192.168.1.34", 48000)), "server")
 }

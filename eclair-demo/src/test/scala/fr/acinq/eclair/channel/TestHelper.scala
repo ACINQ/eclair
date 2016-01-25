@@ -47,7 +47,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     val node = system.actorOf(Props(new Channel(self, bob_params, None)))
     node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
-    val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
+    val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth, their_open_channel.commitmentFee)
     channelDesc = channelDesc.copy(theirParams = Some(theirParams))
     val theirRevocationHash = their_open_channel.revocationHash
     val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
@@ -88,7 +88,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     val node = system.actorOf(Props(new Channel(self, bob_params, Some(anchorInput))))
     node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
-    val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth.get, their_open_channel.commitmentFee)
+    val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth, their_open_channel.commitmentFee)
     channelDesc = channelDesc.copy(theirParams = Some(theirParams))
     val theirRevocationHash = their_open_channel.revocationHash
     val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))

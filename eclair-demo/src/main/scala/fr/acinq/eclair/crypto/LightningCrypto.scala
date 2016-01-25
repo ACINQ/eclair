@@ -62,6 +62,22 @@ object LightningCrypto {
     cipher.doFinal(data)
   }
 
+  def aesEncryptCipher(key: Array[Byte], iv: Array[Byte]): Cipher = {
+    val ivSpec = new IvParameterSpec(iv)
+    val cipher = Cipher.getInstance("AES/CTR/NoPadding ", "BC")
+    val secretKeySpec = new SecretKeySpec(key, "AES")
+    cipher.init(Cipher.ENCRYPT_MODE, secretKeySpec, ivSpec)
+    cipher
+  }
+
+  def aesDecryptCipher(key: Array[Byte], iv: Array[Byte]): Cipher = {
+    val ivSpec = new IvParameterSpec(iv)
+    val cipher = Cipher.getInstance("AES/CTR/NoPadding ", "BC")
+    val secretKeySpec = new SecretKeySpec(key, "AES")
+    cipher.init(Cipher.DECRYPT_MODE, secretKeySpec, ivSpec)
+    cipher
+  }
+
   case class KeyPair(pub: BinaryData, priv: BinaryData)
 
   lazy val rand = new SecureRandom()
