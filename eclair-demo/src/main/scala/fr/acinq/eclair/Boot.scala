@@ -23,4 +23,6 @@ object Boot extends App with Logging {
 
   val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
 
+  val register = system.actorOf(Props[RegisterActor], name = "register")
+
 }
