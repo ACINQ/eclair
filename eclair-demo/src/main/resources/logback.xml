@@ -46,7 +46,9 @@
         </encoder>
     </appender>
 
-    <root level="DEBUG">
+    <logger name="fr.acinq.eclair" level="DEBUG" />
+
+    <root level="INFO">
         <appender-ref ref="CHANNEL"/>
         <appender-ref ref="BLOCKCHAIN"/>
         <appender-ref ref="CONSOLE"/>
