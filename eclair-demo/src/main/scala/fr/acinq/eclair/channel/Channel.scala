@@ -245,26 +245,27 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams, anchorInput)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, commitmentFee)
       val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
-      log.info(s"anchor txid=${anchorTx.hash}")
+      log.info(s"anchor txid=${anchorTx.txid}")
       // we fund the channel with the anchor tx, so the money is ours
-      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - ourParams.commitmentFee, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide((anchorInput.amount - ourParams.commitmentFee) * 1000, 0, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
-      them ! open_anchor(anchorTx.hash, anchorOutputIndex, anchorInput.amount, ourSigForThem)
+      them ! open_anchor(anchorTx.txid, anchorOutputIndex, anchorInput.amount, ourSigForThem)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, Commitment(0, ourCommitTx, state, theirRevocationHash))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_ANCHOR) {
-    case Event(open_anchor(anchorTxid, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>
+    case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>
+      val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
       // they fund the channel with their anchor tx, so the money is theirs
-      val state = ChannelState(them = ChannelOneSide(anchorAmount - ourParams.commitmentFee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide((anchorAmount - ourParams.commitmentFee) * 1000, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTxid, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
+      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
       val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx, theirSig)
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTxid, anchorOutputIndex) -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(OutPoint(anchorTxHash, anchorOutputIndex) -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       ok match {
         case false =>
           them ! error(Some("Bad signature"))
@@ -288,8 +289,8 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
           them ! error(Some("Bad signature"))
           goto(CLOSED)
         case true =>
-          blockchain ! WatchConfirmed(self, anchorTx.hash, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTx.hash, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
+          blockchain ! WatchConfirmed(self, anchorTx.txid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
+          blockchain ! WatchSpent(self, anchorTx.txid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           blockchain ! Publish(anchorTx)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, commitment.copy(tx = signedCommitTx))
       }
@@ -299,7 +300,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   when(OPEN_WAITING_THEIRANCHOR) {
     case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, shaChain, commitment)) =>
-      val anchorTxId = commitment.tx.txIn(0).outPoint.hash // commit tx only has 1 input, which is the anchor
+      val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
       blockchain ! WatchLost(self, anchorTxId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       unstashAll()
@@ -337,7 +338,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   when(OPEN_WAITING_OURANCHOR) {
     case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ourParams, theirParams, shaChain, commitment)) =>
-      val anchorTxId = commitment.tx.txIn(0).outPoint.hash // commit tx only has 1 input, which is the anchor
+      val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
       blockchain ! WatchLost(self, anchorTxId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       unstashAll()
@@ -448,7 +449,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
     case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       commitment.state.htlc_receive(htlc) match {
-        case newState if (newState.them.pay < 0) =>
+        case newState if (newState.them.pay_msat < 0) =>
           // insufficient funds
           them ! update_decline_htlc(InsufficientFunds(funding(None)))
           stay
@@ -727,7 +728,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
           goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, ourCommitPublished = Some(d.commitment.tx))
         case true =>
           them ! close_channel_ack()
-          blockchain ! WatchConfirmed(self, signedFinalTx.hash, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+          blockchain ! WatchConfirmed(self, signedFinalTx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
           blockchain ! Publish(signedFinalTx)
           goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(signedFinalTx))
       }
@@ -906,7 +907,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
     // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
     val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, commitment.state.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-    val anchorTxId = commitment.tx.txIn(0).outPoint.hash // commit tx only has 1 input, which is the anchor
+    val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
     // we need to watch for BITCOIN_CLOSE_DONE with what we have here, because they may never answer with the fully signed closing tx and still publish it
     blockchain ! WatchConfirmedBasedOnOutputs(self, anchorTxId, theirFinalTx.txOut, ourParams.minDepth, BITCOIN_CLOSE_DONE)
     close_channel(ourSigForThem, cmd.fee)
@@ -919,7 +920,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
     val ourFinalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, commitment.state)
     val ourSig = Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
     val signedFinalTx = ourFinalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
-    blockchain ! WatchConfirmed(self, signedFinalTx.hash, ourParams.minDepth, BITCOIN_CLOSE_DONE)
+    blockchain ! WatchConfirmed(self, signedFinalTx.txid, ourParams.minDepth, BITCOIN_CLOSE_DONE)
     blockchain ! Publish(signedFinalTx)
     (signedFinalTx, close_channel_complete(ourSigForThem))
   }

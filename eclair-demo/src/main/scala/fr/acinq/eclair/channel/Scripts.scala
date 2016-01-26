@@ -105,8 +105,9 @@ object Scripts {
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.us.pay, publicKeyScript = pay2sh(redeemScript)),
-        TxOut(amount = channelState.them.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
+        // TODO : is that the correct way to handle sub-satoshi balances ?
+        TxOut(amount = channelState.us.pay_msat / 1000, publicKeyScript = pay2sh(redeemScript)),
+        TxOut(amount = channelState.them.pay_msat / 1000, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
       ),
       lockTime = 0)
 
@@ -136,8 +137,8 @@ object Scripts {
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = channelState.us.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
+        TxOut(amount = channelState.them.pay_msat / 1000, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = channelState.us.pay_msat / 1000, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
       lockTime = 0))
   }
 
@@ -145,7 +146,7 @@ object Scripts {
 
   def initialFunding(a: open_channel, b: open_channel, anchor: open_anchor, fee: Long): ChannelState = {
     require(isFunder(a) ^ isFunder(b))
-    val (c1, c2) = ChannelOneSide(pay = anchor.amount - fee, fee = fee, Seq.empty[update_add_htlc]) -> ChannelOneSide(0, 0, Seq.empty[update_add_htlc])
+    val (c1, c2) = ChannelOneSide(pay_msat = anchor.amount - fee, fee_msat = fee, Seq.empty[update_add_htlc]) -> ChannelOneSide(0, 0, Seq.empty[update_add_htlc])
     if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 
