@@ -31,7 +31,7 @@ class ClaimSentHtlcSpec extends FunSuite {
     val revokeCommitHash = Crypto.sha256(revokeCommit)
   }
 
-  val htlcScript = scriptPubKeyHtlcSend(Alice.finalPubKey, Bob.finalPubKey, 10, 1000, 2000, Alice.revokeCommitHash, Alice.Rhash)
+  val htlcScript = scriptPubKeyHtlcSend(Alice.finalPubKey, Bob.finalPubKey, 1000, 2000, Alice.revokeCommitHash, Alice.Rhash)
 
   // this tx sends money to our HTLC
   val tx = Transaction(

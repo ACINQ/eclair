@@ -32,7 +32,7 @@ class ClaimReceivedHtlcSpec extends FunSuite {
     val revokeCommitHash = Crypto.sha256(revokeCommit)
   }
 
-  val htlcScript = scriptPubKeyHtlcReceive(Alice.finalPubKey, Bob.finalPubKey, 10, 1000, 2000, Bob.revokeCommitHash, Bob.Rhash)
+  val htlcScript = scriptPubKeyHtlcReceive(Alice.finalPubKey, Bob.finalPubKey, 1000, 2000, Bob.revokeCommitHash, Bob.Rhash)
 
   // this tx sends money to our HTLC
   val tx = Transaction(

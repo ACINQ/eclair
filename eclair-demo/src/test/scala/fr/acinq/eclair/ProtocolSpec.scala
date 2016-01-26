@@ -95,7 +95,7 @@ class ProtocolSpec extends FlatSpec {
         txIn = TxIn(OutPoint(commitTx, 0), Array.emptyByteArray, 0xffffffffL) :: Nil,
         txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash160(Bob.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
         lockTime = 0)
-      val redeemScript = redeemSecretOrDelay(ours.finalKey, theirs.delay, theirs.finalKey, Bob.H)
+      val redeemScript = redeemSecretOrDelay(ours.finalKey, locktime2long_csv(theirs.delay), theirs.finalKey, Bob.H)
       val sig = Transaction.signInput(tx, 0, Script.write(redeemScript), SIGHASH_ALL, Bob.finalKey)
       val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Bob.R) :: OP_PUSHDATA(Script.write(redeemScript)) :: Nil
       tx.updateSigScript(0, Script.write(sigScript))

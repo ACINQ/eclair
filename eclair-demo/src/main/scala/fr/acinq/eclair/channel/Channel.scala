@@ -250,7 +250,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide((anchorInput.amount - ourParams.commitmentFee) * 1000, 0, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
-      them ! open_anchor(anchorTx.txid, anchorOutputIndex, anchorInput.amount, ourSigForThem)
+      them ! open_anchor(anchorTx.hash, anchorOutputIndex, anchorInput.amount, ourSigForThem)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, Commitment(0, ourCommitTx, state, theirRevocationHash))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
