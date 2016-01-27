@@ -57,12 +57,12 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     node ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
     val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
     // we fund the channel with the anchor tx, so the money is ours
-    val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount - ourParams.commitmentFee, 0, Seq()))
+    val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount * 1000- ourParams.commitmentFee * 1000, ourParams.commitmentFee * 1000, Seq()))
     // we build our commitment tx, leaving it unsigned
-    val ourCommitTx = makeCommitTx(ourFinalPubKey, theirParams.finalPubKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, ourRevocationHash, state)
+    val ourCommitTx = makeCommitTx(ourFinalPubKey, theirParams.finalPubKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, ourRevocationHash, state)
     channelDesc = channelDesc.copy(ourCommitment = Some(Commitment(0, ourCommitTx, state, theirRevocationHash)))
     // then we build their commitment tx and sign it
-    val theirCommitTx = makeCommitTx(theirParams.finalPubKey, ourFinalPubKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state.reverse)
+    val theirCommitTx = makeCommitTx(theirParams.finalPubKey, ourFinalPubKey, theirParams.delay, anchorTx.hash, anchorOutputIndex, theirRevocationHash, state.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
     node ! CMD_GETSTATE // node is in OPEN_WAIT_FOR_ANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
@@ -98,7 +98,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     node ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WONT_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
     val their_open_anchor = expectMsgClass(classOf[open_anchor])
     // we fund the channel with the anchor tx, so the money is ours
-    val state = ChannelState(them = ChannelOneSide(their_open_anchor.amount - ourParams.commitmentFee, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+    val state = ChannelState(them = ChannelOneSide(their_open_anchor.amount * 1000 - ourParams.commitmentFee * 1000, ourParams.commitmentFee * 1000, Seq()), us = ChannelOneSide(0, 0, Seq()))
     // we build our commitment tx, leaving it unsigned
     val ourCommitTx = makeCommitTx(ourFinalPubKey, theirParams.finalPubKey, theirParams.delay, their_open_anchor.txid, their_open_anchor.outputIndex, ourRevocationHash, state)
     channelDesc = channelDesc.copy(ourCommitment = Some(Commitment(0, ourCommitTx, state, theirRevocationHash)))

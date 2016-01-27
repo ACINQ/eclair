@@ -14,11 +14,11 @@ class Server extends Actor with ActorLogging {
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Bind(self, new InetSocketAddress("localhost", 57776))
+  IO(Tcp) ! Bind(self, new InetSocketAddress("192.168.1.43", 45000))
 
   def receive = {
     case b @ Bound(localAddress) =>
-    // do some logging or setup ...
+      log.info(s"bound on $b")
 
     case CommandFailed(_: Bind) => context stop self
 

@@ -8,6 +8,7 @@ import org.scalatest.junit.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class ClaimReceivedHtlcSpec extends FunSuite {
+
   object Alice {
     val (_, commitKey) = Base58Check.decode("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g")
     val (_, finalKey) = Base58Check.decode("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA")
@@ -32,7 +33,7 @@ class ClaimReceivedHtlcSpec extends FunSuite {
     val revokeCommitHash = Crypto.sha256(revokeCommit)
   }
 
-  val htlcScript = scriptPubKeyHtlcReceive(Alice.finalPubKey, Bob.finalPubKey, 10, 1000, 2000, Bob.revokeCommitHash, Bob.Rhash)
+  val htlcScript = scriptPubKeyHtlcReceive(Alice.finalPubKey, Bob.finalPubKey, 1000, 2000, Bob.Rhash, Bob.revokeCommitHash)
 
   // this tx sends money to our HTLC
   val tx = Transaction(
@@ -55,13 +56,16 @@ class ClaimReceivedHtlcSpec extends FunSuite {
       txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = 2000)
 
-      val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Alice.finalKey)
-      val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Bob.R) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
-      val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
+    val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Alice.finalKey)
+    val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Bob.R) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
+    val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
 
-      val runner = new Script.Runner(new Script.Context(tx2, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
-      val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
-      assert(result)
+    val runner = new Script.Runner(
+      new Script.Context(tx2, 0),
+      ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY
+    )
+    val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
+    assert(result)
   }
 
   test("Blob can spend this HTLC after a delay") {
@@ -72,13 +76,13 @@ class ClaimReceivedHtlcSpec extends FunSuite {
       lockTime = 2000)
 
 
-      val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Bob.finalKey)
-      val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Array.emptyByteArray) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
-      val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
+    val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Bob.finalKey)
+    val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Array.emptyByteArray) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
+    val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
 
-      val runner = new Script.Runner(new Script.Context(tx2, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
-      val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
-      assert(result)
+    val runner = new Script.Runner(new Script.Context(tx2, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
+    val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
+    assert(result)
   }
 
   test("Blob can spend this HTLC right away if he knows the revocation hash") {

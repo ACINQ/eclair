@@ -3,20 +3,33 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import lightning.{update_add_htlc, open_anchor, open_channel}
+import lightning.locktime.Locktime.{Seconds, Blocks}
+import lightning.{locktime, update_add_htlc, open_anchor, open_channel}
 
 /**
   * Created by PM on 21/01/2016.
   */
 object Scripts {
+
+  def locktime2long_csv(in: locktime): Long = in match {
+    case locktime(Blocks(blocks)) => blocks
+    // FIXME : we adopt Element's alpha convention while BIP68 is not enabled
+    case locktime(Seconds(seconds)) => 500000000 + seconds
+  }
+
+  def locktime2long_cltv(in: locktime): Long = in match {
+    case locktime(Blocks(blocks)) => blocks
+    case locktime(Seconds(seconds)) => seconds
+  }
+
   def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0).toList, b.dropWhile(_ == 0).toList) < 0
 
-  def lessThan(output1: TxOut, output2: TxOut) : Boolean = (output1, output2) match {
+  def lessThan(output1: TxOut, output2: TxOut): Boolean = (output1, output2) match {
     case (TxOut(amount1, script1), TxOut(amount2, script2)) if amount1 == amount2 => memcmp(script1.toList, script2.toList) < 0
     case (TxOut(amount1, _), TxOut(amount2, _)) => amount1 < amount2
   }
 
-  def permuteOutputs(tx: Transaction) : Transaction = tx.copy(txOut = tx.txOut.sortWith(lessThan))
+  def permuteOutputs(tx: Transaction): Transaction = tx.copy(txOut = tx.txOut.sortWith(lessThan))
 
   def multiSig2of2(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
     BinaryData(Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2)))
@@ -49,7 +62,7 @@ object Scripts {
     (signedTx, 0)
   }
 
-  def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData) : BinaryData = Script.write(pay2sh(multiSig2of2(pubkey1, pubkey2)))
+  def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = Script.write(pay2sh(multiSig2of2(pubkey1, pubkey2)))
 
   def redeemSecretOrDelay(delayedKey: BinaryData, lockTime: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
@@ -63,7 +76,7 @@ object Scripts {
     // @formatter:on
   }
 
-  def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, value: Long, htlc_abstimeout: Long, locktime: Long, commit_revoke: BinaryData, rhash: BinaryData): Seq[ScriptElt] = {
+  def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, htlc_abstimeout: Long, locktime: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
@@ -77,7 +90,7 @@ object Scripts {
     // @formatter:on
   }
 
-  def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, value: Long, htlc_abstimeout: Long, locktime: Long, commit_revoke: BinaryData, rhash: BinaryData): Seq[ScriptElt] = {
+  def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, htlc_abstimeout: Long, locktime: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
@@ -94,28 +107,29 @@ object Scripts {
     // @formatter:on
   }
 
-  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, channelState: ChannelState): Transaction =
+  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, channelState: ChannelState): Transaction =
     makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, revocationHash, channelState)
 
   // this way it is easy to reuse the inputTx of an existing commitmentTx
-  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Long, revocationHash: BinaryData, channelState: ChannelState): Transaction = {
-    val redeemScript = redeemSecretOrDelay(ourFinalKey, theirDelay, theirFinalKey, revocationHash: BinaryData)
+  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, channelState: ChannelState): Transaction = {
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
 
     val tx = Transaction(
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.us.pay, publicKeyScript = pay2sh(redeemScript)),
-        TxOut(amount = channelState.them.pay, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
+        // TODO : is that the correct way to handle sub-satoshi balances ?
+        TxOut(amount = channelState.us.pay_msat / 1000, publicKeyScript = pay2sh(redeemScript)),
+        TxOut(amount = channelState.them.pay_msat / 1000, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil))
       ),
       lockTime = 0)
 
-    val sendOuts = channelState.them.htlcs.map(htlc => {
-      TxOut(htlc.amountMsat, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, htlc.amountMsat, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
-    })
-    val receiveOuts = channelState.us.htlcs.map(htlc => {
-      TxOut(htlc.amountMsat, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, htlc.amountMsat, htlc.expiry, theirDelay, htlc.rHash, htlc.revocationHash)))
-    })
+    val sendOuts = channelState.them.htlcs.map(htlc =>
+      TxOut(htlc.amountMsat / 1000, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
+    )
+    val receiveOuts = channelState.us.htlcs.map(htlc =>
+      TxOut(htlc.amountMsat / 1000, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
+    )
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
     permuteOutputs(tx1)
   }
@@ -136,8 +150,8 @@ object Scripts {
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.them.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = channelState.us.pay, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
+        TxOut(amount = channelState.them.pay_msat / 1000, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = channelState.us.pay_msat / 1000, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
       lockTime = 0))
   }
 
@@ -145,7 +159,7 @@ object Scripts {
 
   def initialFunding(a: open_channel, b: open_channel, anchor: open_anchor, fee: Long): ChannelState = {
     require(isFunder(a) ^ isFunder(b))
-    val (c1, c2) = ChannelOneSide(pay = anchor.amount - fee, fee = fee, Seq.empty[update_add_htlc]) -> ChannelOneSide(0, 0, Seq.empty[update_add_htlc])
+    val (c1, c2) = ChannelOneSide(pay_msat = anchor.amount - fee, fee_msat = fee, Seq.empty[update_add_htlc]) -> ChannelOneSide(0, 0, Seq.empty[update_add_htlc])
     if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 

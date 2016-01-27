@@ -72,12 +72,6 @@ package object eclair {
     Crypto.encodeSignature(r, s) :+ SIGHASH_ALL.toByte
   }
 
-  implicit def locktime2long(in: locktime): Long = in match {
-    case locktime(Blocks(blocks)) => blocks
-    // FIXME : we adopt Element's alpha convention while BIP68 is not enabled
-    case locktime(Seconds(seconds)) => 500000000 + seconds
-  }
-
   @tailrec
   def memcmp(a: List[Byte], b: List[Byte]): Int = (a, b) match {
     case (x, y) if (x.length != y.length) => x.length - y.length

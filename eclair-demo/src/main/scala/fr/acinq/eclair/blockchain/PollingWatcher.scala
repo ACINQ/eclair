@@ -26,7 +26,7 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
 
     case w: Watch if !watches.contains(w) =>
       log.info(s"adding watch $w for $sender")
-      val cancellable = context.system.scheduler.schedule(2 seconds, 2 minutes)(w match {
+      val cancellable = context.system.scheduler.schedule(2 seconds, 30 seconds)(w match {
           case w@WatchConfirmed(channel, txId, minDepth, event) =>
             getTxConfirmations(client, txId.toString).map(_ match {
               case Some(confirmations) if confirmations >= minDepth =>
@@ -35,13 +35,14 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
               case _ => {}
             })
           case w@WatchSpent(channel, txId, outputIndex, minDepth, event) =>
-            isUnspent(client, txId.toString, outputIndex).map(_ match {
-              case false =>
+            for {
+              conf <- getTxConfirmations(client, txId.toString)
+              unspent <- isUnspent(client, txId.toString, outputIndex)
+            } yield {if (conf.isDefined && !unspent) {
                 // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
                 channel ! event
                 self !('remove, w)
-              case _ => {}
-            })
+            } else {}}
         })
       context.become(watching(watches + (w -> cancellable)))
 
