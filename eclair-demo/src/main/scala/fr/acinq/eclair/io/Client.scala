@@ -30,5 +30,5 @@ class Client(remote: InetSocketAddress) extends Actor with ActorLogging {
 
 object Client extends App {
   implicit val system = ActorSystem("system")
-  val client = system.actorOf(Props(classOf[Client], new InetSocketAddress("192.168.1.34", 48000)), "server")
+  val client = system.actorOf(Props(classOf[Client], new InetSocketAddress("192.168.1.34", 48000)), "client")
 }

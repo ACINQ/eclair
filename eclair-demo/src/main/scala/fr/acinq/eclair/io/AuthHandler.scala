@@ -74,8 +74,8 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_anchor: Boolean) ext
       log.info(s"initializing channel actor")
       val anchorInput_opt = if (our_anchor) Some(AnchorInput(1000000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))) else None
       val channel_params = OurChannelParams(Globals.default_locktime, Globals.commit_priv, Globals.final_priv, Globals.default_mindepth, Globals.default_commitfee, "sha-seed".getBytes())
-      val blockchain = context.system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
-      val channel = context.system.actorOf(Props(new Channel(blockchain, channel_params, anchorInput_opt)), name = "alice")
+      //val blockchain = context.system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
+      val channel = context.actorOf(Props(new Channel(blockchain, channel_params, anchorInput_opt)), name = "channel")
       channel ! INPUT_NONE
       goto(IO_NORMAL) using Normal(channel, s)
   }

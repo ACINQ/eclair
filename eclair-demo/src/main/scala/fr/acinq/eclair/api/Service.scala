@@ -2,21 +2,23 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorSystem, Props, Actor}
-import com.google.common.util.concurrent.Service.State
-import fr.acinq.eclair.io.Client
-import fr.acinq.flipcoin.wallet.BitcoinJsonRPCBody
+import akka.actor.{ActorRef, ActorSystem, Props, Actor}
+import akka.util.Timeout
+import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair._
+import fr.acinq.eclair.channel.CMD_SEND_HTLC_FULFILL
+import fr.acinq.eclair.{Boot, GetChannels, CreateChannel}
 import grizzled.slf4j.Logging
-import org.bitcoinj.params.TestNet3Params
 import org.json4s.JsonAST.{JString, JDouble, JBool, JObject}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import spray.http.{ContentTypes, HttpEntity, StatusCodes, HttpResponse}
 import spray.routing.HttpService
-import spray.routing.authentication.BasicAuth
 
 import scala.concurrent.{Future, ExecutionContext}
+import scala.concurrent.duration._
 import scala.util.{Failure, Success}
+import akka.pattern.ask
 
 /**
   * Created by PM on 25/01/2016.
@@ -43,8 +45,9 @@ trait Service extends HttpService with Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val formats = org.json4s.DefaultFormats
+  implicit val timeout = Timeout(30 seconds)
 
-  implicit val system: ActorSystem
+  def register: ActorRef
 
   val route =
     path(RestPath) { path =>
@@ -54,7 +57,15 @@ trait Service extends HttpService with Logging {
             val json = parse(body).extract[JsonRPCBody]
             val f_res: Future[JValue] = json match {
               case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
-                val client = system.actorOf(Props(classOf[Client], new InetSocketAddress(host, port.toInt)), s"client-$host:$port")
+                register ! CreateChannel(new InetSocketAddress(host, port.toInt))
+                Future.successful(JNothing)
+              case JsonRPCBody(_, _, "list", _) =>
+                (register ? GetChannels).mapTo[Iterable[ActorRef]].map(x => JArray(x.toList.map(a => JString(a.toString()))))
+              case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
+                Boot.system.actorSelection(channel).resolveOne().map(actor => {
+                  actor ! CMD_SEND_HTLC_FULFILL(BinaryData(r))
+                  JString("ok")
+                })
               case _ => Future.failed(new RuntimeException("method not found"))
             }
             onComplete(f_res) {

@@ -1,9 +1,13 @@
 package fr.acinq.eclair
 
-import akka.actor.{Props, ActorSystem}
+import akka.actor.{ActorRef, Props, ActorSystem}
+import akka.io.IO
 import akka.util.Timeout
+import fr.acinq.eclair.api.ServiceActor
 import fr.acinq.eclair.blockchain.PollingWatcher
+import fr.acinq.eclair.io.Server
 import grizzled.slf4j.Logging
+import spray.can.Http
 import scala.concurrent.{ExecutionContext, Await}
 import scala.concurrent.duration._
 import Globals._
@@ -25,4 +29,12 @@ object Boot extends App with Logging {
 
   val register = system.actorOf(Props[RegisterActor], name = "register")
 
+  val server = system.actorOf(Props[Server], "server")
+
+  val api = system.actorOf(Props(new ServiceActor {
+    override val register: ActorRef = Boot.register
+  }), "api")
+
+  // start a new HTTP server on port 8080 with our service actor as the handler
+  IO(Http) ! Http.Bind(api, "localhost", 8080)
 }
