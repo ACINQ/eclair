@@ -247,7 +247,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
       log.info(s"anchor txid=${anchorTx.txid}")
       // we fund the channel with the anchor tx, so the money is ours
-      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide((anchorInput.amount - ourParams.commitmentFee) * 1000, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide((anchorInput.amount - ourParams.commitmentFee) * 1000, ourParams.commitmentFee * 1000, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, anchorInput.amount, ourSigForThem)
@@ -260,7 +260,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
       // they fund the channel with their anchor tx, so the money is theirs
-      val state = ChannelState(them = ChannelOneSide((anchorAmount - ourParams.commitmentFee) * 1000, 0, Seq()), us = ChannelOneSide(0, 0, Seq()))
+      val state = ChannelState(them = ChannelOneSide((anchorAmount - ourParams.commitmentFee) * 1000, ourParams.commitmentFee * 1000, Seq()), us = ChannelOneSide(0, 0, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
