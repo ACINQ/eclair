@@ -9,12 +9,12 @@ import fr.acinq.eclair.{CreateChannel, Boot}
 /**
  * Created by PM on 27/10/2015.
  */
-class Server extends Actor with ActorLogging {
+class Server(address: InetSocketAddress) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Bind(self, new InetSocketAddress("192.168.1.43", 45000))
+  IO(Tcp) ! Bind(self, address)
 
   def receive = {
     case b @ Bound(localAddress) =>
@@ -33,5 +33,8 @@ class Server extends Actor with ActorLogging {
 object Server extends App {
   implicit val system = ActorSystem("system")
   val server = system.actorOf(Props[Server], "server")
+
+  def props(address: InetSocketAddress): Props = Props(classOf[Server], address)
+  def props(address: String, port: Int): Props = props(new InetSocketAddress(address, port))
 }
 

@@ -5,6 +5,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, Props, ActorSystem}
 import akka.io.IO
 import akka.util.Timeout
+import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.api.ServiceActor
 import fr.acinq.eclair.blockchain.PollingWatcher
 import fr.acinq.eclair.io.{Client, Server}
@@ -24,12 +25,13 @@ object Boot extends App with Logging {
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
+  val config = ConfigFactory.load()
   val testnet = Await.result(bitcoin_client.invoke("getinfo").map(json => (json \ "testnet").extract[Boolean]), 10 seconds)
   assert(testnet, "you should be on testnet")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
   val register = system.actorOf(Props[RegisterActor], name = "register")
-  val server = system.actorOf(Props[Server], "server")
+  val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
   val api = system.actorOf(Props(new ServiceActor {
     override val register: ActorRef = Boot.register
 
@@ -37,5 +39,5 @@ object Boot extends App with Logging {
   }), "api")
 
   // start a new HTTP server on port 8080 with our service actor as the handler
-  IO(Http) ! Http.Bind(api, "localhost", 8080)
+  IO(Http) ! Http.Bind(api, config.getString("eclair.api.address"), config.getInt("eclair.api.port"))
 }
