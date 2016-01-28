@@ -1,13 +1,16 @@
 package fr.acinq.eclair
 
-import java.net.InetSocketAddress
+import akka.actor._
+import akka.util.Timeout
+import fr.acinq.eclair.channel.{CMD_GETINFO, ChannelState}
+import fr.acinq.eclair.io.AuthHandler
+import akka.pattern.ask
 
-import akka.actor.{Props, Actor, ActorLogging}
-import fr.acinq.eclair.channel.ChannelState
-import fr.acinq.eclair.io.Client
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration._
 
 // @formatter:off
-case class CreateChannel(addr: InetSocketAddress)
+case class CreateChannel(connection: ActorRef, our_anchor: Boolean)
 case class GetChannels()
 case class RegisterChannel(nodeId: String, state: ChannelState)
 // @formatter:on
@@ -18,13 +21,19 @@ case class RegisterChannel(nodeId: String, state: ChannelState)
   */
 class RegisterActor extends Actor with ActorLogging {
 
+  var i = 0
+  implicit val timeout = Timeout(30 seconds)
+  import ExecutionContext.Implicits.global
+
   context.become(main(Map()))
 
   override def receive: Receive = ???
 
   def main(channels: Map[String, ChannelState]): Receive = {
-    case CreateChannel(addr) => context.actorOf(Props(classOf[Client], addr))
-    case GetChannels => sender() ! context.children
+    case CreateChannel(connection, our_anchor) => context.actorOf(Props(classOf[AuthHandler], connection, Boot.blockchain, our_anchor), name = s"handler-${i = i + 1; i}")
+    case GetChannels =>
+      val s = sender()
+      Future.sequence(context.children.map(c => c ? CMD_GETINFO)).map(s ! _)
     case RegisterChannel(nodeId, state) => context.become(main(channels + (nodeId -> state)))
   }
 

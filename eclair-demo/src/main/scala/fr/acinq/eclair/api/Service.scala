@@ -2,16 +2,17 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, ActorSystem, Props, Actor}
+import akka.actor.{ActorRef, Actor}
 import akka.util.Timeout
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.CMD_SEND_HTLC_FULFILL
-import fr.acinq.eclair.{Boot, GetChannels, CreateChannel}
+import fr.acinq.eclair.channel.{RES_GETINFO, CMD_SEND_HTLC_FULFILL}
+import fr.acinq.eclair.{Boot, GetChannels}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JString, JDouble, JBool, JObject}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
+import org.json4s.jackson.Serialization
 import spray.http.{ContentTypes, HttpEntity, StatusCodes, HttpResponse}
 import spray.routing.HttpService
 
@@ -39,14 +40,18 @@ abstract class ServiceActor extends Actor with Service {
 }
 
 case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[JValue])
+case class Error(code: Int, message: String)
+case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 
+//TODO : use Json4sSupport ?
 trait Service extends HttpService with Logging {
 
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
-  implicit val formats = org.json4s.DefaultFormats
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer
   implicit val timeout = Timeout(30 seconds)
 
+  def connect(addr: InetSocketAddress): Unit
   def register: ActorRef
 
   val route =
@@ -55,26 +60,28 @@ trait Service extends HttpService with Logging {
         entity(as[String]) {
           body =>
             val json = parse(body).extract[JsonRPCBody]
-            val f_res: Future[JValue] = json match {
+            val f_res: Future[AnyRef] = json match {
               case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
-                register ! CreateChannel(new InetSocketAddress(host, port.toInt))
-                Future.successful(JNothing)
+                //TODO : anchor_amount not implemented
+                connect(new InetSocketAddress(host, port.toInt))
+                Future.successful("")
               case JsonRPCBody(_, _, "list", _) =>
-                (register ? GetChannels).mapTo[Iterable[ActorRef]].map(x => JArray(x.toList.map(a => JString(a.toString()))))
+                (register ? GetChannels).mapTo[Iterable[RES_GETINFO]]
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
                 Boot.system.actorSelection(channel).resolveOne().map(actor => {
                   actor ! CMD_SEND_HTLC_FULFILL(BinaryData(r))
-                  JString("ok")
+                  "ok"
                 })
               case _ => Future.failed(new RuntimeException("method not found"))
             }
+
             onComplete(f_res) {
-              case Success(res) => complete(HttpResponse(StatusCodes.OK, entity = HttpEntity(ContentTypes.`application/json`, pretty(
-                JObject(("result", res) ::("error", JNull) ::("id", JString(json.id)) :: Nil)
+              case Success(res) => complete(HttpResponse(StatusCodes.OK, entity = HttpEntity(ContentTypes.`application/json`, Serialization.writePretty(
+                JsonRPCRes(res, None, json.id)
               ))))
-              case Failure(t) => complete(HttpResponse(StatusCodes.InternalServerError, entity = HttpEntity(ContentTypes.`application/json`, pretty(
-                JObject(("result", JNull) ::("error", JObject(("code", JInt(-1)) ::("message", JString(t.getMessage)) :: Nil)) ::("id", JString(json.id)) :: Nil)
-              ))))
+              case Failure(t) => complete(HttpResponse(StatusCodes.InternalServerError, entity = HttpEntity(ContentTypes.`application/json`, Serialization.writePretty(
+                JsonRPCRes(null, Some(Error(-1, t.getMessage)), json.id))
+              )))
             }
         }
       }
