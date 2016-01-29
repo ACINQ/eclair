@@ -6,9 +6,11 @@ import akka.actor.{ActorRef, Actor}
 import akka.util.Timeout
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{RES_GETINFO, CMD_SEND_HTLC_FULFILL}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.{Boot, GetChannels}
 import grizzled.slf4j.Logging
+import lightning.locktime
+import lightning.locktime.Locktime.Seconds
 import org.json4s.JsonAST.{JString, JDouble, JBool, JObject}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
@@ -54,6 +56,13 @@ trait Service extends HttpService with Logging {
   def connect(addr: InetSocketAddress): Unit
   def register: ActorRef
 
+  def sendCommand(channel: String, cmd: Command): Future[String] = {
+    Boot.system.actorSelection(channel).resolveOne().map(actor => {
+      actor ! cmd
+      "ok"
+    })
+  }
+
   val route =
     path(RestPath) { path =>
       post {
@@ -67,11 +76,12 @@ trait Service extends HttpService with Logging {
                 Future.successful("")
               case JsonRPCBody(_, _, "list", _) =>
                 (register ? GetChannels).mapTo[Iterable[RES_GETINFO]]
+              case JsonRPCBody(_, _, "addhtlc", JString(channel) :: JInt(amount) :: JString(rhash) :: JInt(expiry) :: Nil) =>
+                sendCommand(channel, CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt))))
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
-                Boot.system.actorSelection(channel).resolveOne().map(actor => {
-                  actor ! CMD_SEND_HTLC_FULFILL(BinaryData(r))
-                  "ok"
-                })
+                sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
+              case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
+                sendCommand(channel, CMD_CLOSE(0))
               case _ => Future.failed(new RuntimeException("method not found"))
             }
 

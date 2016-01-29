@@ -138,7 +138,7 @@ final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command
-final case class RES_GETINFO(state: State, data: Data)
+final case class RES_GETINFO(name: String, state: State, data: Data)
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -852,7 +852,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
       stay
 
     case Event(CMD_GETINFO, _) =>
-      sender ! RES_GETINFO(stateName, stateData)
+      sender ! RES_GETINFO(self.path.toStringWithoutAddress, stateName, stateData)
       stay
 
     // TODO : them ! error(Some("Unexpected message")) ?
