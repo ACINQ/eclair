@@ -163,4 +163,8 @@ object Scripts {
     if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 
+  def findPublicKeyScriptIndex(tx: Transaction, publicKeyScript: BinaryData): Option[Int] =
+    tx.txOut.zipWithIndex.find {
+      case (TxOut(_, script), _) => script == publicKeyScript
+    } map (_._2)
 }

@@ -154,7 +154,10 @@ final case class RES_GETINFO(name: String, state: State, data: Data)
 sealed trait Data
 case object Nothing extends Data
 final case class AnchorInput(amount: Long, previousTxOutput: OutPoint, signData: SignData) extends Data
-final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, commitmentFee: Long, shaSeed: BinaryData)
+final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, commitmentFee: Long, shaSeed: BinaryData) {
+  val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
+  val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
+}
 final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], commitmentFee: Long)
 final case class Commitment(index: Long, tx: Transaction, state: ChannelState, theirRevocationHash: sha256_hash)
 final case class UpdateProposal(index: Long, state: ChannelState)
@@ -186,11 +189,11 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 
 class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
 
-  val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(params.commitPrivKey.key.toByteArray)))
-  val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(params.finalPrivKey.key.toByteArray)))
+  val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(params.commitPubKey))
+  val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(params.finalPubKey))
 
-  log.info(s"commit pubkey: ${BinaryData(Crypto.publicKeyFromPrivateKey(params.commitPrivKey.key.toByteArray))}")
-  log.info(s"final pubkey: ${BinaryData(Crypto.publicKeyFromPrivateKey(params.finalPrivKey.key.toByteArray))}")
+  log.info(s"commit pubkey: ${params.commitPubKey}")
+  log.info(s"final pubkey: ${params.finalPubKey}")
 
   // TODO
   var them: ActorRef = null
