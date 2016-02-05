@@ -36,7 +36,7 @@ case object IO_NORMAL extends State
 
 // @formatter:on
 
-class AuthHandler(them: ActorRef, blockchain: ActorRef, our_anchor: Boolean) extends LoggingFSM[State, Data] with Stash {
+class AuthHandler(them: ActorRef, blockchain: ActorRef, our_anchor: Boolean, amount: Long) extends LoggingFSM[State, Data] with Stash {
 
   import AuthHandler._
 
@@ -71,7 +71,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_anchor: Boolean) ext
       log.info(s"their_nodeid: ${BinaryData(auth.nodeId.key.toByteArray)}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
       log.info(s"initializing channel actor")
-      val anchorInput_opt = if (our_anchor) Some(AnchorInput(1000000L, OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1), SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2))) else None
+      val anchorInput_opt = if (our_anchor)
+        Some(AnchorInput(amount))
+      else
+        None
       val channel_params = OurChannelParams(Globals.default_locktime, Globals.commit_priv, Globals.final_priv, Globals.default_mindepth, Globals.default_commitfee, "sha-seed".getBytes())
       val channel = context.actorOf(Props(new Channel(blockchain, channel_params, anchorInput_opt)), name = "channel")
       channel ! INPUT_NONE

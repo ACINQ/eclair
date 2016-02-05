@@ -56,6 +56,9 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
 
     case Publish(tx) =>
       log.info(s"publishing tx $tx")
+      PollingWatcher.publishTransaction(client, tx).onFailure {
+        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx))}")
+      }
   }
 }
 
@@ -128,6 +131,14 @@ object PollingWatcher {
 
   def signTransaction(client: BitcoinJsonRPCClient, tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] =
     signTransaction(client, Hex.toHexString(Transaction.write(tx)))
+
+  def publishTransaction(client: BitcoinJsonRPCClient, hex: String)(implicit ec: ExecutionContext): Future[String] =
+    client.invoke("sendrawtransaction", hex).map {
+      case JString(txid) => txid
+    }
+
+  def publishTransaction(client: BitcoinJsonRPCClient, tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
+    publishTransaction(client, Hex.toHexString(Transaction.write(tx)))
 }
 
 /*object MyTest extends App {

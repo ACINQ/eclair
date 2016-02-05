@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, LoggingFSM, Stash}
+import akka.pattern.pipe
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -10,8 +11,9 @@ import Scripts._
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
+import org.bouncycastle.util.encoders.Hex
 
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by PM on 20/08/2015.
@@ -153,7 +155,7 @@ final case class RES_GETINFO(name: String, state: State, data: Data)
 
 sealed trait Data
 case object Nothing extends Data
-final case class AnchorInput(amount: Long, previousTxOutput: OutPoint, signData: SignData) extends Data
+final case class AnchorInput(amount: Long) extends Data
 final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, commitmentFee: Long, shaSeed: BinaryData) {
   val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
@@ -171,6 +173,7 @@ trait CurrentCommitment {
 
 final case class DATA_OPEN_WAIT_FOR_OPEN_NOANCHOR(ourParams: OurChannelParams) extends Data
 final case class DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams: OurChannelParams, anchorInput: AnchorInput) extends Data
+final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, newCommitmentUnsigned: Commitment) extends Data
 final case class DATA_OPEN_WAITING(ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment) extends Data with CurrentCommitment
@@ -188,6 +191,7 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 // @formatter:on
 
 class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchorDataOpt: Option[AnchorInput]) extends LoggingFSM[State, Data] with Stash {
+  import context.dispatcher
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(params.commitPubKey))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(params.finalPubKey))
@@ -249,13 +253,17 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
   when(OPEN_WAIT_FOR_OPEN_WITHANCHOR) {
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN_WITHANCHOR(ourParams, anchorInput)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, commitmentFee)
-      val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, anchorInput.previousTxOutput, anchorInput.signData)
+      Anchor.makeAnchorTx(Globals.bitcoin_client, ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount).pipeTo(self)
+      stay using DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)
+
+    case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
-      // we fund the channel with the anchor tx, so the money is ours
-      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide((anchorInput.amount - ourParams.commitmentFee) * 1000, ourParams.commitmentFee * 1000, Seq()))
+      val amount = anchorTx.txOut(anchorOutputIndex).amount
+      val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide((amount - ourParams.commitmentFee) * 1000, ourParams.commitmentFee * 1000, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
-      them ! open_anchor(anchorTx.hash, anchorOutputIndex, anchorInput.amount, ourSigForThem)
+      log.info(s"our commit tx: ${Hex.toHexString(Transaction.write(ourCommitTx))}")
+      them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount, ourSigForThem)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, Commitment(0, ourCommitTx, state, theirRevocationHash))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)

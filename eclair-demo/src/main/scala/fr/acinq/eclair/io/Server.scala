@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import akka.io.{IO, Tcp}
+import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.{CreateChannel, Boot}
 
 /**
@@ -32,7 +33,8 @@ class Server(address: InetSocketAddress) extends Actor with ActorLogging {
 
 object Server extends App {
   implicit val system = ActorSystem("system")
-  val server = system.actorOf(Props[Server], "server")
+  val config = ConfigFactory.load()
+  val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
 
   def props(address: InetSocketAddress): Props = Props(classOf[Server], address)
   def props(address: String, port: Int): Props = props(new InetSocketAddress(address, port))

@@ -45,7 +45,7 @@ object Anchor extends App {
     val finalPub = Crypto.publicKeyFromPrivateKey(finalPriv)
   }
 
-  val amount = (0.5 * Coin).asInstanceOf[Long]
+  val amount = (0.06 * Coin).asInstanceOf[Long]
 
   val config = ConfigFactory.load()
   val bitcoind = new BitcoinJsonRPCClient(
@@ -54,14 +54,14 @@ object Anchor extends App {
     host = config.getString("eclair.bitcoind.address"),
     port = config.getInt("eclair.bitcoind.port"))
 
-  val (anchorTx, pos) = Await.result(makeAnchorTx(bitcoind, Alice.commitPub, Bob.commitPub, amount), 10 seconds)
+  val (anchorTx, pos) = (Transaction.read("010000000164345d5e5f6d3f8489740bc4e3f8bf8686b2ac221af48f0a2e88f601496182f1010000006a47304402204db8a977f275e74c92d28b18d82f09b5291111d0435cb3e653268a1d35dbbe02022074ada818ff9ea49ec613132423c42a5eecc223dbaa6ec1719a8de75539f659ca012103b8e06b059d35f1a3447ed834d265cb194f0f67dc50da30d18e569a40af697565feffffff02808d5b000000000017a91408bc5c0400edc31cbca9204fe1b8463b8c912f0187d99f0602000000001976a9148cda43313910281fe08a9d1659249e1f97152f8588ac00000000"), 0) //Await.result(makeAnchorTx(bitcoind, Alice.commitPub, Bob.commitPub, amount), 10 seconds)
   println(anchorTx)
-  println(Hex.toHexString(Transaction.write(anchorTx)))
+  println(s"anchor tx: ${Hex.toHexString(Transaction.write(anchorTx))}")
   bitcoind.client.close()
 
   val spending = Transaction(version = 1,
     txIn = TxIn(OutPoint(anchorTx, pos), Array.emptyByteArray, 0xffffffffL) :: Nil,
-    txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.commitPub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+    txOut = TxOut(amount - 10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.commitPub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
     lockTime = 0)
 
   val redeemScript = Scripts.multiSig2of2(Alice.commitPub, Bob.commitPub)
@@ -70,4 +70,5 @@ object Anchor extends App {
   val scriptSig = Scripts.sigScript2of2(sig1, sig2, Alice.commitPub, Bob.commitPub)
   val signedTx = spending.updateSigScript(0, scriptSig)
   Transaction.correctlySpends(signedTx, Seq(anchorTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+  println(s"spending tx: ${Hex.toHexString(Transaction.write(signedTx))}")
 }

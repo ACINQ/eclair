@@ -9,7 +9,7 @@ import fr.acinq.eclair.{CreateChannel, Boot}
 /**
  * Created by PM on 27/10/2015.
  */
-class Client(remote: InetSocketAddress) extends Actor with ActorLogging {
+class Client(remote: InetSocketAddress, amount: Long) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -22,7 +22,7 @@ class Client(remote: InetSocketAddress) extends Actor with ActorLogging {
     case c@Connected(remote, local) =>
       log.info(s"connected to $remote")
       val connection = sender()
-      Boot.register ! CreateChannel(connection, true)
+      Boot.register ! CreateChannel(connection, true, amount)
       // TODO : kill this actor ?
   }
 }

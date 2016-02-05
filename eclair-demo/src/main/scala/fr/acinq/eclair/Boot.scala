@@ -35,7 +35,7 @@ object Boot extends App with Logging {
   val api = system.actorOf(Props(new ServiceActor {
     override val register: ActorRef = Boot.register
 
-    override def connect(addr: InetSocketAddress): Unit = system.actorOf(Props(classOf[Client], addr))
+    override def connect(addr: InetSocketAddress, amount: Long): Unit = system.actorOf(Props(classOf[Client], addr, amount))
   }), "api")
 
   // start a new HTTP server on port 8080 with our service actor as the handler

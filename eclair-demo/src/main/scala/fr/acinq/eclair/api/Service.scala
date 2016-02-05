@@ -53,7 +53,7 @@ trait Service extends HttpService with Logging {
   implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer
   implicit val timeout = Timeout(30 seconds)
 
-  def connect(addr: InetSocketAddress): Unit
+  def connect(addr: InetSocketAddress, amount: Long): Unit // amount in satoshis
   def register: ActorRef
 
   def sendCommand(channel: String, cmd: Command): Future[String] = {
@@ -71,8 +71,7 @@ trait Service extends HttpService with Logging {
             val json = parse(body).extract[JsonRPCBody]
             val f_res: Future[AnyRef] = json match {
               case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
-                //TODO : anchor_amount not implemented
-                connect(new InetSocketAddress(host, port.toInt))
+                connect(new InetSocketAddress(host, port.toInt), anchor_amount.toLong)
                 Future.successful("")
               case JsonRPCBody(_, _, "list", _) =>
                 (register ? GetChannels).mapTo[Iterable[RES_GETINFO]]
