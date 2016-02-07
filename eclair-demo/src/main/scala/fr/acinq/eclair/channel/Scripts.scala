@@ -48,14 +48,9 @@ object Scripts {
 
   //TODO : this function does not handle the case where the anchor tx does not spend all previous tx output (meaning there is change)
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): (Transaction, Int) = {
-    val scriptPubKey = if (isLess(pubkey1, pubkey2))
-      Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
-    else
-      Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
-
     val tx = Transaction(version = 1,
       txIn = TxIn(outPoint = previousTxOutput, signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
-      txOut = TxOut(amount, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(hash160(scriptPubKey)) :: OP_EQUAL :: Nil) :: Nil,
+      txOut = TxOut(amount, publicKeyScript = pay2sh(multiSig2of2(pubkey1, pubkey2))) :: Nil,
       lockTime = 0)
     val signedTx = Transaction.sign(tx, Seq(signData))
     // we don't permute outputs because by convention the multisig output has index = 0
@@ -135,13 +130,14 @@ object Scripts {
   }
 
   /**
-    * This is a simple tx with a multisig input and two pay2pk output
+    * This is a simple tx with a multisig input and two pay2sh output
     *
-    * @param inputs
-    * @param ourFinalKey
-    * @param theirFinalKey
-    * @param channelState
-    * @return
+    * @param inputs inputs to include in the tx. In most cases, there's only one input that points to the output of
+    *               the anchor tx
+    * @param ourFinalKey our final public key
+    * @param theirFinalKey their final public key
+    * @param channelState channel state
+    * @return an unsigned "final" tx
     */
   def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
     // TODO : is this the proper behaviour ?
@@ -150,8 +146,9 @@ object Scripts {
       version = 1,
       txIn = inputs,
       txOut = Seq(
-        TxOut(amount = channelState.them.pay_msat / 1000, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(theirFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = channelState.us.pay_msat / 1000, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(ourFinalKey) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)),
+        TxOut(amount = channelState.them.pay_msat / 1000, publicKeyScript = pay2sh(OP_PUSHDATA(theirFinalKey) :: OP_CHECKSIG :: Nil)),
+        TxOut(amount = channelState.us.pay_msat / 1000, publicKeyScript = pay2sh(OP_PUSHDATA(ourFinalKey) :: OP_CHECKSIG :: Nil))
+      ),
       lockTime = 0))
   }
 

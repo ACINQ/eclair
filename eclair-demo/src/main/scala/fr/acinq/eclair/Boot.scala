@@ -27,7 +27,7 @@ object Boot extends App with Logging {
 
   val config = ConfigFactory.load()
   val testnet = Await.result(bitcoin_client.invoke("getinfo").map(json => (json \ "testnet").extract[Boolean]), 10 seconds)
-  assert(testnet, "you should be on testnet")
+  //assert(testnet, "you should be on testnet")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
   val register = system.actorOf(Props[RegisterActor], name = "register")
