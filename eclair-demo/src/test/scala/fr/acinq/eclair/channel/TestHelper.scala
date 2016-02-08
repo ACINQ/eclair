@@ -36,8 +36,8 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
   val bob_commit_priv = Base58Check.decode("cSUwLtdZ2tht9ZmHhdQue48pfe7tY2GT2TGWJDtjoZgo6FHrubGk")._2
   val bob_final_priv = Base58Check.decode("cPR7ZgXpUaDPA3GwGceMDS5pfnSm955yvks3yELf3wMJwegsdGTg")._2
 
-  val ourParams = OurChannelParams(locktime(Blocks(10)), our_commitkey_priv, our_finalkey_priv, 1, 100000, "alice-seed".getBytes())
-  val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes())
+  val ourParams = OurChannelParams(locktime(Blocks(10)), our_commitkey_priv, our_finalkey_priv, 1, 100000, "alice-seed".getBytes(), true)
+  val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes(), false)
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(our_commitkey_priv.key.toByteArray)))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(our_finalkey_priv.key.toByteArray)))

@@ -58,4 +58,12 @@ class ChannelStateSpec extends FunSuite {
     ))
   }
 
+  test("adjust fees") {
+    val state_0 = ChannelState(
+      us = ChannelOneSide(pay_msat = 950000*1000, fee_msat = 49900*1000, htlcs = Seq()),
+      them = ChannelOneSide(pay_msat = 0, fee_msat = 100*1000, htlcs = Seq())
+    )
+    val state_1 = state_0.adjust_fees(100000, true)
+    println(state_1)
+  }
 }

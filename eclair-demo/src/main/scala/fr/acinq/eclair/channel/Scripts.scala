@@ -140,8 +140,8 @@ object Scripts {
     * @return an unsigned "final" tx
     */
   def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
-    // TODO : is this the proper behaviour ?
     assert(channelState.them.htlcs.isEmpty && channelState.us.htlcs.isEmpty, s"cannot close a channel with pending htlcs (see rusty's state_types.h line 103)")
+
     permuteOutputs(Transaction(
       version = 1,
       txIn = inputs,

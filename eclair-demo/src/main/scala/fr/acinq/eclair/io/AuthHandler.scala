@@ -75,7 +75,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_anchor: Boolean, amo
         Some(AnchorInput(amount))
       else
         None
-      val channel_params = OurChannelParams(Globals.default_locktime, Globals.commit_priv, Globals.final_priv, Globals.default_mindepth, Globals.default_commitfee, "sha-seed".getBytes())
+      val channel_params = OurChannelParams(Globals.default_locktime, Globals.commit_priv, Globals.final_priv, Globals.default_mindepth, Globals.commit_fee, "sha-seed".getBytes(), our_anchor)
       val channel = context.actorOf(Props(new Channel(blockchain, channel_params, anchorInput_opt)), name = "channel")
       channel ! INPUT_NONE
       goto(IO_NORMAL) using Normal(channel, s)

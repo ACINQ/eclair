@@ -18,7 +18,8 @@ object Globals {
 
   val default_locktime = locktime(Seconds(86400))
   val default_mindepth = 3
-  val default_commitfee = 50000
+  val commit_fee = config.getInt("eclair.commit-fee")
+  val closing_fee = config.getInt("eclair.closing-fee")
 
   val default_anchor_amount = 1000000
 

@@ -7,7 +7,9 @@ import lightning.{sha256_hash, update_add_htlc}
 /**
   * Created by PM on 19/01/2016.
   */
-case class ChannelOneSide(pay_msat: Long, fee_msat: Long, htlcs: Seq[update_add_htlc])
+case class ChannelOneSide(pay_msat: Long, fee_msat: Long, htlcs: Seq[update_add_htlc]) {
+  val funds = pay_msat + fee_msat
+}
 
 case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
   /**
@@ -91,5 +93,23 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
     } else throw new RuntimeException(s"could not find corresponding htlc (r=$r)")
   }
 
+  def adjust_fees(fee: Int, is_funder: Boolean) : ChannelState = {
+    if (is_funder) {
+      val (funder, nonfunder) = ChannelState.adjust_fees(this.us, this.them, fee)
+      this.copy(us = funder, them = nonfunder)
+    } else {
+      val (funder, nonfunder) = ChannelState.adjust_fees(this.them, this.us, fee)
+      this.copy(us = nonfunder, them = funder)
+    }
+  }
+
   def prettyString(): String = s"pay_us=${us.pay_msat} htlcs_us=${us.htlcs.map(_.amountMsat).sum} pay_them=${them.pay_msat} htlcs_them=${them.htlcs.map(_.amountMsat).sum} total=${us.pay_msat + us.htlcs.map(_.amountMsat).sum + them.pay_msat + them.htlcs.map(_.amountMsat).sum}"
+}
+
+object ChannelState {
+  def adjust_fees(funder: ChannelOneSide, nonfunder: ChannelOneSide, fee: Int) : (ChannelOneSide, ChannelOneSide) = {
+    val nonfunder_fee = Math.min(fee - fee / 2, nonfunder.funds)
+    val funder_fee = fee - nonfunder_fee
+    (funder.copy(pay_msat = funder.funds - funder_fee, fee_msat = funder_fee), nonfunder.copy(pay_msat = nonfunder.funds - nonfunder_fee, fee_msat = nonfunder_fee))
+  }
 }

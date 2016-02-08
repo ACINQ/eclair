@@ -156,7 +156,7 @@ final case class RES_GETINFO(name: String, state: State, data: Data)
 sealed trait Data
 case object Nothing extends Data
 final case class AnchorInput(amount: Long) extends Data
-final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, commitmentFee: Long, shaSeed: BinaryData) {
+final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, commitmentFee: Long, shaSeed: BinaryData, isFunder: Boolean) {
   val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
 }
@@ -732,7 +732,8 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
     case Event(close_channel_complete(theirSig), d: CurrentCommitment) =>
-      val finalTx = makeFinalTx(d.commitment.tx.txIn, ourFinalPubKey, d.theirParams.finalPubKey, d.commitment.state)
+      val closingState = d.commitment.state.adjust_fees(Globals.closing_fee * 1000, d.ourParams.isFunder)
+      val finalTx = makeFinalTx(d.commitment.tx.txIn, ourFinalPubKey, d.theirParams.finalPubKey, closingState)
       val signedFinalTx = sign_our_commitment_tx(d.ourParams, d.theirParams, finalTx, theirSig)
       val ok = Try(Transaction.correctlySpends(signedFinalTx, Map(signedFinalTx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, d.theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
       ok match {
@@ -933,9 +934,10 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   def handle_pkt_close(pkt: close_channel, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): (Transaction, close_channel_complete) = {
     // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, commitment.state.reverse)
+    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.isFunder)
+    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-    val ourFinalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, commitment.state)
+    val ourFinalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
     val ourSig = Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
     val signedFinalTx = ourFinalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
     blockchain ! WatchConfirmed(self, signedFinalTx.txid, ourParams.minDepth, BITCOIN_CLOSE_DONE)
