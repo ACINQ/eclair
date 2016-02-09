@@ -924,7 +924,8 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams, val anchor
 
   def handle_cmd_close(cmd: CMD_CLOSE, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): close_channel = {
     // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, commitment.state.reverse)
+    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.isFunder)
+    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState.reverse)
     val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
     val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
     // we need to watch for BITCOIN_CLOSE_DONE with what we have here, because they may never answer with the fully signed closing tx and still publish it
