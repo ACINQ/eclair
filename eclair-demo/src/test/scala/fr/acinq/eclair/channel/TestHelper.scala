@@ -27,7 +27,6 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     TestKit.shutdownActorSystem(system)
   }
 
-  val anchorInput = AnchorInput(100100000L)
   val previousTxOutput = OutPoint(Hex.decode("7727730d21428276a4d6b0e16f3a3e6f3a07a07dc67151e6a88d4a8c3e8edb24").reverse, 1)
   val signData = SignData("76a914e093fbc19866b98e0fbc25d79d0ad0f0375170af88ac", Base58Check.decode("cU1YgK56oUKAtV6XXHZeJQjEx1KGXkZS1pGiKpyW4mUyKYFJwWFg")._2)
 
@@ -36,8 +35,10 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
   val bob_commit_priv = Base58Check.decode("cSUwLtdZ2tht9ZmHhdQue48pfe7tY2GT2TGWJDtjoZgo6FHrubGk")._2
   val bob_final_priv = Base58Check.decode("cPR7ZgXpUaDPA3GwGceMDS5pfnSm955yvks3yELf3wMJwegsdGTg")._2
 
-  val ourParams = OurChannelParams(locktime(Blocks(10)), our_commitkey_priv, our_finalkey_priv, 1, 100000, "alice-seed".getBytes(), true)
-  val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes(), false)
+  val anchorAmount = 100100000L
+
+  val ourParams = OurChannelParams(locktime(Blocks(10)), our_commitkey_priv, our_finalkey_priv, 1, 100000, "alice-seed".getBytes(), Some(anchorAmount))
+  val bob_params = OurChannelParams(locktime(Blocks(10)), bob_commit_priv, bob_final_priv, 2, 100000, "bob-seed".getBytes(), None)
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(our_commitkey_priv.key.toByteArray)))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(Crypto.publicKeyFromPrivateKey(our_finalkey_priv.key.toByteArray)))
@@ -46,7 +47,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
 
   def reachState_NOANCHOR(targetState: State): (ActorRef, ChannelDesc) = {
     var channelDesc = ChannelDesc()
-    val node = system.actorOf(Props(new Channel(self, bob_params, None)))
+    val node = system.actorOf(Props(new Channel(self, bob_params)))
     node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
     val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth, their_open_channel.commitmentFee)
@@ -57,9 +58,9 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     channelDesc = channelDesc.copy(ourParams = Some(ourParams))
     node ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
-    val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorInput.amount, previousTxOutput, signData)
+    val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorAmount, previousTxOutput, signData)
     // we fund the channel with the anchor tx, so the money is ours
-    val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(anchorInput.amount * 1000- ourParams.commitmentFee * 1000, ourParams.commitmentFee * 1000, Seq()))
+    val state = ChannelState(them = ChannelOneSide(0, 0, Seq()), us = ChannelOneSide(ourParams.anchorAmount.get * 1000 - ourParams.commitmentFee * 1000, ourParams.commitmentFee * 1000, Seq()))
     // we build our commitment tx, leaving it unsigned
     val ourCommitTx = makeCommitTx(ourFinalPubKey, theirParams.finalPubKey, ourParams.delay, anchorTx.hash, anchorOutputIndex, ourRevocationHash, state)
     channelDesc = channelDesc.copy(ourCommitment = Some(Commitment(0, ourCommitTx, state, theirRevocationHash)))
@@ -68,7 +69,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
     node ! CMD_GETSTATE // node is in OPEN_WAIT_FOR_ANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
-    node ! open_anchor(anchorTx.hash, 0, anchorInput.amount, ourSigForThem)
+    node ! open_anchor(anchorTx.hash, 0, anchorAmount, ourSigForThem)
     expectMsgClass(classOf[open_commit_sig])
     expectMsgClass(classOf[WatchConfirmed])
     expectMsgClass(classOf[WatchSpent])
@@ -87,7 +88,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
 
   def reachState_WITHANCHOR(targetState: State): (ActorRef, ChannelDesc) = {
     var channelDesc = ChannelDesc()
-    val node = system.actorOf(Props(new Channel(self, bob_params, Some(anchorInput))))
+    val node = system.actorOf(Props(new Channel(self, bob_params.copy(anchorAmount = Some(anchorAmount)))))
     node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
     val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth, their_open_channel.commitmentFee)
