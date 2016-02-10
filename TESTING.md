@@ -45,8 +45,10 @@ eclair and lightnind are now both in NORMAL state (high priority for eclair, low
 
 ## Tell eclair to send a htlc
 We’ll use the following values for R and H:
+```
 R = 0102030405060708010203040506070801020304050607080102030405060708
 H = 8cf3e5f40cf025a984d8e00b307bbab2b520c91b2bde6fa86958f8f4e7d8a609
+```
 
 You’ll need a unix timestamp that is not too far into the future. Now + 100000 is fine:
 ```shell
