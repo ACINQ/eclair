@@ -5,7 +5,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import akka.io.{IO, Tcp}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.{CreateChannel, Boot}
+import fr.acinq.eclair.{Globals, CreateChannel, Boot}
 
 /**
  * Created by PM on 27/10/2015.
@@ -26,7 +26,7 @@ class Server(address: InetSocketAddress) extends Actor with ActorLogging {
     case c @ Connected(remote, local) =>
       log.info(s"connected to $remote")
       val connection = sender()
-      Boot.register ! CreateChannel(connection, false)
+      Boot.register ! CreateChannel(connection, Globals.params_noanchor)
   }
 
 }

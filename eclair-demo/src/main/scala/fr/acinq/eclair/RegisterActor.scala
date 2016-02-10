@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import akka.actor._
 import akka.util.Timeout
-import fr.acinq.eclair.channel.{CMD_GETINFO, ChannelState}
+import fr.acinq.eclair.channel.{OurChannelParams, CMD_GETINFO, ChannelState}
 import fr.acinq.eclair.io.AuthHandler
 import akka.pattern.ask
 
@@ -10,7 +10,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 
 // @formatter:off
-case class CreateChannel(connection: ActorRef, our_anchor: Boolean, amount: Long = 0)
+case class CreateChannel(connection: ActorRef, our_params: OurChannelParams)
 case class GetChannels()
 case class RegisterChannel(nodeId: String, state: ChannelState)
 // @formatter:on
@@ -30,7 +30,7 @@ class RegisterActor extends Actor with ActorLogging {
   override def receive: Receive = ???
 
   def main(channels: Map[String, ChannelState]): Receive = {
-    case CreateChannel(connection, our_anchor, amount) => context.actorOf(Props(classOf[AuthHandler], connection, Boot.blockchain, our_anchor, amount), name = s"handler-${i = i + 1; i}")
+    case CreateChannel(connection, our_params) => context.actorOf(Props(classOf[AuthHandler], connection, Boot.blockchain, our_params), name = s"handler-${i = i + 1; i}")
     case GetChannels =>
       val s = sender()
       Future.sequence(context.children.map(c => c ? CMD_GETINFO)).map(s ! _)

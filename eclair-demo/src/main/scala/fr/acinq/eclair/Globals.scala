@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Base58Check}
+import fr.acinq.eclair.channel.OurChannelParams
 import fr.acinq.eclair.crypto.LightningCrypto._
 import lightning.locktime
 import lightning.locktime.Locktime.Seconds
@@ -22,6 +23,8 @@ object Globals {
   val closing_fee = config.getInt("eclair.closing-fee")
 
   val default_anchor_amount = 1000000
+
+  val params_noanchor = OurChannelParams(default_locktime, commit_priv, final_priv, default_mindepth, commit_fee, "sha-seed".getBytes(), None)
 
   val bitcoin_client = new BitcoinJsonRPCClient(
     user = config.getString("eclair.bitcoind.rpcuser"),
