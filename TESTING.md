@@ -26,7 +26,7 @@ Start eclair:
 ```shell
 mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 ```
-## Tell eclair to connect to lightningd:
+## Tell eclair to connect to lightningd
 
 ```shell
 curl -X POST -H "Content-Type: application/json" -d '{
@@ -63,7 +63,7 @@ curl -X POST -H "Content-Type: application/json" -d '{
 }' "http://localhost:8080"
 ```
 
-## Tell lighningd to fulfill the HTLC:
+## Tell lightningd to fulfill the HTLC:
 ```shell
 ./lightning-cli fulfillhtlc 0277863c1e40a2d4934ccf18e6679ea949d36bb0d1333fb098e99180df60d0195a 0102030405060708010203040506070801020304050607080102030405060708
 ```
