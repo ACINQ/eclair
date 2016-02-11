@@ -864,7 +864,10 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       stay
 
     case Event(CMD_GETINFO, _) =>
-      sender ! RES_GETINFO(self.path.toStringWithoutAddress, stateName, stateData)
+      //TODO
+      val r = """/user/register/handler-(\d+)/channel""".r
+      val r(id) = self.path.toStringWithoutAddress
+      sender ! RES_GETINFO(id, stateName, stateData)
       stay
 
     // TODO : them ! error(Some("Unexpected message")) ?

@@ -57,7 +57,7 @@ trait Service extends HttpService with Logging {
   def register: ActorRef
 
   def sendCommand(channel: String, cmd: Command): Future[String] = {
-    Boot.system.actorSelection(channel).resolveOne().map(actor => {
+    Boot.system.actorSelection(s"/user/register/handler-$channel/channel").resolveOne().map(actor => {
       actor ! cmd
       "ok"
     })
