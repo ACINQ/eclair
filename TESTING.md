@@ -29,7 +29,7 @@ mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 ## Tell eclair to connect to lightnind:
 
 ```shell
-curl -X POST -H "Content-Type: application/json" -H "Cache-Control: no-cache" -H "Postman-Token: 7c9823a3-3b83-e881-fdcd-21a38bdd9905" -d '{
+curl -X POST -H "Content-Type: application/json" -H "Cache-Control: no-cache" -d '{
 >     "id": 12345,
 >     "method": "connect",
 >     "params" : [ "localhost", 50000, 1000000 ]
@@ -56,7 +56,7 @@ echo `date +%s` + 100000 | bc
 ```
 
 ```shell
-curl -X POST -H "Content-Type: application/json" -H "Cache-Control: no-cache" -H "Postman-Token: 7b422190-3f64-2a38-e8b7-0044d207dab0" -d '{
+curl -X POST -H "Content-Type: application/json" -H "Cache-Control: no-cache" -d '{
     "id": 12345,
     "method": "addhtlc",
     "params" : [ "akka://default/user/register/handler-1/channel", 100000, "8cf3e5f40cf025a984d8e00b307bbab2b520c91b2bde6fa86958f8f4e7d8a609", YOURTIMESTAMP  ]
