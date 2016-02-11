@@ -30,10 +30,10 @@ mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 
 ```shell
 curl -X POST -H "Content-Type: application/json" -d '{
->     "id": 12345,
->     "method": "connect",
->     "params" : [ "localhost", 50000, 1000000 ]
-> }' "http://localhost:8080"
+     "id": 12345,
+     "method": "connect",
+     "params" : [ "localhost", 50000, 1000000 ]
+ }' "http://localhost:8080"
 ```
 Since eclair is funder, it will create and publish the anchor tx
 
