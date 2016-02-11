@@ -30,7 +30,6 @@ mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 
 ```shell
 curl -X POST -H "Content-Type: application/json" -d '{
-     "id": 12345,
      "method": "connect",
      "params" : [ "localhost", 50000, 1000000 ]
  }' http://localhost:8080
@@ -53,7 +52,6 @@ H = 8cf3e5f40cf025a984d8e00b307bbab2b520c91b2bde6fa86958f8f4e7d8a609
 You’ll need a unix timestamp that is not too far into the future. Now + 100000 is fine:
 ```shell
 curl -X POST -H "Content-Type: application/json" -d "{
-    \"id\": 12345,
     \"method\": \"addhtlc\",
     \"params\" : [ \"akka://default/user/register/handler-1/channel\", 100000, \"8cf3e5f40cf025a984d8e00b307bbab2b520c91b2bde6fa86958f8f4e7d8a609\", $((`date +%s` + 100000))  ]
 }" http://localhost:8080
