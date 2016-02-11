@@ -1,4 +1,4 @@
-# Testing eclair and lightnind
+# Testing eclair and lightningd
 
 ## Configure bitcoind to run in regtest mode
 edit ~/.bitcoin/bitcoin.conf and add:
@@ -17,7 +17,7 @@ Mine a few blocks:
 bitcoin-cli generate 101
 ```
 ##
-Start lighnind (here we’ll use port 50000)
+Start lightningd (here we’ll use port 50000)
 ```shell
 lightningd --port 50000
 ```
@@ -26,7 +26,7 @@ Start eclair:
 ```shell
 mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 ```
-## Tell eclair to connect to lightnind:
+## Tell eclair to connect to lightningd:
 
 ```shell
 curl -X POST -H "Content-Type: application/json" -d '{
@@ -41,7 +41,7 @@ Mine a few blocks to confirm the anchor tx:
 ```shell
 bitcoin-cli generate 10
 ```
-eclair and lightnind are now both in NORMAL state (high priority for eclair, low priority for lightnind)
+eclair and lightningd are now both in NORMAL state (high priority for eclair, low priority for lightningd)
 
 ## Tell eclair to send a htlc
 We’ll use the following values for R and H:
