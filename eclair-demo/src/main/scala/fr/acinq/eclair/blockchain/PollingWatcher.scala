@@ -1,11 +1,13 @@
 package fr.acinq.eclair.blockchain
 
+
 import akka.actor.{Cancellable, Actor, ActorLogging}
-import fr.acinq.bitcoin.{Transaction, JsonRPCError, BitcoinJsonRPCClient}
+import fr.acinq.bitcoin.{BinaryData, Transaction, JsonRPCError, BitcoinJsonRPCClient}
+import fr.acinq.eclair.channel.BITCOIN_ANCHOR_SPENT
+import grizzled.slf4j.Logging
 import org.bouncycastle.util.encoders.Hex
-import org.json4s.{FieldSerializer, CustomSerializer}
 import org.json4s.JsonAST._
-import scala.concurrent.{Future, ExecutionContext}
+import scala.concurrent.{Await, Promise, Future, ExecutionContext}
 import scala.concurrent.duration._
 
 /**
@@ -43,7 +45,7 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
           } yield {
             if (conf.isDefined && !unspent) {
               // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
-              channel ! event
+              findSpendingTransaction(client, txId.toString(), outputIndex).map(tx => channel ! (BITCOIN_ANCHOR_SPENT, tx))
               self !('remove, w)
             } else {}
           }
@@ -62,18 +64,9 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
   }
 }
 
-object PollingWatcher {
+object PollingWatcher extends Logging {
 
-  implicit val formats = org.json4s.DefaultFormats + new TransactionSerializer
-
-  class TransactionSerializer extends CustomSerializer[Transaction](format => (
-    {
-      case JString(x) => Transaction.read(x)
-    },
-    {
-      case x: Transaction => JString(Hex.toHexString(Transaction.write(x)))
-    }
-    ))
+  implicit val formats = org.json4s.DefaultFormats
 
   def getTxConfirmations(client: BitcoinJsonRPCClient, txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
@@ -139,13 +132,32 @@ object PollingWatcher {
 
   def publishTransaction(client: BitcoinJsonRPCClient, tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(client, Hex.toHexString(Transaction.write(tx)))
+
+  // TODO : this is very dirty
+  // we only check the memory pool and the last block, and throw an error if tx was not found
+  def findSpendingTransaction(client: BitcoinJsonRPCClient, txid: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
+    for {
+      mempool <- client.invoke("getrawmempool").map(_.extract[List[String]])
+      bestblockhash <- client.invoke("getbestblockhash").map(_.extract[String])
+      bestblock <- client.invoke("getblock", bestblockhash).map(b => (b \ "tx").extract[List[String]])
+      txs <- Future {
+        for(txid <- mempool ++ bestblock) yield {
+          Await.result(client.invoke("getrawtransaction", txid).map(json => {
+            Transaction.read(json.extract[String])
+          }).recover {
+            case t: Throwable => Transaction(0, Seq(), Seq(), 0)
+          }, 20 seconds)
+        }
+      }
+      tx = txs.find(tx => tx.txIn.exists(input => input.outPoint.txid == txid && input.outPoint.index == outputIndex)).getOrElse(throw new RuntimeException("tx not found!"))
+    } yield tx
+  }
 }
 
-/*object MyTest extends App {
+object MyTest extends App {
   import ExecutionContext.Implicits.global
   implicit val formats = org.json4s.DefaultFormats
 
-  val client = new BitcoinJsonRPCClient("foo", "bar")
-  println(Await.result(BlockchainWatcher.getTxConfirmations(client, "28ec4853f134c416757cda8ef3243df549c823d02c2aa5e3c148557ab04a2aa8"), 10 seconds))
-  println(Await.result(BlockchainWatcher.isUnspent(client, "c1e932badc68b8d07b714ee87b71dadafad3a3c0058266544ae61fd679481d7a", 0), 10 seconds))
-}*/
+  val client = new BitcoinJsonRPCClient("foo", "bar", port = 18332)
+  println(Await.result(PollingWatcher.findSpendingTransaction(client, "d9690555e8de580901202975f5a249febfc12fad57fb4d3ff20cd6a7316ff5b3", 1), 10 seconds))
+}

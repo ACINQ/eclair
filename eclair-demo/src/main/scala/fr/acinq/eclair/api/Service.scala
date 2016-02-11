@@ -80,7 +80,7 @@ trait Service extends HttpService with Logging {
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
                 sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                sendCommand(channel, CMD_CLOSE(0))
+                sendCommand(channel, CMD_CLOSE(Globals.closing_fee))
               case _ => Future.failed(new RuntimeException("method not found"))
             }
 

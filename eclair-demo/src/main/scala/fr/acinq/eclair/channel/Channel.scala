@@ -110,15 +110,15 @@ case object INPUT_NO_MORE_HTLCS
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 
 sealed trait BlockchainEvent
-case object BITCOIN_ANCHOR_DEPTHOK
-case object BITCOIN_ANCHOR_LOST
-case object BITCOIN_ANCHOR_TIMEOUT
-case class BITCOIN_ANCHOR_SPENT(tx: Transaction)
-case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
-case object BITCOIN_SPEND_THEIRS_DONE
-case object BITCOIN_SPEND_OURS_DONE
-case object BITCOIN_STEAL_DONE
-case object BITCOIN_CLOSE_DONE
+case object BITCOIN_ANCHOR_DEPTHOK extends BlockchainEvent
+case object BITCOIN_ANCHOR_LOST extends BlockchainEvent
+case object BITCOIN_ANCHOR_TIMEOUT extends BlockchainEvent
+case object BITCOIN_ANCHOR_SPENT extends BlockchainEvent
+case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED extends BlockchainEvent
+case object BITCOIN_SPEND_THEIRS_DONE extends BlockchainEvent
+case object BITCOIN_SPEND_OURS_DONE extends BlockchainEvent
+case object BITCOIN_STEAL_DONE extends BlockchainEvent
+case object BITCOIN_CLOSE_DONE extends BlockchainEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
@@ -336,7 +336,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
@@ -370,11 +370,11 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -395,11 +395,11 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -420,11 +420,11 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -525,15 +525,15 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -577,15 +577,15 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_WAIT_FOR_HTLC_ACCEPT) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_WAIT_FOR_HTLC_ACCEPT) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -658,15 +658,15 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
       goto(WAIT_FOR_CLOSE_COMPLETE)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_WAIT_FOR_UPDATE_SIG) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_WAIT_FOR_UPDATE_SIG) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -697,15 +697,15 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_WAIT_FOR_UPDATE_COMPLETE) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_WAIT_FOR_UPDATE_COMPLETE) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(pkt: error, d: CurrentCommitment) =>
@@ -730,6 +730,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
 
   when(WAIT_FOR_CLOSE_COMPLETE) {
     case Event(close_channel_complete(theirSig), d: CurrentCommitment) =>
+      //TODO we should use the closing fee in pkts
       val closingState = d.commitment.state.adjust_fees(Globals.closing_fee * 1000, d.ourParams.anchorAmount.isDefined)
       val finalTx = makeFinalTx(d.commitment.tx.txIn, ourFinalPubKey, d.theirParams.finalPubKey, closingState)
       val signedFinalTx = sign_our_commitment_tx(d.ourParams, d.theirParams, finalTx, theirSig)
@@ -746,20 +747,20 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
           goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(signedFinalTx))
       }
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
       // it is possible that we received this before the close_channel_complete, we may still receive the latter
       log.info(s"mutual close detected: $tx")
       stay
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
@@ -772,20 +773,20 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
     case Event(close_channel_ack(), d: DATA_WAIT_FOR_CLOSE_ACK) =>
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(d.mutualCloseTx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
       // it is possible that we received this before the close_channel_ack, we may still receive the latter
       log.info(s"mutual close detected: $tx")
       stay
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, revokedPublished = tx :: Nil)
 
-    case Event(BITCOIN_ANCHOR_SPENT, _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
@@ -801,26 +802,26 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
     */
   when(CLOSING) {
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d@DATA_CLOSING(ourParams, theirParams, _, commitment, _, _, _, _)) if (isMutualClose(tx, ourParams, theirParams, commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d@DATA_CLOSING(ourParams, theirParams, _, commitment, _, _, _, _)) if (isMutualClose(tx, ourParams, theirParams, commitment)) =>
       log.info(s"mutual close detected: $tx")
       // wait for BITCOIN_CLOSE_DONE
       // should we override the previous tx? (which may be different because of malleability)
       stay using d.copy(mutualClosePublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), DATA_CLOSING(_, _, _, commitment, _, _, _, _)) if (isOurCommit(tx, commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), DATA_CLOSING(_, _, _, commitment, _, _, _, _)) if (isOurCommit(tx, commitment)) =>
       log.info(s"our commit detected: $tx")
       handle_ourcommit()
       stay
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d@DATA_CLOSING(ourParams, theirParams, shaChain, commitment, _, _, _, _)) if (isTheirCommit(tx, ourParams, theirParams, commitment)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d@DATA_CLOSING(ourParams, theirParams, shaChain, commitment, _, _, _, _)) if (isTheirCommit(tx, ourParams, theirParams, commitment)) =>
       handle_theircommit(tx, ourParams, theirParams, shaChain, commitment)
       stay using d.copy(theirCommitPublished = Some(tx))
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), d: DATA_CLOSING) if (isRevokedCommit(tx)) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLOSING) if (isRevokedCommit(tx)) =>
       them ! handle_revoked(tx)
       stay using d.copy(revokedPublished = tx +: d.revokedPublished)
 
-    case Event(BITCOIN_ANCHOR_SPENT(tx), _) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), _) =>
       // somebody managed to spend the anchor...
       // we're fucked
       goto(ERR_INFORMATION_LEAK)
@@ -881,13 +882,13 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
           888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
   */
 
-  def isMutualClose(tx: Transaction, comourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
+  def isMutualClose(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
     // we rebuild the closing tx as seen by both parties
-    // TODO : should they be equal ?
-    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, commitment.state.reverse)
-    val ourFinalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, commitment.state)
+    //TODO we should use the closing fee in pkts
+    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
+    val finalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState)
     // and only compare the outputs
-    tx.txOut == theirFinalTx.txOut || tx.txOut == ourFinalTx.txOut
+    tx.txOut == finalTx.txOut
   }
 
   def isOurCommit(tx: Transaction, commitment: Commitment): Boolean = tx == commitment.tx
@@ -921,27 +922,23 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
   }
 
   def handle_cmd_close(cmd: CMD_CLOSE, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): close_channel = {
-    // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
-    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState.reverse)
-    val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
+    val closingState = commitment.state.adjust_fees(cmd.fee * 1000, ourParams.anchorAmount.isDefined)
+    val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
+    val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
     val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
     // we need to watch for BITCOIN_CLOSE_DONE with what we have here, because they may never answer with the fully signed closing tx and still publish it
-    blockchain ! WatchConfirmedBasedOnOutputs(self, anchorTxId, theirFinalTx.txOut, ourParams.minDepth, BITCOIN_CLOSE_DONE)
-    close_channel(ourSigForThem, cmd.fee)
+    blockchain ! WatchConfirmedBasedOnOutputs(self, anchorTxId, finalTx.txOut, ourParams.minDepth, BITCOIN_CLOSE_DONE)
+    close_channel(ourSig, cmd.fee)
   }
 
   def handle_pkt_close(pkt: close_channel, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): (Transaction, close_channel_complete) = {
-    // the only difference between their final tx and ours is the order of the outputs, because state is symmetric
-    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
-    val theirFinalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState.reverse)
-    val ourSigForThem = bin2signature(Transaction.signInput(theirFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-    val ourFinalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
-    val ourSig = Transaction.signInput(ourFinalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
-    val signedFinalTx = ourFinalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
+    val closingState = commitment.state.adjust_fees(pkt.closeFee * 1000, ourParams.anchorAmount.isDefined)
+    val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
+    val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
+    val signedFinalTx = finalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
     blockchain ! WatchConfirmed(self, signedFinalTx.txid, ourParams.minDepth, BITCOIN_CLOSE_DONE)
     blockchain ! Publish(signedFinalTx)
-    (signedFinalTx, close_channel_complete(ourSigForThem))
+    (signedFinalTx, close_channel_complete(ourSig))
   }
 
   /**

@@ -32,7 +32,7 @@ class TheirCommitSpec extends TestHelper {
       val update_complete(theirRevocationPreimage) = expectMsgClass(classOf[update_complete])
       node ! CMD_GETSTATE
       expectMsg(NORMAL_HIGHPRIO)
-      node ! BITCOIN_ANCHOR_SPENT(ourCommitTx)
+      node ! (BITCOIN_ANCHOR_SPENT, ourCommitTx)
       expectMsgClass(classOf[error])
       node ! CMD_GETSTATE
       expectMsg(CLOSING)
@@ -57,7 +57,7 @@ class TheirCommitSpec extends TestHelper {
       val update_complete(theirRevocationPreimage) = expectMsgClass(classOf[update_complete])
       node ! CMD_GETSTATE
       expectMsg(NORMAL_HIGHPRIO)
-      node ! BITCOIN_ANCHOR_SPENT(previousCommitment.tx)
+      node ! (BITCOIN_ANCHOR_SPENT, previousCommitment.tx)
       expectMsgClass(classOf[error])
       node ! CMD_GETSTATE
       expectMsg(CLOSING)

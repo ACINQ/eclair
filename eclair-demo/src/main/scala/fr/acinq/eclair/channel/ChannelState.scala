@@ -93,7 +93,7 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
     } else throw new RuntimeException(s"could not find corresponding htlc (r=$r)")
   }
 
-  def adjust_fees(fee: Int, is_funder: Boolean) : ChannelState = {
+  def adjust_fees(fee: Long, is_funder: Boolean) : ChannelState = {
     if (is_funder) {
       val (funder, nonfunder) = ChannelState.adjust_fees(this.us, this.them, fee)
       this.copy(us = funder, them = nonfunder)
@@ -107,7 +107,7 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
 }
 
 object ChannelState {
-  def adjust_fees(funder: ChannelOneSide, nonfunder: ChannelOneSide, fee: Int) : (ChannelOneSide, ChannelOneSide) = {
+  def adjust_fees(funder: ChannelOneSide, nonfunder: ChannelOneSide, fee: Long) : (ChannelOneSide, ChannelOneSide) = {
     val nonfunder_fee = Math.min(fee - fee / 2, nonfunder.funds)
     val funder_fee = fee - nonfunder_fee
     (funder.copy(pay_msat = funder.funds - funder_fee, fee_msat = funder_fee), nonfunder.copy(pay_msat = nonfunder.funds - nonfunder_fee, fee_msat = nonfunder_fee))
