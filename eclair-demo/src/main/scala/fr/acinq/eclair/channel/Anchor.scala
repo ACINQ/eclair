@@ -10,23 +10,7 @@ import org.bouncycastle.util.encoders.Hex
 import scala.concurrent.{Future, ExecutionContext, Await}
 import scala.concurrent.duration._
 
-/**
-  * Created by fabrice on 03/02/16.
-  */
 object Anchor extends App {
-
-  def makeAnchorTx(bitcoind: BitcoinJsonRPCClient, ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
-    val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
-    val tx = Transaction(version = 1, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
-    val future = for {
-      FundTransactionResponse(tx1, changepos, fee) <- PollingWatcher.fundTransaction(bitcoind, tx)
-      SignTransactionResponse(anchorTx, true) <- PollingWatcher.signTransaction(bitcoind, tx1)
-      Some(pos) = Scripts.findPublicKeyScriptIndex(anchorTx, anchorOutputScript)
-    } yield (anchorTx, pos)
-
-    future
-  }
-
   import scala.concurrent.ExecutionContext.Implicits.global
 
   object Alice {

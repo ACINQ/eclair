@@ -5,7 +5,7 @@ import akka.testkit.{ImplicitSender, TestKit}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed, WatchLost, WatchSpent}
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.channel.Scripts._
 import lightning._
@@ -56,7 +56,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
     node ! CMD_GETSTATE // node is in OPEN_WAIT_FOR_OPEN_NOANCHOR
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
-    channelDesc = channelDesc.copy(ourParams = Some(ourParams))
+    channelDesc = channelDesc.copy(ourParams = Some(ourParams.copy(anchorAmount = None)))
     node ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
     val (anchorTx, anchorOutputIndex) = makeAnchorTx(ourCommitPubKey, theirParams.commitPubKey, anchorAmount, previousTxOutput, signData)
     // we fund the channel with the anchor tx, so the money is ours
@@ -99,6 +99,13 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     if (expectMsgClass(classOf[State]) == targetState) return (node, channelDesc)
     channelDesc = channelDesc.copy(ourParams = Some(ourParams))
     node ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WONT_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
+    val MakeAnchor(_, _, amount) = expectMsgClass(classOf[MakeAnchor])
+    val anchorTx = Transaction(version = 1,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(amount, Scripts.anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)) :: Nil,
+      lockTime = 0
+    )
+    node ! (anchorTx, 0)
     val their_open_anchor = expectMsgClass(classOf[open_anchor])
     // we fund the channel with the anchor tx, so the money is ours
     val state = ChannelState(them = ChannelOneSide(their_open_anchor.amount * 1000 - ourParams.commitmentFee * 1000, ourParams.commitmentFee * 1000, Seq()), us = ChannelOneSide(0, 0, Seq()))

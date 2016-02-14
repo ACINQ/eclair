@@ -252,7 +252,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, commitmentFee)
       log.debug(s"their params: $theirParams")
-      Anchor.makeAnchorTx(Globals.bitcoin_client, ourCommitPubKey, theirParams.commitPubKey, ourParams.anchorAmount.get).pipeTo(self)
+      blockchain ! MakeAnchor(ourCommitPubKey, theirParams.commitPubKey, ourParams.anchorAmount.get)
       stay using DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)
 
     case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>

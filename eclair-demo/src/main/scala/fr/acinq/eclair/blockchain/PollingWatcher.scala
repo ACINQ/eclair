@@ -2,8 +2,10 @@ package fr.acinq.eclair.blockchain
 
 
 import akka.actor.{Cancellable, Actor, ActorLogging}
-import fr.acinq.bitcoin.{BinaryData, Transaction, JsonRPCError, BitcoinJsonRPCClient}
-import fr.acinq.eclair.channel.BITCOIN_ANCHOR_SPENT
+import akka.pattern.pipe
+import fr.acinq.bitcoin._
+import fr.acinq.eclair.channel
+import fr.acinq.eclair.channel.{Scripts, BITCOIN_ANCHOR_SPENT}
 import grizzled.slf4j.Logging
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
@@ -61,6 +63,9 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
       PollingWatcher.publishTransaction(client, tx).onFailure {
         case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx))}")
       }
+
+    case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
+      PollingWatcher.makeAnchorTx(client, ourCommitPub, theirCommitPub, amount).pipeTo(sender)
   }
 }
 
@@ -151,6 +156,18 @@ object PollingWatcher extends Logging {
       }
       tx = txs.find(tx => tx.txIn.exists(input => input.outPoint.txid == txid && input.outPoint.index == outputIndex)).getOrElse(throw new RuntimeException("tx not found!"))
     } yield tx
+  }
+
+  def makeAnchorTx(bitcoind: BitcoinJsonRPCClient, ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+    val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+    val tx = Transaction(version = 1, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
+    val future = for {
+      FundTransactionResponse(tx1, changepos, fee) <- PollingWatcher.fundTransaction(bitcoind, tx)
+      SignTransactionResponse(anchorTx, true) <- PollingWatcher.signTransaction(bitcoind, tx1)
+      Some(pos) = Scripts.findPublicKeyScriptIndex(anchorTx, anchorOutputScript)
+    } yield (anchorTx, pos)
+
+    future
   }
 }
 

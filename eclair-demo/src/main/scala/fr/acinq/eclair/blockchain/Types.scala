@@ -17,5 +17,5 @@ final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: In
 final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Int, event: BlockchainEvent) extends Watch // notify me if confirmation number gets below minDepth
 
 final case class Publish(tx: Transaction)
-
+final case class MakeAnchor(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)
 // @formatter:on
