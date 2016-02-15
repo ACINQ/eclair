@@ -3,7 +3,7 @@ addons:
  apt:
   packages:
    - protobuf-compiler
-script:
+before_script:
  - export PATH=$PATH:.
  - echo $PATH
 scala:
