@@ -5,6 +5,7 @@ addons:
    - protobuf-compiler
 script:
  - export PATH=$PATH:.
+ - echo $PATH
 scala:
  - 2.11.7
 jdk:
