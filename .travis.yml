@@ -1,3 +1,5 @@
+sudo: required
+dist: trusty
 language: scala
 addons:
  apt:
@@ -9,4 +11,3 @@ scala:
  - 2.11.7
 jdk:
  - oraclejdk8
-before_script: echo toto
