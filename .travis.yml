@@ -1,13 +1,8 @@
-sudo: required
-dist: trusty
 language: scala
 before_install:
-  - sudo add-apt-repository protobuf-2.6.1-ppa -y
-  - sudo apt-get update -q
-addons:
- apt:
-  packages:
-   - protobuf-compiler
+  - wget https://protobuf.googlecode.com/files/protobuf-2.4.1.tar.gz
+  - tar -xzvf protobuf-2.4.1.tar.gz
+  - cd protobuf-2.4.1 && ./configure --prefix=/usr && make && sudo make install
 env:
  - PATH=$PATH:.
 scala:
