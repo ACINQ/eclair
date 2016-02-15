@@ -9,3 +9,6 @@ scala:
  - 2.11.7
 jdk:
  - oraclejdk8
+notifications:
+ email:
+  - ops@acinq.fr
