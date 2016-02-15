@@ -1,11 +1,12 @@
 language: scala
 before_install:
-  - wget https://protobuf.googlecode.com/files/protobuf-2.4.1.tar.gz
-  - tar -xzvf protobuf-2.4.1.tar.gz
-  - cd protobuf-2.4.1 && ./configure --prefix=/usr && make && sudo make install
+  - wget https://github.com/google/protobuf/releases/download/v2.6.1/protobuf-2.6.1.tar.bz2
+  - tar -xjvf protobuf-2.6.1.tar.gz
+  - cd protobuf-2.6.1 && ./configure --prefix=/usr && make && sudo make install
 env:
  - PATH=$PATH:.
 scala:
  - 2.11.7
 jdk:
  - oraclejdk8
+ script: mvn install
