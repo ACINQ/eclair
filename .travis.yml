@@ -3,8 +3,10 @@ addons:
  apt:
   packages:
    - protobuf-compiler
+env:
+ - PATH=$PATH:.
 scala:
  - 2.11.7
 jdk:
  - oraclejdk8
-script: echo toto
+before_script: echo toto
