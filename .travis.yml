@@ -3,8 +3,8 @@ addons:
  apt:
   packages:
    - protobuf-compiler
-script: PATH=$PATH:. mvn install
 scala:
  - 2.11.7
 jdk:
  - oraclejdk8
+script: echo toto
