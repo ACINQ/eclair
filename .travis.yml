@@ -1,6 +1,14 @@
 language: scala
-script: mvn test
+addons:
+ apt:
+  packages:
+   - protobuf-compiler
+script:
+  - export PATH=$PATH:.
 scala:
   - 2.11.7
 jdk:
   - oraclejdk8
+before_install:
+  - sudo apt-get -qq update
+  - sudo apt-get install -y protoc
