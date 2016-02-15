@@ -889,7 +889,8 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
     // we rebuild the closing tx as seen by both parties
     //TODO we should use the closing fee in pkts
     val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
-    val finalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState)
+    //val finalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState)
+    val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
     // and only compare the outputs
     tx.txOut == finalTx.txOut
   }
