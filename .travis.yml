@@ -1,6 +1,9 @@
 sudo: required
 dist: trusty
 language: scala
+before_install:
+  - sudo add-apt-repository protobuf-2.6.1-ppa -y
+  - sudo apt-get update -q
 addons:
  apt:
   packages:
