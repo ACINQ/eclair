@@ -1,0 +1,6 @@
+language: scala
+script: mvn test
+scala:
+  - 2.11.7
+jdk:
+  - oraclejdk8
