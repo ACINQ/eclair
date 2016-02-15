@@ -22,7 +22,7 @@ Run `Demo.scala` to have an example of:
  3. Closing the channel
 
 ## Status
-- [ ] Network
+- [X] Network
 - [ ] Routing
 - [X] Channel state machine
 - [X] HTLC Scripts
