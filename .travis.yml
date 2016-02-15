@@ -3,9 +3,7 @@ addons:
  apt:
   packages:
    - protobuf-compiler
-before_script:
- - export PATH=$PATH:.
- - echo $PATH
+script: PATH=$PATH:. mvn install
 scala:
  - 2.11.7
 jdk:
