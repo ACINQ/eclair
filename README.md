@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
+
 # eclair
 
 A scala implementation of the Lightning Network. Eclair is french for Lightning.
