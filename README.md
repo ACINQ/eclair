@@ -16,10 +16,26 @@ A "blockchain watcher" is responsible for monitoring the blockchain, and sending
 * eclair-demo: actual implementation
 
 ## Usage
-Run `Demo.scala` to have an example of:
- 1. Opening a channel
- 2. Updating the balance with an HTLC
- 3. Closing the channel
+- Either run from source:
+```
+mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
+```
+- Or compile and execute the jar:
+```
+mvn install
+java -jar eclair-demo/target/eclair-demo_2.11-*-capsule-fat.jar
+```
+*See [TESTING.md](TESTING.md) for more details on how to use this software.*
+
+## JSON-RPC API
+
+ method       |  params                             | description
+ -------------|-------------------------------------|-----------------------------------------------------------
+  connect     | host, port, anchor_amount           | opens a channel with another eclair or lightningd instance
+  list        |                                     | lists existing channels
+  addhtlc     | channel_id, amount, rhash, locktime | sends an htlc
+  fulfillhtlc | channel_id, r                       | fulfills an htlc
+  close       | channel_id                          | closes a channel
 
 ## Status
 - [X] Network
