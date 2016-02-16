@@ -26,8 +26,8 @@ object Boot extends App with Logging {
   implicit val ec = ExecutionContext.Implicits.global
 
   val config = ConfigFactory.load()
-  val bitcoin_version = Await.result(bitcoin_client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
-  logger.info(s"connected to bitcoin-core version $bitcoin_version")
+  val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
+  assert(chain == "testnet" || chain == "regtest", "you should be on testnet or regtest")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
   val register = system.actorOf(Props[RegisterActor], name = "register")
