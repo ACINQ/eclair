@@ -16,16 +16,29 @@ A "blockchain watcher" is responsible for monitoring the blockchain, and sending
 * eclair-demo: actual implementation
 
 ## Usage
-- Either run from source:
+
+Prerequisites:
+- A JRE or JDK depending on wether you want to compile yourself or not (preferably > 1.8)
+- A running bitcoin-core (testnet or regtest)
+
+Either run from source:
 ```
 mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 ```
-- Or compile and execute the jar:
+Or grab the latest released jar and run:
 ```
-mvn install
-java -jar eclair-demo/target/eclair-demo_2.11-*-capsule-fat.jar
+java -jar eclair-demo_2.11-*-capsule-fat.jar
 ```
+
 *See [TESTING.md](TESTING.md) for more details on how to use this software.*
+
+Available jvm options (see `application.conf` for full reference):
+```
+eclair.server.port (default: 45000)
+eclair.http.port (default: 8080)
+eclair.bitcoind.rpcuser (default: foo)
+eclair.bitcoind.rpcpassword (default: bar)
+```
 
 ## JSON-RPC API
 
