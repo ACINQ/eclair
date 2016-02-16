@@ -23,5 +23,5 @@ dependency-reduced-pom.xml
 *.iml
 target/
 project/target
-DeleteMe*.scala
+DeleteMe*.*
 *~
