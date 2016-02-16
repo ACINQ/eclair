@@ -1,9 +1,8 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.FSM.{Transition, CurrentState, SubscribeTransitionCallBack}
-import akka.actor.{Actor, ActorSystem, Props}
-import akka.actor.ActorDSL._
-import akka.testkit.{TestProbe, ImplicitSender, TestKit}
+import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.{ActorSystem, Props}
+import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -12,7 +11,6 @@ import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
 import org.scalatest._
 import org.scalatest.junit.JUnitRunner
-import scala.concurrent.duration._
 
 
 @RunWith(classOf[JUnitRunner])
