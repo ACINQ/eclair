@@ -63,14 +63,13 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 
   when(IO_WAITING_FOR_AUTH) {
     case Event(Received(chunk), s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in)) =>
-      log.info(s"received chunk=${BinaryData(chunk)}")
+      log.debug(s"received chunk=${BinaryData(chunk)}")
       val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
       stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
 
     case Event(pkt(Auth(auth)), s: SessionData) =>
       log.info(s"their_nodeid: ${BinaryData(auth.nodeId.key.toByteArray)}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
-      log.info(s"initializing channel actor")
       val channel = context.actorOf(Props(new Channel(blockchain, our_params)), name = "channel")
       channel ! INPUT_NONE
       goto(IO_NORMAL) using Normal(channel, s)
@@ -78,12 +77,12 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 
   when(IO_NORMAL) {
     case Event(Received(chunk), n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
-      log.info(s"received chunk=${BinaryData(chunk)}")
+      log.debug(s"received chunk=${BinaryData(chunk)}")
       val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
       stay using n.copy(sessionData = s.copy(totlen_in = new_totlen_in, acc_in = rest))
 
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
-      log.info(s">>>>>> $packet")
+      log.debug(s"sending $packet")
       packet.pkt match {
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
@@ -125,7 +124,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
         case o: close_channel_ack => pkt(CloseAck(o))
         case o: error => pkt(Error(o))
       }
-      log.info(s"<<<<<< $packet")
+      log.debug(s"receiving $packet")
       val (data, new_totlen_out) = writeMsg(packet, secrets_out, cipher_out, totlen_out)
       them ! Write(ByteString.fromArray(data))
       stay using n.copy(sessionData = s.copy(totlen_out = new_totlen_out))
