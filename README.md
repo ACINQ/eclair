@@ -21,6 +21,8 @@ Prerequisites:
 - A JRE or JDK depending on wether you want to compile yourself or not (preferably > 1.8)
 - A running bitcoin-core (testnet or regtest)
 
+:warning: **eclair demo currently runs on testnet or regtest only. Do not try and modify it to run on bitcoin mainnet!**
+
 Either run from source:
 ```
 mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
