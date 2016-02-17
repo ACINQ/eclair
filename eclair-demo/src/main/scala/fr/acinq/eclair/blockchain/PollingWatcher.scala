@@ -32,7 +32,7 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
 
     case w: Watch if !watches.contains(w) =>
       log.info(s"adding watch $w for $sender")
-      val cancellable = context.system.scheduler.schedule(2 seconds, 30 seconds)(w match {
+      val cancellable = context.system.scheduler.schedule(2 seconds, 10 seconds)(w match {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
           getTxConfirmations(client, txId.toString).map(_ match {
             case Some(confirmations) if confirmations >= minDepth =>
