@@ -49,6 +49,7 @@ eclair.bitcoind.rpcpassword (default: bar)
   addhtlc     | channel_id, amount, rhash, locktime | sends an htlc
   fulfillhtlc | channel_id, r                       | fulfills an htlc
   close       | channel_id                          | closes a channel
+  help        |                                     | displays available methods
 
 ## Status
 - [X] Network

@@ -81,6 +81,14 @@ trait Service extends HttpService with Logging {
                 sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
                 sendCommand(channel, CMD_CLOSE(Globals.closing_fee))
+              case JsonRPCBody(_, _, "help", _) =>
+                Future.successful(List(
+                  "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",
+                  "list: lists existing channels",
+                  "addhtlc (channel_id, amount, rhash, locktime): sends an htlc",
+                  "fulfillhtlc (channel_id, r): fulfills an htlc",
+                  "close (channel_id): closes a channel",
+                  "help: displays this message"))
               case _ => Future.failed(new RuntimeException("method not found"))
             }
 
