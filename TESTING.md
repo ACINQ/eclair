@@ -67,6 +67,11 @@ Check balances on both eclair and lightningd
 ```shell
 ./lightning-cli close 0277863c1e40a2d4934ccf18e6679ea949d36bb0d1333fb098e99180df60d0195a
 ```
+Mine a few blocks to bury the closing tx
+```shell
+bitcoin-cli generate 10
+```
+The channel is now in CLOSED state
 
 
 
