@@ -7,7 +7,7 @@ syntax = "proto2";
 // Helper Types
 //
 
-import "scalapb.proto";
+import "scalapb/scalapb.proto";
 
 // Protobufs don't have fixed-length fields, so these are a hack.
 message sha256_hash {
