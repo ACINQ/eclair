@@ -165,7 +165,7 @@
             <dependency>
                 <groupId>com.trueaccord.scalapb</groupId>
                 <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
-                <version>0.4.16</version>
+                <version>0.4.21</version>
             </dependency>
             <dependency>
                 <groupId>com.google.protobuf</groupId>
