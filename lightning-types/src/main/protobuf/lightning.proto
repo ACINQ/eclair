@@ -7,8 +7,11 @@ syntax = "proto2";
 // Helper Types
 //
 
+import "scalapb/scalapb.proto";
+
 // Protobufs don't have fixed-length fields, so these are a hack.
 message sha256_hash {
+  option (scalapb.message).extends = "lightning.Sha256ToString";
   required fixed64 a = 1;
   required fixed64 b = 2;
   required fixed64 c = 3;
@@ -16,6 +19,7 @@ message sha256_hash {
 }
 
 message signature {
+  option (scalapb.message).extends = "lightning.SignatureToString";
   required fixed64 r1 = 1;
   required fixed64 r2 = 2;
   required fixed64 r3 = 3;
