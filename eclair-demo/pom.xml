@@ -59,6 +59,16 @@
             <version>${akka.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-core_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-http-experimental_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+        </dependency>
+        <dependency>
             <groupId>fr.acinq</groupId>
             <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
         </dependency>
@@ -83,16 +93,6 @@
         <dependency>
             <groupId>com.trueaccord.lenses</groupId>
             <artifactId>lenses_${scala.version.short}</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.spray</groupId>
-            <artifactId>spray-routing_${scala.version.short}</artifactId>
-            <version>${spray.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.spray</groupId>
-            <artifactId>spray-can_${scala.version.short}</artifactId>
-            <version>${spray.version}</version>
         </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
