@@ -29,6 +29,6 @@ object Globals {
   val bitcoin_client = new BitcoinJsonRPCClient(
     user = config.getString("eclair.bitcoind.rpcuser"),
     password = config.getString("eclair.bitcoind.rpcpassword"),
-    host = config.getString("eclair.bitcoind.address"),
-    port = config.getInt("eclair.bitcoind.port"))
+    host = config.getString("eclair.bitcoind.host"),
+    port = config.getInt("eclair.bitcoind.rpcport"))
 }

@@ -9,7 +9,7 @@ import akka.util.Timeout
 import akka.stream.ActorMaterializer
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.api.Service
-import fr.acinq.eclair.blockchain.PollingWatcher
+import fr.acinq.eclair.blockchain.{PeerWatcher, PollingWatcher}
 import fr.acinq.eclair.io.{Client, Server}
 import grizzled.slf4j.Logging
 import scala.concurrent.{ExecutionContext, Await}
@@ -31,7 +31,7 @@ object Boot extends App with Logging {
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest", "you should be on testnet or regtest")
 
-  val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
+  val blockchain = system.actorOf(Props(new PeerWatcher(bitcoin_client)), name = "blockchain")
   val register = system.actorOf(Props[RegisterActor], name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
   val api = new Service {
