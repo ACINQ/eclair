@@ -6,7 +6,7 @@
         <withJansi>false</withJansi>
         <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
             <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
-                <expression>return logger.contains("Channel") || logger.contains("PollingWatcher");</expression>
+                <expression>return logger.contains("Channel") || logger.contains("Watcher");</expression>
             </evaluator>
             <OnMatch>DENY</OnMatch>
             <OnMismatch>ACCEPT</OnMismatch>
@@ -36,7 +36,7 @@
         <withJansi>false</withJansi>
         <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
             <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
-                <expression>return logger.contains("PollingWatcher");</expression>
+                <expression>return logger.contains("Watcher");</expression>
             </evaluator>
             <OnMismatch>DENY</OnMismatch>
             <OnMatch>ACCEPT</OnMatch>
