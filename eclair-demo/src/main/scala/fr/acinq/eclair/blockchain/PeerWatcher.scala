@@ -52,8 +52,6 @@ class PeerWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext = 
         }
       }
 
-    case w: WatchConfirmedBasedOnOutputs => log.warning(s"ignoring $w (not implemented)")
-
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
 
     case w: Watch if !watches.contains(w) =>
