@@ -734,7 +734,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, ourCommitPublished = Some(d.commitment.tx))
         case true =>
           them ! close_channel_ack()
-          blockchain ! WatchConfirmed(self, signedFinalTx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
           blockchain ! Publish(signedFinalTx)
           goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(signedFinalTx))
       }
@@ -742,7 +741,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
       // it is possible that we received this before the close_channel_complete, we may still receive the latter
       log.info(s"mutual close detected: $tx")
-      stay
+      blockchain ! WatchConfirmed(self, tx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(tx))
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
@@ -754,8 +754,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
-
-    case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
   }
 
   /**
@@ -768,7 +766,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
       // it is possible that we received this before the close_channel_ack, we may still receive the latter
       log.info(s"mutual close detected: $tx")
-      stay
+      blockchain ! WatchConfirmed(self, tx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(tx))
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
       them ! handle_theircommit(tx, d.ourParams, d.theirParams, d.shaChain, d.commitment)
@@ -780,8 +779,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
-
-    case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
     case Event(pkt: error, d: DATA_WAIT_FOR_CLOSE_ACK) =>
       // no-op, because at this point we have already published the mutual close tx on the blockchain
@@ -796,6 +793,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d@DATA_CLOSING(ourParams, theirParams, _, commitment, _, _, _, _)) if (isMutualClose(tx, ourParams, theirParams, commitment)) =>
       log.info(s"mutual close detected: $tx")
+      blockchain ! WatchConfirmed(self, tx.txid, ourParams.minDepth, BITCOIN_CLOSE_DONE)
       // wait for BITCOIN_CLOSE_DONE
       // should we override the previous tx? (which may be different because of malleability)
       stay using d.copy(mutualClosePublished = Some(tx))
@@ -838,6 +836,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(BITCOIN_SPEND_THEIRS_DONE, _) => goto(CLOSED)
 
     case Event(BITCOIN_STEAL_DONE, _) => goto(CLOSED)
+
+    case Event(p: close_channel_complete, _) => stay // if bitcoin network is faster than lightning network (very unlikely to happen)
+
+    case Event(p: close_channel_ack, _) => stay // if bitcoin network is faster than lightning network (very unlikely to happen)
   }
 
   when(CLOSED) {
@@ -922,8 +924,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
     val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
     val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
-    // we need to watch for BITCOIN_CLOSE_DONE with what we have here, because they may never answer with the fully signed closing tx and still publish it
-    blockchain ! WatchConfirmedBasedOnOutputs(self, anchorTxId, finalTx.txOut, ourParams.minDepth, BITCOIN_CLOSE_DONE)
     close_channel(ourSig, cmd.fee)
   }
 
@@ -932,7 +932,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
     val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
     val signedFinalTx = finalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
-    blockchain ! WatchConfirmed(self, signedFinalTx.txid, ourParams.minDepth, BITCOIN_CLOSE_DONE)
     blockchain ! Publish(signedFinalTx)
     (signedFinalTx, close_channel_complete(ourSig))
   }
