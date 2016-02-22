@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, LoggingFSM, Stash}
+import akka.actor.{Props, ActorRef, LoggingFSM, Stash}
 import akka.pattern.pipe
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
@@ -104,7 +104,6 @@ sealed trait LowPriority extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case object INPUT_NONE
 case object INPUT_NO_MORE_HTLCS
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
@@ -188,7 +187,11 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 
 // @formatter:on
 
-class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
+object Channel {
+  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams) = Props(new Channel(them, blockchain, params))
+}
+
+class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
   import context.dispatcher
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(params.commitPubKey))
@@ -197,18 +200,21 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
   log.info(s"commit pubkey: ${params.commitPubKey}")
   log.info(s"final pubkey: ${params.finalPubKey}")
 
-  // TODO
-  var them: ActorRef = null
-
   def priority: Priority = stateName match {
     case _: HighPriority => High
     case _: LowPriority => Low
     case _ => ???
   }
 
+  val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(params.shaSeed, 0))
+
   params.anchorAmount match {
-    case None => startWith(INIT_NOANCHOR, Nothing)
-    case _ => startWith(INIT_WITHANCHOR, Nothing)
+    case None =>
+      them ! open_channel(params.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.commitmentFee)
+      startWith(OPEN_WAIT_FOR_OPEN_NOANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
+    case _ =>
+      them ! open_channel(params.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WILL_CREATE_ANCHOR, Some(params.minDepth), params.commitmentFee)
+      startWith(OPEN_WAIT_FOR_OPEN_WITHANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
   }
 
   /*
@@ -221,25 +227,6 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
             888   888   Y8888   888       888
           8888888 888    Y888 8888888     888
    */
-
-  when(INIT_NOANCHOR) {
-    case Event(INPUT_NONE, _) =>
-      them = sender
-      val ourParams = params
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
-      them ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WONT_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
-      goto(OPEN_WAIT_FOR_OPEN_NOANCHOR) using DATA_OPEN_WAIT_FOR_OPEN(ourParams)
-  }
-
-  when(INIT_WITHANCHOR) {
-    case Event(INPUT_NONE, _) =>
-      them = sender
-      val ourParams = params
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
-      them ! open_channel(ourParams.delay, ourRevocationHash, ourCommitPubKey, ourFinalPubKey, WILL_CREATE_ANCHOR, Some(ourParams.minDepth), ourParams.commitmentFee)
-      goto(OPEN_WAIT_FOR_OPEN_WITHANCHOR) using DATA_OPEN_WAIT_FOR_OPEN(ourParams)
-  }
-
   when(OPEN_WAIT_FOR_OPEN_NOANCHOR) {
     case Event(open_channel(delay, theirRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, commitmentFee), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, commitmentFee)
@@ -285,7 +272,7 @@ class Channel(val blockchain: ActorRef, val params: OurChannelParams) extends Lo
         case true =>
           them ! open_commit_sig(ourSigForThem)
           blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 1, BITCOIN_ANCHOR_SPENT)
+          blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, Commitment(0, signedCommitTx, state, theirRevocationHash))
       }
 

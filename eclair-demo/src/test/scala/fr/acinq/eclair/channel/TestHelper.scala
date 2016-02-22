@@ -47,8 +47,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
 
   def reachState_NOANCHOR(targetState: State): (ActorRef, ChannelDesc) = {
     var channelDesc = ChannelDesc()
-    val node = system.actorOf(Props(new Channel(self, bob_params)))
-    node ! INPUT_NONE
+    val node = system.actorOf(Channel.props(self, self, bob_params))
     val their_open_channel = expectMsgClass(classOf[open_channel])
     val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth, their_open_channel.commitmentFee)
     channelDesc = channelDesc.copy(theirParams = Some(theirParams))
@@ -88,8 +87,8 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
 
   def reachState_WITHANCHOR(targetState: State): (ActorRef, ChannelDesc) = {
     var channelDesc = ChannelDesc()
-    val node = system.actorOf(Props(new Channel(self, bob_params.copy(anchorAmount = Some(anchorAmount)))))
-    node ! INPUT_NONE
+    val node = system.actorOf(Channel.props(self, self, bob_params.copy(anchorAmount = Some(anchorAmount))))
+    //node ! INPUT_NONE
     val their_open_channel = expectMsgClass(classOf[open_channel])
     val theirParams = TheirChannelParams(their_open_channel.delay, their_open_channel.commitKey, their_open_channel.finalKey, their_open_channel.minDepth, their_open_channel.commitmentFee)
     channelDesc = channelDesc.copy(theirParams = Some(theirParams))
