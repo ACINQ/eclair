@@ -272,7 +272,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case true =>
           them ! open_commit_sig(ourSigForThem)
           blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 1, BITCOIN_ANCHOR_SPENT)
+          blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, Commitment(0, signedCommitTx, state, theirRevocationHash))
       }
 
