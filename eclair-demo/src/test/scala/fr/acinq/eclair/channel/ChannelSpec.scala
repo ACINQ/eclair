@@ -40,7 +40,6 @@ class ChannelSpec extends TestKit(ActorSystem("TestSystem")) with WordSpecLike w
         case m: WatchConfirmed => true
         case m: WatchSpent => true
         case m: WatchLost => true
-        case m: WatchConfirmedBasedOnOutputs => true
       }
       val pipe = system.actorOf(Props[ChannelSpec.Pipe])
       val alice = system.actorOf(Channel.props(pipe, blockchain.ref, Alice.channelParams), "Alice")
