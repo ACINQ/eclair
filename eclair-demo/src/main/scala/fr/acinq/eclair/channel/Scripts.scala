@@ -59,19 +59,19 @@ object Scripts {
 
   def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = Script.write(pay2sh(multiSig2of2(pubkey1, pubkey2)))
 
-  def redeemSecretOrDelay(delayedKey: BinaryData, lockTime: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
+  def redeemSecretOrDelay(delayedKey: BinaryData, reltimeout: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_PUSHDATA(ripemd160(hashOfSecret)) :: OP_EQUAL ::
     OP_IF ::
       OP_PUSHDATA(keyIfSecretKnown) ::
     OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(lockTime)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
+      OP_PUSHDATA(Script.encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
   }
 
-  def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, htlc_abstimeout: Long, locktime: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
+  def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
@@ -79,22 +79,22 @@ object Scripts {
     OP_IF ::
       OP_PUSHDATA(theirkey) ::
     OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(htlc_abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(Script.encodeNumber(locktime)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      OP_PUSHDATA(Script.encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(Script.encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
   }
 
-  def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, htlc_abstimeout: Long, locktime: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
+  def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
     OP_IF ::
-      OP_PUSHDATA(Script.encodeNumber(locktime)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      OP_PUSHDATA(Script.encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ELSE ::
       OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL ::
       OP_NOTIF ::
-        OP_PUSHDATA(Script.encodeNumber(htlc_abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+        OP_PUSHDATA(Script.encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
       OP_ENDIF ::
       OP_PUSHDATA(theirkey) ::
     OP_ENDIF ::

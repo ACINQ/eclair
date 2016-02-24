@@ -8,6 +8,7 @@ import org.scalatest.junit.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class ClaimSentHtlcSpec extends FunSuite {
+
   object Alice {
     val (_, commitKey) = Base58Check.decode("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g")
     val (_, finalKey) = Base58Check.decode("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA")
@@ -31,7 +32,9 @@ class ClaimSentHtlcSpec extends FunSuite {
     val revokeCommitHash = Crypto.sha256(revokeCommit)
   }
 
-  val htlcScript = scriptPubKeyHtlcSend(Alice.finalPubKey, Bob.finalPubKey, 1000, 2000, Alice.revokeCommitHash, Alice.Rhash)
+  val abstimeout = 3000
+  val reltimeout = 2000
+  val htlcScript = scriptPubKeyHtlcSend(Alice.finalPubKey, Bob.finalPubKey, abstimeout, reltimeout, Alice.revokeCommitHash, Alice.Rhash)
 
   // this tx sends money to our HTLC
   val tx = Transaction(
@@ -48,29 +51,65 @@ class ClaimSentHtlcSpec extends FunSuite {
     lockTime = 0)
 
   test("Alice can spend this HTLC after a delay") {
-    val tx1 = Transaction(
-      version = 1,
-      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = 0xffffffff - 2000) :: Nil,
+    val tx2 = Transaction(
+      version = 2,
+      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = reltimeout + 1) :: Nil,
       txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
-      lockTime = 2000)
+      lockTime = abstimeout + 1)
 
-    val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Alice.finalKey)
-      val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Array.emptyByteArray) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
-      val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
+    val sig = Transaction.signInput(tx2, 0, Script.write(htlcScript), SIGHASH_ALL, Alice.finalKey)
+    val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Array.emptyByteArray) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
+    val tx3 = tx2.updateSigScript(0, Script.write(sigScript))
 
-      val runner = new Script.Runner(new Script.Context(tx2, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
-      val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
-      assert(result)
+    val runner = new Script.Runner(new Script.Context(tx3, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
+    val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
+    assert(result)
+  }
+
+  test("Alice cannot spend this HTLC before its absolute timeout") {
+    val tx2 = Transaction(
+      version = 2,
+      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = reltimeout + 1) :: Nil,
+      txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      lockTime = abstimeout -1)
+
+    val sig = Transaction.signInput(tx2, 0, Script.write(htlcScript), SIGHASH_ALL, Alice.finalKey)
+    val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Array.emptyByteArray) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
+    val tx3 = tx2.updateSigScript(0, Script.write(sigScript))
+
+    val runner = new Script.Runner(new Script.Context(tx3, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
+    val e = intercept[RuntimeException] {
+      runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
+    }
+    assert(e.getMessage === "unsatisfied CLTV lock time")
+  }
+
+  test("Alice cannot spend this HTLC before its relative timeout") {
+    val tx2 = Transaction(
+      version = 2,
+      txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, sequence = reltimeout - 1) :: Nil,
+      txOut = TxOut(10, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      lockTime = abstimeout +1)
+
+    val sig = Transaction.signInput(tx2, 0, Script.write(htlcScript), SIGHASH_ALL, Alice.finalKey)
+    val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Array.emptyByteArray) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
+    val tx3 = tx2.updateSigScript(0, Script.write(sigScript))
+
+    val runner = new Script.Runner(new Script.Context(tx3, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
+    val e = intercept[RuntimeException] {
+      runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
+    }
+    assert(e.getMessage === "unsatisfied CSV lock time")
   }
 
   test("Blob can spend this HTLC if he knows the payment hash") {
-      val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Bob.finalKey)
-      val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Alice.R) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
-      val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
+    val sig = Transaction.signInput(tx1, 0, Script.write(htlcScript), SIGHASH_ALL, Bob.finalKey)
+    val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Alice.R) :: OP_PUSHDATA(Script.write(htlcScript)) :: Nil
+    val tx2 = tx1.updateSigScript(0, Script.write(sigScript))
 
-      val runner = new Script.Runner(new Script.Context(tx2, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
-      val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
-      assert(result)
+    val runner = new Script.Runner(new Script.Context(tx2, 0), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS | ScriptFlags.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY | ScriptFlags.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY)
+    val result = runner.verifyScripts(Script.write(sigScript), Script.write(pay2sh(htlcScript)))
+    assert(result)
   }
 
   test("Blob can spend this HTLC if he knows the revocation hash") {
