@@ -1,7 +1,8 @@
 package fr.acinq.eclair.channel
 
+import akka.actor.Actor.Receive
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.actor.{ActorSystem, Props}
+import akka.actor._
 import akka.testkit.{ImplicitSender, TestKit, TestProbe}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -41,26 +42,24 @@ class ChannelSpec extends TestKit(ActorSystem("TestSystem")) with WordSpecLike w
         case m: WatchLost => true
         case m: WatchConfirmedBasedOnOutputs => true
       }
-      val alice = system.actorOf(Props(new Channel(blockchain.ref, Alice.channelParams)), "Alice")
-      val bob = system.actorOf(Props(new Channel(blockchain.ref, Bob.channelParams)), "Bob")
+      val pipe = system.actorOf(Props[ChannelSpec.Pipe])
+      val alice = system.actorOf(Channel.props(pipe, blockchain.ref, Alice.channelParams), "Alice")
+      val bob = system.actorOf(Channel.props(pipe, blockchain.ref, Bob.channelParams), "Bob")
 
       val monitora = TestProbe()
       val monitorb = TestProbe()
 
       alice ! SubscribeTransitionCallBack(monitora.ref)
-      val CurrentState(_, INIT_WITHANCHOR) = monitora.expectMsgClass(classOf[CurrentState[_]])
+      val CurrentState(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR) = monitora.expectMsgClass(classOf[CurrentState[_]])
 
       bob ! SubscribeTransitionCallBack(monitorb.ref)
-      val CurrentState(_, INIT_NOANCHOR) = monitorb.expectMsgClass(classOf[CurrentState[_]])
+      val CurrentState(_, OPEN_WAIT_FOR_OPEN_NOANCHOR) = monitorb.expectMsgClass(classOf[CurrentState[_]])
 
-      alice.tell(INPUT_NONE, bob)
-      bob.tell(INPUT_NONE, alice)
+      pipe ! alice
+      pipe ! bob
 
       def waitForAliceTransition = monitora.expectMsgClass(classOf[Transition[_]])
       def waitForBobTransition = monitorb.expectMsgClass(classOf[Transition[_]])
-
-      val Transition(_, INIT_WITHANCHOR, OPEN_WAIT_FOR_OPEN_WITHANCHOR) = waitForAliceTransition
-      val Transition(_, INIT_NOANCHOR, OPEN_WAIT_FOR_OPEN_NOANCHOR) = waitForBobTransition
 
       val MakeAnchor(_, _, amount) = blockchain.expectMsgClass(classOf[MakeAnchor])
       val anchorTx = Transaction(version = 1,
@@ -125,6 +124,30 @@ class ChannelSpec extends TestKit(ActorSystem("TestSystem")) with WordSpecLike w
 
       val Transition(_, CLOSING, CLOSED) = waitForAliceTransition
       val Transition(_, CLOSING, CLOSED) = waitForBobTransition
+    }
+  }
+}
+
+object ChannelSpec {
+  // handle a bi-directional path between 2 actors
+  // used to avoid the chicken-and-egg problem of:
+  // a = new Channel(b)
+  // b = new Channel(a)
+  class Pipe extends Actor with Stash {
+
+    override def unhandled(message: Any): Unit = stash()
+
+    def receive = {
+      case a: ActorRef => context become receive1(a)
+    }
+    def receive1(a: ActorRef): Receive = {
+      case b: ActorRef =>
+        unstashAll()
+        context become receive2(a, b)
+    }
+    def receive2(a: ActorRef, b: ActorRef): Receive = {
+      case msg if sender() == a => b forward msg
+      case msg if sender() == b => a forward msg
     }
   }
 }

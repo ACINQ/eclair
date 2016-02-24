@@ -70,8 +70,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
     case Event(pkt(Auth(auth)), s: SessionData) =>
       log.info(s"their_nodeid: ${BinaryData(auth.nodeId.key.toByteArray)}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
-      val channel = context.actorOf(Props(new Channel(blockchain, our_params)), name = "channel")
-      channel ! INPUT_NONE
+      val channel = context.actorOf(Channel.props(self, blockchain, our_params), name = "channel")
       goto(IO_NORMAL) using Normal(channel, s)
   }
 
