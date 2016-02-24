@@ -26,7 +26,6 @@ class PollingWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext
   override def receive: Receive = ???
 
   def watching(watches: Map[Watch, Cancellable]): Receive = {
-    case w: WatchConfirmedBasedOnOutputs => log.warning(s"ignoring $w (not implemented)")
 
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
 
