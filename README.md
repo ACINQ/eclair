@@ -60,6 +60,7 @@ eclair.bitcoind.rpcpassword (default: bar)
 - [X] HTLC Scripts
 - [ ] Unilateral close handling
 - [ ] Relaying Payment
+- [ ] Fee management
 - [X] Blockchain watcher
 - [ ] Storing states in a database
 
