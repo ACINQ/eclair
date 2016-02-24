@@ -25,6 +25,9 @@ object Boot extends App with Logging {
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
+  logger.info(s"hello!")
+  logger.info(s"nodeid=${Globals.node_id.pub}")
+
   val config = ConfigFactory.load()
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest", "you should be on testnet or regtest")
