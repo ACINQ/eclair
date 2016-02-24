@@ -1,9 +1,9 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Base58Check}
+import fr.acinq.bitcoin.{Crypto, BitcoinJsonRPCClient}
 import fr.acinq.eclair.channel.OurChannelParams
-import fr.acinq.eclair.crypto.LightningCrypto._
+import fr.acinq.eclair.crypto.LightningCrypto
 import lightning.locktime
 import lightning.locktime.Locktime.Seconds
 
@@ -13,9 +13,10 @@ import lightning.locktime.Locktime.Seconds
   */
 object Globals {
   val config = ConfigFactory.load()
-  val node_id = KeyPair("0277863c1e40a2d4934ccf18e6679ea949d36bb0d1333fb098e99180df60d0195a","0623a602c7b0c96df445b999de31ca31682f0117ca2bf2fb149b9e09287d5d47")
-  val commit_priv = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")._2
-  val final_priv = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")._2
+
+  val node_id = LightningCrypto.randomKeyPair()
+  val commit_priv = Crypto.sha256(node_id.priv) // TODO : just for testing
+  val final_priv = Crypto.sha256(commit_priv) // TODO : just for testing
 
   val default_locktime = locktime(Seconds(86400))
   val default_mindepth = 3
