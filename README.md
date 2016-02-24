@@ -56,7 +56,7 @@ eclair.bitcoind.rpcpassword (default: bar)
 ## Status
 - [X] Network
 - [ ] Routing
-- [X] Channel state machine
+- [X] Channel protocol
 - [X] HTLC Scripts
 - [ ] Unilateral close handling
 - [ ] Relaying Payment
