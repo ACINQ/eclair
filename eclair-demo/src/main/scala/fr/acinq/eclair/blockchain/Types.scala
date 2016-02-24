@@ -12,7 +12,6 @@ import fr.acinq.eclair.channel.BlockchainEvent
 
 trait Watch
 final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Int, event: BlockchainEvent) extends Watch
-final case class WatchConfirmedBasedOnOutputs(channel: ActorRef, txIdSpent: BinaryData, txOut: Seq[TxOut], minDepth: Int, event: BlockchainEvent) extends Watch
 final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: Int, minDepth: Int, event: BlockchainEvent) extends Watch
 final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Int, event: BlockchainEvent) extends Watch // notify me if confirmation number gets below minDepth
 
