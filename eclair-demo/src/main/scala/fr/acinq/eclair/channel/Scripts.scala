@@ -13,8 +13,7 @@ object Scripts {
 
   def locktime2long_csv(in: locktime): Long = in match {
     case locktime(Blocks(blocks)) => blocks
-    // FIXME : we adopt Element's alpha convention while BIP68 is not enabled
-    case locktime(Seconds(seconds)) => 500000000 + seconds
+    case locktime(Seconds(seconds)) => (seconds / 512) & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG
   }
 
   def locktime2long_cltv(in: locktime): Long = in match {
