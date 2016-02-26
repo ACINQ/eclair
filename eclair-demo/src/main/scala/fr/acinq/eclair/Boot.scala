@@ -26,7 +26,7 @@ object Boot extends App with Logging {
   implicit val ec = ExecutionContext.Implicits.global
 
   logger.info(s"hello!")
-  logger.info(s"nodeid=${Globals.node_id.pub}")
+  logger.info(s"nodeid=${Globals.Node.publicKey}")
 
   val config = ConfigFactory.load()
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
@@ -34,6 +34,8 @@ object Boot extends App with Logging {
 
   val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
   val register = system.actorOf(Props[RegisterActor], name = "register")
+
+
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
   val api = system.actorOf(Props(new ServiceActor {
     override val register: ActorRef = Boot.register

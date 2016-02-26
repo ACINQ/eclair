@@ -7,6 +7,7 @@ import akka.io.Tcp.{Register, Received, Write}
 import akka.util.ByteString
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.RegisterActor.RegisterChannel
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.LightningCrypto._
@@ -55,7 +56,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       log.info(s"generated secrets_in=$secrets_in secrets_out=$secrets_out")
       val cipher_in = aesDecryptCipher(secrets_in.aes_key, secrets_in.aes_iv)
       val cipher_out = aesEncryptCipher(secrets_out.aes_key, secrets_out.aes_iv)
-      val our_auth = pkt(Auth(lightning.authenticate(Globals.node_id.pub, bin2signature(Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.node_id.priv))))))
+      val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))))))
       val (d, new_totlen_out) = writeMsg(our_auth, secrets_out, cipher_out, 0)
       them ! Write(ByteString.fromArray(d))
       goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, secrets_in, secrets_out, cipher_in, cipher_out, 0, new_totlen_out, BinaryData(Seq()))
@@ -68,9 +69,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
 
     case Event(pkt(Auth(auth)), s: SessionData) =>
-      log.info(s"their_nodeid=${BinaryData(auth.nodeId.key.toByteArray)}")
+      val nodeId: BinaryData = auth.nodeId.key.toByteArray
+      log.info(s"their_nodeid=${nodeId}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
-      val channel = context.actorOf(Channel.props(self, blockchain, our_params), name = "channel")
+      val channel = context.actorOf(Channel.props(self, blockchain, our_params, nodeId), name = "channel")
       goto(IO_NORMAL) using Normal(channel, s)
   }
 
@@ -127,6 +129,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       val (data, new_totlen_out) = writeMsg(packet, secrets_out, cipher_out, totlen_out)
       them ! Write(ByteString.fromArray(data))
       stay using n.copy(sessionData = s.copy(totlen_out = new_totlen_out))
+
+    case Event(msg: RegisterActor.UpdateState, _) =>
+      context.parent forward msg
+      stay
 
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd

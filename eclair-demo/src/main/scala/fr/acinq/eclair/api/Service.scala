@@ -5,9 +5,10 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, Actor}
 import akka.util.Timeout
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair.RegisterActor.GetChannels
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.{Boot, GetChannels}
+import fr.acinq.eclair.Boot
 import grizzled.slf4j.Logging
 import lightning.locktime
 import lightning.locktime.Locktime.Seconds

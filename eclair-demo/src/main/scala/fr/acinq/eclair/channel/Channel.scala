@@ -188,11 +188,14 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 // @formatter:on
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams) = Props(new Channel(them, blockchain, params))
+  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, nodeId: BinaryData = Hash.Zeroes) = Props(new Channel(them, blockchain, params, nodeId))
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
+class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, nodeId: BinaryData) extends LoggingFSM[State, Data] with Stash {
   import context.dispatcher
+
+  //TODO: improve this ?
+  def register = context.actorSelection("/*/register")
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(params.commitPubKey))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(params.finalPubKey))
@@ -371,6 +374,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
+      val anchorTxHash = d.commitment.tx.txIn(0).outPoint.hash
+      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash, d.commitment.state)
       goto(NORMAL_LOWPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
@@ -396,6 +401,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
+      /**
+       * TODO: here we assume that the register actor is the parent of this auth.handler !!
+       * other options: pass the register explicitly to the auth.handler constructor, or use actor paths
+       */
+      val anchorTxHash = d.commitment.tx.txIn(0).outPoint.hash
+      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash, d.commitment.state)
       goto(NORMAL_HIGHPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
