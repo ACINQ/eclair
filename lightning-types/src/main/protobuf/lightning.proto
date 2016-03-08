@@ -133,6 +133,8 @@ message update_add_htlc {
   // Time at which HTLC expires (absolute)
   required locktime expiry = 4;
   // FIXME: Routing information.
+  repeated string node_ids = 10;
+
 }
 
 // We can't do this HTLC, sorry (instead of update_accept)

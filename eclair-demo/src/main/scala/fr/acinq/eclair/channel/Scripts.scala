@@ -32,19 +32,19 @@ object Scripts {
   def permuteOutputs(tx: Transaction): Transaction = tx.copy(txOut = tx.txOut.sortWith(lessThan))
 
   def multiSig2of2(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
-    BinaryData(Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2)))
+    Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
   else
-    BinaryData(Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1)))
+    Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
 
 
   def sigScript2of2(sig1: BinaryData, sig2: BinaryData, pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
-    BinaryData(Script.write(OP_0 :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil))
+    Script.write(OP_0 :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil)
   else
-    BinaryData(Script.write(OP_0 :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil))
+    Script.write(OP_0 :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil)
 
-  def pay2sh(script: Seq[ScriptElt]) = OP_HASH160 :: OP_PUSHDATA(hash160(Script.write(script))) :: OP_EQUAL :: Nil
+  def pay2sh(script: Seq[ScriptElt]): Seq[ScriptElt] = pay2sh(Script.write(script))
 
-  def pay2sh(script: BinaryData) = OP_HASH160 :: OP_PUSHDATA(hash160(script)) :: OP_EQUAL :: Nil
+  def pay2sh(script: BinaryData): Seq[ScriptElt] = OP_HASH160 :: OP_PUSHDATA(hash160(script)) :: OP_EQUAL :: Nil
 
   //TODO : this function does not handle the case where the anchor tx does not spend all previous tx output (meaning there is change)
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTxOutput: OutPoint, signData: SignData): (Transaction, Int) = {

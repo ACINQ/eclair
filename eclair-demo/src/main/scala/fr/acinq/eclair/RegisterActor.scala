@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import akka.actor._
 import akka.util.Timeout
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import fr.acinq.eclair.channel.{OurChannelParams, CMD_GETINFO, ChannelState}
+import fr.acinq.eclair.channel.{CMD_SEND_HTLC_UPDATE, OurChannelParams, CMD_GETINFO, ChannelState}
 import fr.acinq.eclair.io.AuthHandler
 import akka.pattern.ask
 
@@ -56,6 +56,14 @@ class RegisterActor extends Actor with ActorLogging {
         case (entry, index) =>
           log.debug(s"${Globals.Node.publicKey} -> ${entry.nodeId} updated state $newState")
           context.become(main(entries.updated(index, entry.copy(state = newState)), counter))
+      }
+    case msg@CMD_SEND_HTLC_UPDATE(amount, rhash, expiry, nodeIds) =>
+      val nodeId: BinaryData = nodeIds.head
+      entries.find(_.nodeId == nodeId) match {
+        case None => sender ! akka.actor.Status.Failure(new RuntimeException(s"no channels to $nodeId"))
+        case Some(entry) =>
+          log.debug(s"forwarding $msg to ${entry.nodeId}:${entry.channelId}")
+          entry.channel forward msg
       }
     case Terminated(actor) =>
       context.unwatch(actor)

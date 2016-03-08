@@ -78,6 +78,11 @@ trait Service extends HttpService with Logging {
                 (register ? GetChannels).mapTo[Iterable[RES_GETINFO]]
               case JsonRPCBody(_, _, "addhtlc", JString(channel) :: JInt(amount) :: JString(rhash) :: JInt(expiry) :: Nil) =>
                 sendCommand(channel, CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt))))
+              case JsonRPCBody(_, _, "addhtlc_r", JInt(amount) :: JString(rhash) :: JInt(expiry) :: tail) =>
+                val nodeIds = tail.toSeq.map {
+                  case JString(nodeId) => nodeId
+                }
+                (register ? CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds)).mapTo[Nothing]
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
                 sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>

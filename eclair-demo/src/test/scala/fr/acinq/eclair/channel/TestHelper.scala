@@ -186,7 +186,7 @@ abstract class TestHelper(_system: ActorSystem) extends TestKit(_system) with Im
     val their_rHash = Crypto.sha256(their_r)
     node ! CMD_SEND_HTLC_UPDATE(amount, their_rHash, locktime(Blocks(4)))
 
-    val htlc@update_add_htlc(theirRevocationHash1, amount_, rHash, expiry) = expectMsgClass(classOf[update_add_htlc])
+    val htlc@update_add_htlc(theirRevocationHash1, amount_, rHash, expiry, _) = expectMsgClass(classOf[update_add_htlc])
     assert(amount === amount_)
     val state1 = state0.htlc_receive(htlc)
     val ourRevocationHash1 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index + 1))

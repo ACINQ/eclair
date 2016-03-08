@@ -131,7 +131,7 @@ case object BITCOIN_CLOSE_DONE extends BlockchainEvent
  */
 
 sealed trait Command
-final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime) extends Command
+final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String]) extends Command
 final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
 final case class CMD_SEND_HTLC_ROUTEFAIL(h: sha256_hash) extends Command
@@ -443,21 +443,21 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   def NORMAL_handler: StateFunction = {
-    case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
+    case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry, nodeIds), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
-      val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry)
+      val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry, if (nodeIds.isEmpty) Seq.empty[String] else nodeIds.tail)
       val newState = previousState.htlc_send(htlc)
       // for now we don't care if we don't have the money, in that case they will decline the request
       them ! htlc
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, UpdateProposal(commitment.index + 1, newState))
 
 
-    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), d@DATA_NORMAL(ourParams, theirParams, shaChain, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
+    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry, nodeIds), d@DATA_NORMAL(ourParams, theirParams, shaChain, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
       them ! update_decline_htlc(CannotRoute(true))
       goto(NORMAL(priority))
 
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, Nil), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       commitment.state.htlc_receive(htlc) match {
         case newState if (newState.them.pay_msat < 0) =>
           // insufficient funds
@@ -468,6 +468,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
           them ! update_accept(ourSigForThem, ourRevocationHash)
           goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
+      }
+
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, nodeIds), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
+      commitment.state.htlc_receive(htlc) match {
+        case newState if (newState.them.pay_msat < 0) =>
+          // insufficient funds
+          them ! update_decline_htlc(InsufficientFunds(funding(None)))
+          stay
+        case newState =>
+          register ! htlc
+          stay()
       }
 
     case Event(CMD_SEND_HTLC_ROUTEFAIL(rHash), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
@@ -599,12 +610,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler)
 
   when(WAIT_FOR_HTLC_ACCEPT_LOWPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler orElse {
-    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
+    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
       //TODO : for testing, hashes 0/0/0/0 are declined
       them ! update_decline_htlc(CannotRoute(true))
       goto(NORMAL_LOWPRIO) using DATA_NORMAL(ourParams, theirParams, shaChain, commitment)
 
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
       val newState = commitment.state.htlc_receive(htlc)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)

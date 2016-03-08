@@ -35,7 +35,6 @@ object Boot extends App with Logging {
   val blockchain = system.actorOf(Props(new PollingWatcher(bitcoin_client)), name = "blockchain")
   val register = system.actorOf(Props[RegisterActor], name = "register")
 
-
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
   val api = system.actorOf(Props(new ServiceActor {
     override val register: ActorRef = Boot.register
