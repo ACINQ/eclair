@@ -69,7 +69,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
 
     case Event(pkt(Auth(auth)), s: SessionData) =>
-      val nodeId: BinaryData = auth.nodeId.key.toByteArray
+      val nodeId: String = BinaryData(auth.nodeId.key.toByteArray).toString
       log.info(s"their_nodeid=${nodeId}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
       val channel = context.actorOf(Channel.props(self, blockchain, our_params, nodeId), name = "channel")

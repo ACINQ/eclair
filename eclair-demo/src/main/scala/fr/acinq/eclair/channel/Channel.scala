@@ -132,7 +132,7 @@ case object BITCOIN_CLOSE_DONE extends BlockchainEvent
 
 sealed trait Command
 final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String]) extends Command
-final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash) extends Command
+final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash, nodeIds: Seq[String] = Seq.empty[String]) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
 final case class CMD_SEND_HTLC_ROUTEFAIL(h: sha256_hash) extends Command
 final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
@@ -188,10 +188,68 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 // @formatter:on
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, nodeId: BinaryData = Hash.Zeroes) = Props(new Channel(them, blockchain, params, nodeId))
+  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, nodeId: String = Hash.Zeroes.toString()) = Props(new Channel(them, blockchain, params, nodeId))
+
+  def isMutualClose(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
+    // we rebuild the closing tx as seen by both parties
+    //TODO we should use the closing fee in pkts
+    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
+    //val finalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState)
+    val finalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, closingState)
+    // and only compare the outputs
+    tx.txOut == finalTx.txOut
+  }
+
+  def isOurCommit(tx: Transaction, commitment: Commitment): Boolean = tx == commitment.tx
+
+  def isTheirCommit(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
+    // we rebuild their commitment tx
+    val theirCommitTx = makeCommitTx(commitment.tx.txIn, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, commitment.theirRevocationHash, commitment.state.reverse)
+    // and only compare the outputs
+    tx.txOut == theirCommitTx.txOut
+  }
+
+  def isRevokedCommit(tx: Transaction): Boolean = {
+    // TODO : for now we assume that every published tx which is none of (mutualclose, ourcommit, theircommit) is a revoked commit
+    // which means ERR_INFORMATION_LEAK will never occur
+    true
+  }
+
+  def sign_their_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHash: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
+    // we build our side of the new commitment tx
+    val ourCommitTx = makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, newState)
+    // we build their commitment tx and sign it
+    val theirCommitTx = makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, newState.reverse)
+    val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
+    (ourCommitTx, ourSigForThem)
+  }
+
+  def sign_our_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, ourCommitTx: Transaction, theirSig: signature): Transaction = {
+    // TODO : Transaction.sign(...) should handle multisig
+    val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
+    ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey))
+  }
+
+  def handle_cmd_close(cmd: CMD_CLOSE, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): close_channel = {
+    val closingState = commitment.state.adjust_fees(cmd.fee * 1000, ourParams.anchorAmount.isDefined)
+    val finalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, closingState)
+    val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
+    val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
+    close_channel(ourSig, cmd.fee)
+  }
+
+  def handle_pkt_close(pkt: close_channel, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): (Transaction, close_channel_complete) = {
+    val closingState = commitment.state.adjust_fees(pkt.closeFee * 1000, ourParams.anchorAmount.isDefined)
+    val finalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, closingState)
+    val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
+    val signedFinalTx = finalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey))
+    (signedFinalTx, close_channel_complete(ourSig))
+  }
+
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, nodeId: BinaryData) extends LoggingFSM[State, Data] with Stash {
+class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, nodeId: String) extends LoggingFSM[State, Data] with Stash {
+  import Channel._
   import context.dispatcher
 
   //TODO: improve this ?
@@ -319,6 +377,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -353,6 +412,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -375,11 +435,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       val anchorTxHash = d.commitment.tx.txIn(0).outPoint.hash
-      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash, d.commitment.state)
+      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash.toString(), d.commitment.state)
       goto(NORMAL_LOWPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -406,11 +467,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
        * other options: pass the register explicitly to the auth.handler constructor, or use actor paths
        */
       val anchorTxHash = d.commitment.tx.txIn(0).outPoint.hash
-      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash, d.commitment.state)
+      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash.toString(), d.commitment.state)
       goto(NORMAL_HIGHPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -445,7 +507,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   def NORMAL_handler: StateFunction = {
     case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry, nodeIds), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
-      val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry, if (nodeIds.isEmpty) Seq.empty[String] else nodeIds.tail)
+      val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry, nodeIds)
       val newState = previousState.htlc_send(htlc)
       // for now we don't care if we don't have the money, in that case they will decline the request
       them ! htlc
@@ -457,7 +519,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! update_decline_htlc(CannotRoute(true))
       goto(NORMAL(priority))
 
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, Nil), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
+    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       commitment.state.htlc_receive(htlc) match {
         case newState if (newState.them.pay_msat < 0) =>
           // insufficient funds
@@ -468,17 +530,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
           them ! update_accept(ourSigForThem, ourRevocationHash)
           goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
-      }
-
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, nodeIds), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      commitment.state.htlc_receive(htlc) match {
-        case newState if (newState.them.pay_msat < 0) =>
-          // insufficient funds
-          them ! update_decline_htlc(InsufficientFunds(funding(None)))
-          stay
-        case newState =>
-          register ! htlc
-          stay()
       }
 
     case Event(CMD_SEND_HTLC_ROUTEFAIL(rHash), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
@@ -510,7 +561,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! update_accept(ourSigForThem, ourRevocationHash)
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
 
-    case Event(c@CMD_SEND_HTLC_FULFILL(r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
+    case Event(c@CMD_SEND_HTLC_FULFILL(r, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
       // we paid upstream in exchange for r, now lets gets paid
       Try(previousState.htlc_fulfill(r)) match {
         case Success(newState) =>
@@ -525,6 +576,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(update_fulfill_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
       val newState = commitment.state.htlc_fulfill(r)
+      // FIXME: is this the right moment to propagate this htlc ?
+      commitment.state.them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).map(htlc => register ! CMD_SEND_HTLC_FULFILL(r, htlc.nodeIds))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
       them ! update_accept(ourSigForThem, ourRevocationHash)
@@ -532,6 +585,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -588,6 +642,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -655,6 +710,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case (true, true) =>
           val preimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index)
           them ! update_complete(preimage)
+          // FIXME: we assume that the last received htlc is the one that is pending
+          newCommitment.state.us.htlcs.lastOption.map(htlc => register ! CMD_SEND_HTLC_UPDATE(htlc.amountMsat, htlc.rHash, htlc.expiry, htlc.nodeIds))
           goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, ShaChain.addHash(shaChain, theirRevocationPreimage, previousCommitment.index), newCommitment)
         case (true, false) =>
           log.warning(s"bad signature !")
@@ -708,6 +765,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
+      blockchain ! Publish(finalTx)
       them ! res
       goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
 
@@ -901,62 +959,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
   */
 
-  def isMutualClose(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
-    // we rebuild the closing tx as seen by both parties
-    //TODO we should use the closing fee in pkts
-    val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
-    //val finalTx = makeFinalTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, closingState)
-    val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
-    // and only compare the outputs
-    tx.txOut == finalTx.txOut
-  }
-
-  def isOurCommit(tx: Transaction, commitment: Commitment): Boolean = tx == commitment.tx
-
-  def isTheirCommit(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
-    // we rebuild their commitment tx
-    val theirCommitTx = makeCommitTx(commitment.tx.txIn, theirParams.finalPubKey, ourFinalPubKey, theirParams.delay, commitment.theirRevocationHash, commitment.state.reverse)
-    // and only compare the outputs
-    tx.txOut == theirCommitTx.txOut
-  }
-
-  def isRevokedCommit(tx: Transaction): Boolean = {
-    // TODO : for now we assume that every published tx which is none of (mutualclose, ourcommit, theircommit) is a revoked commit
-    // which means ERR_INFORMATION_LEAK will never occur
-    true
-  }
-
-  def sign_their_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], newState: ChannelState, ourRevocationHash: sha256_hash, theirRevocationHash: sha256_hash): (Transaction, signature) = {
-    // we build our side of the new commitment tx
-    val ourCommitTx = makeCommitTx(inputs, ourFinalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, newState)
-    // we build their commitment tx and sign it
-    val theirCommitTx = makeCommitTx(inputs, theirParams.finalPubKey, ourFinalPubKey, theirParams.delay, theirRevocationHash, newState.reverse)
-    val ourSigForThem = bin2signature(Transaction.signInput(theirCommitTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-    (ourCommitTx, ourSigForThem)
-  }
-
-  def sign_our_commitment_tx(ourParams: OurChannelParams, theirParams: TheirChannelParams, ourCommitTx: Transaction, theirSig: signature): Transaction = {
-    // TODO : Transaction.sign(...) should handle multisig
-    val ourSig = Transaction.signInput(ourCommitTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
-    ourCommitTx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
-  }
-
-  def handle_cmd_close(cmd: CMD_CLOSE, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): close_channel = {
-    val closingState = commitment.state.adjust_fees(cmd.fee * 1000, ourParams.anchorAmount.isDefined)
-    val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
-    val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-    val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
-    close_channel(ourSig, cmd.fee)
-  }
-
-  def handle_pkt_close(pkt: close_channel, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): (Transaction, close_channel_complete) = {
-    val closingState = commitment.state.adjust_fees(pkt.closeFee * 1000, ourParams.anchorAmount.isDefined)
-    val finalTx = makeFinalTx(commitment.tx.txIn, ourFinalPubKey, theirParams.finalPubKey, closingState)
-    val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourCommitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
-    val signedFinalTx = finalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourCommitPubKey))
-    blockchain ! Publish(signedFinalTx)
-    (signedFinalTx, close_channel_complete(ourSig))
-  }
 
   /**
     * Something went wrong, we publish the current commitment transaction
@@ -999,7 +1001,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     // wait for BITCOIN_STEAL_DONE
     error(Some("Otherspend noticed"))
   }
-
 }
 
 

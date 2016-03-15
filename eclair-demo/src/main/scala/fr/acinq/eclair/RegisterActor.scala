@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import akka.actor._
 import akka.util.Timeout
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import fr.acinq.eclair.channel.{CMD_SEND_HTLC_UPDATE, OurChannelParams, CMD_GETINFO, ChannelState}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.AuthHandler
 import akka.pattern.ask
 
@@ -15,9 +15,9 @@ object RegisterActor {
   // @formatter:off
   case class CreateChannel(connection: ActorRef, anchorAmount: Option[Long])
   case class GetChannels()
-  case class Entry(nodeId: BinaryData, channelId: BinaryData, channel: ActorRef, state: ChannelState)
+  case class Entry(nodeId: String, channelId: String, channel: ActorRef, state: ChannelState)
   case class UpdateState(state: ChannelState)
-  case class RegisterChannel(nodeId: BinaryData, channelId: BinaryData, state: ChannelState)
+  case class RegisterChannel(nodeId: String, channelId: String, state: ChannelState)
   // @formatter:on
 }
 
@@ -29,9 +29,8 @@ class RegisterActor extends Actor with ActorLogging {
   implicit val timeout = Timeout(30 seconds)
   import ExecutionContext.Implicits.global
 
-
   override def unhandled(message: Any): Unit = {
-    log.warning(s"unhanled message $message")
+    log.warning(s"unhandled message $message")
     super.unhandled(message)
   }
 
@@ -48,19 +47,41 @@ class RegisterActor extends Actor with ActorLogging {
       val s = sender()
       Future.sequence(context.children.map(c => c ? CMD_GETINFO)).map(s ! _)
     case RegisterChannel(nodeId, channelId, state) =>
-      log.info(s"${Globals.Node.publicKey} has a new channel to nodeId:$nodeId channelId:$channelId")
+      log.info(s"${Globals.Node.id} has a new channel to nodeId:$nodeId channelId:$channelId")
       context.watch(sender)
       context.become(main(Entry(nodeId, channelId, sender, state) +: entries, counter))
     case UpdateState(newState) =>
       entries.zipWithIndex.find(_._1.channel == sender).map {
         case (entry, index) =>
-          log.debug(s"${Globals.Node.publicKey} -> ${entry.nodeId} updated state $newState")
+          log.debug(s"${Globals.Node.id} -> ${entry.nodeId} updated state $newState")
           context.become(main(entries.updated(index, entry.copy(state = newState)), counter))
       }
+    case msg@CMD_SEND_HTLC_UPDATE(amount, rhash, expiry, nodeIds) if !nodeIds.contains(Globals.Node.id) =>
+      log.error(s"cannot send $msg because I am not on the route")
+      sender ! akka.actor.Status.Failure(new RuntimeException("not on the route"))
+    case msg@CMD_SEND_HTLC_UPDATE(amount, rhash, expiry, nodeIds) if nodeIds.last == Globals.Node.id =>
+      log.debug(s"not forwarding $msg because I am the last node the route")
     case msg@CMD_SEND_HTLC_UPDATE(amount, rhash, expiry, nodeIds) =>
-      val nodeId: BinaryData = nodeIds.head
-      entries.find(_.nodeId == nodeId) match {
-        case None => sender ! akka.actor.Status.Failure(new RuntimeException(s"no channels to $nodeId"))
+      val nextNodeId = nodeIds.dropWhile(_ != Globals.Node.id).tail.head
+      entries.find(_.nodeId == nextNodeId) match {
+        case None =>
+          log.error(s"cannot send htlc: no channels to $nextNodeId")
+          sender ! akka.actor.Status.Failure(new RuntimeException(s"no channels to $nextNodeId"))
+        case Some(entry) =>
+          log.debug(s"forwarding $msg to ${entry.nodeId}:${entry.channelId}")
+          entry.channel forward msg
+      }
+    case msg@CMD_SEND_HTLC_FULFILL(r, nodeIds) if !nodeIds.contains(Globals.Node.id) =>
+      log.error(s"cannot send $msg because I am not on the route")
+      sender ! akka.actor.Status.Failure(new RuntimeException("not on the route"))
+    case msg@CMD_SEND_HTLC_FULFILL(r, nodeIds) if nodeIds.head == Globals.Node.id =>
+      log.debug(s"not forwarding $msg because I am the first node the route")
+    case msg@CMD_SEND_HTLC_FULFILL(r, nodeIds) =>
+      val previousNodeId = nodeIds.reverse.dropWhile(_ != Globals.Node.id).tail.head
+      entries.find(_.nodeId == previousNodeId) match {
+        case None =>
+          log.error(s"cannot send fulfill: no channels to $previousNodeId")
+          sender ! akka.actor.Status.Failure(new RuntimeException(s"no channels to $previousNodeId"))
         case Some(entry) =>
           log.debug(s"forwarding $msg to ${entry.nodeId}:${entry.channelId}")
           entry.channel forward msg
@@ -69,5 +90,8 @@ class RegisterActor extends Actor with ActorLogging {
       context.unwatch(actor)
       entries.find(_.channel == actor).map(e => log.info(s"${Globals.Node.publicKey} has lost its channel nodeId:${e.nodeId} channelId:${e.channelId}"))
       context.become(main(entries.filterNot(_.channel == actor), counter))
+    case msg => {
+      log.warning(s"unhandled message $msg")
+    }
   }
 }
