@@ -2,24 +2,24 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, Actor}
+import akka.actor.{Actor, ActorRef}
 import akka.util.Timeout
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.RegisterActor.GetChannels
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.Boot
+import fr.acinq.eclair.{Boot, channel}
 import grizzled.slf4j.Logging
 import lightning.locktime
 import lightning.locktime.Locktime.Seconds
-import org.json4s.JsonAST.{JString, JDouble, JBool, JObject}
+import org.json4s.JsonAST.{JBool, JDouble, JObject, JString}
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.json4s.jackson.Serialization
-import spray.http.{ContentTypes, HttpEntity, StatusCodes, HttpResponse}
+import spray.http.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import spray.routing.HttpService
 
-import scala.concurrent.{Future, ExecutionContext}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.pattern.ask
@@ -82,8 +82,12 @@ trait Service extends HttpService with Logging {
                 val nodeIds = tail.toSeq.map {
                   case JString(nodeId) => nodeId
                 }
-                register ! CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds)
-                Future.successful("ok")
+                Boot.system.actorSelection(s"*/register/handler-*/channel/${nodeIds.head}-*")
+                  .resolveOne(2 seconds)
+                    .map { channel =>
+                      channel ! CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
+                      channel.toString()
+                    }
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
                 sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>

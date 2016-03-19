@@ -1,7 +1,6 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{Props, ActorRef, LoggingFSM, Stash}
-import akka.pattern.pipe
+import akka.actor.{ActorRef, LoggingFSM, Props, Stash}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -131,15 +130,15 @@ case object BITCOIN_CLOSE_DONE extends BlockchainEvent
  */
 
 sealed trait Command
-final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String]) extends Command
-final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash, nodeIds: Seq[String] = Seq.empty[String]) extends Command
+final case class CMD_SEND_HTLC_UPDATE(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String], originChannelId: Option[BinaryData] = None) extends Command
+final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
 final case class CMD_SEND_HTLC_ROUTEFAIL(h: sha256_hash) extends Command
 final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command
-final case class RES_GETINFO(name: String, state: State, data: Data)
+final case class RES_GETINFO(name: String, nodeid: BinaryData, channelid: BinaryData, state: State, data: Data)
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -159,7 +158,12 @@ final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, fi
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
 }
 final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], commitmentFee: Long)
-final case class Commitment(index: Long, tx: Transaction, state: ChannelState, theirRevocationHash: sha256_hash)
+final case class Commitment(index: Long, tx: Transaction, state: ChannelState, theirRevocationHash: sha256_hash) {
+  def anchorId: BinaryData = {
+    assert(tx.txIn.size == 1, "commitment tx should only have one input")
+    tx.txIn(0).outPoint.hash
+  }
+}
 final case class UpdateProposal(index: Long, state: ChannelState)
 
 trait CurrentCommitment {
@@ -188,7 +192,7 @@ final case class DATA_CLOSING(ourParams: OurChannelParams, theirParams: TheirCha
 // @formatter:on
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, nodeId: String = Hash.Zeroes.toString()) = Props(new Channel(them, blockchain, params, nodeId))
+  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, theirNodeId: String = Hash.Zeroes.toString()) = Props(new Channel(them, blockchain, params, theirNodeId))
 
   def isMutualClose(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): Boolean = {
     // we rebuild the closing tx as seen by both parties
@@ -248,12 +252,10 @@ object Channel {
 
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, nodeId: String) extends LoggingFSM[State, Data] with Stash {
+class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] with Stash {
+
   import Channel._
   import context.dispatcher
-
-  //TODO: improve this ?
-  def register = context.actorSelection("/*/register")
 
   val ourCommitPubKey = bitcoin_pubkey(ByteString.copyFrom(params.commitPubKey))
   val ourFinalPubKey = bitcoin_pubkey(ByteString.copyFrom(params.finalPubKey))
@@ -319,8 +321,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
-      // they fund the channel with their anchor tx, so the money is theirs
-      val state = ChannelState(them = ChannelOneSide((anchorAmount - ourParams.commitmentFee) * 1000, ourParams.commitmentFee * 1000, Seq()), us = ChannelOneSide(0, 0, Seq()))
+    // they fund the channel with their anchor tx, so the money is theirs
+    val state = ChannelState(them = ChannelOneSide((anchorAmount - ourParams.commitmentFee) * 1000, ourParams.commitmentFee * 1000, Seq()), us = ChannelOneSide(0, 0, Seq()))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, state, ourRevocationHash, theirRevocationHash)
@@ -434,8 +436,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
-      val anchorTxHash = d.commitment.tx.txIn(0).outPoint.hash
-      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash.toString(), d.commitment.state)
+      create_alias(theirNodeId, d.commitment.anchorId)
       goto(NORMAL_LOWPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
@@ -462,12 +463,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
-      /**
-       * TODO: here we assume that the register actor is the parent of this auth.handler !!
-       * other options: pass the register explicitly to the auth.handler constructor, or use actor paths
-       */
-      val anchorTxHash = d.commitment.tx.txIn(0).outPoint.hash
-      register ! RegisterActor.RegisterChannel(nodeId, anchorTxHash.toString(), d.commitment.state)
+      create_alias(theirNodeId, d.commitment.anchorId)
       goto(NORMAL_HIGHPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
@@ -505,26 +501,24 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   def NORMAL_handler: StateFunction = {
-    case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry, nodeIds), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
+    case Event(CMD_SEND_HTLC_UPDATE(amount, rHash, expiry, nodeIds, origin), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val htlc = update_add_htlc(ourRevocationHash, amount, rHash, expiry, nodeIds)
-      val newState = previousState.htlc_send(htlc)
+      val newState = previousState.htlc_send(Htlc(amount, rHash, expiry, nodeIds, origin))
       // for now we don't care if we don't have the money, in that case they will decline the request
       them ! htlc
       goto(WAIT_FOR_HTLC_ACCEPT(priority)) using DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, UpdateProposal(commitment.index + 1, newState))
 
-
-    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry, nodeIds), d@DATA_NORMAL(ourParams, theirParams, shaChain, p@Commitment(previousCommitmentTx, previousState, _, _))) =>
-      //TODO : for testing, hashes 0/0/0/0 are declined
-      them ! update_decline_htlc(CannotRoute(true))
-      goto(NORMAL(priority))
-
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      commitment.state.htlc_receive(htlc) match {
+    case Event(htlc@update_add_htlc(theirRevocationHash, amount, rHash, expiry, nodeIds), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
+      commitment.state.htlc_receive(Htlc(amount, rHash, expiry, nodeIds, None)) match {
         case newState if (newState.them.pay_msat < 0) =>
           // insufficient funds
           them ! update_decline_htlc(InsufficientFunds(funding(None)))
           stay
+        // TODO : update_decline_htlc(CannotRoute(true)) is not implemented
+        // is it really a big deal ?
+        // doing too much work before accepting the htlc exposes us to spam since it's "free" for the downstream node
+        // accepting the payment and then trying to route it make it costlier for an attacker because his funds are locked until the htlc expires
         case newState =>
           val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
           val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
@@ -561,7 +555,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! update_accept(ourSigForThem, ourRevocationHash)
       goto(WAIT_FOR_UPDATE_SIG(priority)) using DATA_WAIT_FOR_UPDATE_SIG(ourParams, theirParams, shaChain, commitment, Commitment(commitment.index + 1, newCommitmentTx, newState, theirRevocationHash))
 
-    case Event(c@CMD_SEND_HTLC_FULFILL(r, _), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
+    case Event(c@CMD_SEND_HTLC_FULFILL(r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment@Commitment(_, _, previousState, _))) =>
       // we paid upstream in exchange for r, now lets gets paid
       Try(previousState.htlc_fulfill(r)) match {
         case Success(newState) =>
@@ -575,9 +569,20 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(update_fulfill_htlc(theirRevocationHash, r), DATA_NORMAL(ourParams, theirParams, shaChain, commitment)) =>
-      val newState = commitment.state.htlc_fulfill(r)
       // FIXME: is this the right moment to propagate this htlc ?
-      commitment.state.them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).map(htlc => register ! CMD_SEND_HTLC_FULFILL(r, htlc.nodeIds))
+      // pm : probably not because if subsequent channel update fails we will already have paid the downstream channel
+      // and we'll get our money back only after the timeout
+      commitment.state.them.htlcs_received.find(_.rHash == bin2sha256(Crypto.sha256(r)))
+        .map(htlc => htlc.previousChannelId match {
+          case Some(previousChannelId) =>
+            val downstreamActorPath = s"*/register/handler-*/channel/*-$previousChannelId"
+            val downstream = Boot.system.actorSelection(downstreamActorPath)
+            log.info(s"forwarding r value to downstream=$downstream using path=$downstreamActorPath")
+            downstream ! CMD_SEND_HTLC_FULFILL(r)
+          case None =>
+            log.info(s"looks like I was the origin payer for htlc $htlc")
+        })
+      val newState = commitment.state.htlc_fulfill(r)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
       them ! update_accept(ourSigForThem, ourRevocationHash)
@@ -665,13 +670,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler)
 
   when(WAIT_FOR_HTLC_ACCEPT_LOWPRIO)(WAIT_FOR_HTLC_ACCEPT_HIGHPRIO_handler orElse {
-    case Event(htlc@update_add_htlc(sha256_hash(0, 0, 0, 0), amount, rHash, expiry, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
-      //TODO : for testing, hashes 0/0/0/0 are declined
-      them ! update_decline_htlc(CannotRoute(true))
-      goto(NORMAL_LOWPRIO) using DATA_NORMAL(ourParams, theirParams, shaChain, commitment)
-
-    case Event(htlc@update_add_htlc(theirRevocationHash, _, _, _, _), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
-      val newState = commitment.state.htlc_receive(htlc)
+    case Event(htlc@update_add_htlc(theirRevocationHash, amount, rHash, expiry, nodeIds), DATA_WAIT_FOR_HTLC_ACCEPT(ourParams, theirParams, shaChain, commitment, _)) =>
+      val newState = commitment.state.htlc_receive(Htlc(amount, rHash, expiry, nodeIds, None))
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, commitment.index + 1))
       val (newCommitmentTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, commitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
       them ! update_accept(ourSigForThem, ourRevocationHash)
@@ -711,7 +711,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val preimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index)
           them ! update_complete(preimage)
           // FIXME: we assume that the last received htlc is the one that is pending
-          newCommitment.state.us.htlcs.lastOption.map(htlc => register ! CMD_SEND_HTLC_UPDATE(htlc.amountMsat, htlc.rHash, htlc.expiry, htlc.nodeIds))
+          newCommitment.state.us.htlcs_received.lastOption
+            .map(htlc => htlc.nextNodeIds.headOption match {
+              case Some(nextNodeId) =>
+                val upstreamActorPath = s"*/register/handler-*/channel/$nextNodeId-*"
+                val upstream = Boot.system.actorSelection(upstreamActorPath)
+                log.info(s"forwarding htlc to upstream=$upstream using path=$upstreamActorPath")
+                //FIXME : what if the next channel is in LOW state ? it will ignore CMD_SEND_HTLC_UPDATE msg
+                upstream ! CMD_SEND_HTLC_UPDATE(htlc.amountMsat, htlc.rHash, htlc.expiry, htlc.nextNodeIds.drop(1), originChannelId = Some(previousCommitment.anchorId))
+              case None =>
+                log.info(s"looks like I was the final payee for htlc $htlc")
+            })
           goto(NORMAL(priority.invert)) using DATA_NORMAL(ourParams, theirParams, ShaChain.addHash(shaChain, theirRevocationPreimage, previousCommitment.index), newCommitment)
         case (true, false) =>
           log.warning(s"bad signature !")
@@ -941,7 +951,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       //TODO
       val r = """/user/register/handler-(\d+)/channel""".r
       val r(id) = self.path.toStringWithoutAddress
-      sender ! RES_GETINFO(id, stateName, stateData)
+      sender ! RES_GETINFO(id, theirNodeId, stateData match {
+        case c: CurrentCommitment => c.commitment.anchorId
+        case _ => "unknown"
+      } ,stateName, stateData)
       stay
 
     // TODO : them ! error(Some("Unexpected message")) ?
@@ -959,6 +972,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
   */
 
+  /**
+    * Once it reaches NORMAL state, channel creates a [[fr.acinq.eclair.channel.AliasActor]] which name is counterparty_id-anchor_id
+    */
+  def create_alias(node_id: BinaryData, anchor_id: BinaryData) {
+    context.actorOf(Props(new AliasActor(self)), name = s"$node_id-$anchor_id")
+  }
 
   /**
     * Something went wrong, we publish the current commitment transaction

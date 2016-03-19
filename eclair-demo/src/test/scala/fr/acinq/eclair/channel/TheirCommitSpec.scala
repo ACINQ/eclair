@@ -23,7 +23,7 @@ class TheirCommitSpec extends TestHelper {
       val r = sha256_hash(1, 2, 1, 2)
       val rHash = Crypto.sha256(r)
       val htlc = update_add_htlc(ourRevocationHash, 40000000, rHash, locktime(Blocks(4)))
-      val newState = previousCommitment.state.htlc_send(htlc)
+      val newState = previousCommitment.state.htlc_send(Htlc(htlc.amountMsat, rHash, htlc.expiry, Nil, None))
       node ! htlc
       val update_accept(theirSig, theirRevocationHash) = expectMsgClass(classOf[update_accept])
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)
@@ -49,7 +49,7 @@ class TheirCommitSpec extends TestHelper {
       val r = sha256_hash(1, 2, 1, 2)
       val rHash = Crypto.sha256(r)
       val htlc = update_add_htlc(ourRevocationHash, 40000000, rHash, locktime(Blocks(4)))
-      val newState = previousCommitment.state.htlc_send(htlc)
+      val newState = previousCommitment.state.htlc_send(Htlc(htlc.amountMsat, rHash, htlc.expiry, Nil, None))
       node ! htlc
       val update_accept(theirSig, theirRevocationHash) = expectMsgClass(classOf[update_accept])
       val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, newState, ourRevocationHash, theirRevocationHash)

@@ -7,14 +7,12 @@ import akka.io.Tcp.{Register, Received, Write}
 import akka.util.ByteString
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.RegisterActor.RegisterChannel
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.LightningCrypto._
 import fr.acinq.eclair.io.AuthHandler.Secrets
 import lightning._
 import lightning.pkt.Pkt._
-import org.bouncycastle.util.encoders.Hex
 
 import scala.annotation.tailrec
 
@@ -69,10 +67,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
 
     case Event(pkt(Auth(auth)), s: SessionData) =>
-      val nodeId: String = BinaryData(auth.nodeId.key.toByteArray).toString
-      log.info(s"their_nodeid=${nodeId}")
+      val theirNodeId: String = BinaryData(auth.nodeId.key.toByteArray).toString
+      log.info(s"theirNodeId=${theirNodeId}")
       assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
-      val channel = context.actorOf(Channel.props(self, blockchain, our_params, nodeId), name = "channel")
+      val channel = context.actorOf(Channel.props(self, blockchain, our_params, theirNodeId), name = "channel")
       goto(IO_NORMAL) using Normal(channel, s)
   }
 

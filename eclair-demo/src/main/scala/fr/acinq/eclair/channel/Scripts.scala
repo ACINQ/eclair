@@ -119,10 +119,10 @@ object Scripts {
       ),
       lockTime = 0)
 
-    val sendOuts = channelState.them.htlcs.map(htlc =>
+    val sendOuts = channelState.them.htlcs_received.map(htlc =>
       TxOut(htlc.amountMsat / 1000, pay2sh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
     )
-    val receiveOuts = channelState.us.htlcs.map(htlc =>
+    val receiveOuts = channelState.us.htlcs_received.map(htlc =>
       TxOut(htlc.amountMsat / 1000, pay2sh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
     )
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
@@ -140,7 +140,7 @@ object Scripts {
     * @return an unsigned "final" tx
     */
   def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
-    assert(channelState.them.htlcs.isEmpty && channelState.us.htlcs.isEmpty, s"cannot close a channel with pending htlcs (see rusty's state_types.h line 103)")
+    assert(channelState.them.htlcs_received.isEmpty && channelState.us.htlcs_received.isEmpty, s"cannot close a channel with pending htlcs (see rusty's state_types.h line 103)")
 
     permuteOutputs(Transaction(
       version = 1,
@@ -156,7 +156,7 @@ object Scripts {
 
   def initialFunding(a: open_channel, b: open_channel, anchor: open_anchor, fee: Long): ChannelState = {
     require(isFunder(a) ^ isFunder(b))
-    val (c1, c2) = ChannelOneSide(pay_msat = anchor.amount - fee, fee_msat = fee, Seq.empty[update_add_htlc]) -> ChannelOneSide(0, 0, Seq.empty[update_add_htlc])
+    val (c1, c2) = ChannelOneSide(pay_msat = anchor.amount - fee, fee_msat = fee, Seq.empty[Htlc]) -> ChannelOneSide(0, 0, Seq.empty[Htlc])
     if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 
