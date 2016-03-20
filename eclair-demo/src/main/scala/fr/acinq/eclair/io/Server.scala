@@ -6,7 +6,7 @@ import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import akka.io.{IO, Tcp}
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.Boot
-import fr.acinq.eclair.RegisterActor.CreateChannel
+import fr.acinq.eclair.channel.Register.CreateChannel
 
 /**
  * Created by PM on 27/10/2015.

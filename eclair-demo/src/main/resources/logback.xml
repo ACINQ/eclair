@@ -9,7 +9,7 @@
     </appender>
 
     <logger name="fr.acinq.eclair.channel" level="DEBUG" />
-    <logger name="fr.acinq.eclair.RegisterActor" level="DEBUG" />
+    <logger name="fr.acinq.eclair.channel.Register" level="DEBUG" />
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

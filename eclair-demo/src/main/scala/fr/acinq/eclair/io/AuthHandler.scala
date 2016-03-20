@@ -128,10 +128,6 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       them ! Write(ByteString.fromArray(data))
       stay using n.copy(sessionData = s.copy(totlen_out = new_totlen_out))
 
-    case Event(msg: RegisterActor.UpdateState, _) =>
-      context.parent forward msg
-      stay
-
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
       stay

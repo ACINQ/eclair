@@ -4,8 +4,8 @@ import java.net.InetSocketAddress
 
 import akka.actor._
 import akka.io.{IO, Tcp}
-import fr.acinq.eclair.RegisterActor.CreateChannel
-import fr.acinq.eclair.{Globals, Boot}
+import fr.acinq.eclair.Boot
+import fr.acinq.eclair.channel.Register.CreateChannel
 
 /**
  * Created by PM on 27/10/2015.

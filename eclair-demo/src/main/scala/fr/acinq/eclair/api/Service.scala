@@ -5,14 +5,13 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef}
 import akka.util.Timeout
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.RegisterActor.GetChannels
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.{Boot, channel}
+import fr.acinq.eclair.Boot
 import grizzled.slf4j.Logging
 import lightning.locktime
 import lightning.locktime.Locktime.Seconds
-import org.json4s.JsonAST.{JBool, JDouble, JObject, JString}
+import org.json4s.JsonAST.JString
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.json4s.jackson.Serialization
@@ -23,6 +22,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.pattern.ask
+import fr.acinq.eclair.channel.Register.ListChannels
 
 /**
   * Created by PM on 25/01/2016.
@@ -57,8 +57,8 @@ trait Service extends HttpService with Logging {
   def connect(addr: InetSocketAddress, amount: Long): Unit // amount in satoshis
   def register: ActorRef
 
-  def sendCommand(channel: String, cmd: Command): Future[String] = {
-    Boot.system.actorSelection(s"/user/register/handler-$channel/channel").resolveOne().map(actor => {
+  def sendCommand(channel_id: String, cmd: Command): Future[String] = {
+    Boot.system.actorSelection(Register.actorPathToChannelId(channel_id)).resolveOne().map(actor => {
       actor ! cmd
       "ok"
     })
@@ -75,14 +75,13 @@ trait Service extends HttpService with Logging {
                 connect(new InetSocketAddress(host, port.toInt), anchor_amount.toLong)
                 Future.successful("")
               case JsonRPCBody(_, _, "list", _) =>
-                (register ? GetChannels).mapTo[Iterable[RES_GETINFO]]
-              case JsonRPCBody(_, _, "addhtlc", JString(channel) :: JInt(amount) :: JString(rhash) :: JInt(expiry) :: Nil) =>
-                sendCommand(channel, CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt))))
-              case JsonRPCBody(_, _, "addhtlc_r", JInt(amount) :: JString(rhash) :: JInt(expiry) :: tail) =>
-                val nodeIds = tail.toSeq.map {
+                (register ? ListChannels).mapTo[Iterable[ActorRef]]
+                  .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
+              case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JInt(expiry) :: tail) =>
+                val nodeIds = tail.map {
                   case JString(nodeId) => nodeId
                 }
-                Boot.system.actorSelection(s"*/register/handler-*/channel/${nodeIds.head}-*")
+                Boot.system.actorSelection(Register.actorPathToNodeId(nodeIds.head))
                   .resolveOne(2 seconds)
                     .map { channel =>
                       channel ! CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))

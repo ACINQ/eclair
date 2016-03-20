@@ -13,6 +13,7 @@ import lightning.update_decline_htlc.Reason.{CannotRoute, InsufficientFunds}
 import org.bouncycastle.util.encoders.Hex
 
 import scala.util.{Failure, Success, Try}
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 20/08/2015.
@@ -138,7 +139,7 @@ final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command
-final case class RES_GETINFO(name: String, nodeid: BinaryData, channelid: BinaryData, state: State, data: Data)
+final case class RES_GETINFO(nodeid: BinaryData, channelid: BinaryData, state: State, data: Data)
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -436,7 +437,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
-      create_alias(theirNodeId, d.commitment.anchorId)
+      Register.create_alias(theirNodeId, d.commitment.anchorId)
       goto(NORMAL_LOWPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
@@ -463,7 +464,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
-      create_alias(theirNodeId, d.commitment.anchorId)
+      Register.create_alias(theirNodeId, d.commitment.anchorId)
       goto(NORMAL_HIGHPRIO) using d
 
     case Event(pkt: close_channel, d: CurrentCommitment) =>
@@ -575,10 +576,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       commitment.state.them.htlcs_received.find(_.rHash == bin2sha256(Crypto.sha256(r)))
         .map(htlc => htlc.previousChannelId match {
           case Some(previousChannelId) =>
-            val downstreamActorPath = s"*/register/handler-*/channel/*-$previousChannelId"
-            val downstream = Boot.system.actorSelection(downstreamActorPath)
-            log.info(s"forwarding r value to downstream=$downstream using path=$downstreamActorPath")
-            downstream ! CMD_SEND_HTLC_FULFILL(r)
+            log.info(s"resolving channelId=$previousChannelId")
+            Boot.system.actorSelection(Register.actorPathToChannelId(previousChannelId))
+              .resolveOne(3 seconds)
+              .onComplete {
+                case Success(downstream) =>
+                  log.info(s"forwarding r value to downstream=$downstream")
+                  downstream ! CMD_SEND_HTLC_FULFILL(r)
+                case Failure(t: Throwable) =>
+                  log.warning(s"couldn't resolve downstream node, htlc will timeout", t)
+              }
           case None =>
             log.info(s"looks like I was the origin payer for htlc $htlc")
         })
@@ -714,11 +721,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           newCommitment.state.us.htlcs_received.lastOption
             .map(htlc => htlc.nextNodeIds.headOption match {
               case Some(nextNodeId) =>
-                val upstreamActorPath = s"*/register/handler-*/channel/$nextNodeId-*"
-                val upstream = Boot.system.actorSelection(upstreamActorPath)
-                log.info(s"forwarding htlc to upstream=$upstream using path=$upstreamActorPath")
-                //FIXME : what if the next channel is in LOW state ? it will ignore CMD_SEND_HTLC_UPDATE msg
-                upstream ! CMD_SEND_HTLC_UPDATE(htlc.amountMsat, htlc.rHash, htlc.expiry, htlc.nextNodeIds.drop(1), originChannelId = Some(previousCommitment.anchorId))
+                log.info(s"resolving next nodeId=$nextNodeId")
+                Boot.system.actorSelection(Register.actorPathToNodeId(nextNodeId))
+                  .resolveOne(3 seconds)
+                  .onComplete {
+                    case Success(upstream) =>
+                      log.info(s"forwarding htlc to upstream=$upstream")
+                      //FIXME : what if the next channel is in LOW state ? will it ignore CMD_SEND_HTLC_UPDATE msg ?
+                      upstream ! CMD_SEND_HTLC_UPDATE(htlc.amountMsat, htlc.rHash, htlc.expiry, htlc.nextNodeIds.drop(1), originChannelId = Some(previousCommitment.anchorId))
+                    case Failure(t: Throwable) =>
+                      log.warning(s"couldn't resolve upstream node, htlc will timeout", t)
+                  }
               case None =>
                 log.info(s"looks like I was the final payee for htlc $htlc")
             })
@@ -948,13 +961,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       stay
 
     case Event(CMD_GETINFO, _) =>
-      //TODO
-      val r = """/user/register/handler-(\d+)/channel""".r
-      val r(id) = self.path.toStringWithoutAddress
-      sender ! RES_GETINFO(id, theirNodeId, stateData match {
+      sender ! RES_GETINFO(theirNodeId, stateData match {
         case c: CurrentCommitment => c.commitment.anchorId
         case _ => "unknown"
-      } ,stateName, stateData)
+      }, stateName, stateData)
       stay
 
     // TODO : them ! error(Some("Unexpected message")) ?
@@ -971,13 +981,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           888    888 888        888      888        888        888  T88b  Y88b  d88P
           888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
   */
-
-  /**
-    * Once it reaches NORMAL state, channel creates a [[fr.acinq.eclair.channel.AliasActor]] which name is counterparty_id-anchor_id
-    */
-  def create_alias(node_id: BinaryData, anchor_id: BinaryData) {
-    context.actorOf(Props(new AliasActor(self)), name = s"$node_id-$anchor_id")
-  }
 
   /**
     * Something went wrong, we publish the current commitment transaction
