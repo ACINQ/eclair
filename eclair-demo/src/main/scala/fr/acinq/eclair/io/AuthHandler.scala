@@ -25,7 +25,7 @@ import scala.annotation.tailrec
 
 sealed trait Data
 case object Nothing extends Data
-case class SessionData(their_session_key: BinaryData, secrets_in: Secrets, secrets_out: Secrets, cipher_in: Cipher, cipher_out: Cipher, totlen_in: Long, totlen_out: Long, acc_in: BinaryData) extends Data
+case class SessionData(their_session_key: BinaryData, decryptor: Decryptor, encryptor: Encryptor) extends Data
 case class Normal(channel: ActorRef, sessionData: SessionData) extends Data
 
 sealed trait State
@@ -37,6 +37,56 @@ case object IO_NORMAL extends State
 
 // @formatter:on
 
+/**
+  * message format used by lightningd:
+  * header: 20 bytes
+  * - 4 bytes: body length
+  * - 16 bytes: AEAD tag
+  * body: header.length + 16 bytes
+  * - length bytes: encrypted plaintext
+  * - 16 bytes: AEAD tag
+  *
+  * header and body are encrypted with the same key, with a nonce that is incremented each time:
+  * header = encrypt(plaintext.length, key, nonce++)
+  * body = encrypt(plaintext, key, nonce++)
+  */
+
+
+object Decryptor {
+  case class Header(length: Int)
+
+  def add(state: Decryptor, data: ByteString) : Decryptor = state match {
+    case Decryptor(key, nonce, buffer, None, None) =>
+      val buffer1 = buffer ++ data
+      if (buffer1.length >= 20) {
+        val plaintext = AeadChacha20Poly1305.decrypt(key, Protocol.writeUInt64(nonce), buffer1.take(4), Array.emptyByteArray, buffer1.drop(4).take(16))
+        val length = Protocol.uint32(plaintext.take(4)).toInt
+        val state1 = state.copy(header = Some(Header(length)), nonce = nonce + 1, buffer = ByteString.empty)
+        add(state1, buffer1.drop(20))
+      }
+      else state.copy(buffer = buffer1)
+    case Decryptor(key, nonce, buffer, Some(header), None) =>
+      val buffer1 = buffer ++ data
+      if (buffer1.length >= header.length) {
+        val plaintext = AeadChacha20Poly1305.decrypt(key, Protocol.writeUInt64(nonce), buffer1.take(header.length), Array.emptyByteArray, buffer1.drop(header.length).take(16))
+        state.copy(nonce = nonce + 1, body =  Some(plaintext), buffer = ByteString.empty)
+      } else state.copy(buffer = buffer1)
+  }
+}
+
+case class Decryptor(key: BinaryData, nonce: Long, buffer: ByteString = ByteString.empty, header: Option[Decryptor.Header] = None, body: Option[BinaryData] = None)
+
+object Encryptor {
+  def encrypt(encryptor: Encryptor, data: BinaryData) : (Encryptor, BinaryData) = {
+    val header = Protocol.writeUInt32(data.length)
+    val (ciphertext1, mac1) = AeadChacha20Poly1305.encrypt(encryptor.key, Protocol.writeUInt64(encryptor.nonce), header, Array.emptyByteArray)
+    val (ciphertext2, mac2) = AeadChacha20Poly1305.encrypt(encryptor.key, Protocol.writeUInt64(encryptor.nonce + 1), data, Array.emptyByteArray)
+    (encryptor.copy(nonce = encryptor.nonce + 2), ciphertext1 ++ mac1 ++ ciphertext2 ++ mac2)
+  }
+}
+
+case class Encryptor(key: BinaryData, nonce: Long)
+
 class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
 
   import AuthHandler._
@@ -44,46 +94,87 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
   val session_key = randomKeyPair()
 
   them ! Register(self)
-  them ! Write(ByteString.fromArray(session_key.pub))
+
+  val firstMessage = Protocol.writeUInt32(session_key.pub.length) ++ session_key.pub
+
+  them ! Write(ByteString.fromArray(firstMessage))
+
+  def send(encryptor: Encryptor, message: BinaryData) : Encryptor = {
+    val (encryptor1, ciphertext) = Encryptor.encrypt(encryptor, message)
+    them ! Write(ByteString.fromArray(ciphertext))
+    encryptor1
+  }
+
+  def send(encryptor: Encryptor, message: pkt) : Encryptor = send(encryptor, message.toByteArray)
+
   startWith(IO_WAITING_FOR_SESSION_KEY, Nothing)
 
   when(IO_WAITING_FOR_SESSION_KEY) {
     case Event(Received(data), _) =>
-      val their_session_key = BinaryData(data)
+      val their_session_key_length = Protocol.uint32(data.take(4))
+      log.info(s"session key length: $their_session_key_length")
+      val their_session_key: BinaryData = data.drop(4).take(33)
       log.info(s"their_session_key=$their_session_key")
-      val secrets_in = generate_secrets(ecdh(their_session_key, session_key.priv), their_session_key)
-      val secrets_out = generate_secrets(ecdh(their_session_key, session_key.priv), session_key.pub)
-      log.info(s"generated secrets_in=$secrets_in secrets_out=$secrets_out")
-      val cipher_in = aesDecryptCipher(secrets_in.aes_key, secrets_in.aes_iv)
-      val cipher_out = aesEncryptCipher(secrets_out.aes_key, secrets_out.aes_iv)
-      val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))))))
-      val (d, new_totlen_out) = writeMsg(our_auth, secrets_out, cipher_out, 0)
-      them ! Write(ByteString.fromArray(d))
-      goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, secrets_in, secrets_out, cipher_in, cipher_out, 0, new_totlen_out, BinaryData(Seq()))
+      /**
+        * BOLT #1:
+        * sending-key: SHA256(shared-secret || sending-node-id)
+        * receiving-key: SHA256(shared-secret || receiving-node-id)
+        */
+      val shared_secret = ecdh(their_session_key, session_key.priv)
+      val sending_key: BinaryData = Crypto.sha256(shared_secret ++ session_key.pub)
+      val receiving_key: BinaryData = Crypto.sha256(shared_secret ++ their_session_key)
+      log.debug(s"shared_secret: $shared_secret")
+      log.debug(s"sending key: $sending_key")
+      log.debug(s"receiving key: $receiving_key")
+      /**
+        * node_id is the expected value for the sending node.
+        * session_sig is a valid secp256k1 ECDSA signature encoded as a 32-byte big endian R value, followed by a 32-byte big endian S value.
+        * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
+        */
+      val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
+      val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
+
+      val encryptor = Encryptor(sending_key, 0)
+      val encryptor1 = send(encryptor, our_auth)
+      val decryptor = Decryptor(receiving_key, 0)
+
+      goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor, encryptor1)
   }
 
   when(IO_WAITING_FOR_AUTH) {
-    case Event(Received(chunk), s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in)) =>
+    case Event(Received(chunk), s@SessionData(theirpub, decryptor, encryptor)) =>
       log.debug(s"received chunk=${BinaryData(chunk)}")
-      val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
-      stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
-
-    case Event(pkt(Auth(auth)), s: SessionData) =>
-      val theirNodeId: String = BinaryData(auth.nodeId.key.toByteArray).toString
-      log.info(s"theirNodeId=${theirNodeId}")
-      assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
-      val channel = context.actorOf(Channel.props(self, blockchain, our_params, theirNodeId), name = "channel")
-      goto(IO_NORMAL) using Normal(channel, s)
+      val decryptor1 = Decryptor.add(decryptor, chunk)
+      decryptor1.body match {
+        case None => stay using s.copy(decryptor = decryptor1)
+        case Some(plaintext) =>
+          val pkt(Auth(auth)) = pkt.parseFrom(plaintext)
+          val their_nodeid: BinaryData = auth.nodeId
+          val their_sig: BinaryData = auth.sessionSig
+          if (!Crypto.verifySignature(Crypto.hash256(session_key.pub), their_sig, their_nodeid)) {
+            log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
+            context.stop(self)
+          }
+          val channel = context.actorOf(Channel.props(self, blockchain, our_params), name = "channel")
+          goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
+     }
   }
 
   when(IO_NORMAL) {
-    case Event(Received(chunk), n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
+    case Event(Received(chunk), n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"received chunk=${BinaryData(chunk)}")
-      val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
-      stay using n.copy(sessionData = s.copy(totlen_in = new_totlen_in, acc_in = rest))
+      val decryptor1 = Decryptor.add(decryptor, chunk)
+      decryptor1.body match {
+        case None => stay using Normal(channel, s.copy(decryptor = decryptor1))
+        case Some(plaintext) =>
+          val packet = pkt.parseFrom(plaintext)
+          log.debug(s"received packet $packet")
+          channel ! packet
+          stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
+      }
 
-    case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
-      log.debug(s"receiving $packet")
+    case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
+      log.debug(s"sending $packet")
       packet.pkt match {
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
@@ -100,7 +191,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       }
       stay
 
-    case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
+    case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       val packet = msg match {
         case o: open_channel => pkt(Open(o))
         case o: open_anchor => pkt(OpenAnchor(o))
@@ -115,10 +206,9 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
         case o: close_signature => pkt(CloseSignature(o))
         case o: error => pkt(Error(o))
       }
-      log.debug(s"sending $packet")
-      val (data, new_totlen_out) = writeMsg(packet, secrets_out, cipher_out, totlen_out)
-      them ! Write(ByteString.fromArray(data))
-      stay using n.copy(sessionData = s.copy(totlen_out = new_totlen_out))
+      log.debug(s"receiving $packet")
+      val encryptor1 = send(encryptor, packet)
+      stay using n.copy(sessionData = s.copy(encryptor = encryptor1))
 
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
