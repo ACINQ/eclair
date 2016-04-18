@@ -7,7 +7,11 @@ import lightning.{locktime, sha256_hash, update_add_htlc}
 /**
   * Created by PM on 19/01/2016.
   */
-case class Htlc(amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, previousChannelId: Option[BinaryData])
+sealed trait Direction
+case object IN extends Direction
+case object OUT extends Direction
+case class Htlc(direction: Direction, id: Long, amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, val previousChannelId: Option[BinaryData])
+
 case class ChannelOneSide(pay_msat: Long, fee_msat: Long, htlcs_received: Seq[Htlc]) {
   val funds = pay_msat + fee_msat
 }

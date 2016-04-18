@@ -33,6 +33,8 @@ case object IO_WAITING_FOR_SESSION_KEY extends State
 case object IO_WAITING_FOR_AUTH extends State
 case object IO_NORMAL extends State
 
+//case class Received(msg: GeneratedMessage, acknowledged: Long)
+
 // @formatter:on
 
 class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
@@ -81,24 +83,19 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       stay using n.copy(sessionData = s.copy(totlen_in = new_totlen_in, acc_in = rest))
 
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
-      log.debug(s"sending $packet")
+      log.debug(s"receiving $packet")
       packet.pkt match {
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
         case OpenCommitSig(o) => channel ! o
         case OpenComplete(o) => channel ! o
-        case Update(o) => channel ! o
         case UpdateAddHtlc(o) => channel ! o
-        case UpdateAccept(o) => channel ! o
-        case UpdateSignature(o) => channel ! o
-        case UpdateComplete(o) => channel ! o
-        case UpdateDeclineHtlc(o) => channel ! o
         case UpdateFulfillHtlc(o) => channel ! o
-        case UpdateTimedoutHtlc(o) => channel ! o
-        case UpdateRoutefailHtlc(o) => channel ! o
-        case Close(o) => channel ! o
-        case CloseComplete(o) => channel ! o
-        case CloseAck(o) => channel ! o
+        case UpdateFailHtlc(o) => channel ! o
+        case UpdateCommit(o) => channel ! o
+        case UpdateRevocation(o) => channel ! o
+        case CloseClearing(o) => channel ! o
+        case CloseSignature(o) => channel ! o
         case Error(o) => channel ! o
       }
       stay
@@ -109,21 +106,16 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
         case o: open_anchor => pkt(OpenAnchor(o))
         case o: open_commit_sig => pkt(OpenCommitSig(o))
         case o: open_complete => pkt(OpenComplete(o))
-        case o: update => pkt(Update(o))
         case o: update_add_htlc => pkt(UpdateAddHtlc(o))
-        case o: update_accept => pkt(UpdateAccept(o))
-        case o: update_signature => pkt(UpdateSignature(o))
-        case o: update_complete => pkt(UpdateComplete(o))
-        case o: update_decline_htlc => pkt(UpdateDeclineHtlc(o))
         case o: update_fulfill_htlc => pkt(UpdateFulfillHtlc(o))
-        case o: update_timedout_htlc => pkt(UpdateTimedoutHtlc(o))
-        case o: update_routefail_htlc => pkt(UpdateRoutefailHtlc(o))
-        case o: close_channel => pkt(Close(o))
-        case o: close_channel_complete => pkt(CloseComplete(o))
-        case o: close_channel_ack => pkt(CloseAck(o))
+        case o: update_fail_htlc => pkt(UpdateFailHtlc(o))
+        case o: update_commit => pkt(UpdateCommit(o))
+        case o: update_revocation => pkt(UpdateRevocation(o))
+        case o: close_clearing => pkt(CloseClearing(o))
+        case o: close_signature => pkt(CloseSignature(o))
         case o: error => pkt(Error(o))
       }
-      log.debug(s"receiving $packet")
+      log.debug(s"sending $packet")
       val (data, new_totlen_out) = writeMsg(packet, secrets_out, cipher_out, totlen_out)
       them ! Write(ByteString.fromArray(data))
       stay using n.copy(sessionData = s.copy(totlen_out = new_totlen_out))

@@ -87,6 +87,8 @@ trait Service extends HttpService with Logging {
                       channel ! CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
                       channel.toString()
                     }
+              case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
+                sendCommand(channel, CMD_SIGN)
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
                 sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
@@ -96,6 +98,7 @@ trait Service extends HttpService with Logging {
                   "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",
                   "list: lists existing channels",
                   "addhtlc (channel_id, amount, rhash, locktime): sends an htlc",
+                  "sign (channel_id): updates the commitment transaction",
                   "fulfillhtlc (channel_id, r): fulfills an htlc",
                   "close (channel_id): closes a channel",
                   "help: displays this message"))
