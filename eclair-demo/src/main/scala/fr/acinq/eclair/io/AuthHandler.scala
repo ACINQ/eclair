@@ -168,13 +168,12 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
         case None => stay using Normal(channel, s.copy(decryptor = decryptor1))
         case Some(plaintext) =>
           val packet = pkt.parseFrom(plaintext)
-          log.debug(s"received packet $packet")
-          channel ! packet
+          self ! packet
           stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
       }
 
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
-      log.debug(s"sending $packet")
+      log.debug(s"receiving $packet")
       packet.pkt match {
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
@@ -206,7 +205,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
         case o: close_signature => pkt(CloseSignature(o))
         case o: error => pkt(Error(o))
       }
-      log.debug(s"receiving $packet")
+      log.debug(s"sending $packet")
       val encryptor1 = send(encryptor, packet)
       stay using n.copy(sessionData = s.copy(encryptor = encryptor1))
 
