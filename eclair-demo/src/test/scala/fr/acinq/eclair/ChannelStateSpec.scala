@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.eclair.channel.{ChannelOneSide, ChannelState, Htlc}
+import fr.acinq.eclair.channel._
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, sha256_hash, update_add_htlc}
 import org.junit.runner.RunWith
@@ -22,14 +22,14 @@ class ChannelStateSpec extends FunSuite {
 
     val r = sha256_hash(7, 7, 7, 7)
     val rHash = Crypto.sha256(r)
-    val htlc = Htlc(100000000, rHash, locktime(Blocks(1)), Nil, None)
-    val state_1 = state_0.htlc_send(htlc)
+    val htlc = Htlc(0, 100000000, rHash, locktime(Blocks(1)), Nil, None)
+    val state_1 = state_0.add_htlc(OUT, htlc)
     assert(state_1 === ChannelState(
       us = ChannelOneSide(pay_msat = 850000000, fee_msat = 50000000, htlcs_received = Seq()),
       them = ChannelOneSide(pay_msat = 0, fee_msat = 0, htlcs_received = Seq(htlc))
     ))
 
-    val state_2 = state_1.htlc_fulfill(r)
+    val state_2 = state_1.fulfill_htlc(IN, htlc.id, r)
     assert(state_2 === ChannelState(
       us = ChannelOneSide(pay_msat = 875000000, fee_msat = 25000000, htlcs_received = Seq()),
       them = ChannelOneSide(pay_msat = 75000000, fee_msat = 25000000, htlcs_received = Seq())
@@ -44,14 +44,14 @@ class ChannelStateSpec extends FunSuite {
 
     val r = sha256_hash(7, 7, 7, 7)
     val rHash = Crypto.sha256(r)
-    val htlc = Htlc(2000000, rHash, locktime(Blocks(1)), Nil, None)
-    val state_1 = state_0.htlc_receive(htlc)
+    val htlc = Htlc(0, 2000000, rHash, locktime(Blocks(1)), Nil, None)
+    val state_1 = state_0.add_htlc(IN, htlc)
     assert(state_1 === ChannelState(
       us = ChannelOneSide(pay_msat = 0, fee_msat = 0, htlcs_received = Seq(htlc)),
       them = ChannelOneSide(pay_msat = 948000000, fee_msat = 50000000, htlcs_received = Seq())
     ))
 
-    val state_2 = state_1.htlc_fulfill(r)
+    val state_2 = state_1.fulfill_htlc(OUT, htlc.id, r)
     assert(state_2 === ChannelState(
       us = ChannelOneSide(pay_msat = 0, fee_msat = 2000000, htlcs_received = Seq()),
       them = ChannelOneSide(pay_msat = 950000000, fee_msat = 48000000, htlcs_received = Seq())

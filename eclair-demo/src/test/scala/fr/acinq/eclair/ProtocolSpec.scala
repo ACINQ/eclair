@@ -56,18 +56,20 @@ class ProtocolSpec extends FlatSpec {
     val (anchor, anchorOutputIndex) = makeAnchorTx(Alice.commitPubKey, Bob.commitPubKey, 10, OutPoint(previousTx, 0), key)
     val ours = open_channel(
       delay = locktime(Blocks(100)),
-      revocationHash = Alice.H,
+      revocationHash = Alice  .H,
       commitKey = Alice.commitPubKey,
       finalKey = Alice.finalPubKey,
       anch = anchor_offer.WILL_CREATE_ANCHOR,
-      commitmentFee = 1)
+      nextRevocationHash = null,
+      initialFeeRate = 1)
     val theirs = open_channel(
       delay = locktime(Blocks(100)),
       revocationHash = Bob.H,
       commitKey = Bob.commitPubKey,
       finalKey = Bob.finalPubKey,
       anch = anchor_offer.WONT_CREATE_ANCHOR,
-      commitmentFee = 1)
+      nextRevocationHash = null,
+      initialFeeRate = 1)
 
     // we assume that Alice knows Bob's H
     val openAnchor = open_anchor(anchor.hash, anchorOutputIndex, 10, signature.defaultInstance) // commit sig will be computed later
