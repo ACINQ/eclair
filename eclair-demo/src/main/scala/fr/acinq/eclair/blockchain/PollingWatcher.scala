@@ -1,15 +1,16 @@
 package fr.acinq.eclair.blockchain
 
 
-import akka.actor.{Cancellable, Actor, ActorLogging}
+import akka.actor.{Actor, ActorLogging, Cancellable}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel
-import fr.acinq.eclair.channel.{Scripts, BITCOIN_ANCHOR_SPENT}
+import fr.acinq.eclair.{Globals, channel}
+import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, Scripts}
 import grizzled.slf4j.Logging
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
-import scala.concurrent.{Await, Promise, Future, ExecutionContext}
+
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 import scala.concurrent.duration._
 
 /**
@@ -106,7 +107,7 @@ object PollingWatcher extends Logging {
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
   def fundTransaction(client: BitcoinJsonRPCClient, hex: String)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    client.invoke("fundrawtransaction", hex).map(json => {
+    client.invoke("fundrawtransaction", hex.take(4) + "0000" + hex.drop(4)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
@@ -175,5 +176,5 @@ object MyTest extends App {
   implicit val formats = org.json4s.DefaultFormats
 
   val client = new BitcoinJsonRPCClient("foo", "bar", port = 18332)
-  println(Await.result(PollingWatcher.findSpendingTransaction(client, "d9690555e8de580901202975f5a249febfc12fad57fb4d3ff20cd6a7316ff5b3", 1), 10 seconds))
+  println(Await.result(PollingWatcher.makeAnchorTx(client, Globals.Node.publicKey, Globals.Node.publicKey, 1000000), 10 seconds))
 }

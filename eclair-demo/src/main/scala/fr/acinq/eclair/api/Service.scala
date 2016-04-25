@@ -84,7 +84,7 @@ trait Service extends HttpService with Logging {
                 Boot.system.actorSelection(Register.actorPathToNodeId(nodeIds.head))
                   .resolveOne(2 seconds)
                     .map { channel =>
-                      channel ! CMD_SEND_HTLC_UPDATE(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
+                      channel ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
                       channel.toString()
                     }
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
