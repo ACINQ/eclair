@@ -67,5 +67,5 @@ eclair.bitcoind.rpcpassword (default: bar)
 ## Ressources
 
 - [1] Lightning Network by Joseph Poon and Thaddeus Dryja ([website](http://lightning.network)), [github repository (golang)](https://github.com/LightningNetwork/lnd)
-- [2] Deployable Lightning by Rusty Russel (Blockstream), [github repository (C)](https://github.com/ElementsProject/lightning)
+- [2] Deployable Lightning by Rusty Russell (Blockstream), [github repository (C)](https://github.com/ElementsProject/lightning)
 - [3] Thunder Network by Mats Jerratsch (Blockchain.info), [github repository (Java)](https://github.com/matsjj/thundernetwork)
