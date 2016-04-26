@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, LoggingFSM, Props, Stash}
+import akka.actor.{ActorRef, LoggingFSM, Props}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -148,7 +148,7 @@ final case class DATA_OPEN_WAIT_FOR_OPEN              (ack_in: Long, ack_out: Lo
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, newCommitmentUnsigned: Commitment, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING                    (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, theirNextRevocationHash: sha256_hash) extends Data with CurrentCommitment
+final case class DATA_OPEN_WAITING                    (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, theirNextRevocationHash: sha256_hash, deferred: Option[open_complete]) extends Data with CurrentCommitment
 final case class DATA_NORMAL                          (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long, staged: List[Change], commitment: Commitment, next: NextCommitment) extends Data with CurrentCommitment
 final case class DATA_WAIT_FOR_CLOSE_ACK              (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, mutualCloseTx: Transaction) extends Data with CurrentCommitment
 final case class DATA_CLOSING                         (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment,
@@ -219,7 +219,7 @@ object Channel {
 
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] with Stash {
+class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] {
 
   import Channel._
   import context.dispatcher
@@ -298,7 +298,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           them ! open_commit_sig(ourSigForThem)
           blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
           blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
-          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ack_in + 1, ack_out + 1, ourParams, theirParams, ShaChain.init, Commitment(0, signedCommitTx, state, theirRevocationHash), theirNextRevocationHash)
+          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ack_in + 1, ack_out + 1, ourParams, theirParams, ShaChain.init, Commitment(0, signedCommitTx, state, theirRevocationHash), theirNextRevocationHash, None)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -316,25 +316,24 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           blockchain ! WatchConfirmed(self, anchorTx.txid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
           blockchain ! WatchSpent(self, anchorTx.txid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           blockchain ! Publish(anchorTx)
-          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ack_in + 1, ack_out, ourParams, theirParams, ShaChain.init, commitment.copy(tx = signedCommitTx), theirNextRevocationHash)
+          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ack_in + 1, ack_out, ourParams, theirParams, ShaChain.init, commitment.copy(tx = signedCommitTx), theirNextRevocationHash, None)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
-    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ack_in, ack_out, ourParams, theirParams, shaChain, commitment, theirNextRevocationHash)) =>
+    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ack_in, ack_out, ourParams, theirParams, shaChain, commitment, theirNextRevocationHash, deferred)) =>
       val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
       blockchain ! WatchLost(self, anchorTxId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
-      unstashAll()
+      deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
       goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(ack_in, ack_out + 1, ourParams, theirParams, shaChain, 0, Nil, commitment, ReadyForSig(theirNextRevocationHash))
 
     case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
       log.info(s"received their open_complete, deferring message")
-      stash()
-      stay
+      stay using d.copy(deferred = Some(msg))
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
@@ -363,17 +362,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(OPEN_WAITING_OURANCHOR) {
-    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ack_in, ack_out, ourParams, theirParams, shaChain, commitment, theirNextRevocationHash)) =>
+    case Event(BITCOIN_ANCHOR_DEPTHOK, DATA_OPEN_WAITING(ack_in, ack_out, ourParams, theirParams, shaChain, commitment, theirNextRevocationHash, deferred)) =>
       val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
       blockchain ! WatchLost(self, anchorTxId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
-      unstashAll()
+      deferred.map(self ! _)
       goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ack_in, ack_out + 1, ourParams, theirParams, shaChain, 0, Nil, commitment, ReadyForSig(theirNextRevocationHash))
 
     case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
       log.info(s"received their open_complete, deferring message")
-      stash()
-      stay
+      stay using d.copy(deferred = Some(msg))
 
     /*case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
@@ -425,6 +423,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
+
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitment.anchorId)
       goto(NORMAL) using d.copy(ack_in = d.ack_in + 1)
@@ -979,6 +978,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   whenUnhandled {
+
     case Event(BITCOIN_ANCHOR_LOST, _) => goto(ERR_ANCHOR_LOST)
 
     case Event(CMD_GETSTATE, _) =>
