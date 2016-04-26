@@ -51,7 +51,6 @@ class ChannelSpec extends TestKit(ActorSystem("MySpec")) with ImplicitSender wit
     //val Transition(_, NORMAL_WAIT_FOR_SIG, NORMAL) = waitForBobTransition
     //val Transition(_, NORMAL_WAIT_FOR_REV_THEIRSIG, NORMAL) = waitForAliceTransition
 
-    Thread.sleep(Long.MaxValue)
     TestActors.cleanup(testData)
   }
 }
