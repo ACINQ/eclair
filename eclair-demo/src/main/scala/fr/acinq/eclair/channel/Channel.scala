@@ -535,8 +535,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(msg@update_commit(theirSig, theirAck), d@DATA_NORMAL(ack_in, ack_out, ourParams, theirParams, shaChain, htlcIdx, staged, previousCommitment, ReadyForSig(theirNextRevocationHash))) =>
       // counterparty initiated a new commitment
-      val committed_changes = staged.takeWhile(c => c.direction == IN || c.ack <= theirAck)
-      val uncommitted_changes = staged.drop(committed_changes.size)
+      val committed_changes = staged.filter(c => c.direction == IN || c.ack <= theirAck)
+      val uncommitted_changes = staged.filterNot(committed_changes.contains(_))
       // TODO : we should check that this is the correct state (see acknowledge discussion)
       val proposal = UpdateProposal(previousCommitment.index + 1, previousCommitment.state.commit_changes(committed_changes), theirNextRevocationHash)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index))
