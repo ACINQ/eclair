@@ -2,8 +2,11 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorRef}
+
+import akka.actor.ActorRef
+import akka.http.scaladsl.model.{HttpEntity, StatusCodes, ContentTypes, HttpResponse}
 import akka.util.Timeout
+import akka.http.scaladsl.server.Directives._
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
@@ -15,8 +18,6 @@ import org.json4s.JsonAST.JString
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
 import org.json4s.jackson.Serialization
-import spray.http.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
-import spray.routing.HttpService
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
@@ -28,26 +29,12 @@ import fr.acinq.eclair.channel.Register.ListChannels
   * Created by PM on 25/01/2016.
   */
 
-// we don't implement our route structure directly in the service actor because
-// we want to be able to test it independently, without having to spin up an actor
-abstract class ServiceActor extends Actor with Service {
-
-  // the HttpService trait defines only one abstract member, which
-  // connects the services environment to the enclosing actor or test
-  def actorRefFactory = context
-
-  // this actor only runs our route, but you could add
-  // other things here, like request stream processing,
-  // timeout handling or alternative handler registration
-  def receive = runRoute(route)
-}
-
 case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[JValue])
 case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 
 //TODO : use Json4sSupport ?
-trait Service extends HttpService with Logging {
+trait Service extends Logging {
 
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
