@@ -94,10 +94,7 @@ final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime,
 final case class CMD_FULFILL_HTLC(id: Long, r: sha256_hash) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String) extends Command
 case object CMD_SIGN extends Command
-final case class CMD_SEND_HTLC_FULFILL(r: sha256_hash) extends Command
 final case class CMD_CLOSE(fee: Long) extends Command
-final case class CMD_SEND_HTLC_ROUTEFAIL(h: sha256_hash) extends Command
-final case class CMD_SEND_HTLC_TIMEDOUT(h: sha256_hash) extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command
@@ -538,7 +535,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(msg@update_commit(theirSig, theirAck), d@DATA_NORMAL(ack_in, ack_out, ourParams, theirParams, shaChain, htlcIdx, staged, previousCommitment, ReadyForSig(theirNextRevocationHash))) =>
       // counterparty initiated a new commitment
-      val (committed_changes, uncommitted_changes) = staged.splitAt(staged.lastIndexWhere(c => c.direction == OUT && c.ack <= theirAck))
+      val committed_changes = staged.filter(c => c.direction == IN || c.ack <= theirAck)
+      val uncommitted_changes = staged.filterNot(committed_changes.contains(_))
       // TODO : we should check that this is the correct state (see acknowledge discussion)
       val proposal = UpdateProposal(previousCommitment.index + 1, previousCommitment.state.commit_changes(committed_changes), theirNextRevocationHash)
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index))
@@ -583,7 +581,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // counterparty replied with the signature for its new commitment tx, and revocationPreimage
       val revocationHashCheck = new BinaryData(previousCommitment.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage))
       if (revocationHashCheck) {
-        goto(NORMAL) using d.copy(ack_in = ack_in + 1, next = ReadyForSig(theirNextRevocationHash))
+        goto(NORMAL) using d.copy(ack_in = ack_in + 1, commitment = nextCommitment, next = ReadyForSig(theirNextRevocationHash))
       } else {
         log.warning(s"the revocation preimage they gave us is wrong! hash=${previousCommitment.theirRevocationHash} preimage=$theirRevocationPreimage")
         them ! error(Some("Wrong preimage"))

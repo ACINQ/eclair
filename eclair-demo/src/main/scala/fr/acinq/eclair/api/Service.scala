@@ -89,8 +89,8 @@ trait Service extends HttpService with Logging {
                     }
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
                 sendCommand(channel, CMD_SIGN)
-              case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JString(r) :: Nil) =>
-                sendCommand(channel, CMD_SEND_HTLC_FULFILL(BinaryData(r)))
+              case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
+                sendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r)))
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
                 sendCommand(channel, CMD_CLOSE(Globals.closing_fee))
               case JsonRPCBody(_, _, "help", _) =>

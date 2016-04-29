@@ -4,8 +4,9 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
-import lightning.{locktime, update_add_htlc}
+import lightning.{locktime, update_add_htlc, update_fulfill_htlc}
 import lightning.locktime.Locktime.Blocks
+
 import scala.concurrent.duration._
 
 /**
@@ -54,15 +55,39 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
 
-      awaitAssert(alice.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, List(Change(OUT, _, update_add_htlc(_, _, r1, _, _))), _, _) if r1 == bin2sha256(H) => {}
-      })
+      alice.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, List(Change(OUT, _, update_add_htlc(_, _, h, _, _))), _, _) if h == bin2sha256(H) => {}
+      }
+      bob.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, List(Change(IN, _, update_add_htlc(_, _, h, _, _))), _, _) if h == bin2sha256(H) => {}
+      }
 
-      awaitAssert(bob.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, List(Change(IN, _, update_add_htlc(_, _, r1, _, _))), _, _) if r1 == bin2sha256(H) => {}
-      })
+      alice ! CMD_SIGN
+
+      alice.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, Nil, Commitment(1, _, ChannelState(ChannelOneSide(_, _, Nil), ChannelOneSide(_, _, List(Htlc(1, _, _, _, _, _)))), _), _) => {}
+      }
+      bob.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, Nil, Commitment(1, _, ChannelState(ChannelOneSide(_, _, List(Htlc(1, _, _, _, _, _))), ChannelOneSide(_, _, Nil)), _), _) => {}
+      }
+
+      bob ! CMD_FULFILL_HTLC(1, R)
+
+      alice.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, List(Change(IN, _, update_fulfill_htlc(1, r))), _, _) if r == bin2sha256(R) => {}
+      }
+      bob.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, List(Change(OUT, _, update_fulfill_htlc(1, r))), _, _) if r == bin2sha256(R) => {}
+      }
 
       bob ! CMD_SIGN
+
+      alice.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, Nil, Commitment(2, _, ChannelState(ChannelOneSide(_, _, Nil), ChannelOneSide(_, _, Nil)), _), _) => {}
+      }
+      bob.stateData match {
+        case DATA_NORMAL(_, _, _, _, _, _, Nil, Commitment(2, _, ChannelState(ChannelOneSide(_, _, Nil), ChannelOneSide(_, _, Nil)), _), _) => {}
+      }
 
     }
   }
