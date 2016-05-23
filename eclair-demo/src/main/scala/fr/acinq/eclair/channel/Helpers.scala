@@ -42,18 +42,19 @@ object Helpers {
 
 
   def makeOurTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
-    makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, null)
+    makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
   def makeTheirTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
-    makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, null)
+    makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
-  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, tx: Transaction): signature =
-    bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
+  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long,  tx: Transaction): signature =
+    bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
 
-  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
+  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long,  tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
     // TODO : Transaction.sign(...) should handle multisig
-    val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
-    tx.updateSigScript(0, sigScript2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey))
+    val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
+    val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
+    tx.copy(witness = Seq(witness))
   }
 
   def checksig(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorOutput: TxOut, tx: Transaction): Boolean =

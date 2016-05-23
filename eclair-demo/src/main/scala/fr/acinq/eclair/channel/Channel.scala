@@ -63,9 +63,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
       val amount = anchorTx.txOut(anchorOutputIndex).amount.toLong
+      // FIXME. fees and amount are wrong
       val spec = CommitmentSpec(Set.empty[Htlc], theirParams.initialFeeRate, amount * 1000, 0)
       val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, spec)
-      val ourSig = sign(ourParams, theirParams, theirTx)
+      val ourSig = sign(ourParams, theirParams, amount, theirTx)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount, ourSig)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, spec, theirRevocationHash), theirNextRevocationHash)
 
@@ -77,22 +78,37 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
       val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
-    // they fund the channel with their anchor tx, so the money is theirs
-      val spec = CommitmentSpec(Set.empty[Htlc], theirParams.initialFeeRate, 0, anchorAmount * 1000)
+      // they fund the channel with their anchor tx, so the money is theirs
+      val ourSpec = {
+        val fee = ChannelState.computeFee(ourParams.initialFeeRate, 0)
+        val pay_msat = (anchorAmount - fee) * 1000
+        val fee_msat = fee * 1000
+        CommitmentSpec(Set.empty[Htlc], fee_msat, amount_us = 0, amount_them = pay_msat)
+      }
+
+      val theirSpec = {
+        val fee = ChannelState.computeFee(theirParams.initialFeeRate, 0)
+        val pay_msat = (anchorAmount - fee) * 1000
+        val fee_msat = fee * 1000
+        CommitmentSpec(Set.empty[Htlc], fee_msat, amount_us = pay_msat, amount_them = 0)
+      }
+
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
-      val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, spec)
-      val ourSig = sign(ourParams, theirParams, ourTx)
-      val signedTx = addSigs(ourParams, theirParams, ourTx, ourSig, theirSig)
+      val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
+      val ourSig = sign(ourParams, theirParams, anchorAmount, ourTx)
+      val signedTx = addSigs(ourParams, theirParams, anchorAmount: Long, ourTx, ourSig, theirSig)
       checksig(ourParams, theirParams, anchorOutput, signedTx) match {
         case false =>
           them ! error(Some("Bad signature"))
           goto(CLOSED)
         case true =>
-          them ! open_commit_sig(ourSig)
+          val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
+          val ourSigForThem = sign(ourParams, theirParams, anchorAmount, theirTx)
+          them ! open_commit_sig(ourSigForThem)
           blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
           blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
-          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, spec, signedTx), TheirCommit(0, spec, theirRevocationHash), theirNextRevocationHash, None, anchorOutput)
+          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, ourSpec, signedTx), TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash, None, anchorOutput)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -104,8 +120,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, spec)
-      val ourSig = sign(ourParams, theirParams, ourTx)
-      val signedTx: Transaction = addSigs(ourParams, theirParams, ourTx, ourSig, theirSig)
+      val anchorAmount = anchorTx.txOut(anchorOutputIndex).amount.toLong
+      val ourSig = sign(ourParams, theirParams, anchorAmount, ourTx)
+      val signedTx: Transaction = addSigs(ourParams, theirParams, anchorAmount, ourTx, ourSig, theirSig)
       val anchorOutput = anchorTx.txOut(anchorOutputIndex)
       checksig(ourParams, theirParams, anchorOutput, signedTx) match {
         case false =>
@@ -315,7 +332,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Some(theirNextRevocationHash) =>
           val spec = reduce(theirCommit.spec, Nil, ourChanges.proposed)
           val theirTx = makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
-          val ourSig = sign(ourParams, theirParams, theirTx)
+          val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
           them ! update_commit(ourSig)
           stay using d.copy(theirCommit = TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash), ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.proposed))
         case None => throw new RuntimeException(s"cannot send two update_commit in a row (must wait for revocation)")
@@ -326,8 +343,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourRevocationPreimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index)
       val ourRevocationHash = Crypto.sha256(ourRevocationPreimage)
       val ourTx = makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourRevocationHash, spec)
-      val ourSig = sign(ourParams, theirParams, ourTx)
-      val signedTx = addSigs(ourParams, theirParams, ourTx, ourSig, theirSig)
+      val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, ourTx)
+      val signedTx = addSigs(ourParams, theirParams, anchorOutput.amount.toLong, ourTx, ourSig, theirSig)
       checksig(ourParams, theirParams, anchorOutput, ourTx) match {
         case false =>
           them ! error(Some("Bad signature"))

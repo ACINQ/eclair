@@ -174,6 +174,31 @@ object Scripts {
     permuteOutputs(tx1)
   }
 
+  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): Transaction = {
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
+
+    val outputs = Seq(
+      // TODO : is that the correct way to handle sub-satoshi balances ?
+      TxOut(amount = Satoshi(commitmentSpec.amount_us / 1000), publicKeyScript = pay2wsh(redeemScript)),
+      TxOut(amount = Satoshi(commitmentSpec.amount_them / 1000), publicKeyScript = pay2wpkh(theirFinalKey))
+    ).filterNot(_.amount.toLong < 546) // do not add dust
+
+    val tx = Transaction(
+      version = 2,
+      txIn = inputs,
+      txOut = outputs,
+      lockTime = 0)
+
+    val sendOuts = commitmentSpec.htlcs.filter(_.direction == OUT).map(htlc =>
+      TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
+    )
+    val receiveOuts = commitmentSpec.htlcs.filter(_.direction == IN).map(htlc =>
+      TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
+    )
+    val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
+    permuteOutputs(tx1)
+  }
+
   /**
     * This is a simple tx with a multisig input and two pay2sh output
     *
