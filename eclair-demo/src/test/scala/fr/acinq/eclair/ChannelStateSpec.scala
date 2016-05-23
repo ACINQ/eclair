@@ -22,7 +22,7 @@ class ChannelStateSpec extends FunSuite {
 
     val r = sha256_hash(7, 7, 7, 7)
     val rHash = Crypto.sha256(r)
-    val htlc = Htlc(0, 100000000, rHash, locktime(Blocks(1)), Nil, None)
+    val htlc = Htlc2(0, 100000000, rHash, locktime(Blocks(1)), Nil, None)
     val state_1 = state_0.add_htlc(OUT, htlc)
     assert(state_1 === ChannelState(
       us = ChannelOneSide(pay_msat = 850000000, fee_msat = 50000000, htlcs_received = Seq()),
@@ -44,7 +44,7 @@ class ChannelStateSpec extends FunSuite {
 
     val r = sha256_hash(7, 7, 7, 7)
     val rHash = Crypto.sha256(r)
-    val htlc = Htlc(0, 2000000, rHash, locktime(Blocks(1)), Nil, None)
+    val htlc = Htlc2(0, 2000000, rHash, locktime(Blocks(1)), Nil, None)
     val state_1 = state_0.add_htlc(IN, htlc)
     assert(state_1 === ChannelState(
       us = ChannelOneSide(pay_msat = 0, fee_msat = 0, htlcs_received = Seq(htlc)),

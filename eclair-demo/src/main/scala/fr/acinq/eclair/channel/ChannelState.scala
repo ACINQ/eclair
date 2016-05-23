@@ -14,13 +14,15 @@ sealed trait Direction
 case object IN extends Direction
 case object OUT extends Direction
 
-final case class Change(direction: Direction, ack: Long, msg: GeneratedMessage)
+final case class Change2(direction: Direction, ack: Long, msg: GeneratedMessage)
 
-case class Htlc(id: Long, amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, val previousChannelId: Option[BinaryData])
+case class Htlc2(id: Long, amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, val previousChannelId: Option[BinaryData])
+
+case class Htlc(direction: Direction, id: Long, amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, val previousChannelId: Option[BinaryData])
 
 // @formatter:on
 
-case class ChannelOneSide(pay_msat: Long, fee_msat: Long, htlcs_received: Seq[Htlc]) {
+case class ChannelOneSide(pay_msat: Long, fee_msat: Long, htlcs_received: Seq[Htlc2]) {
   val funds = pay_msat + fee_msat
 }
 
@@ -32,15 +34,15 @@ case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
     */
   def reverse: ChannelState = this.copy(them = us, us = them)
 
-  def commit_changes(staged: List[Change]): ChannelState = {
+  def commit_changes(staged: List[Change2]): ChannelState = {
     staged.foldLeft(this) {
-      case (state, Change(direction, _, htlc: update_add_htlc)) => state.add_htlc(direction, Htlc(htlc.id, htlc.amountMsat, htlc.rHash, htlc.expiry, Nil, None)) // TODO
-      case (state, Change(direction, _, fulfill: update_fulfill_htlc)) => state.fulfill_htlc(direction, fulfill.id, fulfill.r)
-      case (state, Change(direction, _, fail: update_fail_htlc)) => state.fail_htlc(direction, fail.id)
+      case (state, Change2(direction, _, htlc: update_add_htlc)) => state.add_htlc(direction, Htlc2(htlc.id, htlc.amountMsat, htlc.rHash, htlc.expiry, Nil, None)) // TODO
+      case (state, Change2(direction, _, fulfill: update_fulfill_htlc)) => state.fulfill_htlc(direction, fulfill.id, fulfill.r)
+      case (state, Change2(direction, _, fail: update_fail_htlc)) => state.fail_htlc(direction, fail.id)
     }
   }
 
-  def add_htlc(direction: Direction, htlc: Htlc): ChannelState =
+  def add_htlc(direction: Direction, htlc: Htlc2): ChannelState =
     direction match {
       case IN => this.copy(them = them.copy(pay_msat = them.pay_msat - htlc.amountMsat), us = us.copy(htlcs_received = us.htlcs_received :+ htlc))
       case OUT => this.copy(them = them.copy(htlcs_received = them.htlcs_received :+ htlc), us = us.copy(pay_msat = us.pay_msat - htlc.amountMsat))

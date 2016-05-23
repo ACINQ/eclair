@@ -15,7 +15,7 @@ import scala.annotation.tailrec
 package object eclair {
 
   implicit def bin2sha256(in: BinaryData): sha256_hash = {
-    require(in.size == 32)
+    require(in.data.size == 32)
     val bis = new ByteArrayInputStream(in)
     sha256_hash(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
   }
@@ -71,6 +71,10 @@ package object eclair {
     val s = new BigInteger(1, sbos.toByteArray.reverse)
     Crypto.encodeSignature(r, s) :+ SIGHASH_ALL.toByte
   }
+
+  implicit def bytestring2bin(in: ByteString): BinaryData = in.toByteArray
+
+  implicit def bin2bytestring(in: BinaryData): ByteString = ByteString.copyFrom(in)
 
   @tailrec
   def memcmp(a: List[Byte], b: List[Byte]): Int = (a, b) match {

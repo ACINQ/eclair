@@ -156,7 +156,7 @@ object Scripts {
 
   def initialFunding(a: open_channel, b: open_channel, anchor: open_anchor, fee: Long): ChannelState = {
     require(isFunder(a) ^ isFunder(b))
-    val (c1, c2) = ChannelOneSide(pay_msat = anchor.amount - fee, fee_msat = fee, Seq.empty[Htlc]) -> ChannelOneSide(0, 0, Seq.empty[Htlc])
+    val (c1, c2) = ChannelOneSide(pay_msat = anchor.amount - fee, fee_msat = fee, Seq.empty[Htlc2]) -> ChannelOneSide(0, 0, Seq.empty[Htlc2])
     if (isFunder(a)) ChannelState(c1, c2) else ChannelState(c2, c1)
   }
 
