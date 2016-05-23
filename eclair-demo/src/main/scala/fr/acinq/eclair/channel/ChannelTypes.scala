@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import com.trueaccord.scalapb.GeneratedMessage
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction, TxOut}
 import fr.acinq.eclair.crypto.ShaChain
 import lightning.{locktime, open_complete, sha256_hash}
 
@@ -132,13 +132,14 @@ final case class DATA_OPEN_WAIT_FOR_OPEN              (ourParams: OurChannelPara
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING                    (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit, theirNextRevocationHash: sha256_hash, deferred: Option[open_complete]) extends Data with CurrentCommitment
+final case class DATA_OPEN_WAITING                    (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit, theirNextRevocationHash: sha256_hash, deferred: Option[open_complete], anchorOutput: TxOut) extends Data with CurrentCommitment
 final case class DATA_NORMAL                          (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
                                                        ourCommit: OurCommit,
                                                        theirCommit: TheirCommit,
                                                        ourChanges: OurChanges,
                                                        theirChanges: TheirChanges,
-                                                       theirNextRevocationHash: Option[sha256_hash]) extends Data with CurrentCommitment
+                                                       theirNextRevocationHash: Option[sha256_hash],
+                                                       anchorOutput: TxOut) extends Data with CurrentCommitment
 
 object TypeDefs {
   type Change = GeneratedMessage

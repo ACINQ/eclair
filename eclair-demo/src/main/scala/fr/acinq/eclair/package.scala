@@ -20,6 +20,12 @@ package object eclair {
     sha256_hash(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
   }
 
+  implicit def seq2sha256(in: Seq[Byte]): sha256_hash = {
+    require(in.data.size == 32)
+    val bis = new ByteArrayInputStream(in.toArray)
+    sha256_hash(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
+  }
+
   implicit def array2sha256(in: Array[Byte]): sha256_hash = bin2sha256(in)
 
   implicit def sha2562bin(in: sha256_hash): BinaryData = {

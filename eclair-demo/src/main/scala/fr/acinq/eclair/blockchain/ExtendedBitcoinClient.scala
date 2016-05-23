@@ -1,6 +1,6 @@
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, JsonRPCError, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, JsonRPCError, Protocol, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.channel
 import fr.acinq.eclair.channel.Scripts
 import org.bouncycastle.util.encoders.Hex
@@ -15,6 +15,13 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
+
+  // TODO: this will probably not be needed once segwit is merged into core
+  val protocolVersion = Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS
+
+  def tx2Hex(tx: Transaction): String = Hex.toHexString(Transaction.write(tx, protocolVersion))
+
+  def hex2tx(hex: String) : Transaction = Transaction.read(hex, protocolVersion)
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
@@ -58,7 +65,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
   }
 
   def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[FundTransactionResponse] =
-    fundTransaction(Hex.toHexString(Transaction.write(tx)))
+    fundTransaction(tx2Hex(tx))
 
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 
@@ -70,7 +77,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
     })
 
   def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] =
-    signTransaction(Hex.toHexString(Transaction.write(tx)))
+    signTransaction(tx2Hex(tx))
 
   def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
     client.invoke("sendrawtransaction", hex).map {
@@ -78,7 +85,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
     }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
-    publishTransaction(Hex.toHexString(Transaction.write(tx)))
+    publishTransaction(tx2Hex(tx))
 
   // TODO : this is very dirty
   // we only check the memory pool and the last block, and throw an error if tx was not found
@@ -102,7 +109,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
 
   def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
-    val tx = Transaction(version = 1, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(Satoshi(amount), anchorOutputScript) :: Nil, lockTime = 0)
     val future = for {
       FundTransactionResponse(tx1, changepos, fee) <- fundTransaction(tx)
       SignTransactionResponse(anchorTx, true) <- signTransaction(tx1)

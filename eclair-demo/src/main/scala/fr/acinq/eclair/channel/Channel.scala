@@ -62,7 +62,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
-      val amount = anchorTx.txOut(anchorOutputIndex).amount
+      val amount = anchorTx.txOut(anchorOutputIndex).amount.toLong
       val spec = CommitmentSpec(Set.empty[Htlc], theirParams.initialFeeRate, amount * 1000, 0)
       val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, spec)
       val ourSig = sign(ourParams, theirParams, theirTx)
@@ -75,14 +75,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
+      val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
+
     // they fund the channel with their anchor tx, so the money is theirs
-    val spec = CommitmentSpec(Set.empty[Htlc], theirParams.initialFeeRate, 0, anchorAmount * 1000)
+      val spec = CommitmentSpec(Set.empty[Htlc], theirParams.initialFeeRate, 0, anchorAmount * 1000)
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, spec)
       val ourSig = sign(ourParams, theirParams, ourTx)
       val signedTx = addSigs(ourParams, theirParams, ourTx, ourSig, theirSig)
-      checksig(ourParams, theirParams, signedTx) match {
+      checksig(ourParams, theirParams, anchorOutput, signedTx) match {
         case false =>
           them ! error(Some("Bad signature"))
           goto(CLOSED)
@@ -90,7 +92,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           them ! open_commit_sig(ourSig)
           blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
           blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
-          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, spec, signedTx), TheirCommit(0, spec, theirRevocationHash), theirNextRevocationHash, None)
+          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, spec, signedTx), TheirCommit(0, spec, theirRevocationHash), theirNextRevocationHash, None, anchorOutput)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -104,7 +106,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, spec)
       val ourSig = sign(ourParams, theirParams, ourTx)
       val signedTx: Transaction = addSigs(ourParams, theirParams, ourTx, ourSig, theirSig)
-      checksig(ourParams, theirParams, signedTx) match {
+      val anchorOutput = anchorTx.txOut(anchorOutputIndex)
+      checksig(ourParams, theirParams, anchorOutput, signedTx) match {
         case false =>
           them ! error(Some("Bad signature"))
           goto(CLOSED)
@@ -112,19 +115,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           blockchain ! WatchConfirmed(self, anchorTx.txid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
           blockchain ! WatchSpent(self, anchorTx.txid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           blockchain ! Publish(anchorTx)
-          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, spec, signedTx), commitment, theirNextRevocationHash, None)
+          goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, spec, signedTx), commitment, theirNextRevocationHash, None, anchorOutput)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
-    case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(ourParams, theirParams, shaChain, ourCommit, theirCommit, theirNextRevocationHash, deferred)) =>
+    case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(ourParams, theirParams, shaChain, ourCommit, theirCommit, theirNextRevocationHash, deferred, anchorOutput)) =>
       blockchain ! WatchLost(self, d.asInstanceOf[CurrentCommitment].anchorId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
-      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, 0, ourCommit, theirCommit, OurChanges(Nil, Nil), TheirChanges(Nil), Some(theirNextRevocationHash))
+      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, 0, ourCommit, theirCommit, OurChanges(Nil, Nil), TheirChanges(Nil), Some(theirNextRevocationHash), anchorOutput)
 
     case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
       log.info(s"received their open_complete, deferring message")
@@ -157,12 +160,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(OPEN_WAITING_OURANCHOR) {
-    case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(ourParams, theirParams, shaChain, ourCommit, theirCommit, theirNextRevocationHash, deferred)) =>
+    case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(ourParams, theirParams, shaChain, ourCommit, theirCommit, theirNextRevocationHash, deferred, anchorOutput)) =>
       blockchain ! WatchLost(self, d.asInstanceOf[CurrentCommitment].anchorId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
-      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, 0, ourCommit, theirCommit, OurChanges(Nil, Nil), TheirChanges(Nil), Some(theirNextRevocationHash))
+      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, 0, ourCommit, theirCommit, OurChanges(Nil, Nil), TheirChanges(Nil), Some(theirNextRevocationHash), anchorOutput)
 
     case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
       log.info(s"received their open_complete, deferring message")
@@ -259,7 +262,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(NORMAL) {
 
-    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _)) =>
+    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _)) =>
       // TODO: should we take pending htlcs into account?
       // TODO: assert(commitment.state.commit_changes(staged).us.pay_msat >= amount, "insufficient funds!")
       // TODO: nodeIds are ignored
@@ -267,13 +270,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! htlc
       stay using d.copy(htlcIdx = htlc.id, ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ htlc))
 
-    case Event(htlc@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(_, _, _, _, _, _, _, theirChanges, _)) =>
+    case Event(htlc@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(_, _, _, _, _, _, _, theirChanges, _, _)) =>
       // TODO: should we take pending htlcs into account?
       // assert(commitment.state.commit_changes(staged).them.pay_msat >= amount, "insufficient funds!") // TODO : we should fail the channel
       // TODO: nodeIds are ignored
       stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ htlc))
 
-    case Event(CMD_FULFILL_HTLC(id, r), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, _, _)) =>
+    case Event(CMD_FULFILL_HTLC(id, r), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, _, _, _)) =>
       theirCommit.spec.htlcs.find(h => h.direction == IN && h.id == id) match {
         case Some(htlc) if htlc.rHash == bin2sha256(sha256(r)) =>
           val fulfill = update_fulfill_htlc(id, r)
@@ -283,7 +286,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id")
       }
 
-    case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_NORMAL(_, _, _, _, ourCommit, _, _, theirChanges, _)) =>
+    case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_NORMAL(_, _, _, _, ourCommit, _, _, theirChanges, _, _)) =>
       ourCommit.spec.htlcs.find(h => h.direction == OUT && h.id == id) match {
         case Some(htlc) if htlc.rHash == bin2sha256(sha256(r)) =>
           stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ fulfill))
@@ -291,7 +294,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
       }
 
-    case Event(CMD_FAIL_HTLC(id, reason), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, _, _)) =>
+    case Event(CMD_FAIL_HTLC(id, reason), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, _, _, _)) =>
       theirCommit.spec.htlcs.find(h => h.direction == IN && h.id == id) match {
         case Some(htlc) =>
           val fail = update_fail_htlc(id, fail_reason(ByteString.copyFromUtf8(reason)))
@@ -300,14 +303,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id")
       }
 
-    case Event(fail@update_fail_htlc(id, reason), d@DATA_NORMAL(_, _, _, _, ourCommit, _, _, theirChanges, _)) =>
+    case Event(fail@update_fail_htlc(id, reason), d@DATA_NORMAL(_, _, _, _, ourCommit, _, _, theirChanges, _, _)) =>
       ourCommit.spec.htlcs.find(h => h.direction == OUT && h.id == id) match {
         case Some(htlc) =>
           stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ fail))
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
       }
 
-    case Event(CMD_SIGN, d@DATA_NORMAL(ourParams, theirParams, _, _, ourCommit, theirCommit, ourChanges, theirChanges, theirNextRevocationHash_opt)) =>
+    case Event(CMD_SIGN, d@DATA_NORMAL(ourParams, theirParams, _, _, ourCommit, theirCommit, ourChanges, theirChanges, theirNextRevocationHash_opt, anchorOutput)) =>
       theirNextRevocationHash_opt match {
         case Some(theirNextRevocationHash) =>
           val spec = reduce(theirCommit.spec, Nil, ourChanges.proposed)
@@ -318,14 +321,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"cannot send two update_commit in a row (must wait for revocation)")
       }
 
-    case Event(msg@update_commit(theirSig), d@DATA_NORMAL(ourParams, theirParams, shaChain, _, ourCommit, theirCommit, _, theirChanges, _)) =>
+    case Event(msg@update_commit(theirSig), d@DATA_NORMAL(ourParams, theirParams, shaChain, _, ourCommit, theirCommit, _, theirChanges, _, anchorOutput)) =>
       val spec = reduce(ourCommit.spec, theirChanges.proposed, Nil)
       val ourRevocationPreimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index)
       val ourRevocationHash = Crypto.sha256(ourRevocationPreimage)
       val ourTx = makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourRevocationHash, spec)
       val ourSig = sign(ourParams, theirParams, ourTx)
       val signedTx = addSigs(ourParams, theirParams, ourTx, ourSig, theirSig)
-      checksig(ourParams, theirParams, ourTx) match {
+      checksig(ourParams, theirParams, anchorOutput, ourTx) match {
         case false =>
           them ! error(Some("Bad signature"))
           publish_ourcommit(ourCommit)

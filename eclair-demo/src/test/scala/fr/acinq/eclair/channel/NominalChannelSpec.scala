@@ -56,10 +56,10 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
 
       alice.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, List(Change2(OUT, _, update_add_htlc(_, _, h, _, _))), _, _) if h == bin2sha256(H) => {}
+        case DATA_NORMAL(_, _, _, _, _, _, List(Change2(OUT, _, update_add_htlc(_, _, h, _, _))), _, _, _) if h == bin2sha256(H) => {}
       }
       bob.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, List(Change2(IN, _, update_add_htlc(_, _, h, _, _))), _, _) if h == bin2sha256(H) => {}
+        case DATA_NORMAL(_, _, _, _, _, _, List(Change2(IN, _, update_add_htlc(_, _, h, _, _))), _, _, _) if h == bin2sha256(H) => {}
       }
 
       alice ! CMD_SIGN
