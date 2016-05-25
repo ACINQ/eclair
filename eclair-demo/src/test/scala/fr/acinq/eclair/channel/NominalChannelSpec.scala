@@ -16,33 +16,32 @@ import scala.concurrent.duration._
   */
 class NominalChannelSpec extends BaseChannelTestClass {
 
-//  test("open channel and reach normal state") { case (alice, bob, pipe) =>
-//
-//    val monitorA = TestProbe()
-//    alice ! SubscribeTransitionCallBack(monitorA.ref)
-//    val CurrentState(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR) = monitorA.expectMsgClass(classOf[CurrentState[_]])
-//
-//    val monitorB = TestProbe()
-//    bob ! SubscribeTransitionCallBack(monitorB.ref)
-//    val CurrentState(_, OPEN_WAIT_FOR_OPEN_NOANCHOR) = monitorB.expectMsgClass(classOf[CurrentState[_]])
-//
-//    pipe !(alice, bob) // this starts the communication between alice and bob
-//
-//    within(30 seconds) {
-//
-//      val Transition(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR, OPEN_WAIT_FOR_COMMIT_SIG) = monitorA.expectMsgClass(classOf[Transition[_]])
-//      val Transition(_, OPEN_WAIT_FOR_OPEN_NOANCHOR, OPEN_WAIT_FOR_ANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
-//
-//      val Transition(_, OPEN_WAIT_FOR_COMMIT_SIG, OPEN_WAITING_OURANCHOR) = monitorA.expectMsgClass(classOf[Transition[_]])
-//      val Transition(_, OPEN_WAIT_FOR_ANCHOR, OPEN_WAITING_THEIRANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
-//
-//      val Transition(_, OPEN_WAITING_OURANCHOR, OPEN_WAIT_FOR_COMPLETE_OURANCHOR) = monitorA.expectMsgClass(classOf[Transition[_]])
-//      val Transition(_, OPEN_WAITING_THEIRANCHOR, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
-//
-//      val Transition(_, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL) = monitorA.expectMsgClass(classOf[Transition[_]])
-//      val Transition(_, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, NORMAL) = monitorB.expectMsgClass(classOf[Transition[_]])
-//    }
-//  }
+  test("open channel and reach normal state") { case (alice, bob, pipe) =>
+    val monitorA = TestProbe()
+    alice ! SubscribeTransitionCallBack(monitorA.ref)
+    val CurrentState(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR) = monitorA.expectMsgClass(classOf[CurrentState[_]])
+
+    val monitorB = TestProbe()
+    bob ! SubscribeTransitionCallBack(monitorB.ref)
+    val CurrentState(_, OPEN_WAIT_FOR_OPEN_NOANCHOR) = monitorB.expectMsgClass(classOf[CurrentState[_]])
+
+    pipe !(alice, bob) // this starts the communication between alice and bob
+
+    within(30 seconds) {
+
+      val Transition(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR, OPEN_WAIT_FOR_COMMIT_SIG) = monitorA.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, OPEN_WAIT_FOR_OPEN_NOANCHOR, OPEN_WAIT_FOR_ANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
+
+      val Transition(_, OPEN_WAIT_FOR_COMMIT_SIG, OPEN_WAITING_OURANCHOR) = monitorA.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, OPEN_WAIT_FOR_ANCHOR, OPEN_WAITING_THEIRANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
+
+      val Transition(_, OPEN_WAITING_OURANCHOR, OPEN_WAIT_FOR_COMPLETE_OURANCHOR) = monitorA.expectMsgClass(5 seconds, classOf[Transition[_]])
+      val Transition(_, OPEN_WAITING_THEIRANCHOR, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
+
+      val Transition(_, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL) = monitorA.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, NORMAL) = monitorB.expectMsgClass(classOf[Transition[_]])
+    }
+  }
 
   test("create and fulfill HTLCs") { case (alice, bob, pipe) =>
     pipe !(alice, bob) // this starts the communication between alice and bob
@@ -56,6 +55,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       val H = Crypto.sha256(R)
 
       alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
+      Thread.sleep(100)
 
       alice.stateData match {
         case d: DATA_NORMAL =>
@@ -69,47 +69,37 @@ class NominalChannelSpec extends BaseChannelTestClass {
       }
 
       alice ! CMD_SIGN
-
-      Thread.sleep(200)
+      Thread.sleep(100)
 
       alice.stateData match {
         case d: DATA_NORMAL =>
           val htlc = d.theirCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H))
-
       }
       bob.stateData match {
         case d: DATA_NORMAL =>
-          println(d)
+          val htlc = d.ourCommit.spec.htlcs.head
+          assert(htlc.rHash == bin2sha256(H))
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)
+      bob ! CMD_SIGN
+      alice ! CMD_SIGN
+
+      Thread.sleep(200)
 
       alice.stateData match {
         case d: DATA_NORMAL =>
-          println(d) // their commitment
+          assert(d.ourCommit.spec.htlcs.isEmpty)
+          assert(d.ourCommit.spec.amount_us_msat == d.ourCommit.spec.initial_amount_us_msat - 60000000)
+          assert(d.ourCommit.spec.amount_them_msat == d.ourCommit.spec.initial_amount_them_msat + 60000000)
       }
       bob.stateData match {
         case d: DATA_NORMAL =>
-          println(d)
+          assert(d.ourCommit.spec.htlcs.isEmpty)
+          assert(d.ourCommit.spec.amount_us_msat == d.ourCommit.spec.initial_amount_us_msat + 60000000)
+          assert(d.ourCommit.spec.amount_them_msat == d.ourCommit.spec.initial_amount_them_msat - 60000000)
       }
-
-      /*alice.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, List(Change2(IN, _, update_fulfill_htlc(1, r))), _, _) if r == bin2sha256(R) => {}
-      }
-      bob.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, List(Change2(OUT, _, update_fulfill_htlc(1, r))), _, _) if r == bin2sha256(R) => {}
-      }*/
-
-      bob ! CMD_SIGN
-
-      /*alice.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, Nil, Commitment(2, _, ChannelState(ChannelOneSide(_, _, Nil), ChannelOneSide(_, _, Nil)), _), _) => {}
-      }
-      bob.stateData match {
-        case DATA_NORMAL(_, _, _, _, _, _, Nil, Commitment(2, _, ChannelState(ChannelOneSide(_, _, Nil), ChannelOneSide(_, _, Nil)), _), _) => {}
-      }*/
-
     }
   }
 

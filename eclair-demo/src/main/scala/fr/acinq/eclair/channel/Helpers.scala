@@ -24,7 +24,7 @@ object Helpers {
   })
 
   def findHtlc(changes: List[Change], id: Long, r: sha256_hash): Option[Change] = changes.find(_ match {
-    case u:update_add_htlc if u.id == id && u.rHash == r => true
+    case u:update_add_htlc if u.id == id && u.rHash == bin2sha256(Crypto.sha256(r)) => true
     case u:update_add_htlc if u.id == id => throw new RuntimeException(s"invalid htlc preimage for htlc $id")
     case _ => false
   })
@@ -63,18 +63,28 @@ object Helpers {
   }
 
   def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
-    val spec1 = ourChanges.foldLeft(ourCommitSpec)( (spec, change) => change match {
+    val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
+    val spec1 = ourChanges.filter(isAddHtlc).foldLeft(spec)( (spec, change) => change match {
       case u: update_add_htlc => addHtlc(spec, OUT, u)
       case u: update_fulfill_htlc => fulfillHtlc(spec, OUT, u)
       case u: update_fail_htlc => failHtlc(spec, OUT, u)
     })
-
-    val spec2 = theirChanges.foldLeft(spec1)( (spec, change) => change match {
+    val spec2 = theirChanges.filter(isAddHtlc).foldLeft(spec1)( (spec, change) => change match {
       case u: update_add_htlc => addHtlc(spec, IN, u)
       case u: update_fulfill_htlc => fulfillHtlc(spec, IN, u)
       case u: update_fail_htlc => failHtlc(spec, IN, u)
     })
-    spec2
+    val spec3 = ourChanges.filterNot(isAddHtlc).foldLeft(spec2)( (spec, change) => change match {
+      case u: update_add_htlc => addHtlc(spec, OUT, u)
+      case u: update_fulfill_htlc => fulfillHtlc(spec, OUT, u)
+      case u: update_fail_htlc => failHtlc(spec, OUT, u)
+    })
+    val spec4 = theirChanges.filterNot(isAddHtlc).foldLeft(spec3)( (spec, change) => change match {
+      case u: update_add_htlc => addHtlc(spec, IN, u)
+      case u: update_fulfill_htlc => fulfillHtlc(spec, IN, u)
+      case u: update_fail_htlc => failHtlc(spec, IN, u)
+    })
+    spec4
   }
 
   def makeOurTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
