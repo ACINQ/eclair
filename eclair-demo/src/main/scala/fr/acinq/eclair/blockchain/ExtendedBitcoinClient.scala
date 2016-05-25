@@ -1,6 +1,6 @@
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, JsonRPCError, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel
 import fr.acinq.eclair.channel.Scripts
 import org.bouncycastle.util.encoders.Hex
@@ -15,6 +15,13 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
+
+  // TODO: this will probably not be needed once segwit is merged into core
+  val protocolVersion = Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS
+
+  def tx2Hex(tx: Transaction): String = Hex.toHexString(Transaction.write(tx, protocolVersion))
+
+  def hex2tx(hex: String) : Transaction = Transaction.read(hex, protocolVersion)
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
@@ -49,7 +56,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
   def fundTransaction(hex: String)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    client.invoke("fundrawtransaction", hex.take(4) + "0000" + hex.drop(4)).map(json => {
+    client.invoke("fundrawtransaction", hex /*hex.take(4) + "0000" + hex.drop(4)*/).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
@@ -58,7 +65,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
   }
 
   def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[FundTransactionResponse] =
-    fundTransaction(Hex.toHexString(Transaction.write(tx)))
+    fundTransaction(tx2Hex(tx))
 
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 
@@ -70,7 +77,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
     })
 
   def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] =
-    signTransaction(Hex.toHexString(Transaction.write(tx)))
+    signTransaction(tx2Hex(tx))
 
   def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
     client.invoke("sendrawtransaction", hex).map {
@@ -78,7 +85,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
     }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
-    publishTransaction(Hex.toHexString(Transaction.write(tx)))
+    publishTransaction(tx2Hex(tx))
 
   // TODO : this is very dirty
   // we only check the memory pool and the last block, and throw an error if tx was not found
@@ -102,7 +109,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
 
   def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
-    val tx = Transaction(version = 1, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(Satoshi(amount), anchorOutputScript) :: Nil, lockTime = 0)
     val future = for {
       FundTransactionResponse(tx1, changepos, fee) <- fundTransaction(tx)
       SignTransactionResponse(anchorTx, true) <- signTransaction(tx1)
@@ -112,4 +119,24 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
     future
   }
 
+  def makeAnchorTx(fundingPriv: BinaryData, ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+    val pub = Crypto.publicKeyFromPrivateKey(fundingPriv)
+    val script = Script.write(Scripts.pay2sh(Scripts.pay2wpkh(pub)))
+    val address = Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, script)
+    val future = for {
+      id <- sendFromAccount("", address, amount.amount.toDouble)
+      tx <- getTransaction(id)
+      Some(pos) = Scripts.findPublicKeyScriptIndex(tx, script)
+      output = tx.txOut(pos)
+      anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+      tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
+      pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+      sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount.toLong, 1, fundingPriv)
+      witness = ScriptWitness(Seq(sig, pub))
+      tx2 = tx1.copy(witness = Seq(witness))
+      Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
+    } yield(tx2, pos1)
+
+    future
+  }
 }

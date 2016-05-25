@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -13,7 +13,7 @@ class TestBitcoinClient extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("
   override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
+      txOut = TxOut(Satoshi(amount), Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
       lockTime = 0
     )
     Future.successful((anchorTx, 0))

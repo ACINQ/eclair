@@ -14,9 +14,9 @@ class PermuteOutputSpec extends FlatSpec {
     val pub3: BinaryData = "02C4D72D99CA5AD12C17C9CFE043DC4E777075E8835AF96F46D8E3CCD929FE1926"
 
     val outputs = Seq(
-      TxOut(5, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub1)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-      TxOut(7, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub2)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-      TxOut(11, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub3)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+      TxOut(5 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub1)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+      TxOut(7 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub2)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+      TxOut(11 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub3)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
     )
 
     val tx = Transaction(version = 1, txIn = Seq.empty[TxIn], txOut = Seq.empty[TxOut], lockTime = 0)

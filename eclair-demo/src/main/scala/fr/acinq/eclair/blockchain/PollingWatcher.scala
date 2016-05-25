@@ -56,7 +56,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
     case Publish(tx) =>
       log.info(s"publishing tx $tx")
       client.publishTransaction(tx).onFailure {
-        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx))}")
+        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS))}")
       }
 
     case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>

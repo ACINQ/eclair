@@ -78,8 +78,8 @@ trait Service extends Logging {
                 sendCommand(channel, CMD_SIGN)
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
                 sendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r)))
-              case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                sendCommand(channel, CMD_CLOSE(Globals.closing_fee))
+              case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
+                sendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))
               case JsonRPCBody(_, _, "help", _) =>
                 Future.successful(List(
                   "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",
