@@ -112,7 +112,9 @@ final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, fi
 }
 final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
 
-final case class CommitmentSpec(htlcs: Set[Htlc], fee: Long, amount_us: Long, amount_them: Long)
+final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_us_msat : Long, initial_amount_them_msat: Long, amount_us_msat: Long, amount_them_msat: Long) {
+  val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.amountMsat).sum
+}
 
 trait CurrentCommitment {
   def ourParams: OurChannelParams
@@ -145,8 +147,8 @@ object TypeDefs {
   type Change = GeneratedMessage
 }
 import TypeDefs._
-case class OurChanges(proposed: List[Change], signed: List[Change])
-case class TheirChanges(proposed: List[Change])
+case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
+case class TheirChanges(proposed: List[Change], acked: List[Change])
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
 case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
 

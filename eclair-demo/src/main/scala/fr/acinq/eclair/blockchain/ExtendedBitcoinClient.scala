@@ -1,6 +1,6 @@
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, JsonRPCError, Protocol, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel
 import fr.acinq.eclair.channel.Scripts
 import org.bouncycastle.util.encoders.Hex
@@ -56,7 +56,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
   def fundTransaction(hex: String)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    client.invoke("fundrawtransaction", hex.take(4) + "0000" + hex.drop(4)).map(json => {
+    client.invoke("fundrawtransaction", hex /*hex.take(4) + "0000" + hex.drop(4)*/).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
@@ -119,4 +119,24 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
     future
   }
 
+  def makeAnchorTx(fundingPriv: BinaryData, ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+    val pub = Crypto.publicKeyFromPrivateKey(fundingPriv)
+    val script = Script.write(Scripts.pay2sh(Scripts.pay2wpkh(pub)))
+    val address = Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, script)
+    val future = for {
+      id <- sendFromAccount("", address, amount.amount.toDouble)
+      tx <- getTransaction(id)
+      Some(pos) = Scripts.findPublicKeyScriptIndex(tx, script)
+      output = tx.txOut(pos)
+      anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+      tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
+      pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+      sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount.toLong, 1, fundingPriv)
+      witness = ScriptWitness(Seq(sig, pub))
+      tx2 = tx1.copy(witness = Seq(witness))
+      Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
+    } yield(tx2, pos1)
+
+    future
+  }
 }

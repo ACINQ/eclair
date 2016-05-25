@@ -4,7 +4,7 @@ import Scripts._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.TypeDefs.Change
-import lightning.{sha256_hash, signature, update_add_htlc, update_fulfill_htlc}
+import lightning._
 
 import scala.util.Try
 
@@ -13,33 +13,79 @@ import scala.util.Try
   */
 object Helpers {
 
-  def reduce(initialSpec: CommitmentSpec, in: List[Change], out: List[Change]): CommitmentSpec = ???
-
-  /*{
-
-     (in ++ out).sortBy().foldLeft(initialSpec.copy(htlcs = initialSpec.htlcs) {
-       case (spec, f: update_add_htlc) => null
-       case (spec, f: update_fulfill_htlc) => null
-       case (spec, f: update_fail_htlc) => null
-       case (spec, f: update_fee_htlc) => null
-     }
-     null
-
-   in.foldLeft(initialSpec.copy(htlcs = initialSpec.htlcs) {
-   case (spec, f: update_fulfill_htlc) =>
+  def isAddHtlc(change: Change) = change match {
+    case u:update_add_htlc => true
+    case _ => false
   }
 
-  val new_htlcs = in.collect { case u: update_add_htlc => Htlc(IN, u.id, u.amountMsat, u.rHash, u.expiry, Nil, None) } ++
-   out.collect { case u: update_add_htlc => Htlc(OUT, u.id, u.amountMsat, u.rHash, u.expiry, Nil, None) }
+  def findHtlc(changes: List[Change], id: Long): Option[Change] = changes.find(_ match {
+    case u:update_add_htlc if u.id == id => true
+    case _ => false
+  })
 
+  def findHtlc(changes: List[Change], id: Long, r: sha256_hash): Option[Change] = changes.find(_ match {
+    case u:update_add_htlc if u.id == id && u.rHash == bin2sha256(Crypto.sha256(r)) => true
+    case u:update_add_htlc if u.id == id => throw new RuntimeException(s"invalid htlc preimage for htlc $id")
+    case _ => false
+  })
 
-  in.foldLeft(initialSpec.copy(htlcs = initialSpec.htlcs ++ new_htlcs)) {
-   case (spec, f: update_fulfill_htlc) =>
-     val htlc = spec.htlcs.find(h => h.direction == OUT && h.id == f.id).getOrElse(???)
-     spec.copy(htlcs = spec.htlcs - htlc, amount_them = spec.amount_them + )
-  }*/
-  //  .foldLeft(initialSpec.htlcs) { case (htlcs, add:) => //
+  def removeHtlc(changes: List[Change], id: Long) : List[Change] = changes.filterNot(_ match {
+    case u: update_add_htlc if u.id == id => true
+    case _ => false
+  })
 
+  def addHtlc(spec: CommitmentSpec, direction: Direction, update: update_add_htlc) : CommitmentSpec = {
+    val htlc = Htlc(direction, update.id, update.amountMsat, update.rHash, update.expiry, previousChannelId = None)
+    direction match {
+      case OUT => spec.copy(amount_us_msat =  spec.amount_us_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
+      case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
+    }
+  }
+
+  // OUT means we are sending an update_fulfill_htlc message which means that we are fulfilling an HTLC that they sent
+  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: update_fulfill_htlc) : CommitmentSpec = {
+    spec.htlcs.find(htlc => htlc.id == update.id && htlc.rHash == bin2sha256(Crypto.sha256(update.r))) match {
+      case Some(htlc) => direction match {
+        case OUT => spec.copy(amount_us_msat =  spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+        case IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+      }
+    }
+  }
+
+  // OUT means we are sending an update_fail_htlc message which means that we are failing an HTLC that they sent
+  def failHtlc(spec: CommitmentSpec, direction: Direction, update: update_fail_htlc) : CommitmentSpec = {
+    spec.htlcs.find(_.id == update.id) match {
+      case Some(htlc) => direction match {
+        case OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+        case IN => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+      }
+    }
+  }
+
+  def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
+    val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
+    val spec1 = ourChanges.filter(isAddHtlc).foldLeft(spec)( (spec, change) => change match {
+      case u: update_add_htlc => addHtlc(spec, OUT, u)
+      case u: update_fulfill_htlc => fulfillHtlc(spec, OUT, u)
+      case u: update_fail_htlc => failHtlc(spec, OUT, u)
+    })
+    val spec2 = theirChanges.filter(isAddHtlc).foldLeft(spec1)( (spec, change) => change match {
+      case u: update_add_htlc => addHtlc(spec, IN, u)
+      case u: update_fulfill_htlc => fulfillHtlc(spec, IN, u)
+      case u: update_fail_htlc => failHtlc(spec, IN, u)
+    })
+    val spec3 = ourChanges.filterNot(isAddHtlc).foldLeft(spec2)( (spec, change) => change match {
+      case u: update_add_htlc => addHtlc(spec, OUT, u)
+      case u: update_fulfill_htlc => fulfillHtlc(spec, OUT, u)
+      case u: update_fail_htlc => failHtlc(spec, OUT, u)
+    })
+    val spec4 = theirChanges.filterNot(isAddHtlc).foldLeft(spec3)( (spec, change) => change match {
+      case u: update_add_htlc => addHtlc(spec, IN, u)
+      case u: update_fulfill_htlc => fulfillHtlc(spec, IN, u)
+      case u: update_fail_htlc => failHtlc(spec, IN, u)
+    })
+    spec4
+  }
 
   def makeOurTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)

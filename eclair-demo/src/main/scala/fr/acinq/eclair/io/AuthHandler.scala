@@ -155,7 +155,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
             log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
             context.stop(self)
           }
-          val channel = context.actorOf(Channel.props(self, blockchain, our_params), name = "channel")
+          val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
      }
   }
