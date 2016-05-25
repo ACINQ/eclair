@@ -56,7 +56,7 @@ class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
   def fundTransaction(hex: String)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
-    client.invoke("fundrawtransaction", hex.take(4) + "0000" + hex.drop(4)).map(json => {
+    client.invoke("fundrawtransaction", hex /*hex.take(4) + "0000" + hex.drop(4)*/).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
