@@ -64,4 +64,7 @@ object Register {
 
   def actorPathToChannels(): ActorPath =
     Boot.system / "register" / "handler-*" / "channel"
+
+  def actorPathToHandlers(): ActorPath =
+    Boot.system / "register" / "handler-*"
 }

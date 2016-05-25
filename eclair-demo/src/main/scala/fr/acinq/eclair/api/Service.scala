@@ -2,9 +2,8 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-
 import akka.actor.ActorRef
-import akka.http.scaladsl.model.{HttpEntity, StatusCodes, ContentTypes, HttpResponse}
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.util.Timeout
 import akka.http.scaladsl.server.Directives._
 import fr.acinq.bitcoin.BinaryData
@@ -12,7 +11,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.Boot
 import grizzled.slf4j.Logging
-import lightning.locktime
+import lightning.{channel_desc, locktime}
 import lightning.locktime.Locktime.Seconds
 import org.json4s.JsonAST.JString
 import org.json4s._
@@ -38,11 +37,12 @@ trait Service extends Logging {
 
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer + new ChannelDescSerializer
   implicit val timeout = Timeout(30 seconds)
 
   def connect(addr: InetSocketAddress, amount: Long): Unit // amount in satoshis
   def register: ActorRef
+  def router: ActorRef
 
   def sendCommand(channel_id: String, cmd: Command): Future[String] = {
     Boot.system.actorSelection(Register.actorPathToChannelId(channel_id)).resolveOne().map(actor => {
@@ -64,6 +64,8 @@ trait Service extends Logging {
               case JsonRPCBody(_, _, "list", _) =>
                 (register ? ListChannels).mapTo[Iterable[ActorRef]]
                   .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
+              case JsonRPCBody(_, _, "network", _) =>
+                (router ? 'network).mapTo[Iterable[channel_desc]]
               case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JInt(expiry) :: tail) =>
                 val nodeIds = tail.map {
                   case JString(nodeId) => nodeId

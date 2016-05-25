@@ -7,8 +7,11 @@ syntax = "proto2";
 // Helper Types
 //
 
+import "scalapb/scalapb.proto";
+
 // Protobufs don't have fixed-length fields, so these are a hack.
 message sha256_hash {
+  option (scalapb.message).extends = "lightning.Sha256ToString";
   required fixed64 a = 1;
   required fixed64 b = 2;
   required fixed64 c = 3;
@@ -16,6 +19,7 @@ message sha256_hash {
 }
 
 message signature {
+  option (scalapb.message).extends = "lightning.SignatureToString";
   required fixed64 r1 = 1;
   required fixed64 r2 = 2;
   required fixed64 r3 = 3;
@@ -33,8 +37,11 @@ message locktime {
   }
 }
 
+
+
 // Pubkey for commitment transaction input.
 message bitcoin_pubkey {
+  option (scalapb.message).extends = "lightning.PubkeyToString";
   // Must be 33 bytes.
   required bytes key = 1;
 }
@@ -60,6 +67,22 @@ message authenticate {
   // How many (non-authenticate) packets we've already received
   optional uint64 ack = 3 [ default = 0 ];
 };
+
+// Description of a channel
+message channel_desc {
+  option (scalapb.message).extends = "lightning.ChannelDescToString";
+  required bytes id = 1;
+  required bytes node_id_a = 2;
+  required bytes node_id_b = 3;
+}
+
+message register_channel {
+  required channel_desc channel = 1;
+}
+
+message unregister_channel {
+  required channel_desc channel = 1;
+}
 
 // Set channel params.
 message open_channel {
@@ -190,6 +213,11 @@ message pkt {
   oneof pkt {
     // Start of connection
     authenticate auth = 50;
+
+    // Gossip
+    register_channel register_channel = 10;
+    unregister_channel unregister_channel = 11;
+
     // Opening
     open_channel open = 20;
     open_anchor open_anchor = 21;

@@ -155,7 +155,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
             log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
             context.stop(self)
           }
-          val channel = context.actorOf(Channel.props(self, blockchain, our_params), name = "channel")
+          val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
      }
   }
@@ -175,6 +175,8 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"receiving $packet")
       packet.pkt match {
+        case RegisterChannel(o) => Boot.router ! o
+        case UnregisterChannel(o) => Boot.router ! o
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
         case OpenCommitSig(o) => channel ! o
@@ -193,6 +195,8 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
     case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       val packet = msg match {
         case o: open_channel => pkt(Open(o))
+        case o: register_channel => pkt(RegisterChannel(o))
+        case o: unregister_channel => pkt(UnregisterChannel(o))
         case o: open_anchor => pkt(OpenAnchor(o))
         case o: open_commit_sig => pkt(OpenCommitSig(o))
         case o: open_complete => pkt(OpenComplete(o))

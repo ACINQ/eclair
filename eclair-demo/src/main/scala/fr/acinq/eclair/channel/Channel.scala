@@ -213,6 +213,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
     case Event(open_complete(blockid_opt), d: CurrentCommitment) =>
       Register.create_alias(theirNodeId, d.anchorId)
+      them ! register_channel(channel_desc(d.anchorId, BinaryData(Globals.Node.id), BinaryData(theirNodeId)))
       goto(NORMAL)
 
     /*case Event(pkt: close_channel, d: CurrentCommitment) =>
@@ -241,6 +242,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(open_complete(blockid_opt), d: CurrentCommitment) =>
       Register.create_alias(theirNodeId, d.anchorId)
+      them ! register_channel(channel_desc(d.anchorId, BinaryData(Globals.Node.id), BinaryData(theirNodeId)))
       goto(NORMAL)
 
     /*case Event(pkt: close_channel, d: CurrentCommitment) =>
