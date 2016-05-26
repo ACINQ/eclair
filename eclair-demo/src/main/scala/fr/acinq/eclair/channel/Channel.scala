@@ -75,7 +75,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
-      val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
+    val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
       // they fund the channel with their anchor tx, so the money is theirs
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
@@ -285,23 +285,25 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ htlc))
 
     case Event(CMD_FULFILL_HTLC(id, r), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, theirChanges, _, _)) =>
-      findHtlc(theirChanges.acked, id, r) match {
-        case Some(htlc) =>
+      theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
+        case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           val fulfill = update_fulfill_htlc(id, r)
           them ! fulfill
           stay using d.copy(ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ fulfill))
+        case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc $id")
         case None => throw new RuntimeException(s"unknown htlc id=$id")
       }
 
     case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_NORMAL(_, _, _, _, ourCommit, _, ourChanges, theirChanges, _, _)) =>
-      findHtlc(ourChanges.acked, id, r) match {
-        case Some(htlc) =>
+      ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
+        case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ fulfill))
+        case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc $id")
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
       }
 
     case Event(CMD_FAIL_HTLC(id, reason), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, theirChanges, _, _)) =>
-      findHtlc(theirChanges.acked, id) match {
+      theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) =>
           val fail = update_fail_htlc(id, fail_reason(ByteString.copyFromUtf8(reason)))
           them ! fail
@@ -310,7 +312,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(fail@update_fail_htlc(id, reason), d@DATA_NORMAL(_, _, _, _, ourCommit, _, ourChanges, theirChanges, _, _)) =>
-      findHtlc(ourChanges.acked, id) match {
+      ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) =>
           stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ fail))
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
@@ -321,12 +323,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // their commitment now includes all our changes  + their acked changes
       theirNextRevocationHash_opt match {
         case Some(theirNextRevocationHash) =>
-          val ours1 = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed)
           val spec = reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
           val theirTx = makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
           val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
           them ! update_commit(ourSig)
-          stay using d.copy(theirCommit = TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash), ourChanges = ours1, theirNextRevocationHash = None)
+          stay using d.copy(theirCommit = TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash), ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed), theirNextRevocationHash = None)
         case None => throw new RuntimeException(s"cannot send two update_commit in a row (must wait for revocation)")
       }
 
@@ -334,7 +335,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // we've received a signature
       // ack all their changes
       // our commitment now includes all theirs changes + our acked changes
-      val theirs1 = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed)
       val spec = reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
       val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 1))
       val ourTx = makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
@@ -351,7 +351,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 2))
           them ! update_revocation(ourRevocationPreimage, ourNextRevocationHash)
           val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = signedTx)
-          stay using d.copy(ourCommit = ourCommit1, theirChanges = theirs1)
+          stay using d.copy(ourCommit = ourCommit1, theirChanges = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed))
       }
 
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_NORMAL(ourParams, theirParams, shaChain, _, ourCommit, theirCommit, ourChanges, theirChanges, _, _)) =>
