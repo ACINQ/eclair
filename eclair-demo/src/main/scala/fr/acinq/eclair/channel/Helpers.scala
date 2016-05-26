@@ -13,47 +13,31 @@ import scala.util.Try
   */
 object Helpers {
 
-  def isAddHtlc(change: Change) = change match {
-    case u:update_add_htlc => true
-    case _ => false
-  }
-
-  def findHtlc(changes: List[Change], id: Long): Option[Change] = changes.find(_ match {
-    case u:update_add_htlc if u.id == id => true
-    case _ => false
-  })
-
-  def findHtlc(changes: List[Change], id: Long, r: sha256_hash): Option[Change] = changes.find(_ match {
-    case u:update_add_htlc if u.id == id && u.rHash == bin2sha256(Crypto.sha256(r)) => true
-    case u:update_add_htlc if u.id == id => throw new RuntimeException(s"invalid htlc preimage for htlc $id")
-    case _ => false
-  })
-
-  def removeHtlc(changes: List[Change], id: Long) : List[Change] = changes.filterNot(_ match {
+  def removeHtlc(changes: List[Change], id: Long): List[Change] = changes.filterNot(_ match {
     case u: update_add_htlc if u.id == id => true
     case _ => false
   })
 
-  def addHtlc(spec: CommitmentSpec, direction: Direction, update: update_add_htlc) : CommitmentSpec = {
+  def addHtlc(spec: CommitmentSpec, direction: Direction, update: update_add_htlc): CommitmentSpec = {
     val htlc = Htlc(direction, update.id, update.amountMsat, update.rHash, update.expiry, previousChannelId = None)
     direction match {
-      case OUT => spec.copy(amount_us_msat =  spec.amount_us_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
+      case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
       case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
     }
   }
 
   // OUT means we are sending an update_fulfill_htlc message which means that we are fulfilling an HTLC that they sent
-  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: update_fulfill_htlc) : CommitmentSpec = {
+  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: update_fulfill_htlc): CommitmentSpec = {
     spec.htlcs.find(htlc => htlc.id == update.id && htlc.rHash == bin2sha256(Crypto.sha256(update.r))) match {
       case Some(htlc) => direction match {
-        case OUT => spec.copy(amount_us_msat =  spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+        case OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
         case IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
       }
     }
   }
 
   // OUT means we are sending an update_fail_htlc message which means that we are failing an HTLC that they sent
-  def failHtlc(spec: CommitmentSpec, direction: Direction, update: update_fail_htlc) : CommitmentSpec = {
+  def failHtlc(spec: CommitmentSpec, direction: Direction, update: update_fail_htlc): CommitmentSpec = {
     spec.htlcs.find(_.id == update.id) match {
       case Some(htlc) => direction match {
         case OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
@@ -64,26 +48,24 @@ object Helpers {
 
   def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
     val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
-    val spec1 = ourChanges.filter(isAddHtlc).foldLeft(spec)( (spec, change) => change match {
-      case u: update_add_htlc => addHtlc(spec, OUT, u)
-      case u: update_fulfill_htlc => fulfillHtlc(spec, OUT, u)
-      case u: update_fail_htlc => failHtlc(spec, OUT, u)
-    })
-    val spec2 = theirChanges.filter(isAddHtlc).foldLeft(spec1)( (spec, change) => change match {
-      case u: update_add_htlc => addHtlc(spec, IN, u)
-      case u: update_fulfill_htlc => fulfillHtlc(spec, IN, u)
-      case u: update_fail_htlc => failHtlc(spec, IN, u)
-    })
-    val spec3 = ourChanges.filterNot(isAddHtlc).foldLeft(spec2)( (spec, change) => change match {
-      case u: update_add_htlc => addHtlc(spec, OUT, u)
-      case u: update_fulfill_htlc => fulfillHtlc(spec, OUT, u)
-      case u: update_fail_htlc => failHtlc(spec, OUT, u)
-    })
-    val spec4 = theirChanges.filterNot(isAddHtlc).foldLeft(spec3)( (spec, change) => change match {
-      case u: update_add_htlc => addHtlc(spec, IN, u)
-      case u: update_fulfill_htlc => fulfillHtlc(spec, IN, u)
-      case u: update_fail_htlc => failHtlc(spec, IN, u)
-    })
+    val spec1 = ourChanges.foldLeft(spec) {
+      case (spec, u: update_add_htlc) => addHtlc(spec, OUT, u)
+      case (spec, _) => spec
+    }
+    val spec2 = theirChanges.foldLeft(spec1) {
+      case (spec, u: update_add_htlc) => addHtlc(spec, IN, u)
+      case (spec, _) => spec
+    }
+    val spec3 = ourChanges.foldLeft(spec2) {
+      case (spec, u: update_fulfill_htlc) => fulfillHtlc(spec, OUT, u)
+      case (spec, u: update_fail_htlc) => failHtlc(spec, OUT, u)
+      case (spec, _) => spec
+    }
+    val spec4 = theirChanges.foldLeft(spec3) {
+      case (spec, u: update_fulfill_htlc) => fulfillHtlc(spec, IN, u)
+      case (spec, u: update_fail_htlc) => failHtlc(spec, IN, u)
+      case (spec, _) => spec
+    }
     spec4
   }
 
@@ -93,10 +75,10 @@ object Helpers {
   def makeTheirTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
-  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long,  tx: Transaction): signature =
+  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long, tx: Transaction): signature =
     bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
 
-  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long,  tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
+  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long, tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
     // TODO : Transaction.sign(...) should handle multisig
     val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
     val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
