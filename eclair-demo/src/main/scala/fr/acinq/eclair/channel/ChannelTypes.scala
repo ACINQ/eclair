@@ -149,6 +149,7 @@ object TypeDefs {
 import TypeDefs._
 case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
 case class TheirChanges(proposed: List[Change], acked: List[Change])
+case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
 case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
 
