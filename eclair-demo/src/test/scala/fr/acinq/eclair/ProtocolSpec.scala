@@ -81,24 +81,18 @@ class ProtocolSpec extends FunSuite {
       initialFeeRate = 1)
 
     // we assume that Alice knows Bob's H
-    val openAnchor = open_anchor(anchor.hash, anchorOutputIndex, 1000*1000, signature.defaultInstance) // commit sig will be computed later
+    val openAnchor = open_anchor(anchor.hash, anchorOutputIndex, 1000*1000)
     val spec = CommitmentSpec(Set(), ours.initialFeeRate, 1000 *1000, 0, 1000 *1000, 0)
     val tx = makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, openAnchor.txid, openAnchor.outputIndex, Bob.H, spec)
     val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)
     val sigA: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Alice.commitKey)
-    //val sigA: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Alice.commitKey)
-    val openAnchor1 = openAnchor.copy(commitSig = sigA)
 
-    // now Bob receives open anchor and wants to check that Alice's commit sig is valid
-    // Bob can sign too and check that he can spend the anchox tx
+    // now Bob receives open anchor, creates Alice's commit tx and sends backs its signature.
+    // this first commit tx sends all the funds to Alice and nothing to Bob
     val sigB: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Bob.commitKey)
-    //val sigB = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, Bob.commitKey)
-    val witness = witness2of2(openAnchor1.commitSig, sigB, Alice.commitPubKey, Bob.commitPubKey)
+    val witness = witness2of2(sigA, sigB, Alice.commitPubKey, Bob.commitPubKey)
     val commitTx = tx.copy(witness = Seq(witness))
     Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    // or Bob can just check that Alice's sig is valid
-    val hash = Transaction.hashForSigning(commitTx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, signatureVersion = 1)
-    assert(Crypto.verifySignature(hash, Crypto.decodeSignature(sigA.dropRight(1)), Alice.commitPubKey))
 
     // how do we spend our commit tx ?
 
