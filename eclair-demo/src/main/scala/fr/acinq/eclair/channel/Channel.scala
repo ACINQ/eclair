@@ -64,18 +64,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       log.info(s"anchor txid=${anchorTx.txid}")
       val amount = anchorTx.txOut(anchorOutputIndex).amount.toLong
       val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_us_msat = 0, initial_amount_them_msat = amount * 1000, amount_us_msat = 0, amount_them_msat = amount * 1000)
-      val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTx.hash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
-      val ourSig = sign(ourParams, theirParams, amount, theirTx)
-      them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount, ourSig)
+      them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_ANCHOR) {
-    case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount, theirSig), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
+    case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
-    val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
+      val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
       // they fund the channel with their anchor tx, so the money is theirs
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
@@ -84,21 +82,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
-      val ourSig = sign(ourParams, theirParams, anchorAmount, ourTx)
-      val signedTx = addSigs(ourParams, theirParams, anchorAmount, ourTx, ourSig, theirSig)
-      checksig(ourParams, theirParams, anchorOutput, signedTx) match {
-        case false =>
-          them ! error(Some("Bad signature"))
-          goto(CLOSED)
-        case true =>
-          val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
-          log.info(s"signing their tx: $theirTx")
-          val ourSigForThem = sign(ourParams, theirParams, anchorAmount, theirTx)
-          them ! open_commit_sig(ourSigForThem)
-          blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-          blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
-          goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, ourSpec, signedTx), TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash, None, anchorOutput)
-      }
+      val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
+      log.info(s"signing their tx: $theirTx")
+      val ourSigForThem = sign(ourParams, theirParams, anchorAmount, theirTx)
+      them ! open_commit_sig(ourSigForThem)
+      blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
+      blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
+      // FIXME: ourTx is not signed by them and cannot be published
+      goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(ourParams, theirParams, ShaChain.init, OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash, None, anchorOutput)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
