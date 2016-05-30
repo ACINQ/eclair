@@ -10,6 +10,8 @@ import scala.concurrent.{ExecutionContext, Future}
   */
 class TestBitcoinClient extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("", "", "", 0)) {
 
+  client.client.close()
+
   override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
@@ -20,7 +22,6 @@ class TestBitcoinClient extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("
   }
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = Future.successful(tx.txid.toString())
-
 
   override def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
 

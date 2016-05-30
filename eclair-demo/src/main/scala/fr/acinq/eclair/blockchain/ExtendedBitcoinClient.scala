@@ -12,7 +12,7 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 /**
   * Created by PM on 26/04/2016.
   */
-class ExtendedBitcoinClient(client: BitcoinJsonRPCClient) {
+class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
