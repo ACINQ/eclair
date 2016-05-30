@@ -41,9 +41,9 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <scala.version>2.11.7</scala.version>
+        <scala.version>2.11.8</scala.version>
         <scala.version.short>2.11</scala.version.short>
-        <akka.version>2.4.4</akka.version>
+        <akka.version>2.4.6</akka.version>
         <bitcoinlib.version>0.9.6-RC1</bitcoinlib.version>
         <acinqtools.version>1.2</acinqtools.version>
     </properties>
@@ -199,7 +199,7 @@
         <dependency>
             <groupId>org.scalatest</groupId>
             <artifactId>scalatest_${scala.version.short}</artifactId>
-            <version>2.2.5</version>
+            <version>2.2.6</version>
             <scope>test</scope>
         </dependency>
     </dependencies>

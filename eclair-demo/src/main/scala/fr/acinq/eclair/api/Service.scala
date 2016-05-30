@@ -2,7 +2,6 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.{HttpEntity, StatusCodes, ContentTypes, HttpResponse}
 import akka.util.Timeout
@@ -52,7 +51,7 @@ trait Service extends Logging {
   }
 
   val route =
-    path(RestPath) { path =>
+    pathSingleSlash {
       post {
         entity(as[String]) {
           body =>
