@@ -4,16 +4,18 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
-import lightning.{locktime, update_add_htlc, update_fulfill_htlc}
+import lightning.{locktime, update_add_htlc}
 import lightning.locktime.Locktime.Blocks
+import org.junit.runner.RunWith
+import org.scalatest.Ignore
+import org.scalatest.junit.JUnitRunner
 
-import scala.collection.Set
-import scala.collection.immutable.Set
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 26/04/2016.
   */
+@RunWith(classOf[JUnitRunner])
 class NominalChannelSpec extends BaseChannelTestClass {
 
   test("open channel and reach normal state") { case (alice, bob, pipe) =>

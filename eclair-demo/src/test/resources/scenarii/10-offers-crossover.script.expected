@@ -1,0 +1,60 @@
+***A (intermediate)***
+LOCAL COMMITS:
+ Commit 2:
+  Offered htlcs:
+  Received htlcs:
+  Balance us: 500000000
+  Balance them: 500000000
+  Fee rate: 10000
+REMOTE COMMITS:
+ Commit 2:
+  Offered htlcs:
+  Received htlcs:
+  Balance us: 500000000
+  Balance them: 500000000
+  Fee rate: 10000
+***B (intermediate)***
+LOCAL COMMITS:
+ Commit 2:
+  Offered htlcs:
+  Received htlcs:
+  Balance us: 500000000
+  Balance them: 500000000
+  Fee rate: 10000
+REMOTE COMMITS:
+ Commit 2:
+  Offered htlcs:
+  Received htlcs:
+  Balance us: 500000000
+  Balance them: 500000000
+  Fee rate: 10000
+***A***
+LOCAL COMMITS:
+ Commit 3:
+  Offered htlcs: (2,1000000)
+  Received htlcs: (1,2000000)
+  Balance us: 499000000
+  Balance them: 498000000
+  Fee rate: 10000
+REMOTE COMMITS:
+ Commit 4:
+  Offered htlcs: (1,2000000)
+  Received htlcs: (2,1000000)
+  Balance us: 498000000
+  Balance them: 499000000
+  Fee rate: 10000
+***B***
+LOCAL COMMITS:
+ Commit 4:
+  Offered htlcs: (1,2000000)
+  Received htlcs: (2,1000000)
+  Balance us: 498000000
+  Balance them: 499000000
+  Fee rate: 10000
+REMOTE COMMITS:
+ Commit 3:
+  Offered htlcs: (2,1000000)
+  Received htlcs: (1,2000000)
+  Balance us: 499000000
+  Balance them: 498000000
+  Fee rate: 10000
