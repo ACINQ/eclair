@@ -23,6 +23,7 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.pattern.ask
 import fr.acinq.eclair.channel.Register.ListChannels
+import fr.acinq.eclair.channel.Router.CreatePayment
 
 /**
   * Created by PM on 25/01/2016.
@@ -66,20 +67,12 @@ trait Service extends Logging {
                   .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
               case JsonRPCBody(_, _, "network", _) =>
                 (router ? 'network).mapTo[Iterable[channel_desc]]
-              case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JInt(expiry) :: tail) =>
-                val nodeIds = tail.map {
-                  case JString(nodeId) => nodeId
-                }
-                Boot.system.actorSelection(Register.actorPathToNodeId(nodeIds.head))
-                  .resolveOne(2 seconds)
-                    .map { channel =>
-                      channel ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
-                      channel.toString()
-                    }
+              case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
+                (router ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ActorRef]
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
                 sendCommand(channel, CMD_SIGN)
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
-                sendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r)))
+                sendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))
               case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
                 sendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))
               case JsonRPCBody(_, _, "help", _) =>

@@ -93,9 +93,9 @@ sealed trait Command
   * @param originChannelId
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String], originChannelId: Option[BinaryData] = None, id: Option[Long] = None) extends Command
-final case class CMD_FULFILL_HTLC(id: Long, r: sha256_hash) extends Command
-final case class CMD_FAIL_HTLC(id: Long, reason: String) extends Command
+final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[BinaryData] = Seq.empty[BinaryData], originChannelId: Option[BinaryData] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_FULFILL_HTLC(id: Long, r: sha256_hash, commit: Boolean = false) extends Command
+final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
 case object CMD_GETSTATE extends Command

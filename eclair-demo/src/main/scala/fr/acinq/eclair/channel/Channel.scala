@@ -268,13 +268,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(NORMAL) {
 
-    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _, downstreams)) =>
+    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt, commit), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _, downstreams)) =>
       // TODO: should we take pending htlcs into account?
       // TODO: assert(commitment.state.commit_changes(staged).us.pay_msat >= amount, "insufficient funds!")
       // TODO: nodeIds are ignored
       val id: Long = id_opt.getOrElse(htlcIdx + 1)
-      val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.EMPTY))
+      val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.copyFromUtf8(nodeIds.mkString(","))))
       them ! htlc
+      if (commit) self ! CMD_SIGN
       stay using d.copy(htlcIdx = htlc.id, ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ htlc), downstreams = downstreams + (htlc.id -> origin))
 
     case Event(htlc@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(_, _, _, _, _, _, _, theirChanges, _, _, _)) =>
@@ -283,11 +284,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // TODO: nodeIds are ignored
       stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ htlc))
 
-    case Event(CMD_FULFILL_HTLC(id, r), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, theirChanges, _, _, _)) =>
+    case Event(CMD_FULFILL_HTLC(id, r, commit), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, theirChanges, _, _, _)) =>
       theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           val fulfill = update_fulfill_htlc(id, r)
           them ! fulfill
+          if (commit) self ! CMD_SIGN
           stay using d.copy(ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ fulfill))
         case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc $id")
         case None => throw new RuntimeException(s"unknown htlc id=$id")
@@ -306,7 +308,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
                 .onComplete {
                   case Success(downstream) =>
                     log.info(s"forwarding r value to downstream=$downstream")
-                    downstream ! CMD_FULFILL_HTLC(id, r)
+                    downstream ! CMD_FULFILL_HTLC(id, r, commit = true)
                   case Failure(t: Throwable) =>
                     log.warning(s"couldn't resolve downstream node, htlc #${htlc.id} will timeout", t)
                 }
@@ -318,11 +320,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
       }
 
-    case Event(CMD_FAIL_HTLC(id, reason), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, theirChanges, _, _, _)) =>
+    case Event(CMD_FAIL_HTLC(id, reason, commit), d@DATA_NORMAL(_, _, _, _, _, theirCommit, ourChanges, theirChanges, _, _, _)) =>
       theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) =>
           val fail = update_fail_htlc(id, fail_reason(ByteString.copyFromUtf8(reason)))
           them ! fail
+          if (commit) self ! CMD_SIGN
           stay using d.copy(ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ fail))
         case None => throw new RuntimeException(s"unknown htlc id=$id")
       }
@@ -339,7 +342,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
                 .onComplete {
                   case Success(downstream) =>
                     log.info(s"forwarding fail to downstream=$downstream")
-                    downstream ! CMD_FAIL_HTLC(id, reason.info.toStringUtf8)
+                    downstream ! CMD_FAIL_HTLC(id, reason.info.toStringUtf8, commit =true)
                   case Failure(t: Throwable) =>
                     log.warning(s"couldn't resolve downstream node, htlc #${htlc.id} will timeout", t)
                 }
@@ -384,7 +387,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           them ! update_revocation(ourRevocationPreimage, ourNextRevocationHash)
           // now that we have their sig, we should propagate the htlcs newly received
           (spec.htlcs_in -- ourCommit.spec.htlcs_in).foreach(htlc => {
-            val nextNodeIds = htlc.route.info.toStringUtf8.split(",").toSeq.filterNot(_.isEmpty)
+            val nextNodeIds = htlc.route.info.toStringUtf8.split(",").toSeq.filterNot(_.isEmpty).map(BinaryData(_))
             nextNodeIds.headOption match {
               case Some(nextNodeId) =>
                 log.debug(s"propagating htlc #${htlc.id} to $nextNodeId")
@@ -395,7 +398,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
                     case Success(upstream) =>
                       log.info(s"forwarding htlc #${htlc.id} to upstream=$upstream")
                       // TODO : we should decrement expiry !!
-                      upstream ! CMD_ADD_HTLC(htlc.amountMsat, htlc.rHash, htlc.expiry, nextNodeIds.drop(1), Some(d.anchorId))
+                      upstream ! CMD_ADD_HTLC(htlc.amountMsat, htlc.rHash, htlc.expiry, nextNodeIds.drop(1), Some(d.anchorId), commit = true)
                     case Failure(t: Throwable) =>
                       // TODO : send "fail route error"
                       log.warning(s"couldn't resolve upstream node, htlc #${htlc.id} will timeout", t)
