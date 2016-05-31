@@ -72,7 +72,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
-      val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
+      //see https://github.com/ElementsProject/lightning/issues/17
+      val anchorTxid = anchorTxHash.reverse
       val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
       // they fund the channel with their anchor tx, so the money is theirs
@@ -261,11 +262,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(NORMAL) {
 
-    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _)) =>
+    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _)) =>
       // TODO: should we take pending htlcs into account?
       // TODO: assert(commitment.state.commit_changes(staged).us.pay_msat >= amount, "insufficient funds!")
       // TODO: nodeIds are ignored
-      val htlc = update_add_htlc(htlcIdx + 1, amount, rHash, expiry, routing(ByteString.EMPTY))
+      val id: Long = id_opt.getOrElse(htlcIdx + 1)
+      val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.EMPTY))
       them ! htlc
       stay using d.copy(htlcIdx = htlc.id, ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ htlc))
 
