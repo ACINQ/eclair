@@ -18,12 +18,8 @@ class Router extends Actor with ActorLogging {
   def receive: Receive = main(Map())
 
   def main(channels: Map[BinaryData, channel_desc]): Receive = {
-    case r@register_channel(c) =>
-      log.debug(s"received $r")
-      context become main(channels + (BinaryData(c.id.toByteArray) -> c))
-    case u@unregister_channel(c) =>
-      log.debug(s"received $u")
-      context become main(channels - BinaryData(c.id.toByteArray))
+    case r@register_channel(c) => context become main(channels + (BinaryData(c.id.toByteArray) -> c))
+    case u@unregister_channel(c) => context become main(channels - BinaryData(c.id.toByteArray))
     case 'tick =>
       val sel = context.actorSelection(Register.actorPathToHandlers())
       channels.values.foreach(sel ! register_channel(_))
