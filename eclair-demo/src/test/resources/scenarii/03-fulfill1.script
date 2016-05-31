@@ -1,5 +1,6 @@
 # Simple test that we can fulfill (remove) an HTLC after fully settled.
-A:offer 1000000,b8928207364d445daa42f4ba8be0ef661b8d7190206c01f6ee8281566b3dec0a
+# Initial state: A=1000000 sat, B=0, both fee rates=10000 sat
+A:offer 1,1000000,b8928207364d445daa42f4ba8be0ef661b8d7190206c01f6ee8281566b3dec0a
 B:recvoffer
 A:commit
 B:recvcommit

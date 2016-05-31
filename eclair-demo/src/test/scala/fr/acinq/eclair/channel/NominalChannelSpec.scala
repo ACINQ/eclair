@@ -15,6 +15,7 @@ import scala.concurrent.duration._
 /**
   * Created by PM on 26/04/2016.
   */
+@Ignore
 @RunWith(classOf[JUnitRunner])
 class NominalChannelSpec extends BaseChannelTestClass {
 

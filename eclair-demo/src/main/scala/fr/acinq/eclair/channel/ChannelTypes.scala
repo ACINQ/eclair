@@ -83,7 +83,17 @@ case object BITCOIN_CLOSE_DONE extends BlockchainEvent
  */
 
 sealed trait Command
-final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String], originChannelId: Option[BinaryData] = None) extends Command
+/**
+  *
+  *
+  * @param amount
+  * @param rHash
+  * @param expiry
+  * @param nodeIds
+  * @param originChannelId
+  * @param id should only be provided in tests otherwise it will be assigned automatically
+  */
+final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String], originChannelId: Option[BinaryData] = None, id: Option[Long] = None) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: sha256_hash) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String) extends Command
 case object CMD_SIGN extends Command
