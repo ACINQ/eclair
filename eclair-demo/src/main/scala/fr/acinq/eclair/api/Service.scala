@@ -52,7 +52,7 @@ trait Service extends Logging {
   }
 
   val route =
-    path(RestPath) { path =>
+    pathSingleSlash {
       post {
         entity(as[String]) {
           body =>

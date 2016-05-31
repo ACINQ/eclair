@@ -3,12 +3,13 @@ package fr.acinq.eclair.io
 import javax.crypto.Cipher
 
 import akka.actor._
-import akka.io.Tcp.{Register, Received, Write}
+import akka.io.Tcp.{Received, Register, Write}
 import akka.util.ByteString
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.{Decryptor, Encryptor}
 import fr.acinq.eclair.crypto.LightningCrypto._
 import fr.acinq.eclair.io.AuthHandler.Secrets
 import lightning._
@@ -36,56 +37,6 @@ case object IO_NORMAL extends State
 //case class Received(msg: GeneratedMessage, acknowledged: Long)
 
 // @formatter:on
-
-/**
-  * message format used by lightningd:
-  * header: 20 bytes
-  * - 4 bytes: body length
-  * - 16 bytes: AEAD tag
-  * body: header.length + 16 bytes
-  * - length bytes: encrypted plaintext
-  * - 16 bytes: AEAD tag
-  *
-  * header and body are encrypted with the same key, with a nonce that is incremented each time:
-  * header = encrypt(plaintext.length, key, nonce++)
-  * body = encrypt(plaintext, key, nonce++)
-  */
-
-
-object Decryptor {
-  case class Header(length: Int)
-
-  def add(state: Decryptor, data: ByteString) : Decryptor = state match {
-    case Decryptor(key, nonce, buffer, None, None) =>
-      val buffer1 = buffer ++ data
-      if (buffer1.length >= 20) {
-        val plaintext = AeadChacha20Poly1305.decrypt(key, Protocol.writeUInt64(nonce), buffer1.take(4), Array.emptyByteArray, buffer1.drop(4).take(16))
-        val length = Protocol.uint32(plaintext.take(4)).toInt
-        val state1 = state.copy(header = Some(Header(length)), nonce = nonce + 1, buffer = ByteString.empty)
-        add(state1, buffer1.drop(20))
-      }
-      else state.copy(buffer = buffer1)
-    case Decryptor(key, nonce, buffer, Some(header), None) =>
-      val buffer1 = buffer ++ data
-      if (buffer1.length >= header.length) {
-        val plaintext = AeadChacha20Poly1305.decrypt(key, Protocol.writeUInt64(nonce), buffer1.take(header.length), Array.emptyByteArray, buffer1.drop(header.length).take(16))
-        state.copy(nonce = nonce + 1, body =  Some(plaintext), buffer = ByteString.empty)
-      } else state.copy(buffer = buffer1)
-  }
-}
-
-case class Decryptor(key: BinaryData, nonce: Long, buffer: ByteString = ByteString.empty, header: Option[Decryptor.Header] = None, body: Option[BinaryData] = None)
-
-object Encryptor {
-  def encrypt(encryptor: Encryptor, data: BinaryData) : (Encryptor, BinaryData) = {
-    val header = Protocol.writeUInt32(data.length)
-    val (ciphertext1, mac1) = AeadChacha20Poly1305.encrypt(encryptor.key, Protocol.writeUInt64(encryptor.nonce), header, Array.emptyByteArray)
-    val (ciphertext2, mac2) = AeadChacha20Poly1305.encrypt(encryptor.key, Protocol.writeUInt64(encryptor.nonce + 1), data, Array.emptyByteArray)
-    (encryptor.copy(nonce = encryptor.nonce + 2), ciphertext1 ++ mac1 ++ ciphertext2 ++ mac2)
-  }
-}
-
-case class Encryptor(key: BinaryData, nonce: Long)
 
 class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
 
@@ -145,7 +96,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
     case Event(Received(chunk), s@SessionData(theirpub, decryptor, encryptor)) =>
       log.debug(s"received chunk=${BinaryData(chunk)}")
       val decryptor1 = Decryptor.add(decryptor, chunk)
-      decryptor1.body match {
+      decryptor1.bodies.headOption match {
         case None => stay using s.copy(decryptor = decryptor1)
         case Some(plaintext) =>
           val pkt(Auth(auth)) = pkt.parseFrom(plaintext)
@@ -156,7 +107,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
             context.stop(self)
           }
           val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
-          goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
+          goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
      }
   }
 
@@ -164,13 +115,11 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
     case Event(Received(chunk), n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"received chunk=${BinaryData(chunk)}")
       val decryptor1 = Decryptor.add(decryptor, chunk)
-      decryptor1.body match {
-        case None => stay using Normal(channel, s.copy(decryptor = decryptor1))
-        case Some(plaintext) =>
-          val packet = pkt.parseFrom(plaintext)
-          self ! packet
-          stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, body = None)))
-      }
+      decryptor1.bodies.map(plaintext => {
+        val packet = pkt.parseFrom(plaintext)
+        self ! packet
+      })
+      stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = Vector.empty[BinaryData])))
 
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"receiving $packet")

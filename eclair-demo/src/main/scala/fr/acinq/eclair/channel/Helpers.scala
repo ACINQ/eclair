@@ -4,7 +4,7 @@ import Scripts._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.TypeDefs.Change
-import lightning.{sha256_hash, signature, update_add_htlc, update_fulfill_htlc}
+import lightning._
 
 import scala.util.Try
 
@@ -13,33 +13,61 @@ import scala.util.Try
   */
 object Helpers {
 
-  def reduce(initialSpec: CommitmentSpec, in: List[Change], out: List[Change]): CommitmentSpec = ???
+  def removeHtlc(changes: List[Change], id: Long): List[Change] = changes.filterNot(_ match {
+    case u: update_add_htlc if u.id == id => true
+    case _ => false
+  })
 
-  /*{
-
-     (in ++ out).sortBy().foldLeft(initialSpec.copy(htlcs = initialSpec.htlcs) {
-       case (spec, f: update_add_htlc) => null
-       case (spec, f: update_fulfill_htlc) => null
-       case (spec, f: update_fail_htlc) => null
-       case (spec, f: update_fee_htlc) => null
-     }
-     null
-
-   in.foldLeft(initialSpec.copy(htlcs = initialSpec.htlcs) {
-   case (spec, f: update_fulfill_htlc) =>
+  def addHtlc(spec: CommitmentSpec, direction: Direction, update: update_add_htlc): CommitmentSpec = {
+    val htlc = Htlc(direction, update.id, update.amountMsat, update.rHash, update.expiry, previousChannelId = None)
+    direction match {
+      case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
+      case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
+    }
   }
 
-  val new_htlcs = in.collect { case u: update_add_htlc => Htlc(IN, u.id, u.amountMsat, u.rHash, u.expiry, Nil, None) } ++
-   out.collect { case u: update_add_htlc => Htlc(OUT, u.id, u.amountMsat, u.rHash, u.expiry, Nil, None) }
+  // OUT means we are sending an update_fulfill_htlc message which means that we are fulfilling an HTLC that they sent
+  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: update_fulfill_htlc): CommitmentSpec = {
+    spec.htlcs.find(htlc => htlc.id == update.id && htlc.rHash == bin2sha256(Crypto.sha256(update.r))) match {
+      case Some(htlc) => direction match {
+        case OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+        case IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+      }
+    }
+  }
 
+  // OUT means we are sending an update_fail_htlc message which means that we are failing an HTLC that they sent
+  def failHtlc(spec: CommitmentSpec, direction: Direction, update: update_fail_htlc): CommitmentSpec = {
+    spec.htlcs.find(_.id == update.id) match {
+      case Some(htlc) => direction match {
+        case OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+        case IN => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+      }
+    }
+  }
 
-  in.foldLeft(initialSpec.copy(htlcs = initialSpec.htlcs ++ new_htlcs)) {
-   case (spec, f: update_fulfill_htlc) =>
-     val htlc = spec.htlcs.find(h => h.direction == OUT && h.id == f.id).getOrElse(???)
-     spec.copy(htlcs = spec.htlcs - htlc, amount_them = spec.amount_them + )
-  }*/
-  //  .foldLeft(initialSpec.htlcs) { case (htlcs, add:) => //
-
+  def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
+    val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
+    val spec1 = ourChanges.foldLeft(spec) {
+      case (spec, u: update_add_htlc) => addHtlc(spec, OUT, u)
+      case (spec, _) => spec
+    }
+    val spec2 = theirChanges.foldLeft(spec1) {
+      case (spec, u: update_add_htlc) => addHtlc(spec, IN, u)
+      case (spec, _) => spec
+    }
+    val spec3 = ourChanges.foldLeft(spec2) {
+      case (spec, u: update_fulfill_htlc) => fulfillHtlc(spec, OUT, u)
+      case (spec, u: update_fail_htlc) => failHtlc(spec, OUT, u)
+      case (spec, _) => spec
+    }
+    val spec4 = theirChanges.foldLeft(spec3) {
+      case (spec, u: update_fulfill_htlc) => fulfillHtlc(spec, IN, u)
+      case (spec, u: update_fail_htlc) => failHtlc(spec, IN, u)
+      case (spec, _) => spec
+    }
+    spec4
+  }
 
   def makeOurTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
@@ -47,10 +75,10 @@ object Helpers {
   def makeTheirTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
-  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long,  tx: Transaction): signature =
+  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long, tx: Transaction): signature =
     bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
 
-  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long,  tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
+  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long, tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
     // TODO : Transaction.sign(...) should handle multisig
     val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
     val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
