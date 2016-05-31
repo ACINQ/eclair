@@ -160,9 +160,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAITING_OURANCHOR) {
     case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(ourParams, theirParams, shaChain, ourCommit, theirCommit, theirNextRevocationHash, deferred, anchorOutput)) =>
-      blockchain ! WatchLost(self, d.asInstanceOf[CurrentCommitment].anchorId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
-      them ! open_complete(None)
-      deferred.map(self ! _)
+        blockchain ! WatchLost(self, d.asInstanceOf[CurrentCommitment].anchorId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
+        them ! open_complete(None)
+        deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
       goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, 0, ourCommit, theirCommit, OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), Some(theirNextRevocationHash), anchorOutput)
 
@@ -261,11 +261,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(NORMAL) {
 
-    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _)) =>
+    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(_, _, _, htlcIdx, _, _, ourChanges, _, _, _)) =>
       // TODO: should we take pending htlcs into account?
       // TODO: assert(commitment.state.commit_changes(staged).us.pay_msat >= amount, "insufficient funds!")
       // TODO: nodeIds are ignored
-      val htlc = update_add_htlc(htlcIdx + 1, amount, rHash, expiry, routing(ByteString.EMPTY))
+      val id: Long = id_opt.getOrElse(htlcIdx + 1)
+      val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.EMPTY))
       them ! htlc
       stay using d.copy(htlcIdx = htlc.id, ourChanges = ourChanges.copy(proposed = ourChanges.proposed :+ htlc))
 
