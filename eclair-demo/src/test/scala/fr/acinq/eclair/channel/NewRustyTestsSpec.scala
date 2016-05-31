@@ -1,8 +1,9 @@
 package fr.acinq.eclair.channel
 
 import java.io.{File, FileInputStream}
+import java.util.concurrent.{CountDownLatch, TimeUnit}
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit}
 import fr.acinq.eclair.blockchain.PollingWatcher
 import fr.acinq.eclair.channel.TestConstants.{Alice, Bob}
@@ -22,7 +23,8 @@ class NewRustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with 
   type FixtureParam = Tuple2[List[String], List[String]]
 
   override def withFixture(test: OneArgTest) = {
-    val pipe: TestActorRef[SynchronizationPipe] = TestActorRef[SynchronizationPipe]
+    val latch = new CountDownLatch(1)
+    val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val blockchainB = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, Alice.channelParams, "B"))
@@ -33,7 +35,7 @@ class NewRustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with 
       awaitCond(bob.stateName == NORMAL)
     }
     pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)
-    awaitCond(pipe.underlying.isTerminated, 30 seconds)
+    latch.await(30, TimeUnit.SECONDS)
     val ref = Source.fromFile(getClass.getResource(s"/scenarii/${test.name}.script.expected").getFile).getLines().filterNot(_.startsWith("#")).toList
     val res = Source.fromFile(new File("result.txt")).getLines().filterNot(_.startsWith("#")).toList
     test((ref, res))
