@@ -176,10 +176,28 @@ object Scripts {
 //    permuteOutputs(tx1)
 //  }
 
+  /**
+    *
+    * A node MUST use the formula 338 + 32 bytes for every non-dust HTLC as the bytecount for calculating commitment
+    * transaction fees. Note that the fee requirement is unchanged, even if the elimination of dust HTLC outputs
+    * has caused a non-zero fee already.
+    * The fee for a transaction MUST be calculated by multiplying this bytecount by the fee rate, dividing by 1000
+    * and truncating (rounding down) the result to an even number of satoshis.
+    *
+    * @param feeRate       fee rate in Satoshi/Kb
+    * @param numberOfHtlcs number of (non-dust) HTLCs to be included in the commit tx
+    * @return the fee in Satoshis for a commit tx with 'numberOfHtlcs' HTLCs
+    */
+  def computeFee(feeRate: Long, numberOfHtlcs: Int) : Long = {
+    Math.floorDiv((338 + 32 * numberOfHtlcs) * feeRate, 2000) * 2
+  }
+
   def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): Transaction = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
-    val htlcs = commitmentSpec.htlcs.filter(_.amountMsat >= 546000)
-    val fee_msat = ChannelState.computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
+    val dust_threshold = 546000
+    val htlcs_in = commitmentSpec.htlcs_in.filter(_.amountMsat >= dust_threshold)
+    val htlcs_out = commitmentSpec.htlcs_out.filter(_.amountMsat >= dust_threshold)
+    val fee_msat = computeFee(commitmentSpec.feeRate, htlcs_in.size + htlcs_out.size) * 1000
     val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.amount_us_msat, commitmentSpec.amount_them_msat) match {
       case (us, them) if us >= fee_msat/2 && them >= fee_msat / 2 => (us - fee_msat / 2, them - fee_msat / 2)
       case (us, them) if us < fee_msat/2 => (0L, Math.max(0L, them - fee_msat + us))
@@ -198,10 +216,10 @@ object Scripts {
       txOut = outputs,
       lockTime = 0)
 
-    val sendOuts = htlcs.filter(_.direction == OUT).map(htlc =>
+    val sendOuts = htlcs_out.map(htlc =>
       TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
     )
-    val receiveOuts = htlcs.filter(_.direction == IN).map(htlc =>
+    val receiveOuts = htlcs_in.map(htlc =>
       TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
     )
     val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)

@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.{ChannelState, CommitmentSpec}
+import fr.acinq.eclair.channel.CommitmentSpec
 import fr.acinq.eclair.channel.Scripts._
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -82,7 +82,7 @@ class ProtocolSpec extends FunSuite {
 
     // we assume that Alice knows Bob's H
     val openAnchor = open_anchor(anchor.hash, anchorOutputIndex, 1000*1000)
-    val spec = CommitmentSpec(Set(), ours.initialFeeRate, 1000 *1000, 0, 1000 *1000, 0)
+    val spec = CommitmentSpec(Set(), Set(), ours.initialFeeRate, 1000 *1000, 0, 1000 *1000, 0)
     val tx = makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, openAnchor.txid, openAnchor.outputIndex, Bob.H, spec)
     val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)
     val sigA: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Alice.commitKey)

@@ -13,57 +13,30 @@ import scala.util.Try
   */
 object Helpers {
 
-  def removeHtlc(changes: List[Change], id: Long): List[Change] = changes.filterNot(_ match {
-    case u: update_add_htlc if u.id == id => true
-    case _ => false
-  })
-
-  def addHtlc(spec: CommitmentSpec, direction: Direction, update: update_add_htlc): CommitmentSpec = {
-    val htlc = Htlc(direction, update.id, update.amountMsat, update.rHash, update.expiry, previousChannelId = None)
-    direction match {
-      case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
-      case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
-    }
-  }
-
-  // OUT means we are sending an update_fulfill_htlc message which means that we are fulfilling an HTLC that they sent
-  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: update_fulfill_htlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.id == update.id && htlc.rHash == bin2sha256(Crypto.sha256(update.r))) match {
-      case Some(htlc) => direction match {
-        case OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
-        case IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
-      }
-    }
-  }
-
-  // OUT means we are sending an update_fail_htlc message which means that we are failing an HTLC that they sent
-  def failHtlc(spec: CommitmentSpec, direction: Direction, update: update_fail_htlc): CommitmentSpec = {
-    spec.htlcs.find(_.id == update.id) match {
-      case Some(htlc) => direction match {
-        case OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
-        case IN => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
-      }
-    }
-  }
-
   def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
-    val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
-    val spec1 = ourChanges.foldLeft(spec) {
-      case (spec, u: update_add_htlc) => addHtlc(spec, OUT, u)
+    val spec0 = ourCommitSpec.copy(htlcs_in = Set(), htlcs_out = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
+    val spec1 = ourChanges.foldLeft(spec0) {
+      case (spec, htlc: update_add_htlc) => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.amountMsat, htlcs_out = spec.htlcs_out + htlc)
       case (spec, _) => spec
     }
     val spec2 = theirChanges.foldLeft(spec1) {
-      case (spec, u: update_add_htlc) => addHtlc(spec, IN, u)
+      case (spec, htlc: update_add_htlc) => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.amountMsat, htlcs_in = spec.htlcs_in + htlc)
       case (spec, _) => spec
     }
-    val spec3 = ourChanges.foldLeft(spec2) {
-      case (spec, u: update_fulfill_htlc) => fulfillHtlc(spec, OUT, u)
-      case (spec, u: update_fail_htlc) => failHtlc(spec, OUT, u)
+    val spec3 = ourChanges.collect {
+      case f: update_fulfill_htlc => (f, spec2.htlcs_in.find(_.id == f.id))
+      case f: update_fail_htlc => (f, spec2.htlcs_in.find(_.id == f.id))
+    }.foldLeft(spec2) {
+      case (spec, (u: update_fulfill_htlc, Some(htlc))) => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs_in = spec.htlcs_in - htlc)
+      case (spec, (u: update_fail_htlc, Some(htlc))) => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs_in = spec.htlcs_in - htlc)
       case (spec, _) => spec
     }
-    val spec4 = theirChanges.foldLeft(spec3) {
-      case (spec, u: update_fulfill_htlc) => fulfillHtlc(spec, IN, u)
-      case (spec, u: update_fail_htlc) => failHtlc(spec, IN, u)
+    val spec4 = theirChanges.collect {
+      case f: update_fulfill_htlc => (f, spec2.htlcs_out.find(_.id == f.id))
+      case f: update_fail_htlc => (f, spec2.htlcs_out.find(_.id == f.id))
+    }.foldLeft(spec3) {
+      case (spec, (u: update_fulfill_htlc, Some(htlc))) => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs_out = spec.htlcs_out - htlc)
+      case (spec, (u: update_fail_htlc, Some(htlc))) => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs_out = spec.htlcs_out - htlc)
       case (spec, _) => spec
     }
     spec4
@@ -87,7 +60,8 @@ object Helpers {
 
   def checksig(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorOutput: TxOut, tx: Transaction): Boolean =
     true
-    // TODO : Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+
+  // TODO : Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
 
   def isMutualClose(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: OurCommit): Boolean = {
     // we rebuild the closing tx as seen by both parties

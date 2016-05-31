@@ -4,11 +4,8 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.math.BigInteger
 
 import _root_.lightning._
-import _root_.lightning.locktime.Locktime.{Blocks, Seconds}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.{ChannelState, ChannelOneSide}
 
 import scala.annotation.tailrec
 

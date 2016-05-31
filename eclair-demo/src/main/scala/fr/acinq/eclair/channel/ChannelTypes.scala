@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction, TxOut}
 import fr.acinq.eclair.crypto.ShaChain
-import lightning.{locktime, open_complete, sha256_hash}
+import lightning.{locktime, open_complete, sha256_hash, update_add_htlc}
 
 /**
   * Created by PM on 20/05/2016.
@@ -122,8 +122,8 @@ final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, fi
 }
 final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
 
-final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_us_msat : Long, initial_amount_them_msat: Long, amount_us_msat: Long, amount_them_msat: Long) {
-  val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.amountMsat).sum
+final case class CommitmentSpec(htlcs_in: Set[update_add_htlc], htlcs_out: Set[update_add_htlc], feeRate: Long, initial_amount_us_msat : Long, initial_amount_them_msat: Long, amount_us_msat: Long, amount_them_msat: Long) {
+  val totalFunds = amount_us_msat + amount_them_msat + (htlcs_in ++ htlcs_out).map(_.amountMsat).sum
 }
 
 trait CurrentCommitment {
@@ -151,7 +151,8 @@ final case class DATA_NORMAL                          (ourParams: OurChannelPara
                                                        ourChanges: OurChanges,
                                                        theirChanges: TheirChanges,
                                                        theirNextRevocationHash: Option[sha256_hash],
-                                                       anchorOutput: TxOut) extends Data with CurrentCommitment
+                                                       anchorOutput: TxOut,
+                                                       downstreams: Map[Long, Option[BinaryData]]) extends Data with CurrentCommitment
 
 object TypeDefs {
   type Change = GeneratedMessage
