@@ -30,7 +30,7 @@ object TestSighashNoInput extends App {
       val tmpTx = Transaction(
         version = 1L,
         txIn = TxIn(OutPoint(previousTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
-        txOut = TxOut(amount = 100, publicKeyScript = scriptPubKey) :: Nil,
+        txOut = TxOut(amount = 100 satoshi, publicKeyScript = scriptPubKey) :: Nil,
         lockTime = 0
       )
       Transaction.sign(tmpTx, Seq(key))
@@ -51,8 +51,8 @@ object TestSighashNoInput extends App {
       version = 1,
       txIn = TxIn(OutPoint(openingTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
       txOut = Seq(
-        TxOut(amount = 99, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = 1, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+        TxOut(amount = 99 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = 1 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       ),
       lockTime = 0
     )
@@ -83,8 +83,8 @@ object TestSighashNoInput extends App {
       version = 1,
       txIn = TxIn(OutPoint(openingTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
       txOut = Seq(
-        TxOut(amount = 98, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = 2, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+        TxOut(amount = 98 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = 2 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       ),
       lockTime = 0
     )
@@ -121,8 +121,8 @@ object TestSighashNoInput extends App {
       version = 1,
       txIn = TxIn(OutPoint(openingTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
       txOut = Seq(
-        TxOut(amount = 99, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = 1, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(redeemScript1)) :: OP_EQUAL :: Nil)
+        TxOut(amount = 99 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = 1 satoshi, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(redeemScript1)) :: OP_EQUAL :: Nil)
       ),
       lockTime = 0
     )
@@ -139,7 +139,7 @@ object TestSighashNoInput extends App {
     val tmpTx = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(revocablePaymentTx1.hash, 1), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
-      txOut = TxOut(amount = 1, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(amount = 1 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = 100
     )
 
@@ -160,7 +160,7 @@ object TestSighashNoInput extends App {
     tmpTx.updateSigScript(0, Script.write(sigScript))
   }
 
-  Transaction.correctlySpends(revocablePaymentTx1updated, Map(OutPoint(revocablePaymentTx1.hash, 1) -> revocablePaymentTx1.txOut(1).publicKeyScript), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+  Transaction.correctlySpends(revocablePaymentTx1updated, Map(OutPoint(revocablePaymentTx1.hash, 1) -> revocablePaymentTx1.txOut(1)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
 
   // now we want to update the channel and send 2 BTC to Bob instead of 1
@@ -175,8 +175,8 @@ object TestSighashNoInput extends App {
       version = 1,
       txIn = TxIn(OutPoint(openingTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
       txOut = Seq(
-        TxOut(amount = 98, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = 2, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(redeemScript2)) :: OP_EQUAL :: Nil)
+        TxOut(amount = 98 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = 2 satoshi, publicKeyScript = OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(redeemScript2)) :: OP_EQUAL :: Nil)
       ),
       lockTime = 0
     )
@@ -192,7 +192,7 @@ object TestSighashNoInput extends App {
     val tmpTx = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(revocablePaymentTx2.hash, 1), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
-      txOut = TxOut(amount = 1, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(amount = 1 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = 100
     )
 
@@ -230,7 +230,7 @@ object TestSighashNoInput extends App {
     val tmpTx = Transaction(
       version = 1,
       txIn = TxIn(OutPoint(revocablePaymentTx1Bob.hash, 1), sequence = 0xffffffffL, signatureScript = Array.empty[Byte]) :: Nil,
-      txOut = TxOut(1, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(1 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = 0
     )
     val sigAlice = Transaction.signInput(tmpTx, 0, redeemScript1, SIGHASH_ALL, keyAlice)

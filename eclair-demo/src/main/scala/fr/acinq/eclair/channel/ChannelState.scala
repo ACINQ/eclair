@@ -1,113 +1,68 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto
-import fr.acinq.eclair._
-import lightning.{sha256_hash, update_add_htlc}
+import com.trueaccord.scalapb.GeneratedMessage
+import fr.acinq.bitcoin.BinaryData
+import lightning._
 
 /**
   * Created by PM on 19/01/2016.
   */
-case class ChannelOneSide(pay_msat: Long, fee_msat: Long, htlcs: Seq[update_add_htlc]) {
+
+// @formatter:off
+
+sealed trait Direction
+case object IN extends Direction
+case object OUT extends Direction
+
+final case class Change2(direction: Direction, ack: Long, msg: GeneratedMessage)
+
+//case class Htlc2(id: Long, amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, val previousChannelId: Option[BinaryData])
+
+case class Htlc(direction: Direction, id: Long, amountMsat: Int, rHash: sha256_hash, expiry: locktime, nextNodeIds: Seq[String] = Nil, val previousChannelId: Option[BinaryData])
+
+// @formatter:on
+
+case class ChannelOneSide(pay_msat: Long, fee_msat: Long) {
   val funds = pay_msat + fee_msat
 }
 
-case class ChannelState(us: ChannelOneSide, them: ChannelOneSide) {
-  /**
-    * Because each party needs to be able to compute the other party's commitment tx
-    *
-    * @return the channel state as seen by the other party
-    */
-  def reverse: ChannelState = this.copy(them = us, us = them)
-
-  /**
-    * Update the channel
-    *
-    * @param delta as seen by us, if delta > 0 we increase our balance
-    * @return the update channel state
-    */
-  def update(delta: Long): ChannelState = this.copy(them = them.copy(pay_msat = them.pay_msat - delta), us = us.copy(pay_msat = us.pay_msat + delta))
-
-  /**
-    * Update our state when we send an htlc
-    *
-    * @param htlc
-    * @return
-    */
-  def htlc_receive(htlc: update_add_htlc): ChannelState = this.copy(them = them.copy(pay_msat = them.pay_msat - htlc.amountMsat), us = us.copy(htlcs = us.htlcs :+ htlc))
-
-  /**
-    * Update our state when we receive an htlc
-    *
-    * @param htlc
-    * @return
-    */
-  def htlc_send(htlc: update_add_htlc): ChannelState = this.copy(them = them.copy(htlcs = them.htlcs :+ htlc), us = us.copy(pay_msat = us.pay_msat - htlc.amountMsat))
-
-  /**
-    * We remove an existing htlc (can be because of a timeout, or a routing failure)
-    *
-    * @param rHash
-    * @return
-    */
-  def htlc_remove(rHash: sha256_hash): ChannelState = {
-    if (us.htlcs.find(_.rHash == rHash).isDefined) {
-      // TODO not optimized
-      val htlc = us.htlcs.find(_.rHash == rHash).get
-      // we were the receiver of this htlc
-      this.copy(them = them.copy(pay_msat = them.pay_msat + htlc.amountMsat), us = us.copy(htlcs = us.htlcs.filterNot(_ == htlc)))
-    } else if (them.htlcs.find(_.rHash == rHash).isDefined) {
-      // TODO not optimized
-      val htlc = them.htlcs.find(_.rHash == rHash).get
-      // we were the sender of this htlc
-      this.copy(them = them.copy(htlcs = them.htlcs.filterNot(_ == htlc)), us = us.copy(pay_msat = us.pay_msat + htlc.amountMsat))
-    } else throw new RuntimeException(s"could not find corresponding htlc (rHash=$rHash)")
-  }
-
-  def htlc_fulfill(r: sha256_hash): ChannelState = {
-    if (us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).isDefined) {
-      // TODO not optimized
-      val htlc = us.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).get
-      // we were the receiver of this htlc
-      val prev_fee = this.us.fee_msat + this.them.fee_msat
-      val new_us_amount_nofee = us.pay_msat + htlc.amountMsat + us.fee_msat
-      val new_us_fee = Math.min(prev_fee / 2, new_us_amount_nofee)
-      val new_them_fee = prev_fee - new_us_fee
-      val new_us_amount = new_us_amount_nofee - new_us_fee
-      val new_them_amount = them.pay_msat + them.fee_msat - new_them_fee
-      this.copy(
-        us = us.copy(pay_msat = new_us_amount, htlcs = us.htlcs.filterNot(_ == htlc), fee_msat = new_us_fee),
-        them = them.copy(pay_msat = new_them_amount, fee_msat = new_them_fee))
-    } else if (them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).isDefined) {
-      // TODO not optimized
-      val htlc = them.htlcs.find(_.rHash == bin2sha256(Crypto.sha256(r))).get
-      // we were the sender of this htlc
-      val prev_fee = this.us.fee_msat + this.them.fee_msat
-      val new_them_amount_nofee = them.pay_msat + htlc.amountMsat + them.fee_msat
-      val new_them_fee = Math.min(prev_fee / 2, new_them_amount_nofee)
-      val new_us_fee = prev_fee - new_them_fee
-      val new_them_amount = new_them_amount_nofee - new_them_fee
-      val new_us_amount = us.pay_msat + us.fee_msat - new_us_fee
-      this.copy(
-        us = us.copy(pay_msat = new_us_amount, fee_msat = new_us_fee),
-        them = them.copy(pay_msat = new_them_amount, htlcs = them.htlcs.filterNot(_ == htlc), fee_msat = new_them_fee))
-    } else throw new RuntimeException(s"could not find corresponding htlc (r=$r)")
-  }
-
-  def adjust_fees(fee: Long, is_funder: Boolean) : ChannelState = {
-    if (is_funder) {
-      val (funder, nonfunder) = ChannelState.adjust_fees(this.us, this.them, fee)
-      this.copy(us = funder, them = nonfunder)
-    } else {
-      val (funder, nonfunder) = ChannelState.adjust_fees(this.them, this.us, fee)
-      this.copy(us = nonfunder, them = funder)
-    }
-  }
-
-  def prettyString(): String = s"pay_us=${us.pay_msat} htlcs_us=${us.htlcs.map(_.amountMsat).sum} pay_them=${them.pay_msat} htlcs_them=${them.htlcs.map(_.amountMsat).sum} total=${us.pay_msat + us.htlcs.map(_.amountMsat).sum + them.pay_msat + them.htlcs.map(_.amountMsat).sum}"
+case class ChannelState(us: ChannelOneSide, them: ChannelOneSide, feeRate: Long) {
+  def reverse = this.copy(us = them, them = us)
 }
 
 object ChannelState {
-  def adjust_fees(funder: ChannelOneSide, nonfunder: ChannelOneSide, fee: Long) : (ChannelOneSide, ChannelOneSide) = {
+  /**
+    *
+    * A node MUST use the formula 338 + 32 bytes for every non-dust HTLC as the bytecount for calculating commitment
+    * transaction fees. Note that the fee requirement is unchanged, even if the elimination of dust HTLC outputs
+    * has caused a non-zero fee already.
+    * The fee for a transaction MUST be calculated by multiplying this bytecount by the fee rate, dividing by 1000
+    * and truncating (rounding down) the result to an even number of satoshis.
+    *
+    * @param feeRate       fee rate in Satoshi/Kb
+    * @param numberOfHtlcs number of (non-dust) HTLCs to be included in the commit tx
+    * @return the fee in Satoshis for a commit tx with 'numberOfHtlcs' HTLCs
+    */
+  def computeFee(feeRate: Long, numberOfHtlcs: Int) : Long = {
+    Math.floorDiv((338 + 32 * numberOfHtlcs) * feeRate, 2000) * 2
+  }
+
+  /**
+    *
+    * @param anchorAmount anchor amount in Satoshis
+    * @param feeRate fee rate in Satoshis/Kb
+    * @return a ChannelState instance where 'us' is funder (i.e. provided the anchor).
+    */
+  def initialFunding(anchorAmount: Long, feeRate: Long) : ChannelState = {
+    val fee = computeFee(feeRate, 0)
+    val pay_msat = (anchorAmount - fee) * 1000
+    val fee_msat = fee * 1000
+    val us = ChannelOneSide(pay_msat, fee_msat)
+    val them = ChannelOneSide(0, 0)
+    ChannelState(us, them, feeRate)
+  }
+
+  def adjust_fees(funder: ChannelOneSide, nonfunder: ChannelOneSide, fee: Long): (ChannelOneSide, ChannelOneSide) = {
     val nonfunder_fee = Math.min(fee - fee / 2, nonfunder.funds)
     val funder_fee = fee - nonfunder_fee
     (funder.copy(pay_msat = funder.funds - funder_fee, fee_msat = funder_fee), nonfunder.copy(pay_msat = nonfunder.funds - nonfunder_fee, fee_msat = nonfunder_fee))

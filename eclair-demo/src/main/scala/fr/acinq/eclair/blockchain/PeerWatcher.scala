@@ -15,9 +15,7 @@ import scala.concurrent.ExecutionContext
   * - periodically polls bitcoin-core using rpc api
   * Created by PM on 21/02/2016.
   */
-class PeerWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
-
-  import fr.acinq.eclair.blockchain.BitcoinRpcClient._
+class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   context.actorOf(Props(classOf[PeerClient], self))
   context.become(watching(Set[Watch]()))
@@ -42,7 +40,7 @@ class PeerWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext = 
       watches.foreach {
         _ match {
           case w@WatchConfirmed(channel, txId, minDepth, event) =>
-            getTxConfirmations(client, txId.toString).map(_ match {
+            client.getTxConfirmations(txId.toString).map(_ match {
               case Some(confirmations) if confirmations >= minDepth =>
                 channel ! event
                 self !('remove, w)
@@ -63,11 +61,11 @@ class PeerWatcher(client: BitcoinJsonRPCClient)(implicit ec: ExecutionContext = 
 
     case Publish(tx) =>
       log.info(s"publishing tx $tx")
-      publishTransaction(client, tx).onFailure {
-        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx))}")
+      client.publishTransaction(tx).onFailure {
+        case t: Throwable => log.error(t, s"cannot publish tx ${BinaryData(Transaction.write(tx))}")
       }
 
     case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
-      makeAnchorTx(client, ourCommitPub, theirCommitPub, amount).pipeTo(sender)
+      client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)
   }
 }

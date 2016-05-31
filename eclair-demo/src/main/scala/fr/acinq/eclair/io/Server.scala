@@ -5,7 +5,8 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorSystem, Props}
 import akka.io.{IO, Tcp}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.{Globals, CreateChannel, Boot}
+import fr.acinq.eclair.Boot
+import fr.acinq.eclair.channel.Register.CreateChannel
 
 /**
  * Created by PM on 27/10/2015.
@@ -18,17 +19,16 @@ class Server(address: InetSocketAddress) extends Actor with ActorLogging {
   IO(Tcp) ! Bind(self, address)
 
   def receive = {
-    case b @ Bound(localAddress) =>
+    case b@Bound(localAddress) =>
       log.info(s"bound on $b")
 
     case CommandFailed(_: Bind) => context stop self
 
-    case c @ Connected(remote, local) =>
+    case c@Connected(remote, local) =>
       log.info(s"connected to $remote")
       val connection = sender()
-      Boot.register ! CreateChannel(connection, Globals.params_noanchor)
+      Boot.register ! CreateChannel(connection, None)
   }
-
 }
 
 object Server extends App {

@@ -75,7 +75,7 @@ object Onion extends App {
 
   def generate_secrets(ecdh_key: BinaryData): Secrets = {
 
-    val key_hash = Crypto.sha256(ecdh_key)
+    val key_hash: BinaryData = Crypto.sha256(ecdh_key)
 
     val enckey = tweak_hash(key_hash, 0x00).take(16)
     val hmac = tweak_hash(key_hash, 0x01)

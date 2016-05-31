@@ -50,7 +50,7 @@ class PeerHandler(remote: InetSocketAddress, listener: ActorRef) extends Actor w
   def connected(connection: ActorRef): Receive = {
     case message: fr.acinq.bitcoin.Message =>
       log.debug(s"sending $message")
-      connection ! Write(ByteString(fr.acinq.bitcoin.Message.write(message)))
+      connection ! Write(ByteString(fr.acinq.bitcoin.Message.write(message).toArray))
     case CommandFailed(w: Write) =>
       // O/S buffer was full
       log.error("write failed")

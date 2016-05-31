@@ -5,8 +5,6 @@ import javax.crypto.Cipher
 import javax.crypto.spec.{SecretKeySpec, IvParameterSpec}
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.channel.{NORMAL_LOWPRIO, TestHelper}
-import fr.acinq.eclair.crypto.LightningCrypto
 import fr.acinq.eclair.io.AuthHandler
 import AuthHandler.Secrets
 import lightning.pkt
