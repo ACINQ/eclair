@@ -73,7 +73,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
-      val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
+    val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
       // they fund the channel with their anchor tx, so the money is theirs
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
@@ -160,9 +160,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(OPEN_WAITING_OURANCHOR) {
     case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(ourParams, theirParams, shaChain, ourCommit, theirCommit, theirNextRevocationHash, deferred, anchorOutput)) =>
-        blockchain ! WatchLost(self, d.asInstanceOf[CurrentCommitment].anchorId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
-        them ! open_complete(None)
-        deferred.map(self ! _)
+      blockchain ! WatchLost(self, d.asInstanceOf[CurrentCommitment].anchorId, ourParams.minDepth, BITCOIN_ANCHOR_LOST)
+      them ! open_complete(None)
+      deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
       goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(ourParams, theirParams, shaChain, 0, ourCommit, theirCommit, OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), Some(theirNextRevocationHash), anchorOutput)
 
