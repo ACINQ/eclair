@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction, TxOut}
 import fr.acinq.eclair.crypto.ShaChain
-import lightning.{locktime, open_complete, sha256_hash}
+import lightning._
 
 /**
   * Created by PM on 20/05/2016.
@@ -33,12 +33,8 @@ case object OPEN_WAITING_OURANCHOR extends State
 case object OPEN_WAIT_FOR_COMPLETE_OURANCHOR extends State
 case object OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR extends State
 case object NORMAL extends State
-case object CLOSE_CLEARING extends State
-case object CLOSE_CLEARING_WAIT_FOR_REV extends State
-case object CLOSE_CLEARING_WAIT_FOR_REV_THEIRSIG extends State
-case object CLOSE_CLEARING_WAIT_FOR_SIG extends State
-case object CLOSE_NEGOTIATING extends State
-case object WAIT_FOR_CLOSE_COMPLETE extends State
+case object CLEARING extends State
+case object NEGOCIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
 case object ERR_ANCHOR_LOST extends State
@@ -141,7 +137,27 @@ final case class DATA_NORMAL                          (ourParams: OurChannelPara
                                                        ourChanges: OurChanges,
                                                        theirChanges: TheirChanges,
                                                        theirNextRevocationHash: Option[sha256_hash],
-                                                       anchorOutput: TxOut) extends Data with CurrentCommitment
+                                                       anchorOutput: TxOut,
+                                                       ourClearing: Option[close_clearing]) extends Data with CurrentCommitment
+final case class DATA_CLEARING                        (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
+                                                       ourCommit: OurCommit,
+                                                       theirCommit: TheirCommit,
+                                                       ourChanges: OurChanges,
+                                                       theirChanges: TheirChanges,
+                                                       theirNextRevocationHash: Option[sha256_hash],
+                                                       anchorOutput: TxOut,
+                                                       ourClearing: close_clearing,
+                                                       theirClearing: close_clearing) extends Data with CurrentCommitment
+final case class DATA_NEGOCIATING                     (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
+                                                       ourCommit: OurCommit,
+                                                       theirCommit: TheirCommit,
+                                                       ourChanges: OurChanges,
+                                                       theirChanges: TheirChanges,
+                                                       theirNextRevocationHash: Option[sha256_hash],
+                                                       anchorOutput: TxOut,
+                                                       ourClearing: close_clearing,
+                                                       theirClearing: close_clearing,
+                                                       ourSignature: close_signature) extends Data with CurrentCommitment
 
 object TypeDefs {
   type Change = GeneratedMessage
@@ -155,7 +171,8 @@ case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: s
 
 /*final case class DATA_CLEARING                        (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, staged: List[Change], commitment: Commitment, next: NextCommitment, closing: ClosingData) extends Data with CurrentCommitment
 final case class DATA_NEGOTIATING                     (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, closing: ClosingData) extends Data with CurrentCommitment
-*/final case class DATA_CLOSING                         (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit,
+*/
+final case class DATA_CLOSING                         (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit,
                               mutualClosePublished: Option[Transaction] = None, ourCommitPublished: Option[Transaction] = None, theirCommitPublished: Option[Transaction] = None, revokedPublished: Seq[Transaction] = Seq()) extends Data with CurrentCommitment {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }

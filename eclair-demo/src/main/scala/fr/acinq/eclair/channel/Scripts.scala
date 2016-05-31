@@ -176,6 +176,15 @@ object Scripts {
 //    permuteOutputs(tx1)
 //  }
 
+  def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
+    val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {
+      case (Satoshi(us), Satoshi(them)) if us >= fee.toLong /2 && them >= fee.toLong / 2 => (Satoshi(us - fee.toLong / 2), Satoshi(them - fee.toLong / 2))
+      case (Satoshi(us), Satoshi(them)) if us < fee.toLong/2 => (Satoshi(0L), Satoshi(Math.max(0L, them - fee.toLong + us)))
+      case (Satoshi(us), Satoshi(them)) if them < fee.toLong/2 => (Satoshi(Math.max(us - fee.toLong + them, 0L)), Satoshi(0L))
+    }
+    (amount_us1, amount_them1)
+  }
+
   def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): Transaction = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
     val htlcs = commitmentSpec.htlcs.filter(_.amountMsat >= 546000)
@@ -209,27 +218,28 @@ object Scripts {
   }
 
   /**
-    * This is a simple tx with a multisig input and two pay2sh output
+    * Create a "final" channel transaction that will be published when the channel is closed
     *
     * @param inputs inputs to include in the tx. In most cases, there's only one input that points to the output of
     *               the anchor tx
-    * @param ourFinalKey our final public key
-    * @param theirFinalKey their final public key
-    * @param channelState channel state
+    * @param ourPubkeyScript our public key script
+    * @param theirPubkeyScript their public key script
+    * @param amount_us pay to us
+    * @param amount_them pay to them
     * @return an unsigned "final" tx
     */
-//  def makeFinalTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, channelState: ChannelState): Transaction = {
-//    assert(channelState.them.htlcs_received.isEmpty && channelState.us.htlcs_received.isEmpty, s"cannot close a channel with pending htlcs (see rusty's state_types.h line 103)")
-//
-//    permuteOutputs(Transaction(
-//      version = 2,
-//      txIn = inputs,
-//      txOut = Seq(
-//        TxOut(amount = Satoshi(channelState.them.pay_msat / 1000), publicKeyScript = pay2wpkh(theirFinalKey)),
-//        TxOut(amount = Satoshi(channelState.us.pay_msat / 1000), publicKeyScript = pay2wpkh(ourFinalKey))
-//      ),
-//      lockTime = 0))
-//  }
+  def makeFinalTx(inputs: Seq[TxIn], ourPubkeyScript: BinaryData, theirPubkeyScript: BinaryData, amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi): Transaction = {
+    val (amount_us1: Satoshi, amount_them1: Satoshi) = applyFees(amount_us, amount_them, fee)
+
+    permuteOutputs(Transaction(
+      version = 2,
+      txIn = inputs,
+      txOut = Seq(
+        TxOut(amount = amount_us1, publicKeyScript = ourPubkeyScript),
+        TxOut(amount = amount_them1, publicKeyScript = theirPubkeyScript)
+      ),
+      lockTime = 0))
+  }
 
   def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR
 

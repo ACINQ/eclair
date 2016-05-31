@@ -104,18 +104,18 @@ class NominalChannelSpec extends BaseChannelTestClass {
   }
 
   test("close channel starting with no HTLC") { case (alice, bob, pipe) =>
-//    pipe !(alice, bob) // this starts the communication between alice and bob
-//
-//    within(30 seconds) {
-//
-//      awaitCond(alice.stateName == NORMAL)
-//      awaitCond(bob.stateName == NORMAL)
-//
-//      alice ! CMD_CLOSE(None)
-//
-//      awaitCond(alice.stateName == CLOSING)
-//      awaitCond(bob.stateName == CLOSING)
-//    }
+    pipe !(alice, bob) // this starts the communication between alice and bob
+
+    within(30 seconds) {
+
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+
+      alice ! CMD_CLOSE(None)
+
+      awaitCond(alice.stateName == CLOSING)
+      awaitCond(bob.stateName == CLOSING)
+    }
   }
 
 }
