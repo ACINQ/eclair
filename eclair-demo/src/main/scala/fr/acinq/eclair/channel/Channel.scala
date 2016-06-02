@@ -352,7 +352,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(ourParams, theirParams, shaChain, _, ourCommit, theirCommit, ourChanges, theirChanges, _, anchorOutput, ourClearingOpt)) =>
       val ourClearing: close_clearing = ourClearingOpt.getOrElse {
-        val ourScriptPubKey: BinaryData = Script.write(Scripts.pay2wpkh(ourParams.finalPubKey))
+        val ourScriptPubKey: BinaryData = Script.write(Scripts.pay2pkh(ourParams.finalPubKey))
+        log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.ourParams.finalPrivKey)}")
         them ! close_clearing(ourScriptPubKey)
         close_clearing(ourScriptPubKey)
       }
@@ -371,7 +372,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(CMD_CLOSE(scriptPubKeyOpt), d@DATA_NORMAL(ourParams, _, _, _, _, _, _, _, _, _, None)) =>
-      val ourScriptPubKey: BinaryData = scriptPubKeyOpt.getOrElse(Script.write(Scripts.pay2wpkh(ourParams.finalPubKey)))
+      val ourScriptPubKey: BinaryData = scriptPubKeyOpt.getOrElse {
+        log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.ourParams.finalPrivKey)}")
+        Script.write(Scripts.pay2pkh(ourParams.finalPubKey))
+      }
       val ourCloseClearing = close_clearing(ourScriptPubKey)
       them ! ourCloseClearing
       stay using d.copy(ourClearing = Some(ourCloseClearing))
