@@ -100,7 +100,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val theirSpec = theirCommitment.spec
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_us_msat = anchorAmount * 1000, initial_amount_them_msat = 0, amount_us_msat = anchorAmount * 1000, amount_them_msat = 0)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_us_msat = anchorAmount * 1000, initial_amount_them_msat = 0, amount_us_msat = anchorAmount * 1000, amount_them_msat = 0)
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
       val ourSig = sign(ourParams, theirParams, anchorAmount, ourTx)
@@ -108,6 +108,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val anchorOutput = anchorTx.txOut(anchorOutputIndex)
       checksig(ourParams, theirParams, anchorOutput, signedTx) match {
         case false =>
+          log.error("their open_commit_sig message contains an invalid signature")
           them ! error(Some("Bad signature"))
           goto(CLOSED)
         case true =>
