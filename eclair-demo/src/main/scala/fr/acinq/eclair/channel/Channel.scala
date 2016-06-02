@@ -11,6 +11,8 @@ import fr.acinq.bitcoin.Crypto.sha256
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 
+import scala.util.{Failure, Success, Try}
+
 /**
   * Created by PM on 20/08/2015.
   */
@@ -23,8 +25,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   log.info(s"commit pubkey: ${params.commitPubKey}")
   log.info(s"final pubkey: ${params.finalPubKey}")
-
-  val closeFee = 0L // TODO
 
   params.anchorAmount match {
     case None =>
@@ -357,11 +357,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         close_clearing(ourScriptPubKey)
       }
       if (ourCommit.spec.htlcs.isEmpty && theirCommit.spec.htlcs.isEmpty) {
+        val commitFee = d.anchorOutput.amount.toLong - d.ourCommit.publishableTx.txOut.map(_.amount.toLong).sum
+        val closeFee = Satoshi(2 * (commitFee / 4))
         val amount_us = Satoshi(ourCommit.spec.amount_us_msat / 1000)
         val amount_them = Satoshi(theirCommit.spec.amount_us_msat / 1000)
-        val finalTx = Scripts.makeFinalTx(ourCommit.publishableTx.txIn, ourClearing.scriptPubkey, theirScriptPubKey, amount_us, amount_them, 0 satoshi)
+        val finalTx = Scripts.makeFinalTx(ourCommit.publishableTx.txIn, ourClearing.scriptPubkey, theirScriptPubKey, amount_us, amount_them, closeFee)
         val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, finalTx)
-        val ourCloseSig = close_signature(closeFee, ourSig)
+        val ourCloseSig = close_signature(closeFee.toLong, ourSig)
         them ! ourCloseSig
         goto(NEGOCIATING) using DATA_NEGOCIATING(ourParams, theirParams, shaChain, d.htlcIdx, ourCommit, theirCommit, ourChanges, theirChanges, d.theirNextRevocationHash, anchorOutput, ourClearing, theirClearing, ourCloseSig)
       } else {
@@ -469,7 +471,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             val amount_them = Satoshi(theirCommit.spec.amount_us_msat / 1000)
             val finalTx = Scripts.makeFinalTx(ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, 0 satoshi)
             val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, finalTx)
-            val ourCloseSig = close_signature(closeFee, ourSig)
+            val closeFee = 5 satoshi
+            val ourCloseSig = close_signature(closeFee.toLong, ourSig)
             them ! ourCloseSig
             goto(NEGOCIATING) using DATA_NEGOCIATING(ourParams, theirParams, shaChain, d.htlcIdx, ourCommit, theirCommit, ourChanges, theirChanges, d.theirNextRevocationHash, anchorOutput, d.ourClearing, d.theirClearing, ourCloseSig)
           }
@@ -485,36 +488,40 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(NEGOCIATING) {
     case Event(close_signature(theirCloseFee, theirSig), d:DATA_NEGOCIATING) if theirCloseFee == d.ourSignature.closeFee =>
-      val amount_us = Satoshi(d.ourCommit.spec.amount_us_msat / 1000)
-      val amount_them = Satoshi(d.theirCommit.spec.amount_us_msat / 1000)
-      val finalTx = Scripts.makeFinalTx(d.ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, Satoshi(theirCloseFee))
-      val ourSig = sign(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx)
-      val ourCloseSig = close_signature(closeFee, ourSig)
-      val signedTx = addSigs(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx, ourSig, theirSig)
-      checksig(d.ourParams, d.theirParams, d.anchorOutput, signedTx) match {
-        case true =>
+      checkCloseSignature(theirSig, Satoshi(theirCloseFee), d) match {
+        case Success(signedTx) =>
           blockchain ! Publish(signedTx)
           blockchain ! WatchConfirmed(self, signedTx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
           goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.ourCommit, d.theirCommit, mutualClosePublished = Some(signedTx))
-        case false =>
-          throw new RuntimeException("cannot verify their closing signature")
+        case Failure(cause) =>
+          log.error(cause, "cannot verify their close signature")
+          throw new RuntimeException("cannot verify their close signature", cause)
       }
 
     case Event(close_signature(theirCloseFee, theirSig), d:DATA_NEGOCIATING) =>
-      val amount_us = Satoshi(d.ourCommit.spec.amount_us_msat / 1000)
-      val amount_them = Satoshi(d.theirCommit.spec.amount_us_msat / 1000)
-      val finalTx = Scripts.makeFinalTx(d.ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, Satoshi(theirCloseFee))
-      val ourSig = sign(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx)
-      val ourCloseSig = close_signature(closeFee, ourSig)
-      val signedTx = addSigs(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx, ourSig, theirSig)
-      checksig(d.ourParams, d.theirParams, d.anchorOutput, signedTx) match {
-        case true =>
-          blockchain ! Publish(signedTx)
-          blockchain ! WatchConfirmed(self, signedTx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-          them ! ourCloseSig
-          goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.ourCommit, d.theirCommit, mutualClosePublished = Some(signedTx))
-        case false =>
-          throw new RuntimeException("cannot verify their closing signature")
+      checkCloseSignature(theirSig, Satoshi(theirCloseFee), d) match {
+        case Success(_) =>
+          val closeFee = ((theirCloseFee + d.ourSignature.closeFee) / 4) * 2 match {
+            case value if value == d.ourSignature.closeFee => value + 2
+            case value => value
+          }
+          val amount_us = Satoshi(d.ourCommit.spec.amount_us_msat / 1000)
+          val amount_them = Satoshi(d.theirCommit.spec.amount_us_msat / 1000)
+          val finalTx = Scripts.makeFinalTx(d.ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, Satoshi(closeFee))
+          val ourSig = sign(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx)
+          if (closeFee == theirCloseFee) {
+            val signedTx = addSigs(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx, ourSig, theirSig)
+            blockchain ! Publish(signedTx)
+            blockchain ! WatchConfirmed(self, signedTx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+            goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.ourCommit, d.theirCommit, mutualClosePublished = Some(signedTx))
+          } else {
+            val ourCloseSig = close_signature(closeFee, ourSig)
+            them ! ourCloseSig
+            stay using d.copy(ourSignature = ourCloseSig)
+          }
+        case Failure(cause) =>
+          log.error(cause, "cannot verify their close signature")
+          throw new RuntimeException("cannot verify their close signature", cause)
       }
   }
   /*
@@ -888,6 +895,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     // steal immediately
     // wait for BITCOIN_STEAL_DONE
     error(Some("Otherspend noticed"))
+  }
+
+  def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOCIATING) : Try[Transaction] = {
+    val amount_us = Satoshi(d.ourCommit.spec.amount_us_msat / 1000)
+    val amount_them = Satoshi(d.theirCommit.spec.amount_us_msat / 1000)
+    val finalTx = Scripts.makeFinalTx(d.ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, closeFee)
+    val ourSig = sign(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx)
+    val ourCloseSig = close_signature(d.ourSignature.closeFee, ourSig)
+    val signedTx = addSigs(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx, ourSig, closeSig)
+    checksig(d.ourParams, d.theirParams, d.anchorOutput, signedTx) match {
+      case true => Success(signedTx)
+      case false => Failure(new RuntimeException("Cannot verify their signature"))
+    }
   }
 }
 
