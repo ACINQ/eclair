@@ -73,7 +73,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_ANCHOR) {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
-      val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
+    val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
       // they fund the channel with their anchor tx, so the money is theirs
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
@@ -107,11 +107,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val signedTx: Transaction = addSigs(ourParams, theirParams, anchorAmount, ourTx, ourSig, theirSig)
       val anchorOutput = anchorTx.txOut(anchorOutputIndex)
       checksig(ourParams, theirParams, anchorOutput, signedTx) match {
-        case false =>
-          log.error("their open_commit_sig message contains an invalid signature")
+        case Failure(cause) =>
+          log.error(cause, "their open_commit_sig message contains an invalid signature")
           them ! error(Some("Bad signature"))
           goto(CLOSED)
-        case true =>
+        case Success(_) =>
           blockchain ! WatchConfirmed(self, anchorTx.txid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
           blockchain ! WatchSpent(self, anchorTx.txid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
           blockchain ! Publish(anchorTx)
@@ -276,7 +276,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // TODO: nodeIds are ignored
       stay using d.copy(theirChanges = theirChanges.copy(proposed = theirChanges.proposed :+ htlc))
 
-    case Event(CMD_FULFILL_HTLC(id, r), d:DATA_NORMAL) =>
+    case Event(CMD_FULFILL_HTLC(id, r), d: DATA_NORMAL) =>
       d.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           val fulfill = update_fulfill_htlc(id, r)
@@ -286,7 +286,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id")
       }
 
-    case Event(fulfill@update_fulfill_htlc(id, r), d:DATA_NORMAL) =>
+    case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_NORMAL) =>
       d.ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           stay using d.copy(theirChanges = d.theirChanges.copy(proposed = d.theirChanges.proposed :+ fulfill))
@@ -310,7 +310,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
       }
 
-    case Event(CMD_SIGN, d:DATA_NORMAL) if d.theirNextRevocationHash.isEmpty =>
+    case Event(CMD_SIGN, d: DATA_NORMAL) if d.theirNextRevocationHash.isEmpty =>
       throw new RuntimeException(s"cannot send two update_commit in a row (must wait for revocation)")
 
     case Event(CMD_SIGN, d@DATA_NORMAL(ourParams, theirParams, _, _, ourCommit, theirCommit, ourChanges, theirChanges, Some(theirNextRevocationHash), anchorOutput, _)) =>
@@ -332,17 +332,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, ourTx)
       val signedTx = addSigs(ourParams, theirParams, anchorOutput.amount.toLong, ourTx, ourSig, theirSig)
       checksig(ourParams, theirParams, anchorOutput, signedTx) match {
-        case false =>
+        case Failure(cause) =>
+          log.error(cause, "received a bad signature")
           them ! error(Some("Bad signature"))
           publish_ourcommit(ourCommit)
           goto(CLOSING) using DATA_CLOSING(ourParams, theirParams, shaChain, ourCommit, theirCommit, ourCommitPublished = Some(ourCommit.publishableTx))
-        case true =>
+        case Success(_) =>
           val ourRevocationPreimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index)
           val ourRevocationHash = Crypto.sha256(ourRevocationPreimage)
           val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 2))
           them ! update_revocation(ourRevocationPreimage, ourNextRevocationHash)
           val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = signedTx)
-          stay using d.copy(ourCommit = ourCommit1, theirChanges = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed))
+          val theirChanges1 = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed)
+          stay using d.copy(ourCommit = ourCommit1, theirChanges = theirChanges1)
       }
 
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_NORMAL(ourParams, theirParams, shaChain, _, ourCommit, theirCommit, ourChanges, theirChanges, _, _, _)) =>
@@ -405,7 +407,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
 
   when(CLEARING) {
-    case Event(CMD_FULFILL_HTLC(id, r), d:DATA_CLEARING) =>
+    case Event(CMD_FULFILL_HTLC(id, r), d: DATA_CLEARING) =>
       d.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           val fulfill = update_fulfill_htlc(id, r)
@@ -415,7 +417,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id")
       }
 
-    case Event(fulfill@update_fulfill_htlc(id, r), d:DATA_CLEARING) =>
+    case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_CLEARING) =>
       d.ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == id => u } match {
         case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(r)) =>
           stay using d.copy(theirChanges = d.theirChanges.copy(proposed = d.theirChanges.proposed :+ fulfill))
@@ -439,7 +441,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case None => throw new RuntimeException(s"unknown htlc id=$id") // TODO : we should fail the channel
       }
 
-    case Event(CMD_SIGN, d:DATA_CLEARING) if d.theirNextRevocationHash.isEmpty =>
+    case Event(CMD_SIGN, d: DATA_CLEARING) if d.theirNextRevocationHash.isEmpty =>
       throw new RuntimeException(s"cannot send two update_commit in a row (must wait for revocation)")
 
     case Event(CMD_SIGN, d@DATA_CLEARING(ourParams, theirParams, _, _, ourCommit, theirCommit, ourChanges, theirChanges, Some(theirNextRevocationHash), anchorOutput, _, _)) =>
@@ -461,38 +463,55 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, ourTx)
       val signedTx = addSigs(ourParams, theirParams, anchorOutput.amount.toLong, ourTx, ourSig, theirSig)
       checksig(ourParams, theirParams, anchorOutput, signedTx) match {
-        case false =>
+        case Failure(cause) =>
+          log.error(cause, "received a bad signature")
           them ! error(Some("Bad signature"))
           publish_ourcommit(ourCommit)
           goto(CLOSING) using DATA_CLOSING(ourParams, theirParams, shaChain, ourCommit, theirCommit, ourCommitPublished = Some(ourCommit.publishableTx))
-        case true =>
+        case Success(_) =>
           val ourRevocationPreimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index)
           val ourRevocationHash = Crypto.sha256(ourRevocationPreimage)
           val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 2))
           them ! update_revocation(ourRevocationPreimage, ourNextRevocationHash)
-          val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = signedTx)
-          if (spec.htlcs.isEmpty) {
-            val amount_us = Satoshi(ourCommit.spec.amount_us_msat / 1000)
+          val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec = spec, publishableTx = signedTx)
+          val theirChanges1 = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed)
+          if (ourCommit1.spec.htlcs.isEmpty && theirCommit.spec.htlcs.isEmpty) {
+            val commitFee = d.anchorOutput.amount.toLong - d.ourCommit.publishableTx.txOut.map(_.amount.toLong).sum
+            val closeFee = Satoshi(2 * (commitFee / 4))
+            val amount_us = Satoshi(ourCommit1.spec.amount_us_msat / 1000)
             val amount_them = Satoshi(theirCommit.spec.amount_us_msat / 1000)
-            val finalTx = Scripts.makeFinalTx(ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, 0 satoshi)
+            val finalTx = Scripts.makeFinalTx(ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, closeFee)
             val ourSig = sign(ourParams, theirParams, anchorOutput.amount.toLong, finalTx)
-            val closeFee = 5 satoshi
             val ourCloseSig = close_signature(closeFee.toLong, ourSig)
             them ! ourCloseSig
-            goto(NEGOCIATING) using DATA_NEGOCIATING(ourParams, theirParams, shaChain, d.htlcIdx, ourCommit, theirCommit, ourChanges, theirChanges, d.theirNextRevocationHash, anchorOutput, d.ourClearing, d.theirClearing, ourCloseSig)
+            goto(NEGOCIATING) using DATA_NEGOCIATING(ourParams, theirParams, shaChain, d.htlcIdx, ourCommit1, theirCommit, ourChanges, theirChanges1, d.theirNextRevocationHash, anchorOutput, d.ourClearing, d.theirClearing, ourCloseSig)
+          } else {
+            stay using d.copy(ourCommit = ourCommit1, theirChanges = theirChanges1)
           }
-          stay using d.copy(ourCommit = ourCommit1, theirChanges = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed))
       }
 
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(ourParams, theirParams, shaChain, _, ourCommit, theirCommit, ourChanges, theirChanges, _, _, _, _)) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       //TODO : check rev pre image is valid
-      stay using d.copy(ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed), theirNextRevocationHash = Some(nextRevocationHash))
+      val ourChanges1 = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed)
+      if (ourCommit.spec.htlcs.isEmpty && theirCommit.spec.htlcs.isEmpty) {
+        val commitFee = d.anchorOutput.amount.toLong - d.ourCommit.publishableTx.txOut.map(_.amount.toLong).sum
+        val closeFee = Satoshi(2 * (commitFee / 4))
+        val amount_us = Satoshi(ourCommit.spec.amount_us_msat / 1000)
+        val amount_them = Satoshi(theirCommit.spec.amount_us_msat / 1000)
+        val finalTx = Scripts.makeFinalTx(ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, closeFee)
+        val ourSig = sign(ourParams, theirParams, d.anchorOutput.amount.toLong, finalTx)
+        val ourCloseSig = close_signature(closeFee.toLong, ourSig)
+        them ! ourCloseSig
+        goto(NEGOCIATING) using DATA_NEGOCIATING(ourParams, theirParams, shaChain, d.htlcIdx, ourCommit, theirCommit, ourChanges1, theirChanges, Some(nextRevocationHash), d.anchorOutput, d.ourClearing, d.theirClearing, ourCloseSig)
+      } else {
+        stay using d.copy(ourChanges = ourChanges1, theirNextRevocationHash = Some(nextRevocationHash))
+      }
   }
 
   when(NEGOCIATING) {
-    case Event(close_signature(theirCloseFee, theirSig), d:DATA_NEGOCIATING) if theirCloseFee == d.ourSignature.closeFee =>
+    case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) if theirCloseFee == d.ourSignature.closeFee =>
       checkCloseSignature(theirSig, Satoshi(theirCloseFee), d) match {
         case Success(signedTx) =>
           blockchain ! Publish(signedTx)
@@ -503,7 +522,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           throw new RuntimeException("cannot verify their close signature", cause)
       }
 
-    case Event(close_signature(theirCloseFee, theirSig), d:DATA_NEGOCIATING) =>
+    case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) =>
       checkCloseSignature(theirSig, Satoshi(theirCloseFee), d) match {
         case Success(_) =>
           val closeFee = ((theirCloseFee + d.ourSignature.closeFee) / 4) * 2 match {
@@ -514,14 +533,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val amount_them = Satoshi(d.theirCommit.spec.amount_us_msat / 1000)
           val finalTx = Scripts.makeFinalTx(d.ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, Satoshi(closeFee))
           val ourSig = sign(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx)
+          val ourCloseSig = close_signature(closeFee, ourSig)
+          them ! ourCloseSig
           if (closeFee == theirCloseFee) {
             val signedTx = addSigs(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx, ourSig, theirSig)
             blockchain ! Publish(signedTx)
             blockchain ! WatchConfirmed(self, signedTx.txid, d.ourParams.minDepth, BITCOIN_CLOSE_DONE)
             goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.ourCommit, d.theirCommit, mutualClosePublished = Some(signedTx))
           } else {
-            val ourCloseSig = close_signature(closeFee, ourSig)
-            them ! ourCloseSig
             stay using d.copy(ourSignature = ourCloseSig)
           }
         case Failure(cause) =>
@@ -541,6 +560,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(CLOSING) {
+    case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) if theirCloseFee == d.ourSignature.closeFee =>
+      stay()
+
+    case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) =>
+      throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${d.ourSignature.closeFee}")
+
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
   }
   /*def clearing_handler: StateFunction = {
@@ -902,17 +927,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     error(Some("Otherspend noticed"))
   }
 
-  def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOCIATING) : Try[Transaction] = {
+  def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOCIATING): Try[Transaction] = {
     val amount_us = Satoshi(d.ourCommit.spec.amount_us_msat / 1000)
     val amount_them = Satoshi(d.theirCommit.spec.amount_us_msat / 1000)
     val finalTx = Scripts.makeFinalTx(d.ourCommit.publishableTx.txIn, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, amount_us, amount_them, closeFee)
     val ourSig = sign(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx)
     val ourCloseSig = close_signature(d.ourSignature.closeFee, ourSig)
     val signedTx = addSigs(d.ourParams, d.theirParams, d.anchorOutput.amount.toLong, finalTx, ourSig, closeSig)
-    checksig(d.ourParams, d.theirParams, d.anchorOutput, signedTx) match {
-      case true => Success(signedTx)
-      case false => Failure(new RuntimeException("Cannot verify their signature"))
-    }
+    checksig(d.ourParams, d.theirParams, d.anchorOutput, signedTx).map(_ => signedTx)
   }
 }
 
