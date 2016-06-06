@@ -136,6 +136,7 @@ final case class DATA_CLEARING                        (commitments: Commitments,
 final case class DATA_NEGOCIATING                     (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
                                                        ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data
 final case class DATA_CLOSING                         (commitments: Commitments, shaChain: ShaChain,
+                                                       ourSignature: Option[close_signature] = None,
                                                        mutualClosePublished: Option[Transaction] = None,
                                                        ourCommitPublished: Option[Transaction] = None,
                                                        theirCommitPublished: Option[Transaction] = None,

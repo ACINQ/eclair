@@ -315,7 +315,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d: DATA_NORMAL) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
-      //TODO : check rev pre image is valid
+      // TODO: check preimage
       stay using d.copy(commitments = Commitments.receiveRevocation(d.commitments, msg))
 
     case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, _, _, ourClearingOpt)) =>
@@ -463,186 +463,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(CLOSING) {
-    case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) if theirCloseFee == d.ourSignature.closeFee =>
+    case Event(close_signature(theirCloseFee, theirSig), d: DATA_CLOSING) if d.ourSignature.map(_.closeFee) == Some(theirCloseFee) =>
       stay()
 
-    case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) =>
-      throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${d.ourSignature.closeFee}")
+    case Event(close_signature(theirCloseFee, theirSig), d: DATA_CLOSING) =>
+      throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${d.ourSignature.map(_.closeFee)}")
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
   }
-  /*def clearing_handler: StateFunction = {
-    case Event(htlc@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_CLEARING(ack_in, _, _, _, _, staged, commitment, _, _)) =>
-      // TODO : should we take pending htlcs into account?
-      assert(commitment.state.commit_changes(staged).them.pay_msat >= amount, "insufficient funds!") // TODO : we should fail the channel
-      // TODO nodeIds are ignored
-      stay using d.copy(ack_in = ack_in + 1, staged = staged :+ Change(IN, ack_in + 1, htlc))
-
-    case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_CLEARING(ack_in, _, _, _, _, staged, commitment, _, _)) =>
-      assert(commitment.state.commit_changes(staged).them.htlcs_received.exists(_.id == id), s"unknown htlc id=$id") // TODO : we should fail the channel
-      stay using d.copy(ack_in = ack_in + 1, staged = staged :+ Change(IN, ack_in + 1, fulfill))
-
-    case Event(fail@update_fail_htlc(id, reason), d@DATA_CLEARING(ack_in, _, _, _, _, staged, commitment, _, _)) =>
-      assert(commitment.state.commit_changes(staged).them.htlcs_received.exists(_.id == id), s"unknown htlc id=$id") // TODO : we should fail the channel
-      stay using d.copy(ack_in = ack_in + 1, staged = staged :+ Change(IN, ack_in + 1, fail))
-
-    case Event(CMD_FULFILL_HTLC(id, r), d@DATA_CLEARING(_, ack_out, _, _, _, staged, commitment, _, _)) =>
-      assert(commitment.state.commit_changes(staged).us.htlcs_received.exists(_.id == id), s"unknown htlc id=$id") // TODO : we should fail the channel
-    val fulfill = update_fulfill_htlc(id, r)
-      them ! fulfill
-      stay using d.copy(ack_out = ack_out + 1, staged = staged :+ Change(OUT, ack_out + 1, fulfill))
-
-    case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_CLEARING(ack_in, _, _, _, _, staged, commitment, _, _)) =>
-      assert(commitment.state.commit_changes(staged).them.htlcs_received.exists(_.id == id), s"unknown htlc id=$id") // TODO : we should fail the channel
-      stay using d.copy(ack_in = ack_in + 1, staged = staged :+ Change(IN, ack_in + 1, fulfill))
-
-    case Event(CMD_FAIL_HTLC(id, reason), d@DATA_CLEARING(_, ack_out, _, _, _, staged, commitment, _, _)) =>
-      assert(commitment.state.commit_changes(staged).us.htlcs_received.exists(_.id == id), s"unknown htlc id=$id") // TODO : we should fail the channel
-    val fail = update_fail_htlc(id, fail_reason(ByteString.copyFromUtf8(reason)))
-      them ! fail
-      stay using d.copy(ack_out = ack_out + 1, staged = staged :+ Change(OUT, ack_out + 1, fail))
-
-    case Event(fail@update_fail_htlc(id, reason), d@DATA_CLEARING(ack_in, _, _, _, _, staged, commitment, _, _)) =>
-      assert(commitment.state.commit_changes(staged).them.htlcs_received.exists(_.id == id), s"unknown htlc id=$id") // TODO : we should fail the channel
-      stay using d.copy(ack_in = ack_in + 1, staged = staged :+ Change(IN, ack_in + 1, fail))
-
-    case Event(clearing@close_clearing(theirScriptPubKey), d@DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, commitment, _, ClosingData(_, None))) =>
-      val closing = d.closing.copy(theirScriptPubKey = Some(theirScriptPubKey))
-      if (commitment.state.them.htlcs_received.size == 0 && commitment.state.us.htlcs_received.size == 0) {
-        val finalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, commitment.state) //TODO ADJUST FEES
-        val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-        them ! close_signature(closeFee, ourSig)
-        goto(CLOSE_NEGOTIATING) using DATA_NEGOTIATING(ack_in + 1, ack_out + 1, ourParams, theirParams, shaChain, commitment, closing)
-      } else {
-        stay using d.copy(ack_in = ack_in + 1, closing = closing)
-      }
-  }
-
-  when(CLOSE_CLEARING)(clearing_handler orElse {
-    case Event(CMD_SIGN, d@DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, previousCommitment, ReadyForSig(theirNextRevocationHash), _)) =>
-      val proposal = UpdateProposal(previousCommitment.index + 1, previousCommitment.state.commit_changes(staged), theirNextRevocationHash)
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index))
-      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, proposal.state, ourRevocationHash, theirNextRevocationHash)
-      them ! update_commit(ourSigForThem, ack_in)
-      goto(CLOSE_CLEARING_WAIT_FOR_REV) using d.copy(ack_out = ack_out + 1, staged = Nil, next = WaitForRev(proposal))
-
-    case Event(msg@update_commit(theirSig, theirAck), d@DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, previousCommitment, ReadyForSig(theirNextRevocationHash), _)) =>
-      // counterparty initiated a new commitment
-      val committed_changes = staged.filter(c => c.direction == IN || c.ack <= theirAck)
-      val uncommitted_changes = staged.filterNot(committed_changes.contains(_))
-      // TODO : we should check that this is the correct state (see acknowledge discussion)
-      val proposal = UpdateProposal(previousCommitment.index + 1, previousCommitment.state.commit_changes(committed_changes), theirNextRevocationHash)
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index))
-      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, proposal.state, ourRevocationHash, proposal.theirRevocationHash)
-      val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx, theirSig)
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      ok match {
-        case false =>
-          them ! error(Some("Bad signature"))
-          publish_ourcommit(previousCommitment)
-          goto(CLOSING) using DATA_CLOSING(ack_in = ack_in + 1, ack_out = ack_out + 1, ourParams, theirParams, shaChain, previousCommitment, ourCommitPublished = Some(previousCommitment.tx))
-        case true =>
-          val preimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index)
-          val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index + 1))
-          them ! update_revocation(preimage, ourNextRevocationHash, ack_in + 1)
-          them ! update_commit(ourSigForThem, ack_in + 1)
-          goto(CLOSE_CLEARING_WAIT_FOR_REV_THEIRSIG) using d.copy(ack_in = ack_in + 1, ack_out = ack_out + 2, staged = uncommitted_changes, next = WaitForRevTheirSig(Commitment(proposal.index, signedCommitTx, proposal.state, proposal.theirRevocationHash)))
-      }
-  })
-
-  when(CLOSE_CLEARING_WAIT_FOR_REV)(clearing_handler orElse {
-    case Event(update_revocation(theirRevocationPreimage, theirNextRevocationHash, theirAck), d@DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, previousCommitment, WaitForRev(proposal), closing)) =>
-      // counterparty replied with the signature for its new commitment tx, and revocationPreimage
-      val revocationHashCheck = new BinaryData(previousCommitment.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage))
-      if (revocationHashCheck) {
-        goto(CLOSE_CLEARING_WAIT_FOR_SIG) using d.copy(ack_in = ack_in + 1, next = WaitForSig(proposal, theirNextRevocationHash))
-      } else {
-        log.warning(s"the revocation preimage they gave us is wrong! hash=${previousCommitment.theirRevocationHash} preimage=$theirRevocationPreimage")
-        them ! error(Some("Wrong preimage"))
-        publish_ourcommit(previousCommitment)
-        goto(CLOSING) using DATA_CLOSING(ack_in = ack_in + 1, ack_out = ack_out + 1, ourParams, theirParams, shaChain, previousCommitment, ourCommitPublished = Some(previousCommitment.tx))
-      }
-
-    case Event(msg@update_commit(theirSig, theirAck), DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, previousCommitment, WaitForRev(proposal), closing)) =>
-      // TODO : IGNORED FOR NOW
-      log.warning(s"ignored $msg")
-      stay
-  })
-
-  when(CLOSE_CLEARING_WAIT_FOR_REV_THEIRSIG)(clearing_handler orElse {
-    case Event(update_revocation(theirRevocationPreimage, theirNextRevocationHash, theirAck), d@DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, previousCommitment, WaitForRevTheirSig(nextCommitment), _)) =>
-      // counterparty replied with the signature for its new commitment tx, and revocationPreimage
-      val revocationHashCheck = new BinaryData(previousCommitment.theirRevocationHash) == new BinaryData(Crypto.sha256(theirRevocationPreimage))
-      if (revocationHashCheck) {
-        if (nextCommitment.state.them.htlcs_received.size == 0 && nextCommitment.state.us.htlcs_received.size == 0) {
-          val finalTx = makeFinalTx(nextCommitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, nextCommitment.state) //TODO ADJUST FEES
-          val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-          them ! close_signature(closeFee, ourSig)
-          goto(CLOSE_NEGOTIATING) using d.copy(ack_in = ack_in + 1, ack_out = ack_out + 1, commitment = nextCommitment, next = ReadyForSig(theirNextRevocationHash))
-        } else {
-          goto(CLOSE_CLEARING) using d.copy(ack_in = ack_in + 1, commitment = nextCommitment, next = ReadyForSig(theirNextRevocationHash))
-        }
-      } else {
-        log.warning(s"the revocation preimage they gave us is wrong! hash=${previousCommitment.theirRevocationHash} preimage=$theirRevocationPreimage")
-        them ! error(Some("Wrong preimage"))
-        publish_ourcommit(previousCommitment)
-        goto(CLOSING) using DATA_CLOSING(ack_in = ack_in + 1, ack_out = ack_out + 1, ourParams, theirParams, shaChain, previousCommitment, ourCommitPublished = Some(previousCommitment.tx))
-      }
-  })
-
-  when(CLOSE_CLEARING_WAIT_FOR_SIG)(clearing_handler orElse {
-    case Event(update_commit(theirSig, theirAck), d@DATA_CLEARING(ack_in, ack_out, ourParams, theirParams, shaChain, staged, previousCommitment, WaitForSig(proposal, theirNextRevocationHash), _)) =>
-      // counterparty replied with the signature for the new commitment tx
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index))
-      val (ourCommitTx, ourSigForThem) = sign_their_commitment_tx(ourParams, theirParams, previousCommitment.tx.txIn, proposal.state, ourRevocationHash, proposal.theirRevocationHash)
-      val signedCommitTx = sign_our_commitment_tx(ourParams, theirParams, ourCommitTx, theirSig)
-      val ok = Try(Transaction.correctlySpends(signedCommitTx, Map(previousCommitment.tx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      ok match {
-        case false =>
-          them ! error(Some("Bad signature"))
-          publish_ourcommit(previousCommitment)
-          goto(CLOSING) using DATA_CLOSING(ack_in = ack_in + 1, ack_out = ack_out + 1, ourParams, theirParams, shaChain, previousCommitment, ourCommitPublished = Some(previousCommitment.tx))
-        case true =>
-          val preimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, previousCommitment.index)
-          val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, proposal.index + 1))
-          them ! update_revocation(preimage, ourNextRevocationHash, ack_in + 1)
-          val nextCommitment = Commitment(proposal.index, signedCommitTx, proposal.state, proposal.theirRevocationHash)
-          if (nextCommitment.state.them.htlcs_received.size == 0 && nextCommitment.state.us.htlcs_received.size == 0) {
-            val finalTx = makeFinalTx(nextCommitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, nextCommitment.state) //TODO ADJUST FEES
-            val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-            them ! close_signature(closeFee, ourSig)
-            goto(CLOSE_NEGOTIATING) using d.copy(ack_in = ack_in + 1, ack_out = ack_out + 1, commitment = nextCommitment, next = ReadyForSig(theirNextRevocationHash))
-          } else {
-            goto(CLOSE_CLEARING) using d.copy(ack_in = ack_in + 1, ack_out = ack_out + 1, commitment = nextCommitment, next = ReadyForSig(theirNextRevocationHash))
-          }
-      }
-  })
-
-  when(CLOSE_NEGOTIATING) {
-    case Event(close_signature(closeFee, sig), DATA_NEGOTIATING(ack_in, ack_out, ourParams, theirParams, shaChain, commitment, closing)) =>
-      // TODO: we should actually negotiate
-      // TODO: publish tx
-      val mutualTx: Transaction = null // TODO
-      goto(CLOSING) using DATA_CLOSING(ack_in, ack_out, ourParams, theirParams, shaChain, commitment, Some(mutualTx), None, None, Nil)
-  }
+  /*
 
   /*when(WAIT_FOR_CLOSE_COMPLETE) {
-    case Event(close_channel_complete(theirSig), d: CurrentCommitment) =>
-      //TODO we should use the closing fee in pkts
-      val closingState = d.commitment.state.adjust_fees(Globals.closing_fee * 1000, d.ourParams.anchorAmount.isDefined)
-      val finalTx = makeFinalTx(d.commitment.tx.txIn, ourFinalPubKey, d.theirParams.finalPubKey, closingState)
-      val signedFinalTx = sign_our_commitment_tx(d.ourParams, d.theirParams, finalTx, theirSig)
-      val ok = Try(Transaction.correctlySpends(signedFinalTx, Map(signedFinalTx.txIn(0).outPoint -> anchorPubkeyScript(ourCommitPubKey, d.theirParams.commitPubKey)), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
-      ok match {
-        case false =>
-          them ! error(Some("Bad signature"))
-          publish_ourcommit(d.commitment)
-          goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, ourCommitPublished = Some(d.commitment.tx))
-        case true =>
-          them ! close_channel_ack()
-          blockchain ! Publish(signedFinalTx)
-          goto(CLOSING) using DATA_CLOSING(d.ourParams, d.theirParams, d.shaChain, d.commitment, mutualClosePublished = Some(signedFinalTx))
-      }
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: CurrentCommitment) if (isMutualClose(tx, d.ourParams, d.theirParams, d.commitment)) =>
       // it is possible that we received this before the close_channel_complete, we may still receive the latter
