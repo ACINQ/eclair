@@ -130,34 +130,16 @@ final case class DATA_OPEN_WAIT_FOR_OPEN              (ourParams: OurChannelPara
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING                    (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit, theirNextRevocationHash: sha256_hash, deferred: Option[open_complete], anchorOutput: TxOut) extends Data with CurrentCommitment
-final case class DATA_NORMAL                          (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
-                                                       ourCommit: OurCommit,
-                                                       theirCommit: TheirCommit,
-                                                       ourChanges: OurChanges,
-                                                       theirChanges: TheirChanges,
-                                                       theirNextRevocationHash: Option[sha256_hash],
-                                                       anchorOutput: TxOut,
-                                                       ourClearing: Option[close_clearing]) extends Data with CurrentCommitment
-final case class DATA_CLEARING                        (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
-                                                       ourCommit: OurCommit,
-                                                       theirCommit: TheirCommit,
-                                                       ourChanges: OurChanges,
-                                                       theirChanges: TheirChanges,
-                                                       theirNextRevocationHash: Option[sha256_hash],
-                                                       anchorOutput: TxOut,
+final case class DATA_OPEN_WAITING                    (commitments: Commitments, shaChain: ShaChain, deferred: Option[open_complete]) extends Data
+final case class DATA_NORMAL                          (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
+                                                       ourClearing: Option[close_clearing]) extends Data
+final case class DATA_CLEARING                        (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
                                                        ourClearing: close_clearing,
-                                                       theirClearing: close_clearing) extends Data with CurrentCommitment
-final case class DATA_NEGOCIATING                     (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
-                                                       ourCommit: OurCommit,
-                                                       theirCommit: TheirCommit,
-                                                       ourChanges: OurChanges,
-                                                       theirChanges: TheirChanges,
-                                                       theirNextRevocationHash: Option[sha256_hash],
-                                                       anchorOutput: TxOut,
+                                                       theirClearing: close_clearing) extends Data
+final case class DATA_NEGOCIATING                     (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
                                                        ourClearing: close_clearing,
                                                        theirClearing: close_clearing,
-                                                       ourSignature: close_signature) extends Data with CurrentCommitment
+                                                       ourSignature: close_signature) extends Data
 
 object TypeDefs {
   type Change = GeneratedMessage

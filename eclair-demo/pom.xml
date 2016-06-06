@@ -69,6 +69,21 @@
             <version>${akka.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.github.julien-truffaut</groupId>
+            <artifactId>monocle-core_2.11</artifactId>
+            <version>1.2.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.julien-truffaut</groupId>
+            <artifactId>monocle-macro_2.11</artifactId>
+            <version>1.2.1</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.julien-truffaut</groupId>
+            <artifactId>monocle-generic_2.11</artifactId>
+            <version>1.2.1</version>
+        </dependency>
+        <dependency>
             <groupId>fr.acinq</groupId>
             <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
         </dependency>
