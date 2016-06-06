@@ -123,36 +123,6 @@ object Commitments {
     // TODO: check preimage
     commitments.copy(ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed), theirNextRevocationHashOpt = Some(revocation.nextRevocationHash))
   }
-
-  /**
-    *
-    * @param commitments
-    * @param ourScriptPubKey
-    * @param theirScriptPubKey
-    * @param closeFee bitcoin fee for the final tx
-    * @return a (final tx, our signature) tuple. The tx is not signed.
-    */
-  def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData, closeFee: Satoshi): (Transaction, close_signature) = {
-    val amount_us = Satoshi(commitments.ourCommit.spec.amount_us_msat / 1000)
-    val amount_them = Satoshi(commitments.theirCommit.spec.amount_us_msat / 1000)
-    val finalTx = Scripts.makeFinalTx(commitments.ourCommit.publishableTx.txIn, ourScriptPubKey, theirScriptPubKey, amount_us, amount_them, closeFee)
-    val ourSig = Helpers.sign(commitments.ourParams, commitments.theirParams, commitments.anchorOutput.amount.toLong, finalTx)
-    (finalTx, close_signature(closeFee.toLong, ourSig))
-  }
-
-  /**
-    *
-    * @param commitments
-    * @param ourScriptPubKey
-    * @param theirScriptPubKey
-    * @return a (final tx, our signature) tuple. The tx is not signed. Bitcoin fees will be copied from our
-    *         last commit tx
-    */
-  def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, close_signature) = {
-    val commitFee = commitments.anchorOutput.amount.toLong - commitments.ourCommit.publishableTx.txOut.map(_.amount.toLong).sum
-    val closeFee = Satoshi(2 * (commitFee / 4))
-    makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
-  }
 }
 
 

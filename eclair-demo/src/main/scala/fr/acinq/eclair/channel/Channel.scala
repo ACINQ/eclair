@@ -326,7 +326,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         close_clearing(ourScriptPubKey)
       }
       if (commitments.hasNoPendingHtlcs) {
-        val (finalTx, ourCloseSig) = Commitments.makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
+        val (finalTx, ourCloseSig) = makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
         them ! ourCloseSig
         goto(NEGOCIATING) using DATA_NEGOCIATING(commitments, d.shaChain, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
       } else {
@@ -392,7 +392,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Success((commitments1, revocation)) =>
           them ! revocation
           if (commitments1.hasNoPendingHtlcs) {
-            val (finalTx, ourCloseSig) = Commitments.makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
+            val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
             them ! ourCloseSig
             goto(NEGOCIATING) using DATA_NEGOCIATING(commitments1, d.shaChain, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
           } else {
@@ -409,7 +409,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, _, _, ourClearing, theirClearing)) =>
       val commitments1 = Commitments.receiveRevocation(commitments, msg)
       if (commitments1.hasNoPendingHtlcs) {
-        val (finalTx, ourCloseSig) = Commitments.makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
+        val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
         them ! ourCloseSig
         goto(NEGOCIATING) using DATA_NEGOCIATING(commitments1, d.shaChain, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
       } else {
@@ -436,7 +436,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             case value if value == d.ourSignature.closeFee => value + 2
             case value => value
           }
-          val (finalTx, ourCloseSig) = Commitments.makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, Satoshi(closeFee))
+          val (finalTx, ourCloseSig) = makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, Satoshi(closeFee))
           them ! ourCloseSig
           if (closeFee == theirCloseFee) {
             val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount.toLong, finalTx, ourCloseSig.sig, theirSig)
@@ -835,7 +835,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOCIATING): Try[Transaction] = {
-    val (finalTx, ourCloseSig) = Commitments.makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, closeFee)
+    val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, closeFee)
     val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount.toLong, finalTx, ourCloseSig.sig, closeSig)
     checksig(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput, signedTx).map(_ => signedTx)
   }
