@@ -6,7 +6,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
-import monocle.macros.GenLens
 
 case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelParams,
                        ourCommit: OurCommit, theirCommit: TheirCommit,
@@ -26,17 +25,18 @@ case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelPar
 }
 
 object Commitments {
-  val _ourChanges = GenLens[Commitments](_.ourChanges)
-  val _ourChangesProposed = _ourChanges composeLens GenLens[OurChanges](_.proposed)
-  val _ourChangesSigned = _ourChanges composeLens GenLens[OurChanges](_.signed)
-  val _ourChangesAcked = _ourChanges composeLens GenLens[OurChanges](_.acked)
-  val _theirChanges = GenLens[Commitments](_.theirChanges)
-  val _theirChangesProposed = _theirChanges composeLens GenLens[TheirChanges](_.proposed)
-  val _theirChangesAcked = _theirChanges composeLens GenLens[TheirChanges](_.acked)
+  /**
+    * add a change to our proposed change list
+    *
+    * @param commitments
+    * @param proposal
+    * @return an updated commitment instance
+    */
+  def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
+    commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
 
-  def addOurProposal(commitments: Commitments, proposal: Change): Commitments = _ourChangesProposed.modify(_ :+ proposal)(commitments)
-
-  def addTheirProposal(commitments: Commitments, proposal: Change): Commitments = _theirChangesProposed.modify(_ :+ proposal)(commitments)
+  def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
+    commitments.copy(theirChanges = commitments.theirChanges.copy(proposed = commitments.theirChanges.proposed :+ proposal))
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, update_fulfill_htlc) = {
     commitments.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == cmd.id => u } match {
