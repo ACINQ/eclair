@@ -112,17 +112,15 @@ final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_
   val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.amountMsat).sum
 }
 
-trait CurrentCommitment {
-  def ourParams: OurChannelParams
-  def theirParams: TheirChannelParams
-  def shaChain: ShaChain
-  def ourCommit: OurCommit
-  def theirCommit: TheirCommit
-  def anchorId: BinaryData = {
-    assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
-    ourCommit.publishableTx.txIn(0).outPoint.hash
-  }
+object TypeDefs {
+  type Change = GeneratedMessage
 }
+import TypeDefs._
+case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
+case class TheirChanges(proposed: List[Change], acked: List[Change])
+case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
+case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
+case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
 
 final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
 
@@ -134,28 +132,14 @@ final case class DATA_OPEN_WAITING                    (commitments: Commitments,
 final case class DATA_NORMAL                          (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
                                                        ourClearing: Option[close_clearing]) extends Data
 final case class DATA_CLEARING                        (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
-                                                       ourClearing: close_clearing,
-                                                       theirClearing: close_clearing) extends Data
+                                                       ourClearing: close_clearing, theirClearing: close_clearing) extends Data
 final case class DATA_NEGOCIATING                     (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
-                                                       ourClearing: close_clearing,
-                                                       theirClearing: close_clearing,
-                                                       ourSignature: close_signature) extends Data
-
-object TypeDefs {
-  type Change = GeneratedMessage
-}
-import TypeDefs._
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
-case class TheirChanges(proposed: List[Change], acked: List[Change])
-case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
-case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
-
-/*final case class DATA_CLEARING                        (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, staged: List[Change], commitment: Commitment, next: NextCommitment, closing: ClosingData) extends Data with CurrentCommitment
-final case class DATA_NEGOTIATING                     (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, closing: ClosingData) extends Data with CurrentCommitment
-*/
-final case class DATA_CLOSING                         (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit,
-                              mutualClosePublished: Option[Transaction] = None, ourCommitPublished: Option[Transaction] = None, theirCommitPublished: Option[Transaction] = None, revokedPublished: Seq[Transaction] = Seq()) extends Data with CurrentCommitment {
+                                                       ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data
+final case class DATA_CLOSING                         (commitments: Commitments, shaChain: ShaChain,
+                                                       mutualClosePublished: Option[Transaction] = None,
+                                                       ourCommitPublished: Option[Transaction] = None,
+                                                       theirCommitPublished: Option[Transaction] = None,
+                                                       revokedPublished: Seq[Transaction] = Seq()) extends Data {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }
 
