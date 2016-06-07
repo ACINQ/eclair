@@ -60,12 +60,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       alice.stateData match {
         case d: DATA_NORMAL =>
-          val List(update_add_htlc(_, _, h, _, _)) = d.ourChanges.proposed
+          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.ourChanges.proposed
           assert(h == bin2sha256(H))
       }
       bob.stateData match {
         case d: DATA_NORMAL =>
-          val List(update_add_htlc(_, _, h, _, _)) = d.theirChanges.proposed
+          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.theirChanges.proposed
           assert(h == bin2sha256(H))
       }
 
@@ -74,12 +74,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       alice.stateData match {
         case d: DATA_NORMAL =>
-          val htlc = d.theirCommit.spec.htlcs.head
+          val htlc = d.commitments.theirCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H))
       }
       bob.stateData match {
         case d: DATA_NORMAL =>
-          val htlc = d.ourCommit.spec.htlcs.head
+          val htlc = d.commitments.ourCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H))
       }
 
@@ -91,15 +91,15 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       alice.stateData match {
         case d: DATA_NORMAL =>
-          assert(d.ourCommit.spec.htlcs.isEmpty)
-          assert(d.ourCommit.spec.amount_us_msat == d.ourCommit.spec.initial_amount_us_msat - 60000000)
-          assert(d.ourCommit.spec.amount_them_msat == d.ourCommit.spec.initial_amount_them_msat + 60000000)
+          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat - 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat + 60000000)
       }
       bob.stateData match {
         case d: DATA_NORMAL =>
-          assert(d.ourCommit.spec.htlcs.isEmpty)
-          assert(d.ourCommit.spec.amount_us_msat == d.ourCommit.spec.initial_amount_us_msat + 60000000)
-          assert(d.ourCommit.spec.amount_them_msat == d.ourCommit.spec.initial_amount_them_msat - 60000000)
+          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat - 60000000)
       }
     }
   }
