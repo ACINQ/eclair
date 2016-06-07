@@ -10,7 +10,8 @@ import lightning._
 case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelParams,
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
-                       theirNextRevocationHashOpt: Option[BinaryData],
+                       theirRevocationHash: BinaryData,
+                       theirNextRevocationHash: BinaryData,
                        anchorOutput: TxOut) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
@@ -77,26 +78,29 @@ object Commitments {
 
   def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
     import commitments._
-    theirNextRevocationHashOpt match {
-      case Some(theirNextRevocationHash) =>
-        // sign all our proposals + their acked proposals
-        // their commitment now includes all our changes  + their acked changes
-        val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
-        val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
-        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
-        val commit = update_commit(ourSig)
-        val commitments1 = commitments.copy(
-          theirCommit = TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash),
-          ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed),
-          theirNextRevocationHashOpt = None)
-        (commitments1, commit)
-      case None =>
-        throw new RuntimeException(s"cannot send two update_commit in a row (must wait for revocation)")
-    }
+    // sign all our proposals + their acked proposals
+    // their commitment now includes all our changes  + their acked changes
+    val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
+    val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
+    val commit = update_commit(ourSig)
+    val commitments1 = commitments.copy(
+      theirCommit = TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash),
+      ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
+    (commitments1, commit)
   }
 
   def receiveCommit(commitments: Commitments, commit: update_commit): (Commitments, update_revocation) = {
     import commitments._
+    // they sent us a signature for *their* view of *our* next commit tx
+    // so in terms of rev.hashes and indexes we have:
+    // ourCommit.index -> our current revocation hash, which is about to become our old revocation hash
+    // ourCommit.index + 1 -> our next revocation hash, used by * them * to build the sig we've just received, and which
+    // is about to become our current revocation hash
+    // ourCommit.index + 2 -> which is about to become our next revocation hash
+    // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
+    // and will increment our index
+
     // check that their signature is valid
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
     val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 1))
@@ -120,8 +124,12 @@ object Commitments {
 
   def receiveRevocation(commitments: Commitments, revocation: update_revocation): Commitments = {
     import commitments._
-    // TODO: check preimage
-    commitments.copy(ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed), theirNextRevocationHashOpt = Some(revocation.nextRevocationHash))
+    // we receive a revocation because we just sent them a sig for their next commit tx
+    assert(BinaryData(Crypto.sha256(revocation.revocationPreimage)) == commitments.theirRevocationHash, "invalid preimage")
+    commitments.copy(
+      ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
+      theirRevocationHash = theirNextRevocationHash,
+      theirNextRevocationHash = revocation.nextRevocationHash)
   }
 }
 
