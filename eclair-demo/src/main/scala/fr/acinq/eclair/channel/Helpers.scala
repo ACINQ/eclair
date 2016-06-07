@@ -85,8 +85,8 @@ object Helpers {
     tx.copy(witness = Seq(witness))
   }
 
-  def checksig(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorOutput: TxOut, tx: Transaction): Boolean =
-    Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)).isSuccess
+  def checksig(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorOutput: TxOut, tx: Transaction): Try[Unit] =
+    Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
   def isMutualClose(tx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: OurCommit): Boolean = {
     // we rebuild the closing tx as seen by both parties
@@ -113,20 +113,33 @@ object Helpers {
     true
   }
 
-  /*def handle_cmd_close(cmd: CMD_CLOSE, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): close_channel = {
-  val closingState = commitment.state.adjust_fees(cmd.fee * 1000, ourParams.anchorAmount.isDefined)
-  val finalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, closingState)
-  val ourSig = bin2signature(Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey))
-  val anchorTxId = commitment.tx.txIn(0).outPoint.txid // commit tx only has 1 input, which is the anchor
-  close_channel(ourSig, cmd.fee)
-  }*/
+  /**
+    *
+    * @param commitments
+    * @param ourScriptPubKey
+    * @param theirScriptPubKey
+    * @param closeFee bitcoin fee for the final tx
+    * @return a (final tx, our signature) tuple. The tx is not signed.
+    */
+  def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData, closeFee: Satoshi): (Transaction, close_signature) = {
+    val amount_us = Satoshi(commitments.ourCommit.spec.amount_us_msat / 1000)
+    val amount_them = Satoshi(commitments.theirCommit.spec.amount_us_msat / 1000)
+    val finalTx = Scripts.makeFinalTx(commitments.ourCommit.publishableTx.txIn, ourScriptPubKey, theirScriptPubKey, amount_us, amount_them, closeFee)
+    val ourSig = Helpers.sign(commitments.ourParams, commitments.theirParams, commitments.anchorOutput.amount.toLong, finalTx)
+    (finalTx, close_signature(closeFee.toLong, ourSig))
+  }
 
-  /*def handle_pkt_close(pkt: close_channel, ourParams: OurChannelParams, theirParams: TheirChannelParams, commitment: Commitment): (Transaction, close_channel_complete) = {
-  val closingState = commitment.state.adjust_fees(pkt.closeFee * 1000, ourParams.anchorAmount.isDefined)
-  val finalTx = makeFinalTx(commitment.tx.txIn, ourParams.finalPubKey, theirParams.finalPubKey, closingState)
-  val ourSig = Transaction.signInput(finalTx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, ourParams.commitPrivKey)
-  val signedFinalTx = finalTx.updateSigScript(0, sigScript2of2(pkt.sig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey))
-  (signedFinalTx, close_channel_complete(ourSig))
-  }*/
-
+  /**
+    *
+    * @param commitments
+    * @param ourScriptPubKey
+    * @param theirScriptPubKey
+    * @return a (final tx, our signature) tuple. The tx is not signed. Bitcoin fees will be copied from our
+    *         last commit tx
+    */
+  def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, close_signature) = {
+    val commitFee = commitments.anchorOutput.amount.toLong - commitments.ourCommit.publishableTx.txOut.map(_.amount.toLong).sum
+    val closeFee = Satoshi(2 * (commitFee / 4))
+    makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
+  }
 }

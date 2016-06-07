@@ -129,21 +129,22 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       exec(script.drop(1), a, b)
     case d: DATA_NORMAL if script.head.endsWith(":dump") =>
       def rtrim(s: String) = s.replaceAll("\\s+$", "")
+      import d.commitments._
       val l = List(
         "LOCAL COMMITS:",
-        s" Commit ${d.ourCommit.index}:",
-        s"  Offered htlcs: ${d.ourCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.id, h.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${d.ourCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.id, h.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${d.ourCommit.spec.amount_us_msat}",
-        s"  Balance them: ${d.ourCommit.spec.amount_them_msat}",
-        s"  Fee rate: ${d.ourCommit.spec.feeRate}",
+        s" Commit ${d.commitments.ourCommit.index}:",
+        s"  Offered htlcs: ${ourCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.id, h.amountMsat)).mkString(" ")}",
+        s"  Received htlcs: ${ourCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.id, h.amountMsat)).mkString(" ")}",
+        s"  Balance us: ${ourCommit.spec.amount_us_msat}",
+        s"  Balance them: ${ourCommit.spec.amount_them_msat}",
+        s"  Fee rate: ${ourCommit.spec.feeRate}",
         "REMOTE COMMITS:",
-        s" Commit ${d.theirCommit.index}:",
-        s"  Offered htlcs: ${d.theirCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.id, h.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${d.theirCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.id, h.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${d.theirCommit.spec.amount_us_msat}",
-        s"  Balance them: ${d.theirCommit.spec.amount_them_msat}",
-        s"  Fee rate: ${d.theirCommit.spec.feeRate}")
+        s" Commit ${theirCommit.index}:",
+        s"  Offered htlcs: ${theirCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.id, h.amountMsat)).mkString(" ")}",
+        s"  Received htlcs: ${theirCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.id, h.amountMsat)).mkString(" ")}",
+        s"  Balance us: ${theirCommit.spec.amount_us_msat}",
+        s"  Balance them: ${theirCommit.spec.amount_them_msat}",
+        s"  Fee rate: ${theirCommit.spec.feeRate}")
         .foreach(s => {
           fout.write(rtrim(s))
           fout.newLine()
