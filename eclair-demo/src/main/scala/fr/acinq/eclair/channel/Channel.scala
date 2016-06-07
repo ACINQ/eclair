@@ -93,7 +93,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val commitments = Commitments(ourParams, theirParams,
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
-        theirRevocationHash, theirNextRevocationHash, anchorOutput)
+        Right(theirNextRevocationHash), anchorOutput)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, ShaChain.init, None)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -123,7 +123,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val commitments = Commitments(ourParams, theirParams,
             OurCommit(0, ourSpec, signedTx), theirCommitment,
             OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
-            theirCommitment.theirRevocationHash, theirNextRevocationHash, anchorOutput)
+            Right(theirNextRevocationHash), anchorOutput)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, ShaChain.init, None)
       }
 

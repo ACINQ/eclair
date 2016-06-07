@@ -7,11 +7,18 @@ import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 
+/**
+  * about theirNextCommitInfo:
+  * we either:
+  * - have built and sign their next commit tx with their next revocation hash which can now be discarded
+  * - have their next revocation hash
+  * So, when we've signed and sent a commit message and are waiting for their revocation message,
+  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next revocation hash
+  */
 case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelParams,
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
-                       theirRevocationHash: BinaryData,
-                       theirNextRevocationHash: BinaryData,
+                       theirNextCommitInfo: Either[TheirCommit, BinaryData],
                        anchorOutput: TxOut) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
@@ -78,16 +85,21 @@ object Commitments {
 
   def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
     import commitments._
-    // sign all our proposals + their acked proposals
-    // their commitment now includes all our changes  + their acked changes
-    val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
-    val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
-    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
-    val commit = update_commit(ourSig)
-    val commitments1 = commitments.copy(
-      theirCommit = TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash),
-      ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
-    (commitments1, commit)
+    commitments.theirNextCommitInfo match {
+      case Right(theirNextRevocationHash) =>
+        // sign all our proposals + their acked proposals
+        // their commitment now includes all our changes  + their acked changes
+        val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
+        val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
+        val commit = update_commit(ourSig)
+        val commitments1 = commitments.copy(
+          theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash)),
+          ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
+        (commitments1, commit)
+      case Left(theirNextCommit) =>
+        throw new RuntimeException("attempting to sign twice waiting for the first revocation message")
+    }
   }
 
   def receiveCommit(commitments: Commitments, commit: update_commit): (Commitments, update_revocation) = {
@@ -125,11 +137,16 @@ object Commitments {
   def receiveRevocation(commitments: Commitments, revocation: update_revocation): Commitments = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
-    assert(BinaryData(Crypto.sha256(revocation.revocationPreimage)) == commitments.theirRevocationHash, "invalid preimage")
-    commitments.copy(
-      ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
-      theirRevocationHash = theirNextRevocationHash,
-      theirNextRevocationHash = revocation.nextRevocationHash)
+    theirNextCommitInfo match {
+      case Left(theirNextCommit) =>
+        assert(BinaryData(Crypto.sha256(revocation.revocationPreimage)) == BinaryData(theirCommit.theirRevocationHash), "invalid preimage")
+        commitments.copy(
+          ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
+          theirCommit = theirNextCommit,
+          theirNextCommitInfo = Right(revocation.nextRevocationHash))
+      case Right(_) =>
+        throw new RuntimeException("received unexpected update_revocation message")
+    }
   }
 }
 
