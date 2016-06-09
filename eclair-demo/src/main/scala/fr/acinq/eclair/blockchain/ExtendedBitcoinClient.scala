@@ -21,7 +21,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def tx2Hex(tx: Transaction): String = Hex.toHexString(Transaction.write(tx, protocolVersion))
 
-  def hex2tx(hex: String) : Transaction = Transaction.read(hex, protocolVersion)
+  def hex2tx(hex: String): Transaction = Transaction.read(hex, protocolVersion)
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
@@ -48,10 +48,13 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       case JString(txid) => txid
     }
 
-  def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
+  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
     client.invoke("getrawtransaction", txId) map {
-      case JString(raw) => Transaction.read(raw)
+      case JString(raw) => raw
     }
+
+  def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
+    getRawTransaction(txId).map(raw => Transaction.read(raw))
 
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
@@ -95,7 +98,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       bestblockhash <- client.invoke("getbestblockhash").map(_.extract[String])
       bestblock <- client.invoke("getblock", bestblockhash).map(b => (b \ "tx").extract[List[String]])
       txs <- Future {
-        for(txid <- mempool ++ bestblock) yield {
+        for (txid <- mempool ++ bestblock) yield {
           Await.result(client.invoke("getrawtransaction", txid).map(json => {
             Transaction.read(json.extract[String])
           }).recover {
@@ -135,7 +138,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       witness = ScriptWitness(Seq(sig, pub))
       tx2 = tx1.copy(witness = Seq(witness))
       Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
-    } yield(tx2, pos1)
+    } yield (tx2, pos1)
 
     future
   }

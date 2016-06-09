@@ -430,7 +430,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Success(signedTx) =>
           blockchain ! Publish(signedTx)
           blockchain ! WatchConfirmed(self, signedTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-          goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, mutualClosePublished = Some(signedTx))
+          goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourSignature = Some(d.ourSignature), mutualClosePublished = Some(signedTx))
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
           throw new RuntimeException("cannot verify their close signature", cause)
@@ -449,7 +449,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount.toLong, finalTx, ourCloseSig.sig, theirSig)
             blockchain ! Publish(signedTx)
             blockchain ! WatchConfirmed(self, signedTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-            goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, mutualClosePublished = Some(signedTx))
+            goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourSignature = Some(ourCloseSig), mutualClosePublished = Some(signedTx))
           } else {
             stay using d.copy(ourSignature = ourCloseSig)
           }

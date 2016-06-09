@@ -36,7 +36,7 @@ object Boot extends App with Logging {
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
-  val register = system.actorOf(Props[Register], name = "register")
+  val register = system.actorOf(Register.props(blockchain), name = "register")
 
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
   val api = new Service {
