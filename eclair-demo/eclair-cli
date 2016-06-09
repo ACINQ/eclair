@@ -15,6 +15,9 @@ case $1 in
 "sign")
 	curl -X POST -d '{ "method": "sign", "params" : ["'${2?"missing channel id"}'"] }' "http://localhost:8080"
 	;;	
+"add")
+	curl -X POST -d '{ "method": "addhtlc", "params" : ['${2?"missing amount"}', "'${3?"missing payment hash"}'", '${4?"missing expiry"}', "'${5?"missing node id"}'"] }' "http://localhost:8080"
+	;;	
 "fulfill")
 	curl -X POST -d '{ "method": "fulfillhtlc", "params" : ["'${2?"missing channel id"}'", '${3?"missing htlc id"}', "'${4?"missing htlc preimage"}'"] }' "http://localhost:8080"
 	;;	
