@@ -49,8 +49,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
       goto(OPEN_WAIT_FOR_ANCHOR) using DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)
-
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_OPEN_WITHANCHOR) {
@@ -66,8 +64,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_us_msat = 0, initial_amount_them_msat = amount * 1000, amount_us_msat = 0, amount_them_msat = amount * 1000)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash)
-
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_ANCHOR) {
@@ -89,14 +85,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! open_commit_sig(ourSigForThem)
       blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
       blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
-      // FIXME: ourTx is not signed by them and cannot be published
+      // FIXME: ourTx is not signed by them and cannot be published. We won't lose money since they are funding the chanel
       val commitments = Commitments(ourParams, theirParams,
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
         Right(theirNextRevocationHash), anchorOutput)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, ShaChain.init, None)
-
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_COMMIT_SIG) {
@@ -115,6 +109,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) =>
           log.error(cause, "their open_commit_sig message contains an invalid signature")
           them ! error(Some("Bad signature"))
+          context stop self
           goto(CLOSED)
         case Success(_) =>
           blockchain ! WatchConfirmed(self, anchorTx.txid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
@@ -126,8 +121,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             Right(theirNextRevocationHash), anchorOutput)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, ShaChain.init, None)
       }
-
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
@@ -146,26 +139,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! error(Some("Anchor timed out"))
       goto(ERR_ANCHOR_TIMEOUT)
 
-    /*case Event(pkt: close_channel, d: CurrentCommitment) =>
-      val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
-      blockchain ! Publish(finalTx)
-      them ! res
-      goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
-
-    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
-      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)*/
-
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_OPEN_WAITING) if (isTheirCommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.commitments.theirCommit)) =>
-      them ! handle_theircommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.shaChain, d.commitments.theirCommit)
       goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, theirCommitPublished = Some(tx))
 
     case Event(BITCOIN_ANCHOR_SPENT, _) =>
       goto(ERR_INFORMATION_LEAK)
-
-    case Event(pkt: error, d@DATA_OPEN_WAITING(commitments, _, _)) =>
-      publish_ourcommit(commitments.ourCommit)
-      goto(CLOSING) using DATA_CLOSING(commitments, d.shaChain, ourCommitPublished = Some(commitments.ourCommit.publishableTx))
   }
 
   when(OPEN_WAITING_OURANCHOR) {
@@ -180,26 +158,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       log.info(s"received their open_complete, deferring message")
       stay using d.copy(deferred = Some(msg))
 
-    /*case Event(pkt: close_channel, d: CurrentCommitment) =>
-      val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
-      blockchain ! Publish(finalTx)
-      them ! res
-      goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
+    case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
-    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
-      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)*/
-
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_OPEN_WAITING) if (isTheirCommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.commitments.theirCommit)) =>
-      them ! handle_theircommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.shaChain, d.commitments.theirCommit)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, theirCommitPublished = Some(tx))
+    case Event(cmd: CMD_CLOSE, d: DATA_OPEN_WAITING) =>
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
-
-    case Event(pkt: error, d: DATA_OPEN_WAITING) =>
-      publish_ourcommit(d.commitments.ourCommit)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
@@ -207,44 +175,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
-    /*case Event(pkt: close_channel, d: CurrentCommitment) =>
-      val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
-      blockchain ! Publish(finalTx)
-      them ! res
-      goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
-
-    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
-      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)*/
-
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if (isTheirCommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.commitments.theirCommit)) =>
       them ! handle_theircommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.shaChain, d.commitments.theirCommit)
       goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, theirCommitPublished = Some(tx))
 
     case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
-
-    case Event(pkt: error, d: DATA_NORMAL) =>
-      publish_ourcommit(d.commitments.ourCommit)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
-
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
-    /*case Event(pkt: close_channel, d: CurrentCommitment) =>
-      val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
-      blockchain ! Publish(finalTx)
-      them ! res
-      goto(WAIT_FOR_CLOSE_ACK) using DATA_WAIT_FOR_CLOSE_ACK(d.ourParams, d.theirParams, d.shaChain, d.commitment, finalTx)
-
-    case Event(cmd: CMD_CLOSE, d: CurrentCommitment) =>
-      them ! handle_cmd_close(cmd, d.ourParams, d.theirParams, d.commitment)
-      goto(WAIT_FOR_CLOSE_COMPLETE)*/
-
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if (isTheirCommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.commitments.theirCommit)) =>
       them ! handle_theircommit(tx, d.commitments.ourParams, d.commitments.theirParams, d.shaChain, d.commitments.theirCommit)
       goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, theirCommitPublished = Some(tx))
@@ -252,8 +195,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
       goto(ERR_INFORMATION_LEAK)
 
-    case Event(pkt: error, d: DATA_NORMAL) =>
-      publish_ourcommit(d.commitments.ourCommit)
+    case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+
+    case Event(cmd: CMD_CLOSE, d: DATA_OPEN_WAITING) =>
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
@@ -348,6 +295,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourCloseClearing = close_clearing(ourScriptPubKey)
       them ! ourCloseClearing
       stay using d.copy(ourClearing = Some(ourCloseClearing))
+
+    case Event(e@error(problem), d: DATA_NORMAL) =>
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, d.shaChain, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     /*case Event(pkt: close_channel, d: CurrentCommitment) =>
       val (finalTx, res) = handle_pkt_close(pkt, d.ourParams, d.theirParams, d.commitment)
@@ -591,6 +542,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   whenUnhandled {
+    case Event(CMD_CLOSE(_), _) =>
+      // default behaviour when we decode to close the channel
+      context stop self
+      goto(CLOSED)
+
+    case Event(e@error(problem), _) =>
+      // default handling of error messages sent by our peer: close the connection
+      // see bolt #2: A node MUST fail the connection if it receives an err message
+      log.error(s"peer sent $e, closing connection")
+      context stop self
+      stay
 
     case Event(BITCOIN_ANCHOR_LOST, _) => goto(ERR_ANCHOR_LOST)
 

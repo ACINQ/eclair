@@ -50,13 +50,13 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 
   them ! Write(ByteString.fromArray(firstMessage))
 
-  def send(encryptor: Encryptor, message: BinaryData) : Encryptor = {
+  def send(encryptor: Encryptor, message: BinaryData): Encryptor = {
     val (encryptor1, ciphertext) = Encryptor.encrypt(encryptor, message)
     them ! Write(ByteString.fromArray(ciphertext))
     encryptor1
   }
 
-  def send(encryptor: Encryptor, message: pkt) : Encryptor = send(encryptor, message.toByteArray)
+  def send(encryptor: Encryptor, message: pkt): Encryptor = send(encryptor, message.toByteArray)
 
   startWith(IO_WAITING_FOR_SESSION_KEY, Nothing)
 
@@ -107,8 +107,9 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
             context.stop(self)
           }
           val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
+          context.watch(channel)
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
-     }
+      }
   }
 
   when(IO_NORMAL) {
@@ -160,6 +161,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
+      stay
+
+    case Event(Terminated(subject), n@Normal(channel, _)) if subject == channel =>
+      context stop self
       stay
   }
 

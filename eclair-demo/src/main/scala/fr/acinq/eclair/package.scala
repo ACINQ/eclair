@@ -8,7 +8,6 @@ import _root_.lightning.locktime.Locktime.{Blocks, Seconds}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.{ChannelState, ChannelOneSide}
 
 import scala.annotation.tailrec
 
@@ -90,4 +89,19 @@ package object eclair {
     case (ha :: ta, hb :: tb) => (ha & 0xff) - (hb & 0xff)
   }
 
+  /**
+    *
+    * A node MUST use the formula 338 + 32 bytes for every non-dust HTLC as the bytecount for calculating commitment
+    * transaction fees. Note that the fee requirement is unchanged, even if the elimination of dust HTLC outputs
+    * has caused a non-zero fee already.
+    * The fee for a transaction MUST be calculated by multiplying this bytecount by the fee rate, dividing by 1000
+    * and truncating (rounding down) the result to an even number of satoshis.
+    *
+    * @param feeRate       fee rate in Satoshi/Kb
+    * @param numberOfHtlcs number of (non-dust) HTLCs to be included in the commit tx
+    * @return the fee in Satoshis for a commit tx with 'numberOfHtlcs' HTLCs
+    */
+  def computeFee(feeRate: Long, numberOfHtlcs: Int): Long = {
+    Math.floorDiv((338 + 32 * numberOfHtlcs) * feeRate, 2000) * 2
+  }
 }
