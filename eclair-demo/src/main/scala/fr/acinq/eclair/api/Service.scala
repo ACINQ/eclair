@@ -3,7 +3,8 @@ package fr.acinq.eclair.api
 import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
-import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
+import akka.http.scaladsl.model.HttpHeader.ParsingResult
+import akka.http.scaladsl.model._
 import akka.util.Timeout
 import akka.http.scaladsl.server.Directives._
 import fr.acinq.bitcoin.BinaryData
@@ -24,6 +25,7 @@ import scala.util.{Failure, Success}
 import akka.pattern.ask
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.Router.CreatePayment
+import org.jboss.netty.handler.codec.http.HttpHeaders
 
 /**
   * Created by PM on 25/01/2016.
@@ -51,6 +53,16 @@ trait Service extends Logging {
       actor ! cmd
       "ok"
     })
+  }
+
+  val customHeaders = List(
+    HttpHeader.parse("Access-Control-Allow-Origin", "*"),
+    HttpHeader.parse("Access-Control-Allow-Headers", "Content-Type"),
+    HttpHeader.parse("Access-Control-Allow-Methods", "PUT, GET, POST, DELETE, OPTIONS"),
+    HttpHeader.parse("Cache-control", "public, no-store, max-age=0"),
+    HttpHeader.parse("Access-Control-Allow-Headers", "x-requested-with")
+  ).map {
+    case ParsingResult.Ok(header, _) => header
   }
 
   val route =
@@ -91,10 +103,10 @@ trait Service extends Logging {
             }
 
             onComplete(f_res) {
-              case Success(res) => complete(HttpResponse(StatusCodes.OK, entity = HttpEntity(ContentTypes.`application/json`, Serialization.writePretty(
+              case Success(res) => complete(HttpResponse(StatusCodes.OK, headers= customHeaders, entity = HttpEntity(ContentTypes.`application/json`, Serialization.writePretty(
                 JsonRPCRes(res, None, json.id)
               ))))
-              case Failure(t) => complete(HttpResponse(StatusCodes.InternalServerError, entity = HttpEntity(ContentTypes.`application/json`, Serialization.writePretty(
+              case Failure(t) => complete(HttpResponse(StatusCodes.InternalServerError, headers= customHeaders, entity = HttpEntity(ContentTypes.`application/json`, Serialization.writePretty(
                 JsonRPCRes(null, Some(Error(-1, t.getMessage)), json.id))
               )))
             }
