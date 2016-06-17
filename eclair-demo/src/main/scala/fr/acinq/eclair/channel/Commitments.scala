@@ -19,6 +19,7 @@ case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelPar
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
                        theirNextCommitInfo: Either[TheirCommit, BinaryData],
+                       theirShaChain: ShaChain,
                        anchorOutput: TxOut) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
