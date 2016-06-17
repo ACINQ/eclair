@@ -27,8 +27,9 @@ class NewRustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with 
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
     val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val blockchainB = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, Bob.channelParams, "A"))
+    val paymentHandler = TestActorRef(new NoopPaymentHandler())
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "A"))
     pipe !(alice, bob)
     within(30 seconds) {
       awaitCond(alice.stateName == NORMAL)

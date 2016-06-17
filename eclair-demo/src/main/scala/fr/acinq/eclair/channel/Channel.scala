@@ -20,10 +20,10 @@ import scala.util.{Failure, Success}
   */
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, theirNodeId: String = Hash.Zeroes.toString()) = Props(new Channel(them, blockchain, params, theirNodeId))
+  def props(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, params: OurChannelParams, theirNodeId: String) = Props(new Channel(them, blockchain, paymentHandler, params, theirNodeId))
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] {
+class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] {
 
   log.info(s"commit pubkey: ${params.commitPubKey}")
   log.info(s"final pubkey: ${params.finalPubKey}")
@@ -405,6 +405,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
                   }
               case None =>
                 log.info(s"we are the final recipient of htlc #${htlc.id}")
+                paymentHandler ! htlc
             }
           })
           stay using d.copy(ourCommit = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = signedTx), theirChanges = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed))

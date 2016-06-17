@@ -34,13 +34,9 @@ case object IO_WAITING_FOR_SESSION_KEY extends State
 case object IO_WAITING_FOR_AUTH extends State
 case object IO_NORMAL extends State
 
-//case class Received(msg: GeneratedMessage, acknowledged: Long)
-
 // @formatter:on
 
-class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
-
-  import AuthHandler._
+class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
 
   val session_key = randomKeyPair()
 
@@ -106,7 +102,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
             log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
             context.stop(self)
           }
-          val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
+          val channel = context.actorOf(Channel.props(self, blockchain, paymentHandler, our_params, their_nodeid.toString()), name = "channel")
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
      }
   }
@@ -171,6 +167,8 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 }
 
 object AuthHandler {
+
+  def props(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, our_params: OurChannelParams) = Props(new AuthHandler(them, blockchain, paymentHandler, our_params))
 
   case class Secrets(aes_key: BinaryData, hmac_key: BinaryData, aes_iv: BinaryData)
 

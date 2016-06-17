@@ -14,11 +14,11 @@ import fr.acinq.eclair.{Boot, Globals}
   * system
   * ├── blockchain
   * ├── register
-  * │       ├── handler-0
+  * │       ├── auth-handler-0
   * │       │         └── channel
   * │       │                 └── remote_node_id-anchor_id (alias to parent)
   * │      ...
-  * │       └── handler-n
+  * │       └── auth-handler-n
   * │                 └── channel
   * │                         └── remote_node_id-anchor_id (alias to parent)
   * ├── server
@@ -36,7 +36,7 @@ class Register extends Actor with ActorLogging {
       val commit_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 0L :: counter :: Nil)
       val final_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 1L :: counter :: Nil)
       val params = OurChannelParams(Globals.default_locktime, commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, "sha-seed".getBytes(), amount)
-      context.actorOf(Props(classOf[AuthHandler], connection, Boot.blockchain, params), name = s"handler-${counter}")
+      context.actorOf(AuthHandler.props(connection, Boot.blockchain, Boot.paymentHandler, params), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children
   }
@@ -57,14 +57,14 @@ object Register {
     context.actorOf(Props(new AliasActor(context.self)), name = s"$node_id-$anchor_id")
 
   def actorPathToNodeId(nodeId: BinaryData): ActorPath =
-    Boot.system / "register" / "handler-*" / "channel" / s"${nodeId}-*"
+    Boot.system / "register" / "auth-handler-*" / "channel" / s"${nodeId}-*"
 
   def actorPathToChannelId(channelId: BinaryData): ActorPath =
-    Boot.system / "register" / "handler-*" / "channel" / s"*-${channelId}"
+    Boot.system / "register" / "auth-handler-*" / "channel" / s"*-${channelId}"
 
   def actorPathToChannels(): ActorPath =
-    Boot.system / "register" / "handler-*" / "channel"
+    Boot.system / "register" / "auth-handler-*" / "channel"
 
   def actorPathToHandlers(): ActorPath =
-    Boot.system / "register" / "handler-*"
+    Boot.system / "register" / "auth-handler-*"
 }

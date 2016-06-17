@@ -44,6 +44,7 @@ trait Service extends Logging {
   def connect(addr: InetSocketAddress, amount: Long): Unit // amount in satoshis
   def register: ActorRef
   def router: ActorRef
+  def paymentHandler: ActorRef
 
   def sendCommand(channel_id: String, cmd: Command): Future[String] = {
     Boot.system.actorSelection(Register.actorPathToChannelId(channel_id)).resolveOne().map(actor => {
@@ -69,6 +70,8 @@ trait Service extends Logging {
                 (router ? 'network).mapTo[Iterable[channel_desc]]
               case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
                 (router ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ActorRef]
+              case JsonRPCBody(_, _, "genh", _) =>
+                (paymentHandler ? 'genh).mapTo[BinaryData]
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
                 sendCommand(channel, CMD_SIGN)
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
@@ -79,9 +82,9 @@ trait Service extends Logging {
                 Future.successful(List(
                   "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",
                   "list: lists existing channels",
-                  "addhtlc (channel_id, amount, rhash, locktime): sends an htlc",
+                  "addhtlc (amount, rhash, nodeId): sends an htlc",
                   "sign (channel_id): updates the commitment transaction",
-                  "fulfillhtlc (channel_id, r): fulfills an htlc",
+                  "fulfillhtlc (channel_id, htlc_id, r): fulfills an htlc",
                   "close (channel_id): closes a channel",
                   "help: displays this message"))
               case _ => Future.failed(new RuntimeException("method not found"))
