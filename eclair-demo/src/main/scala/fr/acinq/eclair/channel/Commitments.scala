@@ -115,15 +115,15 @@ object Commitments {
 
     // check that their signature is valid
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
-    val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 1))
+    val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
     val ourTx = Helpers.makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
     val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, ourTx)
     val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount.toLong, ourTx, ourSig, commit.sig)
     Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
 
     // we will send our revocation preimage+ our next revocation hash
-    val ourRevocationPreimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index)
-    val ourNextRevocationHash1 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 2))
+    val ourRevocationPreimage = Helpers.revocationPreimage(ourParams.shaSeed, ourCommit.index)
+    val ourNextRevocationHash1 = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 2)
     val revocation = update_revocation(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data

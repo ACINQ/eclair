@@ -28,10 +28,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   params.anchorAmount match {
     case None =>
-      them ! open_channel(params.delay, sha256(ShaChain.shaChainFromSeed(params.shaSeed, 0)), sha256(ShaChain.shaChainFromSeed(params.shaSeed, 1)), params.commitPubKey, params.finalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
+      them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
       startWith(OPEN_WAIT_FOR_OPEN_NOANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
     case _ =>
-      them ! open_channel(params.delay, sha256(ShaChain.shaChainFromSeed(params.shaSeed, 0)), sha256(ShaChain.shaChainFromSeed(params.shaSeed, 1)), params.commitPubKey, params.finalPubKey, WILL_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
+      them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WILL_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
       startWith(OPEN_WAIT_FOR_OPEN_WITHANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
   }
 
@@ -104,7 +104,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val anchorAmount = anchorTx.txOut(anchorOutputIndex).amount.toLong
       val theirSpec = theirCommitment.spec
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
+      val ourRevocationHash = Helpers.revocationHash(ourParams.shaSeed, 0L)
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_us_msat = anchorAmount * 1000, initial_amount_them_msat = 0, amount_us_msat = anchorAmount * 1000, amount_them_msat = 0)
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")

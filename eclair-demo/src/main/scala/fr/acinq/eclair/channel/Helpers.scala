@@ -4,6 +4,7 @@ import Scripts._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.TypeDefs.Change
+import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 
 import scala.util.Try
@@ -142,4 +143,8 @@ object Helpers {
     val closeFee = Satoshi(2 * (commitFee / 4))
     makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
   }
+
+  def revocationPreimage(seed: BinaryData, index: Long): BinaryData = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
+
+  def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
 }
