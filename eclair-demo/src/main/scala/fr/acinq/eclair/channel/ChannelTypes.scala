@@ -138,14 +138,14 @@ final case class DATA_OPEN_WAIT_FOR_OPEN              (ourParams: OurChannelPara
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING                    (commitments: Commitments, shaChain: ShaChain, deferred: Option[open_complete]) extends Data
-final case class DATA_NORMAL                          (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
+final case class DATA_OPEN_WAITING                    (commitments: Commitments, deferred: Option[open_complete]) extends Data
+final case class DATA_NORMAL                          (commitments: Commitments, htlcIdx: Long,
                                                        ourClearing: Option[close_clearing]) extends Data
-final case class DATA_CLEARING                        (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
+final case class DATA_CLEARING                        (commitments: Commitments, htlcIdx: Long,
                                                        ourClearing: close_clearing, theirClearing: close_clearing) extends Data
-final case class DATA_NEGOCIATING                     (commitments: Commitments, shaChain: ShaChain, htlcIdx: Long,
+final case class DATA_NEGOCIATING                     (commitments: Commitments, htlcIdx: Long,
                                                        ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data
-final case class DATA_CLOSING                         (commitments: Commitments, shaChain: ShaChain,
+final case class DATA_CLOSING                         (commitments: Commitments,
                                                        ourSignature: Option[close_signature] = None,
                                                        mutualClosePublished: Option[Transaction] = None,
                                                        ourCommitPublished: Option[Transaction] = None,

@@ -70,7 +70,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       }
 
       alice ! CMD_SIGN
-      Thread.sleep(100)
+      Thread.sleep(500)
 
       alice.stateData match {
         case d: DATA_NORMAL =>
@@ -85,9 +85,10 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       bob ! CMD_FULFILL_HTLC(1, R)
       bob ! CMD_SIGN
-      alice ! CMD_SIGN
+      Thread.sleep(500)
 
-      Thread.sleep(300)
+      alice ! CMD_SIGN
+      Thread.sleep(500)
 
       alice.stateData match {
         case d: DATA_NORMAL =>
@@ -100,6 +101,59 @@ class NominalChannelSpec extends BaseChannelTestClass {
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
           assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 60000000)
           assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat - 60000000)
+      }
+
+      // send another HTLC
+      val R1 = Crypto.sha256(H)
+      val H1 = Crypto.sha256(R1)
+
+      alice ! CMD_ADD_HTLC(60000000, H1, locktime(Blocks(4)))
+      Thread.sleep(500)
+
+      alice.stateData match {
+        case d: DATA_NORMAL =>
+          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.ourChanges.proposed
+          assert(h == bin2sha256(H1))
+      }
+      bob.stateData match {
+        case d: DATA_NORMAL =>
+          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.theirChanges.proposed
+          assert(h == bin2sha256(H1))
+      }
+
+      alice ! CMD_SIGN
+      Thread.sleep(500)
+
+      alice.stateData match {
+        case d: DATA_NORMAL =>
+          val htlc = d.commitments.theirCommit.spec.htlcs.head
+          assert(htlc.rHash == bin2sha256(H1))
+      }
+      bob.stateData match {
+        case d: DATA_NORMAL =>
+          val htlc = d.commitments.ourCommit.spec.htlcs.head
+          assert(htlc.rHash == bin2sha256(H1))
+      }
+
+      bob ! CMD_FULFILL_HTLC(2, R1)
+      bob ! CMD_SIGN
+      Thread.sleep(500)
+
+      alice ! CMD_SIGN
+
+      Thread.sleep(500)
+
+      alice.stateData match {
+        case d: DATA_NORMAL =>
+          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat - 2 * 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat + 2 * 60000000)
+      }
+      bob.stateData match {
+        case d: DATA_NORMAL =>
+          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 2 * 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat - 2 * 60000000)
       }
     }
   }

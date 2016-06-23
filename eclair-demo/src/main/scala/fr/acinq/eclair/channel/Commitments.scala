@@ -19,7 +19,7 @@ case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelPar
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
                        theirNextCommitInfo: Either[TheirCommit, BinaryData],
-                       anchorOutput: TxOut) {
+                       anchorOutput: TxOut, theirPreimages: ShaChain) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
     ourCommit.publishableTx.txIn(0).outPoint.hash
@@ -143,7 +143,8 @@ object Commitments {
         commitments.copy(
           ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
           theirCommit = theirNextCommit,
-          theirNextCommitInfo = Right(revocation.nextRevocationHash))
+          theirNextCommitInfo = Right(revocation.nextRevocationHash),
+          theirPreimages = commitments.theirPreimages.addHash(revocation.revocationPreimage, 0xFFFFFFFFFFFFFFFFL - commitments.theirCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected update_revocation message")
     }
