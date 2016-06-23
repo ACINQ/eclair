@@ -91,7 +91,7 @@ object Commitments {
         // their commitment now includes all our changes  + their acked changes
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
         val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
-        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
+        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
         val commit = update_commit(ourSig)
         val commitments1 = commitments.copy(
           theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash)),
@@ -117,8 +117,8 @@ object Commitments {
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
     val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
     val ourTx = Helpers.makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
-    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, ourTx)
-    val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount.toLong, ourTx, ourSig, commit.sig)
+    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
+    val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount, ourTx, ourSig, commit.sig)
     Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
 
     // we will send our revocation preimage+ our next revocation hash

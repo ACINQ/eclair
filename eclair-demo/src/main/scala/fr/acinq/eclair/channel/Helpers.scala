@@ -76,10 +76,10 @@ object Helpers {
   def makeTheirTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
-  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long, tx: Transaction): signature =
+  def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Satoshi, tx: Transaction): signature =
     bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
 
-  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Long, tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
+  def addSigs(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Satoshi, tx: Transaction, ourSig: signature, theirSig: signature): Transaction = {
     // TODO : Transaction.sign(...) should handle multisig
     val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
     val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
@@ -126,7 +126,7 @@ object Helpers {
     val amount_us = Satoshi(commitments.ourCommit.spec.amount_us_msat / 1000)
     val amount_them = Satoshi(commitments.theirCommit.spec.amount_us_msat / 1000)
     val finalTx = Scripts.makeFinalTx(commitments.ourCommit.publishableTx.txIn, ourScriptPubKey, theirScriptPubKey, amount_us, amount_them, closeFee)
-    val ourSig = Helpers.sign(commitments.ourParams, commitments.theirParams, commitments.anchorOutput.amount.toLong, finalTx)
+    val ourSig = Helpers.sign(commitments.ourParams, commitments.theirParams, commitments.anchorOutput.amount, finalTx)
     (finalTx, close_signature(closeFee.toLong, ourSig))
   }
 

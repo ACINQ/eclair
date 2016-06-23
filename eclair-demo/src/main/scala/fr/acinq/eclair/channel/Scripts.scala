@@ -71,13 +71,13 @@ object Scripts {
 
   /**
     *
-    * @param pubkey1 public key for A
-    * @param pubkey2 public key for B
-    * @param amount anchor tx amount
-    * @param previousTx tx that will fund the anchor; it * must * be a P2PWPK embedded in a standard P2SH tx: the p2sh
-    *                   script is just the P2WPK script for the public key that matches our "key" parameter
+    * @param pubkey1     public key for A
+    * @param pubkey2     public key for B
+    * @param amount      anchor tx amount
+    * @param previousTx  tx that will fund the anchor; it * must * be a P2PWPK embedded in a standard P2SH tx: the p2sh
+    *                    script is just the P2WPK script for the public key that matches our "key" parameter
     * @param outputIndex index of the output in the funding tx
-    * @param key private key that can redeem the funding tx
+    * @param key         private key that can redeem the funding tx
     * @return a signed anchor tx
     */
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTx: Transaction, outputIndex: Int, key: BinaryData): (Transaction, Int) = {
@@ -92,7 +92,7 @@ object Scripts {
     require(p2sh == previousTx.txOut(outputIndex).publicKeyScript)
 
     val pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-    val hash = Transaction.hashForSigning(tx, 0, pubKeyScript, SIGHASH_ALL, tx.txOut(0).amount.toLong, signatureVersion = 1)
+    val hash = Transaction.hashForSigning(tx, 0, pubKeyScript, SIGHASH_ALL, tx.txOut(0).amount, signatureVersion = 1)
     val sig = Crypto.encodeSignature(Crypto.sign(hash, key.take(32), randomize = false)) :+ SIGHASH_ALL.toByte
     val witness = ScriptWitness(Seq(sig, pub))
     val script = Script.write(OP_0 :: OP_PUSHDATA(Crypto.hash160(pub)) :: Nil)
@@ -151,38 +151,12 @@ object Scripts {
 
   def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, revocationHash, spec)
-
-  // this way it is easy to reuse the inputTx of an existing commitmentTx
-//  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, channelState: ChannelState): Transaction = {
-//    val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
-//
-//    val outputs = Seq(
-//      // TODO : is that the correct way to handle sub-satoshi balances ?
-//      TxOut(amount = Satoshi(channelState.us.pay_msat / 1000), publicKeyScript = pay2wsh(redeemScript)),
-//      TxOut(amount = Satoshi(channelState.them.pay_msat / 1000), publicKeyScript = pay2wpkh(theirFinalKey))
-//    ).filterNot(_.amount.toLong < 546) // do not add dust
-//
-//    val tx = Transaction(
-//      version = 2,
-//      txIn = inputs,
-//      txOut = outputs,
-//      lockTime = 0)
-//
-//    val sendOuts = channelState.them.htlcs_received.map(htlc =>
-//      TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
-//    )
-//    val receiveOuts = channelState.us.htlcs_received.map(htlc =>
-//      TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash)))
-//    )
-//    val tx1 = tx.copy(txOut = tx.txOut ++ sendOuts ++ receiveOuts)
-//    permuteOutputs(tx1)
-//  }
-
+  
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {
-      case (Satoshi(us), Satoshi(them)) if us >= fee.toLong /2 && them >= fee.toLong / 2 => (Satoshi(us - fee.toLong / 2), Satoshi(them - fee.toLong / 2))
-      case (Satoshi(us), Satoshi(them)) if us < fee.toLong/2 => (Satoshi(0L), Satoshi(Math.max(0L, them - fee.toLong + us)))
-      case (Satoshi(us), Satoshi(them)) if them < fee.toLong/2 => (Satoshi(Math.max(us - fee.toLong + them, 0L)), Satoshi(0L))
+      case (Satoshi(us), Satoshi(them)) if us >= fee.toLong / 2 && them >= fee.toLong / 2 => (Satoshi(us - fee.toLong / 2), Satoshi(them - fee.toLong / 2))
+      case (Satoshi(us), Satoshi(them)) if us < fee.toLong / 2 => (Satoshi(0L), Satoshi(Math.max(0L, them - fee.toLong + us)))
+      case (Satoshi(us), Satoshi(them)) if them < fee.toLong / 2 => (Satoshi(Math.max(us - fee.toLong + them, 0L)), Satoshi(0L))
     }
     (amount_us1, amount_them1)
   }
@@ -192,9 +166,9 @@ object Scripts {
     val htlcs = commitmentSpec.htlcs.filter(_.amountMsat >= 546000)
     val fee_msat = ChannelState.computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
     val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.amount_us_msat, commitmentSpec.amount_them_msat) match {
-      case (us, them) if us >= fee_msat/2 && them >= fee_msat / 2 => (us - fee_msat / 2, them - fee_msat / 2)
-      case (us, them) if us < fee_msat/2 => (0L, Math.max(0L, them - fee_msat + us))
-      case (us, them) if them < fee_msat/2 => (Math.max(us - fee_msat + them, 0L), 0L)
+      case (us, them) if us >= fee_msat / 2 && them >= fee_msat / 2 => (us - fee_msat / 2, them - fee_msat / 2)
+      case (us, them) if us < fee_msat / 2 => (0L, Math.max(0L, them - fee_msat + us))
+      case (us, them) if them < fee_msat / 2 => (Math.max(us - fee_msat + them, 0L), 0L)
     }
 
     val outputs = Seq(
@@ -222,12 +196,12 @@ object Scripts {
   /**
     * Create a "final" channel transaction that will be published when the channel is closed
     *
-    * @param inputs inputs to include in the tx. In most cases, there's only one input that points to the output of
-    *               the anchor tx
-    * @param ourPubkeyScript our public key script
+    * @param inputs            inputs to include in the tx. In most cases, there's only one input that points to the output of
+    *                          the anchor tx
+    * @param ourPubkeyScript   our public key script
     * @param theirPubkeyScript their public key script
-    * @param amount_us pay to us
-    * @param amount_them pay to them
+    * @param amount_us         pay to us
+    * @param amount_them       pay to them
     * @return an unsigned "final" tx
     */
   def makeFinalTx(inputs: Seq[TxIn], ourPubkeyScript: BinaryData, theirPubkeyScript: BinaryData, amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi): Transaction = {

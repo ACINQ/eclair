@@ -17,7 +17,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   implicit val formats = org.json4s.DefaultFormats
 
   // TODO: this will probably not be needed once segwit is merged into core
-  val protocolVersion = Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS
+  val protocolVersion = Protocol.PROTOCOL_VERSION
 
   def tx2Hex(tx: Transaction): String = Hex.toHexString(Transaction.write(tx, protocolVersion))
 
@@ -134,7 +134,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
       tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
       pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-      sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount.toLong, 1, fundingPriv)
+      sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount, 1, fundingPriv)
       witness = ScriptWitness(Seq(sig, pub))
       tx2 = tx1.copy(witness = Seq(witness))
       Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)

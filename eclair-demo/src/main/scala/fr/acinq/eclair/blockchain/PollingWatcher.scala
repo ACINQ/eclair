@@ -42,7 +42,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
           } yield {
             if (conf.isDefined && !unspent) {
               // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
-              client.findSpendingTransaction(txId.toString(), outputIndex).map(tx => channel ! (BITCOIN_ANCHOR_SPENT, tx))
+              client.findSpendingTransaction(txId.toString(), outputIndex).map(tx => channel !(BITCOIN_ANCHOR_SPENT, tx))
               self !('remove, w)
             } else {}
           }
@@ -56,7 +56,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
     case Publish(tx) =>
       log.info(s"publishing tx ${tx.txid} $tx")
       client.publishTransaction(tx).onFailure {
-        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS))}")
+        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION))}")
       }
 
     case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
