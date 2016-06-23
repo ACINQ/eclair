@@ -11,6 +11,8 @@ import fr.acinq.eclair.Globals._
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PollingWatcher}
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.io.Server
+import lightning.locktime
+import lightning.locktime.Locktime.Seconds
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
 import org.scalatest.FunSuiteLike
@@ -83,8 +85,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     )
   }
 
-  val R = BinaryData("0102030405060708010203040506070801020304050607080102030405060708")
-  val H: BinaryData = Crypto.sha256(R)
+  val seed = BinaryData("0102030405060708010203040506070801020304050607080102030405060708")
 
   test("connect to lighningd") {
     val future = for {
@@ -102,19 +103,41 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     Await.result(future, 45 seconds)
   }
 
-  test("fulfill an HTLC") {
+  test("fulfill HTLCs") {
+    def now: Int = (System.currentTimeMillis() / 1000).toInt
+
     val future = for {
       channelId <- listChannels.map(_.head).map(_.channelid.toString)
       peer = lncli.getPeers.head
-      _ = lncli.newhtlc(peer.peerid, 70000000, (System.currentTimeMillis() / 1000) + 100000, H)
+      // lightningd send us a htlc
+      _ = lncli.newhtlc(peer.peerid, 70000000, now + 100000, Helpers.revocationHash(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.id)
-      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, R))
+      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Helpers.revocationPreimage(seed, 0)))
       _ <- sendCommand(channelId, CMD_SIGN)
       peer1 = lncli.getPeers.head
       _ = assert(peer1.their_amount + peer1.their_fee == 70000000)
+      // lightningd send us another htlc
+      _ = lncli.newhtlc(peer.peerid, 80000000, now + 100000, Helpers.revocationHash(seed, 1))
+      _ = Thread.sleep(500)
+      _ <- sendCommand(channelId, CMD_SIGN)
+      _ = Thread.sleep(500)
+      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.id)
+      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Helpers.revocationPreimage(seed, 1)))
+      _ <- sendCommand(channelId, CMD_SIGN)
+      peer2 = lncli.getPeers.head
+      _ = assert(peer2.their_amount + peer2.their_fee == 70000000 + 80000000)
+      // we send lightningd a HTLC
+      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Helpers.revocationHash(seed, 0), locktime(Seconds(now + 100000))))
+      _ <- sendCommand(channelId, CMD_SIGN)
+      _ = Thread.sleep(500)
+      _ = lncli.fulfillhtlc(peer.peerid, Helpers.revocationPreimage(seed, 0))
+      _ = Thread.sleep(500)
+      _ <- sendCommand(channelId, CMD_SIGN)
+      c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)
+      _ = assert(c.ourCommit.spec.amount_us_msat == 80000000)
     } yield ()
     Await.result(future, 30 seconds)
   }
@@ -183,6 +206,10 @@ object InteroperabilitySpec {
 
     def newhtlc(peerid: String, amount: Long, expiry: Long, rhash: BinaryData): Unit = {
       assert(s"$path newhtlc $peerid $amount $expiry $rhash".! == 0)
+    }
+
+    def fulfillhtlc(peerid: String, rhash: BinaryData): Unit = {
+      assert(s"$path fulfillhtlc $peerid $rhash".! == 0)
     }
   }
 

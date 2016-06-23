@@ -28,10 +28,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   params.anchorAmount match {
     case None =>
-      them ! open_channel(params.delay, sha256(ShaChain.shaChainFromSeed(params.shaSeed, 0)), sha256(ShaChain.shaChainFromSeed(params.shaSeed, 1)), params.commitPubKey, params.finalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
+      them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
       startWith(OPEN_WAIT_FOR_OPEN_NOANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
     case _ =>
-      them ! open_channel(params.delay, sha256(ShaChain.shaChainFromSeed(params.shaSeed, 0)), sha256(ShaChain.shaChainFromSeed(params.shaSeed, 1)), params.commitPubKey, params.finalPubKey, WILL_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
+      them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WILL_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
       startWith(OPEN_WAIT_FOR_OPEN_WITHANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
   }
 
@@ -81,7 +81,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
       log.info(s"signing their tx: $theirTx")
-      val ourSigForThem = sign(ourParams, theirParams, anchorAmount, theirTx)
+      val ourSigForThem = sign(ourParams, theirParams, Satoshi(anchorAmount), theirTx)
       them ! open_commit_sig(ourSigForThem)
       blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
       blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
@@ -89,17 +89,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val commitments = Commitments(ourParams, theirParams,
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
-        Right(theirNextRevocationHash), ShaChain.init, anchorOutput)
+        Right(theirNextRevocationHash), anchorOutput, ShaChain.init)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_COMMIT_SIG) {
     case Event(open_commit_sig(theirSig), DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, theirCommitment, theirNextRevocationHash)) =>
-      val anchorAmount = anchorTx.txOut(anchorOutputIndex).amount.toLong
+      val anchorAmount = anchorTx.txOut(anchorOutputIndex).amount
       val theirSpec = theirCommitment.spec
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_us_msat = anchorAmount * 1000, initial_amount_them_msat = 0, amount_us_msat = anchorAmount * 1000, amount_them_msat = 0)
+      val ourRevocationHash = Helpers.revocationHash(ourParams.shaSeed, 0L)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_us_msat = anchorAmount.toLong * 1000, initial_amount_them_msat = 0, amount_us_msat = anchorAmount.toLong * 1000, amount_them_msat = 0)
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
       val ourSig = sign(ourParams, theirParams, anchorAmount, ourTx)
@@ -119,7 +121,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val commitments = Commitments(ourParams, theirParams,
             OurCommit(0, ourSpec, signedTx), theirCommitment,
             OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
-            Right(theirNextRevocationHash), ShaChain.init, anchorOutput)
+            Right(theirNextRevocationHash), anchorOutput, ShaChain.init)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }
   }
@@ -400,7 +402,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val (finalTx, ourCloseSig) = makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, Satoshi(closeFee))
           them ! ourCloseSig
           if (closeFee == theirCloseFee) {
-            val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount.toLong, finalTx, ourCloseSig.sig, theirSig)
+            val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, theirSig)
             blockchain ! Publish(signedTx)
             blockchain ! WatchConfirmed(self, signedTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
             goto(CLOSING) using DATA_CLOSING(d.commitments, ourSignature = Some(ourCloseSig), mutualClosePublished = Some(signedTx))
@@ -639,7 +641,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOCIATING): Try[Transaction] = {
     val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, closeFee)
-    val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount.toLong, finalTx, ourCloseSig.sig, closeSig)
+    val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, closeSig)
     checksig(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput, signedTx).map(_ => signedTx)
   }
 }

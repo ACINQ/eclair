@@ -51,8 +51,8 @@ class ProtocolSpec extends FunSuite {
 
     // we only need 2 signatures because this is a 2-on-3 multisig
     val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)
-    val sig1 = Transaction.signInput(spending, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Alice.commitKey)
-    val sig2 = Transaction.signInput(spending, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Bob.commitKey)
+    val sig1 = Transaction.signInput(spending, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount, 1, Alice.commitKey)
+    val sig2 = Transaction.signInput(spending, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount, 1, Bob.commitKey)
     val witness = if (isLess(Alice.commitPubKey, Bob.commitPubKey))
       ScriptWitness(Seq(BinaryData.empty, sig1, sig2, redeemScript))
     else
@@ -86,11 +86,11 @@ class ProtocolSpec extends FunSuite {
     val spec = CommitmentSpec(Set(), ours.initialFeeRate, 1000 * 1000, 0, 1000 * 1000, 0)
     val tx = makeCommitTx(ours.finalKey, theirs.finalKey, theirs.delay, openAnchor.txid, openAnchor.outputIndex, Bob.H, spec)
     val redeemScript = multiSig2of2(Alice.commitPubKey, Bob.commitPubKey)
-    val sigA: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Alice.commitKey)
+    val sigA: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount, 1, Alice.commitKey)
 
     // now Bob receives open anchor, creates Alice's commit tx and sends backs its signature.
     // this first commit tx sends all the funds to Alice and nothing to Bob
-    val sigB: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount.toLong, 1, Bob.commitKey)
+    val sigB: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount, 1, Bob.commitKey)
     val witness = witness2of2(sigA, sigB, Alice.commitPubKey, Bob.commitPubKey)
     val commitTx = tx.copy(witness = Seq(witness))
     Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -104,7 +104,7 @@ class ProtocolSpec extends FunSuite {
         txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash160(Bob.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
         lockTime = 0)
       val redeemScript = redeemSecretOrDelay(ours.finalKey, locktime2long_csv(theirs.delay), theirs.finalKey, Bob.H)
-      val sig: BinaryData = Transaction.signInput(tx, 0, Script.write(redeemScript), SIGHASH_ALL, commitTx.txOut(0).amount.toLong, 1, Bob.finalKey)
+      val sig: BinaryData = Transaction.signInput(tx, 0, Script.write(redeemScript), SIGHASH_ALL, commitTx.txOut(0).amount, 1, Bob.finalKey)
       val witness = ScriptWitness(sig :: Bob.R :: BinaryData(Script.write(redeemScript)) :: Nil)
       val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Bob.R) :: OP_PUSHDATA(Script.write(redeemScript)) :: Nil
       //tx.updateSigScript(0, Script.write(sigScript))

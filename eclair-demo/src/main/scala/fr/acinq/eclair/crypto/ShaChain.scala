@@ -1,50 +1,73 @@
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin._
+
+import scala.annotation.tailrec
 
 object ShaChain {
 
+  case class Node(value: BinaryData, height: Int, parent: Option[Node])
+
   def flip(in: BinaryData, index: Int): BinaryData = in.data.updated(index / 8, (in.data(index / 8) ^ (1 << index % 8)).toByte)
 
-  def canDerive(from: Long, to: Long) = (~from & to) == 0
+  /**
+    *
+    * @param index 64-bit integer
+    * @return a binary representation of index as a sequence of 64 booleans. Each bool represents a move down the tree
+    */
+  def moves(index: Long): Seq[Boolean] = for (i <- 63 to 0 by -1) yield (index & (1L << i)) != 0
 
-  def derive(seed: BinaryData, from: Long, to: Long) : BinaryData = {
-    require(canDerive(from, to))
-    var hash = seed
-    val branches = from ^ to
-    for (i <- 63 to 0 by -1) {
-			val foo = (branches >> i) & 1
-      if ( foo != 0) {
-        val hash1 = flip(hash, i)
-        hash = Crypto.sha256(hash1)
-      }
+  /**
+    *
+    * @param node      initial node
+    * @param direction false means left, true means right
+    * @return the child of our node in the specified direction
+    */
+  def derive(node: Node, direction: Boolean) = direction match {
+    case false => Node(node.value, node.height + 1, Some(node))
+    case true => Node(Crypto.sha256(flip(node.value, 63 - node.height)), node.height + 1, Some(node))
+  }
+
+  def derive(node: Node, directions: Seq[Boolean]): Node = directions.foldLeft(node)(derive)
+
+  def derive(node: Node, directions: Long): Node = derive(node, moves(directions))
+
+  def shaChainFromSeed(hash: BinaryData, index: Long) = derive(Node(hash, 0, None), index).value
+
+  type Index = Seq[Boolean]
+
+  val empty = ShaChain(Map.empty[Index, BinaryData])
+
+  val init = empty
+
+  @tailrec
+  def addHash(receiver: ShaChain, hash: BinaryData, index: Index): ShaChain = {
+    index.last match {
+      case true => ShaChain(receiver.nodes + (index -> hash))
+      case false =>
+        val parentIndex = index.dropRight(1)
+        // hashes are supposed to be received in reverse order so we already have parent :+ true
+        // which we should be able to recompute (it's a left node so its hash is the same as its parent's hash)
+        assert(getHash(receiver, parentIndex :+ true) == Some(derive(Node(hash, parentIndex.length, None), true).value))
+        val nodes1 = receiver.nodes - (parentIndex :+ false) - (parentIndex :+ true)
+        addHash(ShaChain(nodes1), hash, parentIndex)
     }
-    hash
   }
 
-  def shaChainFromSeed(seed: BinaryData, index: Long) : BinaryData = derive(seed, 0xffffffffffffffffL, index)
+  def addHash(receiver: ShaChain, hash: BinaryData, index: Long): ShaChain = addHash(receiver, hash, moves(index))
 
-  def init = ShaChain(0, Seq.empty[KnownHash])
-
-  def addHash(chain: ShaChain, hash: BinaryData, index: Long) : ShaChain = {
-    require(index == chain.maxIndex + 1 || (index == 0 && chain.knownHashes.isEmpty))
-
-    def updateKnownHashes(knowHashes: Seq[KnownHash], acc: Seq[KnownHash] = Seq.empty[KnownHash]) : Seq[KnownHash] = knowHashes match {
-      case Nil => acc :+ KnownHash(hash, index)
-      case KnownHash(h, i) :: tail if canDerive(index, i) =>
-        val expected: BinaryData = derive(hash, index, i)
-        require(h == expected)
-        acc :+ KnownHash(hash, index)
-      case head :: tail => updateKnownHashes(tail, acc :+ head)
-    }
-    chain.copy(maxIndex = index, knownHashes = updateKnownHashes(chain.knownHashes))
+  def getHash(receiver: ShaChain, index: Index): Option[BinaryData] = {
+    receiver.nodes.keys.find(key => index.startsWith(key)).map(key => {
+      val root = Node(receiver.nodes(key), key.length, None)
+      derive(root, index.drop(key.length)).value
+    })
   }
 
-  def getHash(chain: ShaChain, index: Long) : Option[BinaryData] = {
-    chain.knownHashes.find(k => canDerive(k.index, index)).map(k => derive(k.hash, k.index, index))
-  }
-
-  case class KnownHash(hash: BinaryData, index: Long)
+  def getHash(receiver: ShaChain, index: Long): Option[BinaryData] = getHash(receiver, moves(index))
 }
 
-case class ShaChain(maxIndex: Long, knownHashes: Seq[ShaChain.KnownHash])
+case class ShaChain(nodes: Map[Seq[Boolean], BinaryData]) {
+  def addHash(hash: BinaryData, index: Long): ShaChain = ShaChain.addHash(this, hash, index)
+
+  def getHash(index: Long) = ShaChain.getHash(this, index)
+}

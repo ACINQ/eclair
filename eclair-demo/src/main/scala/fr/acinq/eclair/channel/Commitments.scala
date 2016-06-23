@@ -19,8 +19,7 @@ case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelPar
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
                        theirNextCommitInfo: Either[TheirCommit, BinaryData],
-                       theirShaChain: ShaChain,
-                       anchorOutput: TxOut) {
+                       anchorOutput: TxOut, theirPreimages: ShaChain) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
     ourCommit.publishableTx.txIn(0).outPoint.hash
@@ -92,7 +91,7 @@ object Commitments {
         // their commitment now includes all our changes  + their acked changes
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
         val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
-        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, theirTx)
+        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
         val commit = update_commit(ourSig)
         val commitments1 = commitments.copy(
           theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash)),
@@ -116,15 +115,15 @@ object Commitments {
 
     // check that their signature is valid
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
-    val ourNextRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 1))
+    val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
     val ourTx = Helpers.makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
-    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount.toLong, ourTx)
-    val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount.toLong, ourTx, ourSig, commit.sig)
+    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
+    val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount, ourTx, ourSig, commit.sig)
     Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
 
     // we will send our revocation preimage+ our next revocation hash
-    val ourRevocationPreimage = ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index)
-    val ourNextRevocationHash1 = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, ourCommit.index + 2))
+    val ourRevocationPreimage = Helpers.revocationPreimage(ourParams.shaSeed, ourCommit.index)
+    val ourNextRevocationHash1 = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 2)
     val revocation = update_revocation(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data
@@ -144,7 +143,8 @@ object Commitments {
         commitments.copy(
           ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
           theirCommit = theirNextCommit,
-          theirNextCommitInfo = Right(revocation.nextRevocationHash))
+          theirNextCommitInfo = Right(revocation.nextRevocationHash),
+          theirPreimages = commitments.theirPreimages.addHash(revocation.revocationPreimage, 0xFFFFFFFFFFFFFFFFL - commitments.theirCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected update_revocation message")
     }
