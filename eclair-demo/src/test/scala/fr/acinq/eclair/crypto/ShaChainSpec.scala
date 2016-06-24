@@ -66,7 +66,7 @@ class ShaChainSpec extends FunSuite {
     var receiver = ShaChain.empty
     for (i <- 0 until 1000) {
       receiver = receiver.addHash(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - i), 0xFFFFFFFFFFFFFFFFL - i)
-      assert(receiver.nodes.size <= 64)
+      assert(receiver.knownHashes.size <= 64)
       var j: Long = 0xFFFFFFFFFFFFFFFFL - i
       while (j != 0xFFFFFFFFFFFFFFFFL) {
         val ho = receiver.getHash(j)
@@ -75,6 +75,7 @@ class ShaChainSpec extends FunSuite {
         if (k < 50) assert(ho == Some(expected(k)))
         j = j + 1
       }
+      assert(receiver.getHash(0xFFFFFFFFFFFFFFFFL - i - 1) == None)
     }
   }
 }

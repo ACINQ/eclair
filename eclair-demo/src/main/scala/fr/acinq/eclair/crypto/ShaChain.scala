@@ -4,6 +4,9 @@ import fr.acinq.bitcoin._
 
 import scala.annotation.tailrec
 
+/**
+  * see https://github.com/rustyrussell/lightning-rfc/blob/master/early-drafts/shachain.txt
+  */
 object ShaChain {
 
   case class Node(value: BinaryData, height: Int, parent: Option[Node])
@@ -43,30 +46,46 @@ object ShaChain {
   @tailrec
   def addHash(receiver: ShaChain, hash: BinaryData, index: Index): ShaChain = {
     index.last match {
-      case true => ShaChain(receiver.nodes + (index -> hash))
+      case true => ShaChain(receiver.knownHashes + (index -> hash))
       case false =>
         val parentIndex = index.dropRight(1)
         // hashes are supposed to be received in reverse order so we already have parent :+ true
         // which we should be able to recompute (it's a left node so its hash is the same as its parent's hash)
         assert(getHash(receiver, parentIndex :+ true) == Some(derive(Node(hash, parentIndex.length, None), true).value))
-        val nodes1 = receiver.nodes - (parentIndex :+ false) - (parentIndex :+ true)
-        addHash(ShaChain(nodes1), hash, parentIndex)
+        val nodes1 = receiver.knownHashes - (parentIndex :+ false) - (parentIndex :+ true)
+        addHash(receiver.copy(knownHashes = nodes1), hash, parentIndex)
     }
   }
 
-  def addHash(receiver: ShaChain, hash: BinaryData, index: Long): ShaChain = addHash(receiver, hash, moves(index))
+  def addHash(receiver: ShaChain, hash: BinaryData, index: Long): ShaChain = {
+    receiver.lastIndex.map(value => require(index == value - 1L))
+    addHash(receiver, hash, moves(index)).copy(lastIndex = Some(index))
+  }
 
   def getHash(receiver: ShaChain, index: Index): Option[BinaryData] = {
-    receiver.nodes.keys.find(key => index.startsWith(key)).map(key => {
-      val root = Node(receiver.nodes(key), key.length, None)
+    receiver.knownHashes.keys.find(key => index.startsWith(key)).map(key => {
+      val root = Node(receiver.knownHashes(key), key.length, None)
       derive(root, index.drop(key.length)).value
     })
   }
 
-  def getHash(receiver: ShaChain, index: Long): Option[BinaryData] = getHash(receiver, moves(index))
+  def getHash(receiver: ShaChain, index: Long): Option[BinaryData] = {
+    receiver.lastIndex match {
+      case None => None
+      case Some(value) if value > index => None
+      case _ => getHash(receiver, moves(index))
+    }
+  }
 }
 
-case class ShaChain(nodes: Map[Seq[Boolean], BinaryData]) {
+/**
+  * Structure used to intelligently store unguessable hashes.
+  *
+  * @param knownHashes know hashes
+  * @param lastIndex   index of the last known hash. Hashes are supposed to be added in reverse order i.e.
+  *                    from 0xFFFFFFFFFFFFFFFF down to 0
+  */
+case class ShaChain(knownHashes: Map[Seq[Boolean], BinaryData], lastIndex: Option[Long] = None) {
   def addHash(hash: BinaryData, index: Long): ShaChain = ShaChain.addHash(this, hash, index)
 
   def getHash(index: Long) = ShaChain.getHash(this, index)
