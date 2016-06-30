@@ -38,7 +38,7 @@ object Test2 extends App {
     val tmpTx = Transaction(
       version = 1,
       txIn = TxIn(outPoint = OutPoint(previousTx.hash, 0), signatureScript = Array.empty[Byte], sequence = 0xffffffffL) :: Nil,
-      txOut = TxOut(100, OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Script.write(redeemScript))) :: OP_EQUAL :: Nil) :: Nil,
+      txOut = TxOut(100 satoshi, OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Script.write(redeemScript))) :: OP_EQUAL :: Nil) :: Nil,
       lockTime = 0
     )
     val sigA = Transaction.signInput(tmpTx, 0, tmpTx.txOut(0).publicKeyScript, SIGHASH_ALL, Alice.commitKey)

@@ -1,0 +1,30 @@
+***A***
+LOCAL COMMITS:
+ Commit 4:
+  Offered htlcs: (1,1000000)
+  Received htlcs: (2,2000000)
+  Balance us: 499000000
+  Balance them: 498000000
+  Fee rate: 10000
+REMOTE COMMITS:
+ Commit 4:
+  Offered htlcs: (2,2000000)
+  Received htlcs: (1,1000000)
+  Balance us: 498000000
+  Balance them: 499000000
+  Fee rate: 10000
+***B***
+LOCAL COMMITS:
+ Commit 4:
+  Offered htlcs: (2,2000000)
+  Received htlcs: (1,1000000)
+  Balance us: 498000000
+  Balance them: 499000000
+  Fee rate: 10000
+REMOTE COMMITS:
+ Commit 4:
+  Offered htlcs: (1,1000000)
+  Received htlcs: (2,2000000)
+  Balance us: 499000000
+  Balance them: 498000000
+  Fee rate: 10000

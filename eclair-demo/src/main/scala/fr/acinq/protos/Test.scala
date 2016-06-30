@@ -27,7 +27,7 @@ object Test extends App {
       val tmpTx = Transaction(
         version = 1L,
         txIn = TxIn(OutPoint(previousTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
-        txOut = TxOut(amount = 100, publicKeyScript = scriptPubKey) :: Nil,
+        txOut = TxOut(amount = 100 satoshi, publicKeyScript = scriptPubKey) :: Nil,
         lockTime = 0
       )
       Transaction.sign(tmpTx, Seq(key))
@@ -44,8 +44,8 @@ object Test extends App {
       version = 1,
       txIn = TxIn(OutPoint(openingTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
       txOut = Seq(
-        TxOut(amount = 99, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = 1, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+        TxOut(amount = 99 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = 1 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       ),
       lockTime = 0
     )
@@ -75,8 +75,8 @@ object Test extends App {
       version = 1,
       txIn = TxIn(OutPoint(openingTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
       txOut = Seq(
-        TxOut(amount = 98, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
-        TxOut(amount = 2, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+        TxOut(amount = 98 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubAlice)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil),
+        TxOut(amount = 2 satoshi, publicKeyScript = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubBob)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       ),
       lockTime = 0
     )
@@ -114,7 +114,7 @@ object RevokablePaymentChannel extends App {
       val tmpTx = Transaction(
         version = 1L,
         txIn = TxIn(OutPoint(previousTx.hash, 0), sequence = 0L, signatureScript = Array.empty[Byte]) :: Nil,
-        txOut = TxOut(amount = 100, publicKeyScript = scriptPubKey) :: Nil,
+        txOut = TxOut(amount = 100 satoshi, publicKeyScript = scriptPubKey) :: Nil,
         lockTime = 0
       )
       Transaction.sign(tmpTx, Seq(key))

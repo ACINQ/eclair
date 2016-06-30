@@ -3,17 +3,17 @@ package fr.acinq.eclair.io
 import javax.crypto.Cipher
 
 import akka.actor._
-import akka.io.Tcp.{Register, Received, Write}
+import akka.io.Tcp.{Received, Register, Write}
 import akka.util.ByteString
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.{Decryptor, Encryptor}
 import fr.acinq.eclair.crypto.LightningCrypto._
 import fr.acinq.eclair.io.AuthHandler.Secrets
 import lightning._
 import lightning.pkt.Pkt._
-import org.bouncycastle.util.encoders.Hex
 
 import scala.annotation.tailrec
 
@@ -26,13 +26,15 @@ import scala.annotation.tailrec
 
 sealed trait Data
 case object Nothing extends Data
-case class SessionData(their_session_key: BinaryData, secrets_in: Secrets, secrets_out: Secrets, cipher_in: Cipher, cipher_out: Cipher, totlen_in: Long, totlen_out: Long, acc_in: BinaryData) extends Data
+case class SessionData(their_session_key: BinaryData, decryptor: Decryptor, encryptor: Encryptor) extends Data
 case class Normal(channel: ActorRef, sessionData: SessionData) extends Data
 
 sealed trait State
 case object IO_WAITING_FOR_SESSION_KEY extends State
 case object IO_WAITING_FOR_AUTH extends State
 case object IO_NORMAL extends State
+
+//case class Received(msg: GeneratedMessage, acknowledged: Long)
 
 // @formatter:on
 
@@ -43,90 +45,118 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
   val session_key = randomKeyPair()
 
   them ! Register(self)
-  them ! Write(ByteString.fromArray(session_key.pub))
+
+  val firstMessage = Protocol.writeUInt32(session_key.pub.length) ++ session_key.pub
+
+  them ! Write(ByteString.fromArray(firstMessage))
+
+  def send(encryptor: Encryptor, message: BinaryData) : Encryptor = {
+    val (encryptor1, ciphertext) = Encryptor.encrypt(encryptor, message)
+    them ! Write(ByteString.fromArray(ciphertext))
+    encryptor1
+  }
+
+  def send(encryptor: Encryptor, message: pkt) : Encryptor = send(encryptor, message.toByteArray)
+
   startWith(IO_WAITING_FOR_SESSION_KEY, Nothing)
 
   when(IO_WAITING_FOR_SESSION_KEY) {
     case Event(Received(data), _) =>
-      val their_session_key = BinaryData(data)
+      val their_session_key_length = Protocol.uint32(data.take(4))
+      log.info(s"session key length: $their_session_key_length")
+      val their_session_key: BinaryData = data.drop(4).take(33)
       log.info(s"their_session_key=$their_session_key")
-      val secrets_in = generate_secrets(ecdh(their_session_key, session_key.priv), their_session_key)
-      val secrets_out = generate_secrets(ecdh(their_session_key, session_key.priv), session_key.pub)
-      log.info(s"generated secrets_in=$secrets_in secrets_out=$secrets_out")
-      val cipher_in = aesDecryptCipher(secrets_in.aes_key, secrets_in.aes_iv)
-      val cipher_out = aesEncryptCipher(secrets_out.aes_key, secrets_out.aes_iv)
-      val our_auth = pkt(Auth(lightning.authenticate(Globals.node_id.pub, bin2signature(Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.node_id.priv))))))
-      val (d, new_totlen_out) = writeMsg(our_auth, secrets_out, cipher_out, 0)
-      them ! Write(ByteString.fromArray(d))
-      goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, secrets_in, secrets_out, cipher_in, cipher_out, 0, new_totlen_out, BinaryData(Seq()))
+      /**
+        * BOLT #1:
+        * sending-key: SHA256(shared-secret || sending-node-id)
+        * receiving-key: SHA256(shared-secret || receiving-node-id)
+        */
+      val shared_secret = ecdh(their_session_key, session_key.priv)
+      val sending_key: BinaryData = Crypto.sha256(shared_secret ++ session_key.pub)
+      val receiving_key: BinaryData = Crypto.sha256(shared_secret ++ their_session_key)
+      log.debug(s"shared_secret: $shared_secret")
+      log.debug(s"sending key: $sending_key")
+      log.debug(s"receiving key: $receiving_key")
+      /**
+        * node_id is the expected value for the sending node.
+        * session_sig is a valid secp256k1 ECDSA signature encoded as a 32-byte big endian R value, followed by a 32-byte big endian S value.
+        * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
+        */
+      val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
+      val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
+
+      val encryptor = Encryptor(sending_key, 0)
+      val encryptor1 = send(encryptor, our_auth)
+      val decryptor = Decryptor(receiving_key, 0)
+
+      goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor, encryptor1)
   }
 
   when(IO_WAITING_FOR_AUTH) {
-    case Event(Received(chunk), s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in)) =>
+    case Event(Received(chunk), s@SessionData(theirpub, decryptor, encryptor)) =>
       log.debug(s"received chunk=${BinaryData(chunk)}")
-      val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
-      stay using s.copy(totlen_in = new_totlen_in, acc_in = rest)
-
-    case Event(pkt(Auth(auth)), s: SessionData) =>
-      log.info(s"their_nodeid=${BinaryData(auth.nodeId.key.toByteArray)}")
-      assert(Crypto.verifySignature(Crypto.hash256(session_key.pub), signature2bin(auth.sessionSig), pubkey2bin(auth.nodeId)), "auth failed")
-      val channel = context.actorOf(Channel.props(self, blockchain, our_params), name = "channel")
-      goto(IO_NORMAL) using Normal(channel, s)
+      val decryptor1 = Decryptor.add(decryptor, chunk)
+      decryptor1.bodies.headOption match {
+        case None => stay using s.copy(decryptor = decryptor1)
+        case Some(plaintext) =>
+          val pkt(Auth(auth)) = pkt.parseFrom(plaintext)
+          val their_nodeid: BinaryData = auth.nodeId
+          val their_sig: BinaryData = auth.sessionSig
+          if (!Crypto.verifySignature(Crypto.hash256(session_key.pub), their_sig, their_nodeid)) {
+            log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
+            context.stop(self)
+          }
+          val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
+          goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
+     }
   }
 
   when(IO_NORMAL) {
-    case Event(Received(chunk), n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
+    case Event(Received(chunk), n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"received chunk=${BinaryData(chunk)}")
-      val (rest, new_totlen_in) = split(acc_in ++ chunk, secrets_in, cipher_in, totlen_in, m => self ! pkt.parseFrom(m))
-      stay using n.copy(sessionData = s.copy(totlen_in = new_totlen_in, acc_in = rest))
+      val decryptor1 = Decryptor.add(decryptor, chunk)
+      decryptor1.bodies.map(plaintext => {
+        val packet = pkt.parseFrom(plaintext)
+        self ! packet
+      })
+      stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = Vector.empty[BinaryData])))
 
-    case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
-      log.debug(s"sending $packet")
+    case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
+      log.debug(s"receiving $packet")
       packet.pkt match {
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
         case OpenCommitSig(o) => channel ! o
         case OpenComplete(o) => channel ! o
-        case Update(o) => channel ! o
         case UpdateAddHtlc(o) => channel ! o
-        case UpdateAccept(o) => channel ! o
-        case UpdateSignature(o) => channel ! o
-        case UpdateComplete(o) => channel ! o
-        case UpdateDeclineHtlc(o) => channel ! o
         case UpdateFulfillHtlc(o) => channel ! o
-        case UpdateTimedoutHtlc(o) => channel ! o
-        case UpdateRoutefailHtlc(o) => channel ! o
-        case Close(o) => channel ! o
-        case CloseComplete(o) => channel ! o
-        case CloseAck(o) => channel ! o
+        case UpdateFailHtlc(o) => channel ! o
+        case UpdateCommit(o) => channel ! o
+        case UpdateRevocation(o) => channel ! o
+        case CloseClearing(o) => channel ! o
+        case CloseSignature(o) => channel ! o
         case Error(o) => channel ! o
       }
       stay
 
-    case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, secrets_in, secrets_out, cipher_in, cipher_out, totlen_in, totlen_out, acc_in))) =>
+    case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       val packet = msg match {
         case o: open_channel => pkt(Open(o))
         case o: open_anchor => pkt(OpenAnchor(o))
         case o: open_commit_sig => pkt(OpenCommitSig(o))
         case o: open_complete => pkt(OpenComplete(o))
-        case o: update => pkt(Update(o))
         case o: update_add_htlc => pkt(UpdateAddHtlc(o))
-        case o: update_accept => pkt(UpdateAccept(o))
-        case o: update_signature => pkt(UpdateSignature(o))
-        case o: update_complete => pkt(UpdateComplete(o))
-        case o: update_decline_htlc => pkt(UpdateDeclineHtlc(o))
         case o: update_fulfill_htlc => pkt(UpdateFulfillHtlc(o))
-        case o: update_timedout_htlc => pkt(UpdateTimedoutHtlc(o))
-        case o: update_routefail_htlc => pkt(UpdateRoutefailHtlc(o))
-        case o: close_channel => pkt(Close(o))
-        case o: close_channel_complete => pkt(CloseComplete(o))
-        case o: close_channel_ack => pkt(CloseAck(o))
+        case o: update_fail_htlc => pkt(UpdateFailHtlc(o))
+        case o: update_commit => pkt(UpdateCommit(o))
+        case o: update_revocation => pkt(UpdateRevocation(o))
+        case o: close_clearing => pkt(CloseClearing(o))
+        case o: close_signature => pkt(CloseSignature(o))
         case o: error => pkt(Error(o))
       }
-      log.debug(s"receiving $packet")
-      val (data, new_totlen_out) = writeMsg(packet, secrets_out, cipher_out, totlen_out)
-      them ! Write(ByteString.fromArray(data))
-      stay using n.copy(sessionData = s.copy(totlen_out = new_totlen_out))
+      log.debug(s"sending $packet")
+      val encryptor1 = send(encryptor, packet)
+      stay using n.copy(sessionData = s.copy(encryptor = encryptor1))
 
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
