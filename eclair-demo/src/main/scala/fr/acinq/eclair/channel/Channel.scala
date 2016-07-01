@@ -165,10 +165,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     case Event(cmd: CMD_CLOSE, d: DATA_OPEN_WAITING) =>
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
@@ -202,10 +204,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
       log.error(s"received error message: $e")
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     case Event(cmd: CMD_CLOSE, d: DATA_OPEN_WAITING) =>
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
@@ -304,11 +308,20 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(e@error(problem), d: DATA_NORMAL) =>
       log.error(s"peer send $e")
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
       log.warning(s"anchor spent in ${tx.txid}")
-      stay()
+      Helpers.claimTheirRevokedCommit(tx, d.commitments) match {
+        case Some(spendingTx) =>
+          blockchain ! Publish(spendingTx)
+          blockchain ! WatchConfirmed(self, spendingTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+          goto(CLOSING) using DATA_CLOSING(d.commitments, revokedPublished = Seq(tx))
+        case None =>
+          // TODO: this is definitely not right!
+          stay()
+      }
 
     /*
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if (isTheirCommit(tx, d.ourParams, d.theirParams, d.commitment)) =>
