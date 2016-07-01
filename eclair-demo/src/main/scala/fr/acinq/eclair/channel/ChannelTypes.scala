@@ -117,6 +117,9 @@ final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, fi
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
 }
 final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
+object TheirChannelParams {
+  def apply(params: OurChannelParams) = new TheirChannelParams(params.delay, params.commitPubKey, params.finalPubKey, Some(params.minDepth), params.initialFeeRate)
+}
 
 sealed trait Direction
 case object IN extends Direction

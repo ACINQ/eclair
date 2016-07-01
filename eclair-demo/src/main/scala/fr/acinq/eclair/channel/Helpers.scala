@@ -147,4 +147,62 @@ object Helpers {
   def revocationPreimage(seed: BinaryData, index: Long): BinaryData = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
 
   def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
+
+  /**
+    * Claim their revoked commit tx. If they published a revoked commit tx, we should be able to "steal" it with one
+    * of the revocation preimages that we received.
+    * Remainder: their commit tx sends:
+    * - our money to our final key
+    * - their money to (their final key + our delay) OR (our final key + secret)
+    * We don't have anything to do about our output (which should probably show up in our bitcoin wallet), can steal their
+    * money if we can find the preimage.
+    * We use a basic brute force algorithm: try all the preimages that we have until we find a match
+    *
+    * @param commitTx    their revoked commit tx
+    * @param commitments our commitment data
+    * @return an optional transaction which "steals" their output
+    */
+  def claimTheirRevokedCommit(commitTx: Transaction, commitments: Commitments): Option[Transaction] = {
+
+    // this is what their output script looks like
+    def theirOutputScript(preimage: BinaryData) = {
+      val revocationHash = Crypto.sha256(preimage)
+      redeemSecretOrDelay(commitments.theirParams.finalPubKey, locktime2long_csv(commitments.theirParams.delay), commitments.ourParams.finalPubKey, revocationHash)
+    }
+
+    // find an output that we can claim with one of our preimages
+    // the only that we're looking for is a pay-to-script (pay2wsh) so for each output that we try we need to generate
+    // all possible output scripts, hash them and see if they match
+    def findTheirOutputPreimage: Option[(Int, BinaryData)] = {
+      for (i <- 0 until commitTx.txOut.length) {
+        val actual = Script.parse(commitTx.txOut(i).publicKeyScript)
+        val preimage = commitments.theirPreimages.iterator.find(preimage => {
+          val expected = theirOutputScript(preimage)
+          val hashOfExpected = pay2wsh(expected)
+          hashOfExpected == actual
+        })
+        preimage.map(value => return Some(i, value))
+      }
+      None
+    }
+
+    findTheirOutputPreimage map {
+      case (index, preimage) =>
+        // TODO: substract network fee
+        val amount = commitTx.txOut(index).amount
+        val tx = Transaction(version = 2,
+          txIn = TxIn(OutPoint(commitTx, index), BinaryData.empty, TxIn.SEQUENCE_FINAL) :: Nil,
+          txOut = TxOut(amount, pay2pkh(commitments.ourParams.finalPubKey)) :: Nil,
+          lockTime = 0xffffffffL)
+        val redeemScript: BinaryData = Script.write(theirOutputScript(preimage))
+        val sig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, amount, 1, commitments.ourParams.finalPrivKey, randomize = false)
+        val witness = ScriptWitness(sig :: preimage :: redeemScript :: Nil)
+        val tx1 = tx.copy(witness = Seq(witness))
+
+        // check that we can actually spend the commit tx
+        Transaction.correctlySpends(tx1, commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+        tx1
+    }
+  }
 }
