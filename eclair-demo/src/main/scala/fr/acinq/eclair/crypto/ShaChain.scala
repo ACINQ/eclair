@@ -76,6 +76,21 @@ object ShaChain {
       case _ => getHash(receiver, moves(index))
     }
   }
+
+  def iterator(chain: ShaChain): Iterator[BinaryData] = chain.lastIndex match {
+    case None => Iterator.empty
+    case Some(index) => new Iterator[BinaryData] {
+      var pos = index
+
+      override def hasNext: Boolean = pos >= index && pos <= 0xffffffffffffffffL
+
+      override def next(): BinaryData = {
+        val value = chain.getHash(pos).get
+        pos = pos + 1
+        value
+      }
+    }
+  }
 }
 
 /**
@@ -89,4 +104,6 @@ case class ShaChain(knownHashes: Map[Seq[Boolean], BinaryData], lastIndex: Optio
   def addHash(hash: BinaryData, index: Long): ShaChain = ShaChain.addHash(this, hash, index)
 
   def getHash(index: Long) = ShaChain.getHash(this, index)
+
+  def iterator = ShaChain.iterator(this)
 }
