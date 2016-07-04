@@ -34,7 +34,7 @@ case object OPEN_WAIT_FOR_COMPLETE_OURANCHOR extends State
 case object OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR extends State
 case object NORMAL extends State
 case object CLEARING extends State
-case object NEGOCIATING extends State
+case object NEGOTIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
 case object ERR_ANCHOR_LOST extends State

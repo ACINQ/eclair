@@ -291,7 +291,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       if (commitments.hasNoPendingHtlcs) {
         val (finalTx, ourCloseSig) = makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
         them ! ourCloseSig
-        goto(NEGOCIATING) using DATA_NEGOCIATING(commitments, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+        goto(NEGOTIATING) using DATA_NEGOCIATING(commitments, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
       } else {
         goto(CLEARING) using DATA_CLEARING(commitments, d.htlcIdx, ourClearing, theirClearing)
       }
@@ -323,7 +323,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           stay()
       }
   }
-  
+
   /*
            .d8888b.  888      .d88888b.   .d8888b. 8888888 888b    888  .d8888b.
           d88P  Y88b 888     d88P" "Y88b d88P  Y88b  888   8888b   888 d88P  Y88b
@@ -364,7 +364,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           if (commitments1.hasNoPendingHtlcs) {
             val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
             them ! ourCloseSig
-            goto(NEGOCIATING) using DATA_NEGOCIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+            goto(NEGOTIATING) using DATA_NEGOCIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
           } else {
             stay using d.copy(commitments = commitments1)
           }
@@ -381,13 +381,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       if (commitments1.hasNoPendingHtlcs) {
         val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
         them ! ourCloseSig
-        goto(NEGOCIATING) using DATA_NEGOCIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+        goto(NEGOTIATING) using DATA_NEGOCIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
       } else {
         stay using d.copy(commitments = commitments1)
       }
   }
 
-  when(NEGOCIATING) {
+  when(NEGOTIATING) {
     case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOCIATING) if theirCloseFee == d.ourSignature.closeFee =>
       checkCloseSignature(theirSig, Satoshi(theirCloseFee), d) match {
         case Success(signedTx) =>
