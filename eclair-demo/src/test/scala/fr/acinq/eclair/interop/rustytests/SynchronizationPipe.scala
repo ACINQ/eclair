@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.interop.rustytests
 
 import java.io.{BufferedWriter, File, FileWriter}
 import java.util.concurrent.CountDownLatch
@@ -6,6 +6,7 @@ import java.util.concurrent.CountDownLatch
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel._
 import lightning.locktime
 import lightning.locktime.Locktime.Blocks
 

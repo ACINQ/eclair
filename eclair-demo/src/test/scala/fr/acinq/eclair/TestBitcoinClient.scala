@@ -1,7 +1,8 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.channel.Scripts
 
 import scala.concurrent.{ExecutionContext, Future}
 

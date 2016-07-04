@@ -1,9 +1,11 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.simulator
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.blockchain.PollingWatcher
-import fr.acinq.eclair.channel.TestConstants.{Alice, Bob}
+import TestConstants.{Alice, Bob}
+import fr.acinq.eclair.channel._
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
 
 /**

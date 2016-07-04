@@ -1,15 +1,13 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.channel.simulator
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
-import lightning.{locktime, update_add_htlc, update_fulfill_htlc}
+import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
 import lightning.locktime.Locktime.Blocks
-import org.scalatest.Ignore
+import lightning.{locktime, update_add_htlc}
 
-import scala.collection.Set
-import scala.collection.immutable.Set
 import scala.concurrent.duration._
 
 /**

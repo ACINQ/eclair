@@ -1,9 +1,8 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Crypto, Hash, OutPoint, Satoshi, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.{MakeAnchor, Publish}
+import fr.acinq.bitcoin.{Base58, Base58Check, Crypto, Hash, OutPoint, Satoshi, TxIn, TxOut}
+import fr.acinq.eclair.channel.{TheirChanges, _}
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair._
 import lightning.locktime
 import lightning.locktime.Locktime.Blocks
 

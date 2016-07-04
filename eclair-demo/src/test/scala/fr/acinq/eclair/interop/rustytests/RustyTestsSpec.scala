@@ -1,24 +1,26 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.interop.rustytests
 
-import java.io.{File, FileInputStream}
+import java.io.File
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.blockchain.PollingWatcher
-import fr.acinq.eclair.channel.TestConstants.{Alice, Bob}
+import TestConstants.{Alice, Bob}
+import fr.acinq.eclair.channel._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, Ignore, Matchers, fixture}
+import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
 
-import scala.io.Source
 import scala.concurrent.duration._
+import scala.io.Source
 
 /**
   * Created by PM on 30/05/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NewRustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
+class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fixture.FunSuiteLike with BeforeAndAfterAll {
 
   type FixtureParam = Tuple2[List[String], List[String]]
 

@@ -1,15 +1,17 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.interop
 
 import akka.actor.{ActorPath, ActorRef, ActorSystem, Props}
 import akka.pattern.ask
 import akka.testkit.TestKit
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.Globals._
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PollingWatcher}
 import fr.acinq.eclair.channel.Register.ListChannels
+import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
 import fr.acinq.eclair.io.Server
 import lightning.locktime
 import lightning.locktime.Locktime.Seconds
@@ -17,16 +19,16 @@ import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
 import org.scalatest.FunSuiteLike
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.sys.process._
 
 /**
   * this test is ignored by default
   * to run it:
   * mvn exec:java -Dexec.mainClass="org.scalatest.tools.Runner" \
-  * -Dexec.classpathScope="test" -Dexec.args="-s fr.acinq.eclair.channel.InteroperabilitySpec" \
+  * -Dexec.classpathScope="test" -Dexec.args="-s fr.acinq.eclair.interop.InteroperabilitySpec" \
   * -Dlightning-cli.path=/home/fabrice/code/lightning-c.fdrn/daemon/lightning-cli
   *
   * You don't have to specify where lightning-cli is if it is on the PATH
@@ -87,7 +89,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
 
   val seed = BinaryData("0102030405060708010203040506070801020304050607080102030405060708")
 
-  test("connect to lighningd") {
+  test("connect to lightningd") {
     val future = for {
       _ <- connect("localhost", 45000)
       _ <- waitForState(OPEN_WAITING_THEIRANCHOR)

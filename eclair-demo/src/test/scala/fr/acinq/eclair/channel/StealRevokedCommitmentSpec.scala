@@ -2,12 +2,12 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair._
+import TestConstants.{Alice, Bob}
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, routing, update_add_htlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import TestConstants._
 
 @RunWith(classOf[JUnitRunner])
 class StealRevokedCommitmentSpec extends FunSuite {

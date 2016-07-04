@@ -6,9 +6,9 @@ import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, LoggingFSM, Props
 
 // @formatter:off
 
-sealed trait NewState
-sealed trait NewData
-case object NORMAL extends NewState
+sealed trait StateMock
+sealed trait DataMock
+case object NORMAL extends StateMock
 case class MyChanges(proposed: List[Int], signed: List[List[Int]], acked_by_them: List[Int])
 case class TheirChanges(unacked_by_me: List[Int], acked_by_me: List[Int])
 case class Commit(index: Int, selected: List[Int], fee_level: Int)
@@ -16,7 +16,7 @@ case class MyState(
                     commit_signed_by_me: Commit,
                     commit_signed_by_them: Commit,
                     my_changes: MyChanges,
-                    their_changes: TheirChanges) extends NewData
+                    their_changes: TheirChanges) extends DataMock
 
 case class CmdOffer(htlc: Int)
 case class CmdRemove(htlc: Int)
@@ -34,7 +34,7 @@ case class Dump()
 /**
   * Created by PM on 17/05/2016.
   */
-class NewChannel(them: ActorRef) extends LoggingFSM[NewState, NewData] {
+class ChannelMock(them: ActorRef) extends LoggingFSM[StateMock, DataMock] {
 
   startWith(NORMAL, MyState(Commit(0, Nil, 0), Commit(0, Nil, 0), MyChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil)))
 
@@ -93,8 +93,8 @@ object NewChannel extends App {
   implicit val system = ActorSystem()
 
   val pipe = system.actorOf(Props(new TestPipe()))
-  val a = system.actorOf(Props(new NewChannel(pipe)), name = "a")
-  val b = system.actorOf(Props(new NewChannel(pipe)), name = "b")
+  val a = system.actorOf(Props(new ChannelMock(pipe)), name = "a")
+  val b = system.actorOf(Props(new ChannelMock(pipe)), name = "b")
   pipe !(a, b, new File("eclair-demo/rusty-scripts/15-fee-twice-back-to-back.script"))
 
 }
