@@ -142,4 +142,9 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
     future
   }
+
+  def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
+    client.invoke("getblockcount") map {
+      case JInt(count) => count.toLong
+    }
 }

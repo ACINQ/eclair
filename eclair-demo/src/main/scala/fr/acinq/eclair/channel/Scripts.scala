@@ -104,13 +104,17 @@ object Scripts {
 
   def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = Script.write(pay2wsh(multiSig2of2(pubkey1, pubkey2)))
 
+  def encodeNumber(n: Long): BinaryData = {
+    if (n < 0xff) Protocol.writeUInt8(n.toInt) else Script.encodeNumber(n)
+  }
+
   def redeemSecretOrDelay(delayedKey: BinaryData, reltimeout: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_PUSHDATA(ripemd160(hashOfSecret)) :: OP_EQUAL ::
     OP_IF ::
       OP_PUSHDATA(keyIfSecretKnown) ::
     OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
+      OP_PUSHDATA(encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -118,14 +122,14 @@ object Scripts {
 
   def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
-    OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUALVERIFY ::
+    OP_SIZE :: OP_PUSHDATA(encodeNumber(32)) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
     OP_SWAP :: OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
     OP_IF ::
       OP_PUSHDATA(theirkey) ::
     OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(Script.encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      OP_PUSHDATA(encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -133,15 +137,15 @@ object Scripts {
 
   def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
-    OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUALVERIFY ::
+    OP_SIZE :: OP_PUSHDATA(encodeNumber(32)) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
     OP_IF ::
-      OP_PUSHDATA(Script.encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      OP_PUSHDATA(encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ELSE ::
       OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL ::
       OP_NOTIF ::
-        OP_PUSHDATA(Script.encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+        OP_PUSHDATA(encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
       OP_ENDIF ::
       OP_PUSHDATA(theirkey) ::
     OP_ENDIF ::
@@ -151,7 +155,7 @@ object Scripts {
 
   def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, revocationHash, spec)
-  
+
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = (amount_us, amount_them) match {
       case (Satoshi(us), Satoshi(them)) if us >= fee.toLong / 2 && them >= fee.toLong / 2 => (Satoshi(us - fee.toLong / 2), Satoshi(them - fee.toLong / 2))
