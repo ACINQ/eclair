@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, LoggingFSM, Props}
+import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
@@ -49,6 +49,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
       goto(OPEN_WAIT_FOR_ANCHOR) using DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_OPEN_WITHANCHOR) {
@@ -64,6 +70,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_us_msat = 0, initial_amount_them_msat = amount * 1000, amount_us_msat = 0, amount_them_msat = amount * 1000)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash)
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_ANCHOR) {
@@ -92,6 +104,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         Right(theirNextRevocationHash), anchorOutput, ShaChain.init)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
 
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
@@ -112,7 +128,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           log.error(cause, "their open_commit_sig message contains an invalid signature")
           them ! error(Some("Bad signature"))
           // we haven't published anything yet, we can just stop
-          context stop self
           goto(CLOSED)
         case Success(_) =>
           blockchain ! WatchConfirmed(self, anchorTx.txid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
@@ -124,6 +139,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             Right(theirNextRevocationHash), anchorOutput, ShaChain.init)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
@@ -140,15 +161,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
-      context stop self
       goto(CLOSED)
 
     case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_OPEN_WAITING) =>
       // they are funding the anchor, we have nothing at stake
       log.warning(s"their anchor ${d.commitments.anchorId} was spent, sending error and closing")
       them ! error(Some(s"your anchor ${d.commitments.anchorId} was spent"))
-      context stop self
       goto(CLOSED)
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAITING_OURANCHOR) {
@@ -164,6 +189,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       stay using d.copy(deferred = Some(msg))
 
     case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
@@ -186,8 +212,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // they are funding the anchor, we have nothing at stake
       log.warning(s"their anchor ${d.commitments.anchorId} was spent, sending error and closing")
       them ! error(Some(s"your anchor ${d.commitments.anchorId} was spent"))
-      context stop self
       goto(CLOSED)
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
@@ -202,7 +233,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(ERR_INFORMATION_LEAK)
 
     case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
-      log.error(s"received error message: $e")
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
@@ -271,7 +302,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) =>
           log.error(cause, "received a bad signature")
           them ! error(Some("Bad signature"))
-          publish_ourcommit(d.commitments.ourCommit)
+          blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+          blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
           goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
       }
 
@@ -296,6 +328,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         goto(CLEARING) using DATA_CLEARING(commitments, d.htlcIdx, ourClearing, theirClearing)
       }
 
+    case Event(e@error(problem), d: DATA_NORMAL) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+
     case Event(CMD_CLOSE(scriptPubKeyOpt), d: DATA_NORMAL) =>
       val ourScriptPubKey: BinaryData = scriptPubKeyOpt.getOrElse {
         log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
@@ -304,12 +342,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourCloseClearing = close_clearing(ourScriptPubKey)
       them ! ourCloseClearing
       stay using d.copy(ourClearing = Some(ourCloseClearing))
-
-    case Event(e@error(problem), d: DATA_NORMAL) =>
-      log.error(s"peer send $e")
-      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
-      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
       log.warning(s"anchor spent in ${tx.txid}")
@@ -371,10 +403,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) =>
           log.error(cause, "received a bad signature")
           them ! error(Some("Bad signature"))
-          publish_ourcommit(d.commitments.ourCommit)
+          blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+          blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
           goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
       }
-
 
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, _, ourClearing, theirClearing)) =>
       val commitments1 = Commitments.receiveRevocation(commitments, msg)
@@ -385,6 +417,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       } else {
         stay using d.copy(commitments = commitments1)
       }
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      // TODO not implemented
+      goto(CLOSED)
   }
 
   when(NEGOTIATING) {
@@ -420,6 +457,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           log.error(cause, "cannot verify their close signature")
           throw new RuntimeException("cannot verify their close signature", cause)
       }
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      // TODO not implemented
+      goto(CLOSED)
   }
 
   when(CLOSING) {
@@ -430,24 +472,20 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${d.ourSignature.map(_.closeFee)}")
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      // TODO not implemented
+      goto(CLOSED)
   }
 
   when(CLOSED, stateTimeout = 30 seconds) {
-    case _ if false => stay // we don't want this to match so that whenUnhandled works
+    case Event(StateTimeout, _) =>
+      log.info("shutting down")
+      stop(FSM.Normal)
   }
 
   whenUnhandled {
-    case Event(CMD_CLOSE(_), _) =>
-      // default behaviour when we decode to close the channel
-      context stop self
-      goto(CLOSED)
-
-    case Event(e@error(problem), _) =>
-      // default handling of error messages sent by our peer: close the connection
-      // see bolt #2: A node MUST fail the connection if it receives an err message
-      log.error(s"peer sent $e, closing connection")
-      context stop self
-      stay
 
     case Event(BITCOIN_ANCHOR_LOST, _) => goto(ERR_ANCHOR_LOST)
 
@@ -485,50 +523,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           888    888 888        888      888        888        888  T88b  Y88b  d88P
           888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
   */
-
-  /**
-    * Something went wrong, we publish the current commitment transaction
-    */
-  def publish_ourcommit(commitment: OurCommit) = {
-    log.info(s"publishing our commitment tx: ${
-      commitment.publishableTx
-    }")
-    blockchain ! Publish(commitment.publishableTx)
-  }
-
-  def handle_ourcommit() = {
-    // if (HTLCs)
-    //    handle them (how ???)
-    //    wait for INPUT_NO_MORE_HTLCS
-    // else
-    //    wait for BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED
-  }
-
-  def handle_ourcommit_delaypassed() = {
-    // spend ours
-    // wait for BITCOIN_SPEND_OURS_DONE
-  }
-
-  /**
-    * They published their current commitment transaction
-    */
-  def handle_theircommit(publishedTx: Transaction, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: TheirCommit): error = {
-    log.info(s"their commit detected: $publishedTx")
-    // if (HTLCs)
-    //    handle them (how ???)
-    //    wait for INPUT_NO_MORE_HTLCS
-    // else
-    //    spend theirs
-    //    wait for BITCOIN_SPEND_THEIRS_DONE
-    error(Some("Commit tx noticed"))
-  }
-
-  def handle_revoked(publishedTx: Transaction): error = {
-    log.info(s"revoked commit detected: $publishedTx")
-    // steal immediately
-    // wait for BITCOIN_STEAL_DONE
-    error(Some("Otherspend noticed"))
-  }
 
   def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOCIATING): Try[Transaction] = {
     val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, closeFee)
