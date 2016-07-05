@@ -111,6 +111,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
       peer = lncli.getPeers.head
       // lightningd send us a htlc
       blockcount <- btccli.getBlockCount
+      _ = lncli.devroutefail(false)
       _ = lncli.newhtlc(peer.peerid, 70000000, blockcount + 288, Helpers.revocationHash(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
@@ -131,16 +132,18 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
       peer2 = lncli.getPeers.head
       _ = assert(peer2.their_amount + peer2.their_fee == 70000000 + 80000000)
       // we send lightningd a HTLC
+      _ = println(s"htlc payment hash: ${Helpers.revocationHash(seed, 0)}")
       _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Helpers.revocationHash(seed, 0), locktime(Blocks(blockcount.toInt + 576))))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
+      _ = println(s"htlc payment preimage: ${Helpers.revocationPreimage(seed, 0)}")
       _ = lncli.fulfillhtlc(peer.peerid, Helpers.revocationPreimage(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)
       _ = assert(c.ourCommit.spec.amount_us_msat == 80000000)
     } yield ()
-    Await.result(future, 30 seconds)
+    Await.result(future, 3000 seconds)
   }
 
   test("close the channel") {
@@ -211,6 +214,14 @@ object InteroperabilitySpec {
 
     def fulfillhtlc(peerid: String, rhash: BinaryData): Unit = {
       assert(s"$path fulfillhtlc $peerid $rhash".! == 0)
+    }
+
+    def commit(peerid: String): Unit = {
+      assert(s"$path commit $peerid".! == 0)
+    }
+
+    def devroutefail(enable: Boolean): Unit = {
+      assert(s"$path dev-routefail $enable".! == 0)
     }
   }
 
