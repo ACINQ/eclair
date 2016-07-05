@@ -58,7 +58,7 @@ class OpenWaitForCommitSigStateSpec extends TestKit(ActorSystem("test")) with fi
     }
   }
 
-  test("recv error with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv open_commit_sig with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       // sending an invalid sig
       alice ! open_commit_sig(signature(0, 0, 0, 0, 0, 0, 0, 0))
