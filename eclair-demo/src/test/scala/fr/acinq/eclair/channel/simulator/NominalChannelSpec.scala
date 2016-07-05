@@ -7,12 +7,15 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, update_add_htlc}
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 26/04/2016.
   */
+@RunWith(classOf[JUnitRunner])
 class NominalChannelSpec extends BaseChannelTestClass {
 
   test("open channel and reach normal state") { case (alice, bob, pipe) =>

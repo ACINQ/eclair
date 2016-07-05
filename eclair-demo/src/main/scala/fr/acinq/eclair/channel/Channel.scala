@@ -148,16 +148,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(OPEN_WAITING_THEIRANCHOR) {
+    case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
+      log.info(s"received their open_complete, deferring message")
+      stay using d.copy(deferred = Some(msg))
+
     case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(commitments, deferred)) =>
       blockchain ! WatchLost(self, commitments.anchorId, commitments.ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
       goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(commitments, 0, None)
-
-    case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
-      log.info(s"received their open_complete, deferring message")
-      stay using d.copy(deferred = Some(msg))
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
@@ -177,6 +177,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(OPEN_WAITING_OURANCHOR) {
+    case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
+      log.info(s"received their open_complete, deferring message")
+      stay using d.copy(deferred = Some(msg))
+
     case Event(BITCOIN_ANCHOR_DEPTHOK, d@DATA_OPEN_WAITING(commitments, deferred)) =>
       blockchain ! WatchLost(self, commitments.anchorId, commitments.ourParams.minDepth, BITCOIN_ANCHOR_LOST)
       them ! open_complete(None)
@@ -184,9 +188,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       //TODO htlcIdx should not be 0 when resuming connection
       goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(commitments, 0, None)
 
-    case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
-      log.info(s"received their open_complete, deferring message")
-      stay using d.copy(deferred = Some(msg))
+    case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
+      them ! error(Some("Anchor timed out"))
+      goto(CLOSED)
+
+    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_OPEN_WAITING) =>
+      // this is never supposed to happen !!
+      log.error(s"our anchor ${d.commitments.anchorId} was spent !!")
+      them ! error(Some("Anchor has been spent"))
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      goto(ERR_INFORMATION_LEAK)
 
     case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
@@ -199,8 +210,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
-    case Event((BITCOIN_ANCHOR_SPENT, _), _) =>
-      goto(ERR_INFORMATION_LEAK)
   }
 
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
@@ -208,7 +217,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
-    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_OPEN_WAITING) =>
+    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) =>
       // they are funding the anchor, we have nothing at stake
       log.warning(s"their anchor ${d.commitments.anchorId} was spent, sending error and closing")
       them ! error(Some(s"your anchor ${d.commitments.anchorId} was spent"))
@@ -229,16 +238,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) =>
       // this is never supposed to happen !!
       log.error(s"our anchor ${d.commitments.anchorId} was spent while we were waiting for their open_complete message !!")
+      them ! error(Some("Anchor has been spent"))
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       goto(ERR_INFORMATION_LEAK)
 
-    case Event(e@error(problem), d: DATA_OPEN_WAITING) =>
+    case Event(e@error(problem), d: DATA_NORMAL) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
-    case Event(cmd: CMD_CLOSE, d: DATA_OPEN_WAITING) =>
+    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) =>
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
@@ -480,6 +490,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(CLOSED, stateTimeout = 30 seconds) {
+    case Event(StateTimeout, _) =>
+      log.info("shutting down")
+      stop(FSM.Normal)
+  }
+
+  when(ERR_INFORMATION_LEAK, stateTimeout = 30 seconds) {
     case Event(StateTimeout, _) =>
       log.info("shutting down")
       stop(FSM.Normal)
