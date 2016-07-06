@@ -105,6 +105,7 @@ object Scripts {
   def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = Script.write(pay2wsh(multiSig2of2(pubkey1, pubkey2)))
 
   def encodeNumber(n: Long): BinaryData = {
+    // TODO: added for compatibility with lightningd => check (it's either a bug in lighningd or bitcoin-lib)
     if (n < 0xff) Protocol.writeUInt8(n.toInt) else Script.encodeNumber(n)
   }
 
