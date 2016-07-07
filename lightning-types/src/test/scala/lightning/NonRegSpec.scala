@@ -15,6 +15,11 @@ class NonRegSpec extends FunSuite {
     assert(hash.isInstanceOf[Sha256ToString])
   }
 
+  test("check rval ToString extensions") {
+    val r = rval(1, 2, 3, 4)
+    assert(r.isInstanceOf[RvalToString])
+  }
+
   test("check signature ToString extensions") {
     val sig = signature(1, 2, 3, 4, 5, 6, 7, 8)
     assert(sig.isInstanceOf[SignatureToString])
