@@ -45,6 +45,27 @@ trait Sha256ToString {
 
 }
 
+trait RvalToString {
+
+  // @formatter:off
+  def a: Long
+  def b: Long
+  def c: Long
+  def d: Long
+  // @formatter:on
+
+  override def toString = {
+    import ToStrings._
+    val bos = new ByteArrayOutputStream()
+    writeUInt64(a, bos)
+    writeUInt64(b, bos)
+    writeUInt64(c, bos)
+    writeUInt64(d, bos)
+    s"rval(${DatatypeConverter.printHexBinary(bos.toByteArray)})"
+  }
+
+}
+
 trait SignatureToString {
 
   // @formatter:off
