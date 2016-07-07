@@ -143,6 +143,13 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     future
   }
 
+  /**
+    * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent
+    * to time.now())
+    *
+    * @param ec
+    * @return the current number of blocks in the active chain
+    */
   def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
     client.invoke("getblockcount") map {
       case JInt(count) => count.toLong
