@@ -1,11 +1,14 @@
 package fr.acinq.eclair.interop
 
+import java.io.File
+import java.nio.file.{Files, Path, Paths}
+
 import akka.actor.{ActorPath, ActorRef, ActorSystem, Props}
 import akka.pattern.ask
 import akka.testkit.TestKit
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient}
 import fr.acinq.eclair._
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.Globals._
@@ -17,12 +20,16 @@ import lightning.locktime
 import lightning.locktime.Locktime.{Blocks, Seconds}
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
-import org.scalatest.FunSuiteLike
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike, Tag}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
+import scala.concurrent._
 import scala.sys.process._
+
+object InteropTest extends Tag("fr.acinq.eclair.tags.InteropTest")
+
+object LinuxOnlyTest extends Tag("fr.acinq.eclair.tags.LinuxOnlyTest")
 
 /**
   * this test is ignored by default
@@ -33,23 +40,50 @@ import scala.sys.process._
   *
   * You don't have to specify where lightning-cli is if it is on the PATH
   */
-class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
+class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll {
 
   import InteroperabilitySpec._
 
   val config = ConfigFactory.load()
   implicit val formats = org.json4s.DefaultFormats
 
-  val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
+  // start bitcoind
+  val bitcoinddir = Files.createTempDirectory("bitcoind")
+  Files.write(Paths.get(bitcoinddir.toString, "bitcoin.conf"), "regtest=1\nrpcuser=foo\nrpcpassword=bar".getBytes())
+  val bitcoind = Process(s"src/test/resources/binaries/bitcoind -datadir=${bitcoinddir.toString} -regtest").run
+  Thread.sleep(500)
+  Files.write(Paths.get(bitcoinddir.toString, "regtest", "bitcoin.conf"), "regtest=1\nrpcuser=foo\nrpcpassword=bar".getBytes())
+  val bitcoindf = Future(blocking(bitcoind.exitValue()))
+  sys.addShutdownHook(bitcoind.destroy())
+
+  Thread.sleep(3000)
+  assert(!bitcoindf.isCompleted)
+  val bitcoinClient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332)
+  val btccli = new ExtendedBitcoinClient(bitcoinClient)
+  Await.result(btccli.client.invoke("generate", 500), 10 seconds)
+
+  // start lightningd
+  val lightningddir = Files.createTempDirectory("lightningd")
+  val lightningd = Process(s"src/test/resources/binaries/lightningd --bitcoin-datadir=${bitcoinddir.toString + "/regtest"} --lightning-dir=${lightningddir.toString}").run
+  val blightningdf = Future(blocking(lightningd.exitValue()))
+  sys.addShutdownHook(lightningd.destroy())
+
+  val chain = Await.result(bitcoinClient.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
-  val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
+  val blockchain = system.actorOf(Props(new PollingWatcher(btccli)), name = "blockchain")
   val register = system.actorOf(Register.props(blockchain), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
 
-  val lncli = new LightingCli(config.getString("lightning-cli.path"))
-  val btccli = new ExtendedBitcoinClient(Globals.bitcoin_client)
+  val lncli = new LightingCli(s"src/test/resources/binaries/lightning-cli --lightning-dir=${lightningddir.toString}")
   implicit val timeout = Timeout(30 seconds)
+
+
+  override protected def afterAll(): Unit = {
+    bitcoind.destroy()
+    lightningd.destroy()
+    super.afterAll()
+  }
 
   def actorPathToChannelId(channelId: BinaryData): ActorPath =
     system / "register" / "handler-*" / "channel" / s"*-${channelId}"

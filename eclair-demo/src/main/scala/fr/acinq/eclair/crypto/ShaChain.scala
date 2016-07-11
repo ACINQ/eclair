@@ -106,4 +106,6 @@ case class ShaChain(knownHashes: Map[Seq[Boolean], BinaryData], lastIndex: Optio
   def getHash(index: Long) = ShaChain.getHash(this, index)
 
   def iterator = ShaChain.iterator(this)
+
+  override def toString = s"ShaChain(lastIndex = $lastIndex)"
 }
