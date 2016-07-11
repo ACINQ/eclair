@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel.simulator
+package fr.acinq.eclair.channel.simulator.states.a
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
@@ -6,8 +6,8 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import lightning.{error, open_channel}
 import org.junit.runner.RunWith
-import org.scalatest.{BeforeAndAfterAll, fixture}
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
 

@@ -12,6 +12,7 @@ import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCH
 
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
+import scala.util.control.NonFatal
 
 /**
   * Created by PM on 20/08/2015.
@@ -45,7 +46,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             888   888   Y8888   888       888
           8888888 888    Y888 8888888     888
    */
-  when(OPEN_WAIT_FOR_OPEN_NOANCHOR) {
+  when(OPEN_WAIT_FOR_OPEN_NOANCHOR)(handleExceptions {
     case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
       goto(OPEN_WAIT_FOR_ANCHOR) using DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)
@@ -55,9 +56,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-  }
+  })
 
-  when(OPEN_WAIT_FOR_OPEN_WITHANCHOR) {
+  when(OPEN_WAIT_FOR_OPEN_WITHANCHOR)(handleExceptions {
     case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
       log.debug(s"their params: $theirParams")
@@ -76,9 +77,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-  }
+  })
 
-  when(OPEN_WAIT_FOR_ANCHOR) {
+  when(OPEN_WAIT_FOR_ANCHOR)(handleExceptions {
     case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
 
@@ -109,9 +110,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-  }
+  })
 
-  when(OPEN_WAIT_FOR_COMMIT_SIG) {
+  when(OPEN_WAIT_FOR_COMMIT_SIG)(handleExceptions {
     case Event(open_commit_sig(theirSig), DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, theirCommitment, theirNextRevocationHash)) =>
       val anchorAmount = anchorTx.txOut(anchorOutputIndex).amount
       val theirSpec = theirCommitment.spec
@@ -145,9 +146,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-  }
+  })
 
-  when(OPEN_WAITING_THEIRANCHOR) {
+  when(OPEN_WAITING_THEIRANCHOR)(handleExceptions {
     case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
       log.info(s"received their open_complete, deferring message")
       stay using d.copy(deferred = Some(msg))
@@ -174,9 +175,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-  }
+  })
 
-  when(OPEN_WAITING_OURANCHOR) {
+  when(OPEN_WAITING_OURANCHOR)(handleExceptions {
     case Event(msg@open_complete(blockId_opt), d: DATA_OPEN_WAITING) =>
       log.info(s"received their open_complete, deferring message")
       stay using d.copy(deferred = Some(msg))
@@ -209,10 +210,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+  })
 
-  }
-
-  when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) {
+  when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)(handleExceptions {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
@@ -228,9 +228,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-  }
+  })
 
-  when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) {
+  when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)(handleExceptions {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
@@ -252,7 +252,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
-  }
+  })
 
 
   /*
@@ -267,25 +267,45 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(NORMAL) {
-
     case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, htlcIdx, _)) =>
-      // TODO: should we take pending htlcs into account?
-      // TODO: assert(commitment.state.commit_changes(staged).us.pay_msat >= amount, "insufficient funds!")
-      // TODO: nodeIds are ignored
-      val id: Long = id_opt.getOrElse(htlcIdx + 1)
-      val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.EMPTY))
-      them ! htlc
-      stay using d.copy(htlcIdx = htlc.id, commitments = commitments.addOurProposal(htlc))
+      // TODO : this should probably be done in Commitments.scala
+      // our available funds as seen by them, including all pending changes
+      val reduced = reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.acked ++ commitments.ourChanges.signed ++ commitments.ourChanges.proposed)
+      // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
+      val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+      if (amount > available) {
+        sender ! s"insufficient funds (available=$available msat)"
+        stay
+      } else {
+        // TODO: nodeIds are ignored
+        val id: Long = id_opt.getOrElse(htlcIdx + 1)
+        val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.EMPTY))
+        them ! htlc
+        sender ! "ok"
+        stay using d.copy(htlcIdx = htlc.id, commitments = commitments.addOurProposal(htlc))
+      }
 
     case Event(htlc@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _, _)) =>
-      // TODO: should we take pending htlcs into account?
-      // assert(commitment.state.commit_changes(staged).them.pay_msat >= amount, "insufficient funds!") // TODO : we should fail the channel
-      // TODO: nodeIds are ignored
-      stay using d.copy(commitments = commitments.addTheirProposal(htlc))
+      // TODO : this should probably be done in Commitments.scala
+      // their available funds as seen by us, including all pending changes
+      val reduced = reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.acked ++ commitments.theirChanges.proposed)
+      // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
+      val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+      if (amount > available) {
+        log.error("they sent an htlc but had insufficient funds")
+        them ! error(Some("Insufficient funds"))
+        blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+        blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+        goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+      } else {
+        // TODO: nodeIds are ignored
+        stay using d.copy(commitments = commitments.addTheirProposal(htlc))
+      }
 
     case Event(CMD_FULFILL_HTLC(id, r), d: DATA_NORMAL) =>
       val (commitments1, fullfill) = Commitments.sendFulfill(d.commitments, CMD_FULFILL_HTLC(id, r))
       them ! fullfill
+      sender ! "ok"
       stay using d.copy(commitments = commitments1)
 
     case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_NORMAL) =>
@@ -300,9 +320,27 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       stay using d.copy(commitments = Commitments.receiveFail(d.commitments, fail))
 
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
-      val (commitments1, commit) = Commitments.sendCommit(d.commitments)
-      them ! commit
-      stay using d.copy(commitments = commitments1)
+      if (d.commitments.theirNextCommitInfo.isLeft) {
+        sender ! "cannot sign until next revocation hash is received"
+        stay
+      } /*else if (d.commitments.ourChanges.proposed.isEmpty) {
+        //TODO : check this
+        sender ! "cannot sign when there are no changes"
+        stay
+      }*/ else {
+        Try(Commitments.sendCommit(d.commitments)) match {
+          case Success((commitments1, commit)) =>
+            them ! commit
+            sender ! "ok"
+            stay using d.copy(commitments = commitments1)
+          case Failure(cause) =>
+            log.error(cause, "")
+            them ! error(Some("Bad signature"))
+            blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+            blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+            goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+        }
+      }
 
     case Event(msg@update_commit(theirSig), d: DATA_NORMAL) =>
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
@@ -310,7 +348,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           them ! revocation
           stay using d.copy(commitments = commitments1)
         case Failure(cause) =>
-          log.error(cause, "received a bad signature")
+          log.error(cause, "")
           them ! error(Some("Bad signature"))
           blockchain ! Publish(d.commitments.ourCommit.publishableTx)
           blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
@@ -320,8 +358,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d: DATA_NORMAL) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
-      // TODO: check preimage
-      stay using d.copy(commitments = Commitments.receiveRevocation(d.commitments, msg))
+      Try(Commitments.receiveRevocation(d.commitments, msg)) match {
+        case Success(commitments1) =>
+          stay using d.copy(commitments = commitments1)
+        case Failure(cause) =>
+          log.error(cause, "")
+          them ! error(Some("Bad revocation"))
+          blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+          blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+          goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+      }
 
     case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, _, ourClearingOpt)) =>
       val ourClearing: close_clearing = ourClearingOpt.getOrElse {
@@ -411,7 +457,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             stay using d.copy(commitments = commitments1)
           }
         case Failure(cause) =>
-          log.error(cause, "received a bad signature")
+          log.error(cause, "")
           them ! error(Some("Bad signature"))
           blockchain ! Publish(d.commitments.ourCommit.publishableTx)
           blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
@@ -479,7 +525,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       stay()
 
     case Event(close_signature(theirCloseFee, theirSig), d: DATA_CLOSING) =>
-      throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${d.ourSignature.map(_.closeFee)}")
+      throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${
+        d.ourSignature.map(_.closeFee)
+      }")
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
@@ -526,6 +574,25 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     // TODO : them ! error(Some("Unexpected message")) ?
 
+  }
+
+  /**
+    * This helper function runs the state's default event handlers, and react to exceptions by unilaterally closing the channel
+    */
+  def handleExceptions(s: StateFunction): StateFunction = {
+    case event =>
+      try {
+        s(event)
+      } catch {
+        case t: Throwable => event.stateData match {
+          case d: HasCommitments =>
+            blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+            blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+            goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+          case _ =>
+            goto(CLOSED)
+        }
+      }
   }
 
 }

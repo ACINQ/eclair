@@ -82,14 +82,14 @@ sealed trait Command
 /**
   *
   *
-  * @param amount
+  * @param amountMsat
   * @param rHash
   * @param expiry
   * @param nodeIds
   * @param originChannelId
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String], originChannelId: Option[BinaryData] = None, id: Option[Long] = None) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[String] = Seq.empty[String], originChannelId: Option[BinaryData] = None, id: Option[Long] = None) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: sha256_hash) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String) extends Command
 case object CMD_SIGN extends Command
@@ -143,23 +143,27 @@ case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: s
 
 final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
 
+trait HasCommitments {
+  def commitments: Commitments
+}
+
 final case class DATA_OPEN_WAIT_FOR_OPEN              (ourParams: OurChannelParams) extends Data
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING                    (commitments: Commitments, deferred: Option[open_complete]) extends Data
+final case class DATA_OPEN_WAITING                    (commitments: Commitments, deferred: Option[open_complete]) extends Data with HasCommitments
 final case class DATA_NORMAL                          (commitments: Commitments, htlcIdx: Long,
-                                                       ourClearing: Option[close_clearing]) extends Data
+                                                       ourClearing: Option[close_clearing]) extends Data with HasCommitments
 final case class DATA_CLEARING                        (commitments: Commitments, htlcIdx: Long,
-                                                       ourClearing: close_clearing, theirClearing: close_clearing) extends Data
+                                                       ourClearing: close_clearing, theirClearing: close_clearing) extends Data with HasCommitments
 final case class DATA_NEGOCIATING                     (commitments: Commitments, htlcIdx: Long,
-                                                       ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data
+                                                       ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data with HasCommitments
 final case class DATA_CLOSING                         (commitments: Commitments,
                                                        ourSignature: Option[close_signature] = None,
                                                        mutualClosePublished: Option[Transaction] = None,
                                                        ourCommitPublished: Option[Transaction] = None,
                                                        theirCommitPublished: Option[Transaction] = None,
-                                                       revokedPublished: Seq[Transaction] = Seq()) extends Data {
+                                                       revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }
 

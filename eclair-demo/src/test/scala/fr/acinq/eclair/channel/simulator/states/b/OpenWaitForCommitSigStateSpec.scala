@@ -1,11 +1,11 @@
-package fr.acinq.eclair.channel.simulator
+package fr.acinq.eclair.channel.simulator.states.b
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.{OPEN_WAITING_OURANCHOR, OPEN_WAIT_FOR_OPEN_WITHANCHOR, _}
+import fr.acinq.eclair.channel.{OPEN_WAITING_OURANCHOR, _}
 import lightning._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner

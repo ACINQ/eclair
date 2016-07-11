@@ -1,12 +1,12 @@
-package fr.acinq.eclair.channel.simulator
+package fr.acinq.eclair.channel.simulator.states.b
 
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.{PollingWatcher, WatchConfirmed, WatchLost, WatchSpent}
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, OPEN_WAITING_THEIRANCHOR, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, _}
-import lightning._
+import fr.acinq.eclair.blockchain.{PollingWatcher, WatchConfirmed, WatchSpent}
+import fr.acinq.eclair.channel.{OPEN_WAITING_THEIRANCHOR, _}
+import lightning.{error, open_anchor, open_channel, open_commit_sig}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, fixture}
@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class OpenWaitForAnchorStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
 
   type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
@@ -32,17 +32,7 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test"
     alice2bob.forward(bob)
     bob2alice.expectMsgType[open_channel]
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[open_anchor]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_commit_sig]
-    bob2alice.forward(alice)
-    bob2blockchain.expectMsgType[WatchConfirmed]
-    bob2blockchain.expectMsgType[WatchSpent]
-    bob ! BITCOIN_ANCHOR_DEPTHOK
-    bob2blockchain.expectMsgType[WatchLost]
-    bob2alice.expectMsgType[open_complete]
-    bob2alice.forward(alice)
-    awaitCond(bob.stateName == OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
+    awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
 
@@ -50,20 +40,14 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test"
     TestKit.shutdownActorSystem(system)
   }
 
-  test("recv open_complete") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv open_anchor") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      val msg = alice2bob.expectMsgType[open_complete]
+      alice2bob.expectMsgType[open_anchor]
       alice2bob.forward(bob)
-      awaitCond(bob.stateName == NORMAL)
-    }
-  }
-
-  test("recv BITCOIN_ANCHOR_SPENT") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
-    within(30 seconds) {
-      // we have nothing at stake so we don't do anything with the tx
-      bob ! (BITCOIN_ANCHOR_SPENT, null)
-      bob2alice.expectMsgType[error]
-      awaitCond(bob.stateName == CLOSED)
+      awaitCond(bob.stateName == OPEN_WAITING_THEIRANCHOR)
+      bob2alice.expectMsgType[open_commit_sig]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      bob2blockchain.expectMsgType[WatchSpent]
     }
   }
 
