@@ -1,12 +1,12 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{DeterministicWallet, BinaryData, Crypto, BitcoinJsonRPCClient}
+import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Crypto, DeterministicWallet}
 import fr.acinq.eclair.api.BinaryDataSerializer
 import fr.acinq.eclair.channel.OurChannelParams
 import fr.acinq.eclair.crypto.LightningCrypto
 import lightning.locktime
-import lightning.locktime.Locktime.Seconds
+import lightning.locktime.Locktime.{Blocks, Seconds}
 
 
 /**
@@ -25,7 +25,7 @@ object Globals {
     val id = publicKey.toString()
   }
 
-  val default_locktime = locktime(Seconds(86400))
+  val default_locktime = locktime(Blocks(144))
   val default_mindepth = 3
   val commit_fee = config.getInt("eclair.commit-fee")
   val closing_fee = config.getInt("eclair.closing-fee")

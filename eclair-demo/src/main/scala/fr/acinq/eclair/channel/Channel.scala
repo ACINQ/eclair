@@ -279,7 +279,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       } else {
         // TODO: nodeIds are ignored
         val id: Long = id_opt.getOrElse(htlcIdx + 1)
-        val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.EMPTY))
+        val steps = route(route_step(0, next = route_step.Next.End(true)) :: Nil)
+        val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.copyFrom(steps.toByteArray)))
         them ! htlc
         sender ! "ok"
         stay using d.copy(htlcIdx = htlc.id, commitments = commitments.addOurProposal(htlc))
@@ -327,7 +328,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         //TODO : check this
         sender ! "cannot sign when there are no changes"
         stay
-      }*/ else {
+      }*/
+      else {
         Try(Commitments.sendCommit(d.commitments)) match {
           case Success((commitments1, commit)) =>
             them ! commit
