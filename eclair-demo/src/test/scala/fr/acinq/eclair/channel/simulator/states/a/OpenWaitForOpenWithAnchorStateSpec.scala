@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel.simulator
+package fr.acinq.eclair.channel.simulator.states.a
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}

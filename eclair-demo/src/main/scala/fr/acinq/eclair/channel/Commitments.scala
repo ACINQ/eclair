@@ -113,6 +113,10 @@ object Commitments {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
+    // check that there have been changes
+    /*if (commitments.theirChanges.proposed.isEmpty)
+      throw new RuntimeException("cannot sign if there are no changes")*/
+
     // check that their signature is valid
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
     val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
@@ -121,7 +125,7 @@ object Commitments {
     val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount, ourTx, ourSig, commit.sig)
     Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
 
-    // we will send our revocation preimage+ our next revocation hash
+    // we will send our revocation preimage + our next revocation hash
     val ourRevocationPreimage = Helpers.revocationPreimage(ourParams.shaSeed, ourCommit.index)
     val ourNextRevocationHash1 = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 2)
     val revocation = update_revocation(ourRevocationPreimage, ourNextRevocationHash1)
@@ -138,8 +142,9 @@ object Commitments {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     theirNextCommitInfo match {
+      case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.revocationPreimage)) != BinaryData(theirCommit.theirRevocationHash) =>
+        throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
-        assert(BinaryData(Crypto.sha256(revocation.revocationPreimage)) == BinaryData(theirCommit.theirRevocationHash), "invalid preimage")
         commitments.copy(
           ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
           theirCommit = theirNextCommit,
