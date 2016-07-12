@@ -111,7 +111,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_add_htlc") { case (_, bob, alice2bob, _, _,_) =>
+  test("recv update_add_htlc") { case (_, bob, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
       val htlc = update_add_htlc(42, 150, sha256_hash(1, 2, 3, 4), locktime(Blocks(3)), routing(ByteString.EMPTY))
@@ -215,6 +215,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
+      // actual test begins
       alice2bob.expectMsgType[update_commit]
       alice2bob.forward(bob)
 
@@ -250,6 +251,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
 
+      // actual test begins
       sender.send(bob, update_commit(signature(0, 0, 0, 0, 0, 0, 0, 0)))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
@@ -276,6 +278,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[update_commit]
       alice2bob.forward(bob)
 
+      // actual test begins
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirNextCommitInfo.isLeft)
       bob2alice.expectMsgType[update_revocation]
       bob2alice.forward(alice)
@@ -283,7 +286,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_revocation (invalid preimage") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv update_revocation (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
@@ -301,6 +304,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[update_commit]
       alice2bob.forward(bob)
 
+      // actual test begins
       bob2alice.expectMsgType[update_revocation]
       sender.send(alice, update_revocation(sha256_hash(0, 0, 0, 0), sha256_hash(1, 1, 1, 1)))
       alice2bob.expectMsgType[error]
@@ -310,7 +314,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_revocation (unexpectedly") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv update_revocation (unexpectedly)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
@@ -323,23 +327,281 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-
-  /*test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _) =>
+  test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
+      val r: rval = rval(1, 2, 3, 4)
       val h: sha256_hash = Crypto.sha256(r)
+
       sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
       sender.expectMsg("ok")
       val htlc = alice2bob.expectMsgType[update_add_htlc]
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+
+      // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fulfill))))
     }
-  }*/
+  }
+
+  test("recv CMD_FULFILL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(bob, CMD_FULFILL_HTLC(42, r))
+      sender.expectMsg("unknown htlc id=42")
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv CMD_FULFILL_HTLC (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+
+      // actual test begins
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+      sender.send(bob, CMD_FULFILL_HTLC(htlc.id, rval(0, 0, 0, 0)))
+      sender.expectMsg("invalid htlc preimage for htlc id=1")
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv update_fulfill_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+
+      sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
+      sender.expectMsg("ok")
+      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData == initialState.copy(commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill))))
+    }
+  }
+
+  test("recv update_fulfill_htlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      val sender = TestProbe()
+      sender.send(alice, update_fulfill_htlc(42, rval(0, 0, 0, 0)))
+      alice2bob.expectMsgType[error]
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv update_fulfill_htlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+
+      // actual test begins
+      sender.send(alice, update_fulfill_htlc(42, rval(0, 0, 0, 0)))
+      alice2bob.expectMsgType[error]
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv CMD_FAIL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+
+      // actual test begins
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
+      sender.expectMsg("ok")
+      val fail = bob2alice.expectMsgType[update_fail_htlc]
+      awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fail))))
+    }
+  }
+
+  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(bob, CMD_FAIL_HTLC(42, "some reason"))
+      sender.expectMsg("unknown htlc id=42")
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv update_fail_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
+      sender.expectMsg("ok")
+      val fulfill = bob2alice.expectMsgType[update_fail_htlc]
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData == initialState.copy(commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill))))
+    }
+  }
+
+  test("recv update_fail_htlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      val sender = TestProbe()
+      sender.send(alice, update_fail_htlc(42, fail_reason(ByteString.copyFromUtf8("some reason"))))
+      alice2bob.expectMsgType[error]
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv close_clearing (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, close_clearing(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_clearing]
+      alice2bob.expectMsgType[close_signature]
+      awaitCond(alice.stateName == NEGOTIATING)
+    }
+  }
+
+  test("recv close_clearing (with unacked htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      // actual test begins
+      sender.send(alice, close_clearing(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateName == CLEARING)
+    }
+  }
+
+  test("recv close_clearing (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+
+      // actual test begins
+      sender.send(alice, close_clearing(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateName == CLEARING)
+    }
+  }
 
 }
