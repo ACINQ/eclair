@@ -59,12 +59,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
       Thread.sleep(100)
 
-      alice.stateData match {
+      (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val List(update_add_htlc(_, _, h, _, _)) = d.commitments.ourChanges.proposed
           assert(h == bin2sha256(H))
       }
-      bob.stateData match {
+      (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val List(update_add_htlc(_, _, h, _, _)) = d.commitments.theirChanges.proposed
           assert(h == bin2sha256(H))
@@ -73,12 +73,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      alice.stateData match {
+      (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.theirCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H))
       }
-      bob.stateData match {
+      (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.ourCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H))
@@ -91,13 +91,13 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      alice.stateData match {
+      (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
           assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat - 60000000)
           assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat + 60000000)
       }
-      bob.stateData match {
+      (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
           assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 60000000)
@@ -111,12 +111,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_ADD_HTLC(60000000, H1, locktime(Blocks(4)))
       Thread.sleep(500)
 
-      alice.stateData match {
+      (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val List(update_add_htlc(_, _, h, _, _)) = d.commitments.ourChanges.proposed
           assert(h == bin2sha256(H1))
       }
-      bob.stateData match {
+      (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val List(update_add_htlc(_, _, h, _, _)) = d.commitments.theirChanges.proposed
           assert(h == bin2sha256(H1))
@@ -125,12 +125,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      alice.stateData match {
+      (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.theirCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H1))
       }
-      bob.stateData match {
+      (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.ourCommit.spec.htlcs.head
           assert(htlc.rHash == bin2sha256(H1))
@@ -144,13 +144,13 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       Thread.sleep(500)
 
-      alice.stateData match {
+      (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
           assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat - 2 * 60000000)
           assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat + 2 * 60000000)
       }
-      bob.stateData match {
+      (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
           assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 2 * 60000000)
@@ -235,7 +235,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       bob ! CMD_SIGN
       Thread.sleep(500)
 
-      val commitTx = alice.stateData match {
+      val commitTx = (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL => d.commitments.ourCommit.publishableTx
       }
 
