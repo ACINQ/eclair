@@ -11,6 +11,10 @@
 
     <name>${project.artifactId}</name>
 
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
     <build>
         <plugins>
             <plugin>
@@ -41,7 +45,7 @@
         <dependency>
             <groupId>com.trueaccord.scalapb</groupId>
             <artifactId>compilerplugin_2.11</artifactId>
-            <version>0.4.16</version>
+            <version>0.4.21</version>
         </dependency>
     </dependencies>
 </project>
