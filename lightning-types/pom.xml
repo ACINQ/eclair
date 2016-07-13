@@ -68,8 +68,8 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <executable>${project.build.directory}\scalapbc-${scalapb.version}\bin\scalapbc${script.extension}</executable>
-                    <commandlineArgs>--proto_path=${project.basedir}\src\main\protobuf --scala_out=${project.build.directory}\generated-sources\scala ${project.basedir}\src\main\protobuf\lightning.proto</commandlineArgs>
+                    <executable>${project.build.directory}/scalapbc-${scalapb.version}/bin/scalapbc${script.extension}</executable>
+                    <commandlineArgs>--proto_path=${project.basedir}/src/main/protobuf --scala_out=${project.build.directory}/generated-sources/scala ${project.basedir}/src/main/protobuf/lightning.proto</commandlineArgs>
                 </configuration>
             </plugin>
             <plugin>
