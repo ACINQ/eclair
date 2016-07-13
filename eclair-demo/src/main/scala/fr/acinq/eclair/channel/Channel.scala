@@ -582,12 +582,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     * This helper function runs the state's default event handlers, and react to exceptions by unilaterally closing the channel
     */
   def handleExceptions(s: StateFunction): StateFunction = {
-    case event =>
+    case event if s.isDefinedAt(event) =>
       try {
         s(event)
       } catch {
         case t: Throwable => event.stateData match {
           case d: HasCommitments =>
+            log.error(t, "error, closing")
             blockchain ! Publish(d.commitments.ourCommit.publishableTx)
             blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
             goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))

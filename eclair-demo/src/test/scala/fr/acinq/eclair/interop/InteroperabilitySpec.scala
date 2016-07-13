@@ -1,5 +1,6 @@
 package fr.acinq.eclair.interop
 
+import java.io.File
 import java.nio.file.{Files, Paths}
 
 import akka.actor.{ActorPath, ActorRef, ActorSystem, Props}
@@ -62,6 +63,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     }
   }
 
+  val currentdir = new File(".").getCanonicalPath
   val prefix = s"src/test/resources/binaries/${osName}${arch}"
 
   // start bitcoind
@@ -72,15 +74,23 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   val bitcoind = Process(s"$prefix/bitcoind -datadir=${bitcoinddir.toString} -regtest").run
   val bitcoindf = Future(blocking(bitcoind.exitValue()))
   sys.addShutdownHook(bitcoind.destroy())
+
+
   Thread.sleep(3000)
   assert(!bitcoindf.isCompleted)
   val bitcoinClient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332)
   val btccli = new ExtendedBitcoinClient(bitcoinClient)
+
+  awaitAssert(Await.result(btccli.client.invoke("getblockchaininfo"), 3 seconds), 10 seconds)
+
   Await.result(btccli.client.invoke("generate", 500), 10 seconds)
 
   // start lightningd
   val lightningddir = Files.createTempDirectory("lightningd")
-  val lightningd = Process(s"$prefix/lightningd --bitcoin-datadir=${bitcoinddir.toString + "/regtest"} --lightning-dir=${lightningddir.toString}").run
+  val lightningd = Process(
+    s"$prefix/lightningd --bitcoin-datadir=${bitcoinddir.toString + "/regtest"} --lightning-dir=${lightningddir.toString}",
+    None,
+    "PATH" -> s"$currentdir/$prefix").run
   val lightningdf = Future(blocking(lightningd.exitValue()))
   sys.addShutdownHook(lightningd.destroy())
   Thread.sleep(500)
@@ -210,7 +220,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
       _ <- waitForState(CLOSED)
     } yield ()
 
-    Await.result(future, 45 seconds)
+    Await.result(future, 4500 seconds)
   }
 }
 
