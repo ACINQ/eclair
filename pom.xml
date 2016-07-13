@@ -46,6 +46,7 @@
         <akka.version>2.4.6</akka.version>
         <bitcoinlib.version>0.9.6-RC2</bitcoinlib.version>
         <acinqtools.version>1.2</acinqtools.version>
+        <scalapb.version>0.4.21</scalapb.version>
     </properties>
 
     <build>
@@ -164,7 +165,7 @@
             <dependency>
                 <groupId>com.trueaccord.scalapb</groupId>
                 <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
-                <version>0.4.21</version>
+                <version>${scalapb.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.protobuf</groupId>

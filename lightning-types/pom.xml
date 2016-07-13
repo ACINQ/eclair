@@ -17,6 +17,45 @@
     <build>
         <plugins>
             <plugin>
+                <groupId>com.googlecode.maven-download-plugin</groupId>
+                <artifactId>download-maven-plugin</artifactId>
+                <version>1.3.0</version>
+                <executions>
+                    <execution>
+                        <id>download-scalapbc</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <configuration>
+                            <url>https://github.com/trueaccord/ScalaPB/releases/download/v${scalapb.version}/scalapbc-${scalapb.version}.zip</url>
+                            <md5>9fef6a23b9e717c14e1bb3924ac0e156</md5>
+                            <unpack>true</unpack>
+                            <outputDirectory>${project.build.directory}</outputDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>1.7</version>
+                <executions>
+                    <execution>
+                        <id>mkdir-generated-sources</id>
+                        <phase>generate-sources</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <mkdir dir="${project.build.directory}/generated-sources/scala"/>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>1.4.0</version>
@@ -29,7 +68,8 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <executable>${project.basedir}/generate${script.extension}</executable>
+                    <executable>${project.build.directory}/scalapbc-${scalapb.version}/bin/scalapbc${script.extension}</executable>
+                    <commandlineArgs>--proto_path=${project.basedir}/src/main/protobuf --scala_out=${project.build.directory}/generated-sources/scala ${project.basedir}/src/main/protobuf/lightning.proto</commandlineArgs>
                 </configuration>
             </plugin>
             <plugin>
