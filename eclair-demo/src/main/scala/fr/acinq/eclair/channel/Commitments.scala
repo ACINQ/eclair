@@ -1,11 +1,27 @@
 package fr.acinq.eclair.channel
 
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Scripts.TxTemplate
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
+
+trait TxDb {
+  def add(parentId: BinaryData, spending: Transaction) : Unit
+  def get(parentId: BinaryData) : Option[Transaction]
+}
+
+class BasicTxDb extends TxDb {
+  val db = collection.mutable.HashMap.empty[BinaryData, Transaction]
+
+  override def add(parentId: BinaryData, spending: Transaction): Unit = {
+    db += parentId -> spending
+  }
+
+  override def get(parentId: BinaryData): Option[Transaction] = db.get(parentId)
+}
 
 /**
   * about theirNextCommitInfo:
@@ -19,7 +35,7 @@ case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelPar
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
                        theirNextCommitInfo: Either[TheirCommit, BinaryData],
-                       anchorOutput: TxOut, theirPreimages: ShaChain) {
+                       anchorOutput: TxOut, theirPreimages: ShaChain, txDb: TxDb) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
     ourCommit.publishableTx.txIn(0).outPoint.hash
@@ -90,7 +106,8 @@ object Commitments {
         // sign all our proposals + their acked proposals
         // their commitment now includes all our changes  + their acked changes
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
-        val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val theirTx = theirTxTemplate.makeTx
         val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
         val commit = update_commit(ourSig)
         val commitments1 = commitments.copy(
@@ -145,6 +162,13 @@ object Commitments {
       case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.revocationPreimage)) != BinaryData(theirCommit.theirRevocationHash) =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
+        // this is their revoked commit tx
+        val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirCommit.theirRevocationHash, theirCommit.spec)
+        val theirTx = theirTxTemplate.makeTx
+        val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, ourParams.finalPrivKey)
+        Transaction.correctlySpends(punishTx, Seq(theirTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        txDb.add(theirTx.txid, punishTx)
+
         commitments.copy(
           ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
           theirCommit = theirNextCommit,
@@ -152,6 +176,17 @@ object Commitments {
           theirPreimages = commitments.theirPreimages.addHash(revocation.revocationPreimage, 0xFFFFFFFFFFFFFFFFL - commitments.theirCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected update_revocation message")
+    }
+  }
+
+  def makeTheirTxTemplate(commitments: Commitments) : TxTemplate = {
+    commitments.theirNextCommitInfo match {
+      case Left(theirNextCommit) =>
+        Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+          theirNextCommit.theirRevocationHash, theirNextCommit.spec)
+      case Right(revocationHash) =>
+        Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+          commitments.theirCommit.theirRevocationHash, commitments.theirCommit.spec)
     }
   }
 }

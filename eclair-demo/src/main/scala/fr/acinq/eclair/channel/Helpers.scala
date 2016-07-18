@@ -73,8 +73,11 @@ object Helpers {
   def makeOurTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
+  def makeTheirTxTemplate(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): TxTemplate =
+    makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
+
   def makeTheirTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
-    makeCommitTx(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
+    makeTheirTxTemplate(ourParams, theirParams, inputs, theirRevocationHash, spec).makeTx
 
   def sign(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorAmount: Satoshi, tx: Transaction): signature =
     bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
@@ -210,5 +213,52 @@ object Helpers {
 
         tx1
     }
+  }
+
+  /**
+    * claim a revoked commit tx
+    * @param theirTxTemplate revoked commit tx template
+    * @param revocationPreimage revocation preimage
+    * @param privateKey private key to send the claimed funds to
+    * @return a signed transaction that spends the revoked commit tx
+    */
+  def claimRevokedCommitTx(theirTxTemplate: TxTemplate, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = {
+    val theirTx = theirTxTemplate.makeTx
+    val outputs = collection.mutable.ListBuffer.empty[TxOut]
+
+    def findOutputIndex(output: TxOut): Option[Int] = {
+      for (i <- 0 until theirTx.txOut.length) {
+        if (theirTx.txOut(i) == output) return Some(i)
+      }
+      None
+    }
+
+    // first, find out how much we can claim
+    val outputsToClaim = (theirTxTemplate.ourOutput.toSeq ++ theirTxTemplate.htlcReceived.toSeq ++ theirTxTemplate.htlcSent.toSeq).filter(o => findOutputIndex(o.txOut).isDefined)
+    val totalAmount = outputsToClaim.map(_.amount).sum
+
+    // create a tx that sends everything to our private key
+    val tx = Transaction(version = 2,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(totalAmount, pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+      witness = Seq.empty[ScriptWitness],
+      lockTime = 0)
+
+    // create tx inputs that spend each output that we can spend
+    val inputs = outputsToClaim.map(outputTemplate => {
+      val index = findOutputIndex(outputTemplate.txOut).get
+      TxIn(OutPoint(theirTx, index), signatureScript = BinaryData.empty, sequence = 0xffffffffL)
+    })
+    assert(inputs.length == outputsToClaim.length)
+
+    // and sign them
+    val tx1 = tx.copy(txIn = inputs)
+    val witnesses = for(i <- 0 until tx1.txIn.length) yield {
+      val sig = Transaction.signInput(tx1, i, outputsToClaim(i).redeemScript, SIGHASH_ALL, outputsToClaim(i).amount, 1, privateKey)
+      val witness = ScriptWitness(sig :: revocationPreimage :: outputsToClaim(i).redeemScript :: Nil)
+      witness
+    }
+
+    tx1.copy(witness = witnesses)
   }
 }

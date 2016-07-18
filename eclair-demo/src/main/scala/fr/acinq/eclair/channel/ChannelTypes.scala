@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction, TxOut}
+import fr.acinq.eclair.channel.Scripts.TxTemplate
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 

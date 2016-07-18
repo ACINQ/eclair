@@ -102,7 +102,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val commitments = Commitments(ourParams, theirParams,
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
-        Right(theirNextRevocationHash), anchorOutput, ShaChain.init)
+        Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
 
     case Event(e@error(problem), _) =>
@@ -137,7 +137,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           val commitments = Commitments(ourParams, theirParams,
             OurCommit(0, ourSpec, signedTx), theirCommitment,
             OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
-            Right(theirNextRevocationHash), anchorOutput, ShaChain.init)
+            Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }
 
@@ -403,7 +403,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
       log.warning(s"anchor spent in ${tx.txid}")
-      Helpers.claimTheirRevokedCommit(tx, d.commitments) match {
+      d.commitments.txDb.get(tx.txid) match {
         case Some(spendingTx) =>
           blockchain ! Publish(spendingTx)
           blockchain ! WatchConfirmed(self, spendingTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
