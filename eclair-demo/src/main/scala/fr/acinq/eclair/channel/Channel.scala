@@ -465,25 +465,76 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   when(CLEARING) {
     case Event(CMD_FULFILL_HTLC(id, r), d: DATA_CLEARING) =>
-      val (commitments1, fullfill) = Commitments.sendFulfill(d.commitments, CMD_FULFILL_HTLC(id, r))
-      them ! fullfill
-      stay using d.copy(commitments = commitments1)
+      Try(Commitments.sendFulfill(d.commitments, CMD_FULFILL_HTLC(id, r))) match {
+        case Success((commitments1, fullfill)) =>
+          them ! fullfill
+          sender ! "ok"
+          stay using d.copy(commitments = commitments1)
+        case Failure(cause) =>
+          log.error(cause, "")
+          sender ! cause.getMessage
+          stay
+      }
 
     case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_CLEARING) =>
-      stay using d.copy(commitments = Commitments.receiveFulfill(d.commitments, fulfill))
+      Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
+        case Success(commitments1) =>
+          stay using d.copy(commitments = commitments1)
+        case Failure(cause) =>
+          log.error(cause, "")
+          them ! error(Some(cause.getMessage))
+          blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+          blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+          goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+      }
 
     case Event(CMD_FAIL_HTLC(id, reason), d: DATA_CLEARING) =>
-      val (commitments1, fail) = Commitments.sendFail(d.commitments, CMD_FAIL_HTLC(id, reason))
-      them ! fail
-      stay using d.copy(commitments = commitments1)
+      Try(Commitments.sendFail(d.commitments, CMD_FAIL_HTLC(id, reason))) match {
+        case Success((commitments1, fail)) =>
+          them ! fail
+          sender ! "ok"
+          stay using d.copy(commitments = commitments1)
+        case Failure(cause) =>
+          log.error(cause, "")
+          sender ! cause.getMessage
+          stay
+      }
 
     case Event(fail@update_fail_htlc(id, reason), d: DATA_CLEARING) =>
-      stay using d.copy(commitments = Commitments.receiveFail(d.commitments, fail))
+      Try(Commitments.receiveFail(d.commitments, fail)) match {
+        case Success(commitments1) =>
+          stay using d.copy(commitments = commitments1)
+        case Failure(cause) =>
+          log.error(cause, "")
+          them ! error(Some(cause.getMessage))
+          blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+          blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+          goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+      }
 
     case Event(CMD_SIGN, d: DATA_CLEARING) =>
-      val (commitments1, commit) = Commitments.sendCommit(d.commitments)
-      them ! commit
-      stay using d.copy(commitments = commitments1)
+      if (d.commitments.theirNextCommitInfo.isLeft) {
+        sender ! "cannot sign until next revocation hash is received"
+        stay
+      } /*else if (d.commitments.ourChanges.proposed.isEmpty) {
+        //TODO : check this
+        sender ! "cannot sign when there are no changes"
+        stay
+      }*/
+      else {
+        Try(Commitments.sendCommit(d.commitments)) match {
+          case Success((commitments1, commit)) =>
+            them ! commit
+            sender ! "ok"
+            stay using d.copy(commitments = commitments1)
+          case Failure(cause) =>
+            log.error(cause, "")
+            them ! error(Some(cause.getMessage))
+            blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+            blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+            goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+        }
+      }
 
     case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, _, ourClearing, theirClearing)) =>
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
@@ -505,19 +556,28 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, _, ourClearing, theirClearing)) =>
-      val commitments1 = Commitments.receiveRevocation(commitments, msg)
-      if (commitments1.hasNoPendingHtlcs) {
-        val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
-        them ! ourCloseSig
-        goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
-      } else {
-        stay using d.copy(commitments = commitments1)
+      // we received a revocation because we sent a signature
+      // => all our changes have been acked
+      Try(Commitments.receiveRevocation(d.commitments, msg)) match {
+        case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
+          val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
+          them ! ourCloseSig
+          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+        case Success(commitments1) =>
+          stay using d.copy(commitments = commitments1)
+        case Failure(cause) =>
+          log.error(cause, "")
+          them ! error(Some(cause.getMessage))
+          blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+          blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+          goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
       }
 
-    case Event(e@error(problem), _) =>
+    case Event(e@error(problem), d: DATA_CLEARING) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      // TODO not implemented
-      goto(CLOSED)
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
   when(NEGOTIATING) {
