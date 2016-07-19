@@ -573,6 +573,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
       }
 
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
+      // TODO : not implemented
+      stay
+
     case Event(e@error(problem), d: DATA_CLEARING) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
@@ -614,6 +618,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           throw new RuntimeException("cannot verify their close signature", cause)
       }
 
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
+      // TODO : not implemented
+      // seing the anchor being spent here could be normal
+      stay
+
     case Event(e@error(problem), d: DATA_NEGOTIATING) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
@@ -624,11 +633,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(CLOSING) {
     case Event(close_signature(theirCloseFee, theirSig), d: DATA_CLOSING) if d.ourSignature.map(_.closeFee) == Some(theirCloseFee) =>
       stay()
-
-    case Event(close_signature(theirCloseFee, theirSig), d: DATA_CLOSING) =>
-      throw new RuntimeException(s"unexpected closing fee: $theirCloseFee ours is ${
-        d.ourSignature.map(_.closeFee)
-      }")
 
     case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
 
