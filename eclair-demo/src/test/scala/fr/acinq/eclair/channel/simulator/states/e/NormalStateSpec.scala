@@ -173,13 +173,13 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  /*test("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  ignore("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("cannot sign when there are no changes")
     }
-  }*/
+  }
 
   test("recv CMD_SIGN (while waiting for update_revocation)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
@@ -225,7 +225,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  /*test("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  ignore("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
@@ -236,7 +236,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       bob2blockchain.expectMsg(Publish(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
-  }*/
+  }
 
   test("recv update_commit (invalid signature)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
@@ -553,6 +553,30 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isEmpty)
+      sender.send(alice, CMD_CLOSE(None))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+    }
+  }
+
+  test("recv CMD_CLOSE (two in a row)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isEmpty)
+      sender.send(alice, CMD_CLOSE(None))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("closing already in progress")
+    }
+  }
+
   test("recv close_clearing (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -563,22 +587,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  /*test("recv close_clearing (with unacked received htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
-    within(30 seconds) {
-      val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-      sender.send(alice, CMD_ADD_HTLC(500000, sha, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      // actual test begins
-      sender.send(alice, close_clearing(ByteString.EMPTY))
-      alice2bob.expectMsgType[close_clearing]
-      awaitCond(alice.stateName == CLEARING)
-    }
-  }
-
-  test("recv close_clearing (with unacked sent htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  ignore("recv close_clearing (with unacked received htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val r: rval = rval(1, 2, 3, 4)
@@ -591,7 +600,22 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[close_clearing]
       awaitCond(alice.stateName == CLEARING)
     }
-  }*/
+  }
+
+  ignore("recv close_clearing (with unacked sent htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      // actual test begins
+      sender.send(alice, close_clearing(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateName == CLEARING)
+    }
+  }
 
   test("recv close_clearing (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
@@ -616,6 +640,25 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       sender.send(alice, close_clearing(ByteString.EMPTY))
       alice2bob.expectMsgType[close_clearing]
       awaitCond(alice.stateName == CLEARING)
+    }
+  }
+
+  ignore("recv BITCOIN_ANCHOR_SPENT") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      alice ! (BITCOIN_ANCHOR_SPENT, null)
+      alice2bob.expectMsgType[error]
+      // TODO
+    }
+  }
+
+  test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      alice ! error(Some("oops"))
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 

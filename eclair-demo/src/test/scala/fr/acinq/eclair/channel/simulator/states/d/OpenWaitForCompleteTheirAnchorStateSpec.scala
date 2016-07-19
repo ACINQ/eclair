@@ -67,16 +67,16 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test"
     }
   }
 
-  test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv CMD_CLOSE") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! error(Some("oops"))
+      bob ! CMD_CLOSE(None)
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! CMD_CLOSE(None)
+      bob ! error(Some("oops"))
       awaitCond(bob.stateName == CLOSED)
     }
   }

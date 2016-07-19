@@ -402,13 +402,18 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(CMD_CLOSE(scriptPubKeyOpt), d: DATA_NORMAL) =>
-      val ourScriptPubKey: BinaryData = scriptPubKeyOpt.getOrElse {
-        log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
-        Script.write(Scripts.pay2pkh(d.commitments.ourParams.finalPubKey))
+      if (d.ourClearing.isDefined) {
+        sender ! "closing already in progress"
+        stay
+      } else {
+        val ourScriptPubKey: BinaryData = scriptPubKeyOpt.getOrElse {
+          log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
+          Script.write(Scripts.pay2pkh(d.commitments.ourParams.finalPubKey))
+        }
+        val ourCloseClearing = close_clearing(ourScriptPubKey)
+        them ! ourCloseClearing
+        stay using d.copy(ourClearing = Some(ourCloseClearing))
       }
-      val ourCloseClearing = close_clearing(ourScriptPubKey)
-      them ! ourCloseClearing
-      stay using d.copy(ourClearing = Some(ourCloseClearing))
 
     case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, _, ourClearingOpt)) =>
       val ourClearing: close_clearing = ourClearingOpt.getOrElse {
@@ -426,12 +431,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         goto(CLEARING) using DATA_CLEARING(commitments, d.htlcIdx, ourClearing, theirClearing)
       }
 
-    case Event(e@error(problem), d: DATA_NORMAL) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
-      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
-
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
       log.warning(s"anchor spent in ${tx.txid}")
       them ! error(Some("Anchor has been spent"))
@@ -444,6 +443,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           // TODO: this is definitely not right!
           stay()
       }
+
+    case Event(e@error(problem), d: DATA_NORMAL) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+
   }
 
   /*
