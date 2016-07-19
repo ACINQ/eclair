@@ -614,10 +614,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           throw new RuntimeException("cannot verify their close signature", cause)
       }
 
-    case Event(e@error(problem), _) =>
+    case Event(e@error(problem), d: DATA_NEGOTIATING) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      // TODO not implemented
-      goto(CLOSED)
+      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
   when(CLOSING) {
