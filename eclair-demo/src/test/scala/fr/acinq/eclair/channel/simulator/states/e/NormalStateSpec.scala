@@ -563,7 +563,22 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv close_clearing (with unacked htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  /*test("recv close_clearing (with unacked received htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: rval = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+      sender.send(alice, CMD_ADD_HTLC(500000, sha, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      // actual test begins
+      sender.send(alice, close_clearing(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateName == CLEARING)
+    }
+  }
+
+  test("recv close_clearing (with unacked sent htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val r: rval = rval(1, 2, 3, 4)
@@ -576,7 +591,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[close_clearing]
       awaitCond(alice.stateName == CLEARING)
     }
-  }
+  }*/
 
   test("recv close_clearing (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
