@@ -454,22 +454,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   }
 
-  def handleSpent(tx: Transaction, d: DATA_NORMAL): StateFunction = {
-    log.warning(s"anchor spent in txid=${tx.txid}")
-    d.commitments.txDb.get(tx.txid) match {
-      case Some(spendingTx) =>
-        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
-        them ! error(Some("Anchor has been spent"))
-        blockchain ! Publish(spendingTx)
-        blockchain ! WatchConfirmed(self, spendingTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-        goto(CLOSING) using DATA_CLOSING(d.commitments, revokedPublished = Seq(tx))
-      case None =>
-        // the published tx was neither their current commitment nor a revoked one
-        log.error(s"couldn't identify txid=${tx.txid}!")
-        goto(ERR_INFORMATION_LEAK)
-    }
-  }
-
   /*
            .d8888b.  888      .d88888b.   .d8888b. 8888888 888b    888  .d8888b.
           d88P  Y88b 888     d88P" "Y88b d88P  Y88b  888   8888b   888 d88P  Y88b
@@ -591,7 +575,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
       }
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLEARING) =>
       // TODO : not implemented
       stay
 
@@ -636,7 +620,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           throw new RuntimeException("cannot verify their close signature", cause)
       }
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) =>
       // TODO : not implemented
       // seing the anchor being spent here could be normal
       stay
@@ -698,6 +682,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     // TODO : them ! error(Some("Unexpected message")) ?
 
   }
+
 
   /**
     * This helper function runs the state's default event handlers, and react to exceptions by unilaterally closing the channel
