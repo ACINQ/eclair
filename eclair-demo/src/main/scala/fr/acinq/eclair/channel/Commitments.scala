@@ -2,9 +2,8 @@ package fr.acinq.eclair.channel
 
 import com.google.protobuf.ByteString
 import com.trueaccord.scalapb.GeneratedMessage
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed}
 import fr.acinq.eclair.channel.Scripts.TxTemplate
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
