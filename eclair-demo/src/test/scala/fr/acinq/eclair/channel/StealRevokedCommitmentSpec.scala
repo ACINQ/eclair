@@ -44,6 +44,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
     val (bob4, alice4) = fulfillHtlc(bob3, alice3, 1, R)
     val (bob5, alice5) = signAndReceiveRevocation(bob4, alice4)
 
+
     val theirTxTemplate = Commitments.makeTheirTxTemplate(bob3)
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txIn == alice3.ourCommit.publishableTx.txIn && theirTx.txOut == alice3.ourCommit.publishableTx.txOut)
