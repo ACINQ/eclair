@@ -20,7 +20,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
   }
 
   def addHtlc(sender: Commitments, receiver: Commitments, htlc: update_add_htlc): (Commitments, Commitments) = {
-    (Commitments.addOurProposal(sender, htlc), Commitments.addTheirProposal(receiver, htlc))
+    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.rHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
   }
 
   def fulfillHtlc(sender: Commitments, receiver: Commitments, id: Long, paymentPreimage: BinaryData): (Commitments, Commitments) = {

@@ -3,14 +3,16 @@ package fr.acinq.eclair.channel
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed}
 import fr.acinq.eclair.channel.Scripts.TxTemplate
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 
 trait TxDb {
-  def add(parentId: BinaryData, spending: Transaction) : Unit
-  def get(parentId: BinaryData) : Option[Transaction]
+  def add(parentId: BinaryData, spending: Transaction): Unit
+
+  def get(parentId: BinaryData): Option[Transaction]
 }
 
 class BasicTxDb extends TxDb {
@@ -56,11 +58,40 @@ object Commitments {
     * @param proposal
     * @return an updated commitment instance
     */
-  def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
-    commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
+  private def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
+  commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
 
-  def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
+  private def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
     commitments.copy(theirChanges = commitments.theirChanges.copy(proposed = commitments.theirChanges.proposed :+ proposal))
+
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, update_add_htlc) = {
+    // our available funds as seen by them, including all pending changes
+    val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.acked ++ commitments.ourChanges.signed ++ commitments.ourChanges.proposed)
+    // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
+    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+    if (cmd.amountMsat > available) {
+      throw new RuntimeException(s"insufficient funds (available=$available msat)")
+    } else {
+      // TODO: nodeIds are ignored
+      val steps = route(route_step(0, next = route_step.Next.End(true)) :: Nil)
+      val add = update_add_htlc(cmd.id.get, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(steps.toByteArray)))
+      val commitments1 = addOurProposal(commitments, add)
+      (commitments1, add)
+    }
+  }
+
+  def receiveAdd(commitments: Commitments, add: update_add_htlc): Commitments = {
+    // their available funds as seen by us, including all pending changes
+    val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.acked ++ commitments.theirChanges.proposed)
+    // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
+    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+    if (add.amountMsat > available) {
+      throw new RuntimeException("Insufficient funds")
+    } else {
+      // TODO: nodeIds are ignored
+      addTheirProposal(commitments, add)
+    }
+  }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, update_fulfill_htlc) = {
     commitments.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == cmd.id => u } match {
@@ -179,7 +210,7 @@ object Commitments {
     }
   }
 
-  def makeTheirTxTemplate(commitments: Commitments) : TxTemplate = {
+  def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {
     commitments.theirNextCommitInfo match {
       case Left(theirNextCommit) =>
         Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,

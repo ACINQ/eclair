@@ -266,44 +266,23 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(NORMAL) {
-    case Event(CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, htlcIdx, _)) =>
-      // TODO : this should probably be done in Commitments.scala
-      // our available funds as seen by them, including all pending changes
-      val reduced = reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.acked ++ commitments.ourChanges.signed ++ commitments.ourChanges.proposed)
-      // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
-      val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
-      if (amount > available) {
-        sender ! s"insufficient funds (available=$available msat)"
-        stay
-      } else {
-        // TODO: nodeIds are ignored
-        val id: Long = id_opt.getOrElse(htlcIdx + 1)
-        val steps = route(route_step(0, next = route_step.Next.End(true)) :: Nil)
-        val htlc = update_add_htlc(id, amount, rHash, expiry, routing(ByteString.copyFrom(steps.toByteArray)))
-        them ! htlc
-        sender ! "ok"
-        stay using d.copy(htlcIdx = htlc.id, commitments = commitments.addOurProposal(htlc))
+    case Event(c@CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, htlcIdx, _)) =>
+      Try(Commitments.sendAdd(commitments, c.copy(id = Some(id_opt.getOrElse(htlcIdx + 1))))) match {
+        case Success((commitments1, add)) =>
+          them ! add
+          sender ! "ok"
+          stay using d.copy(htlcIdx = add.id, commitments = commitments.addOurProposal(add))
+        case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(htlc@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _, _)) =>
-      // TODO : this should probably be done in Commitments.scala
-      // their available funds as seen by us, including all pending changes
-      val reduced = reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.acked ++ commitments.theirChanges.proposed)
-      // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
-      val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
-      if (amount > available) {
-        log.error("they sent an htlc but had insufficient funds")
-        them ! error(Some("Insufficient funds"))
-        blockchain ! Publish(d.commitments.ourCommit.publishableTx)
-        blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-        goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
-      } else {
-        // TODO: nodeIds are ignored
-        stay using d.copy(commitments = commitments.addTheirProposal(htlc))
+    case Event(add@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _, _)) =>
+      Try(Commitments.receiveAdd(commitments, add)) match {
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Failure(cause) => handleUnicloseError(cause, d)
       }
 
-    case Event(CMD_FULFILL_HTLC(id, r), d: DATA_NORMAL) =>
-      Try(Commitments.sendFulfill(d.commitments, CMD_FULFILL_HTLC(id, r))) match {
+    case Event(c@CMD_FULFILL_HTLC(id, r), d: DATA_NORMAL) =>
+      Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fullfill)) =>
           them ! fullfill
           sender ! "ok"
@@ -317,8 +296,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 
-    case Event(CMD_FAIL_HTLC(id, reason), d: DATA_NORMAL) =>
-      Try(Commitments.sendFail(d.commitments, CMD_FAIL_HTLC(id, reason))) match {
+    case Event(c@CMD_FAIL_HTLC(id, reason), d: DATA_NORMAL) =>
+      Try(Commitments.sendFail(d.commitments, c)) match {
         case Success((commitments1, fail)) =>
           them ! fail
           sender ! "ok"
@@ -416,8 +395,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(CLEARING) {
-    case Event(CMD_FULFILL_HTLC(id, r), d: DATA_CLEARING) =>
-      Try(Commitments.sendFulfill(d.commitments, CMD_FULFILL_HTLC(id, r))) match {
+    case Event(c@CMD_FULFILL_HTLC(id, r), d: DATA_CLEARING) =>
+      Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fullfill)) =>
           them ! fullfill
           sender ! "ok"
@@ -431,8 +410,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 
-    case Event(CMD_FAIL_HTLC(id, reason), d: DATA_CLEARING) =>
-      Try(Commitments.sendFail(d.commitments, CMD_FAIL_HTLC(id, reason))) match {
+    case Event(c@CMD_FAIL_HTLC(id, reason), d: DATA_CLEARING) =>
+      Try(Commitments.sendFail(d.commitments, c)) match {
         case Success((commitments1, fail)) =>
           them ! fail
           sender ! "ok"
