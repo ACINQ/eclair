@@ -35,7 +35,7 @@ case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[
 case class TheirChanges(proposed: List[Change], acked: List[Change])
 case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
+case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: sha256_hash)
 
 // @formatter:on
 
@@ -159,7 +159,7 @@ object Commitments {
         val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
         val commit = update_commit(ourSig)
         val commitments1 = commitments.copy(
-          theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash)),
+          theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
           ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
         (commitments1, commit)
       case Left(theirNextCommit) =>

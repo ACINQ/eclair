@@ -1,8 +1,6 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
-import com.google.protobuf.ByteString
-import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -47,6 +45,32 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             888   888   Y8888   888       888
           8888888 888    Y888 8888888     888
    */
+
+  /*
+                              FUNDER                            FUNDEE
+                                 | open_channel      open_channel |
+                                 |---------------  ---------------|
+    OPEN_WAIT_FOR_OPEN_WITHANCHOR|               \/               |OPEN_WAIT_FOR_OPEN_NOANCHOR
+                                 |               /\               |
+                                 |<--------------  -------------->|
+                                 |                                |OPEN_WAIT_FOR_ANCHOR
+                                 |  open_anchor                   |
+                                 |---------------                 |
+         OPEN_WAIT_FOR_COMMIT_SIG|               \                |
+                                 |                --------------->|
+                                 |                open_commit_sig |
+                                 |                ----------------|
+                                 |               /                |OPEN_WAITING_THEIRANCHOR
+                                 |<--------------                 |
+           OPEN_WAITING_OURANCHOR|                                |
+                                 |                                |
+                                 | open_complete   openu_complete |
+                                 |---------------  ---------------|
+ OPEN_WAIT_FOR_COMPLETE_OURANCHOR|               \/               |OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR
+                                 |               /\               |
+                                 |<--------------  -------------->|
+                           NORMAL|                                |NORMAL
+   */
   when(OPEN_WAIT_FOR_OPEN_NOANCHOR)(handleExceptions {
     case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
       val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
@@ -71,7 +95,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val amount = anchorTx.txOut(anchorOutputIndex).amount.toLong
       val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_us_msat = 0, initial_amount_them_msat = amount * 1000, amount_us_msat = 0, amount_them_msat = amount * 1000)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount)
-      goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, theirRevocationHash), theirNextRevocationHash)
+      goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, BinaryData(""), theirRevocationHash), theirNextRevocationHash)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -101,7 +125,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
       // FIXME: ourTx is not signed by them and cannot be published. We won't lose money since they are funding the chanel
       val commitments = Commitments(ourParams, theirParams,
-        OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash),
+        OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
         Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
@@ -165,11 +189,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! error(Some("Anchor timed out"))
       goto(CLOSED)
 
-    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_OPEN_WAITING) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_OPEN_WAITING) if tx.txid == d.commitments.theirCommit.txid =>
       // they are funding the anchor, we have nothing at stake
       log.warning(s"their anchor ${d.commitments.anchorId} was spent, sending error and closing")
       them ! error(Some(s"your anchor ${d.commitments.anchorId} was spent"))
       goto(CLOSED)
+
+    case Event((BITCOIN_ANCHOR_SPENT, _), d: HasCommitments) => handleInformationLeak(d)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -194,12 +220,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! error(Some("Anchor timed out"))
       goto(CLOSED)
 
-    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_OPEN_WAITING) =>
-      // this is never supposed to happen !!
-      log.error(s"our anchor ${d.commitments.anchorId} was spent !!")
-      them ! error(Some("Anchor has been spent"))
-      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
-      goto(ERR_INFORMATION_LEAK)
+    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_OPEN_WAITING) => handleInformationLeak(d)
 
     case Event(cmd: CMD_CLOSE, d: DATA_OPEN_WAITING) =>
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
@@ -218,7 +239,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
-    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) =>
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid =>
       // they are funding the anchor, we have nothing at stake
       log.warning(s"their anchor ${d.commitments.anchorId} was spent, sending error and closing")
       them ! error(Some(s"your anchor ${d.commitments.anchorId} was spent"))
@@ -236,23 +257,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
-    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) =>
-      // this is never supposed to happen !!
-      log.error(s"our anchor ${d.commitments.anchorId} was spent while we were waiting for their open_complete message !!")
-      them ! error(Some("Anchor has been spent"))
-      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
-      goto(ERR_INFORMATION_LEAK)
+    case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
     case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) =>
       blockchain ! Publish(d.commitments.ourCommit.publishableTx)
       blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
       goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
 
-    case Event(e@error(problem), d: DATA_NORMAL) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      blockchain ! Publish(d.commitments.ourCommit.publishableTx)
-      blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+    case Event(e@error(problem), d: DATA_NORMAL) => handleError(e, d)
   })
 
 
@@ -357,7 +369,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         goto(CLEARING) using DATA_CLEARING(commitments, ourClearing, theirClearing)
       }
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) => handleTheirSpent(tx, d)
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
+
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) => handleTheirSpentOther(tx, d)
 
     case Event(e@error(problem), d: DATA_NORMAL) => handleError(e, d)
 
@@ -431,7 +445,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLEARING) => handleTheirSpent(tx, d)
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLEARING) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
+
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLEARING) => handleTheirSpentOther(tx, d)
 
     case Event(e@error(problem), d: DATA_CLEARING) => handleError(e, d)
   }
@@ -470,7 +486,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           throw new RuntimeException("cannot verify their close signature", cause)
       }
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) => handleTheirSpent(tx, d)
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == d.commitments.theirCommit.txid =>
+      // TODO : this may be normal
+      handleTheirSpentCurrent(tx, d)
+
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) => handleTheirSpentOther(tx, d)
 
     case Event(e@error(problem), d: DATA_NEGOTIATING) => handleError(e, d)
 
@@ -558,7 +578,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
-  def handleTheirSpent(tx: Transaction, d: HasCommitments) = {
+  def handleTheirSpentCurrent(tx: Transaction, d: HasCommitments) =
+    // TODO
+    ???
+
+  def handleTheirSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"anchor spent in txid=${tx.txid}")
     d.commitments.txDb.get(tx.txid) match {
       case Some(spendingTx) =>
@@ -579,6 +603,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     blockchain ! Publish(d.commitments.ourCommit.publishableTx)
     blockchain ! WatchConfirmed(self, d.commitments.ourCommit.publishableTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
     goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
+  }
+
+  def handleInformationLeak(d: HasCommitments) = {
+    // this is never supposed to happen !!
+    log.error(s"our anchor ${d.commitments.anchorId} was spent !!")
+    them ! error(Some("Anchor has been spent"))
+    blockchain ! Publish(d.commitments.ourCommit.publishableTx)
+    goto(ERR_INFORMATION_LEAK)
   }
 
   /**
