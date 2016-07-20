@@ -578,9 +578,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.ourCommit.publishableTx))
   }
 
-  def handleTheirSpentCurrent(tx: Transaction, d: HasCommitments) =
+  def handleTheirSpentCurrent(tx: Transaction, d: HasCommitments) = {
+    log.warning(s"they published their current commit in txid=${tx.txid}")
     // TODO
     ???
+  }
 
   def handleTheirSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"anchor spent in txid=${tx.txid}")
