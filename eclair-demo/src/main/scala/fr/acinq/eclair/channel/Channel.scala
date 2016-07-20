@@ -2,10 +2,12 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import com.google.protobuf.ByteString
+import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers._
+import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
@@ -100,7 +102,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       // FIXME: ourTx is not signed by them and cannot be published. We won't lose money since they are funding the chanel
       val commitments = Commitments(ourParams, theirParams,
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirRevocationHash),
-        OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
+        OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
         Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
 
@@ -135,7 +137,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           blockchain ! Publish(anchorTx)
           val commitments = Commitments(ourParams, theirParams,
             OurCommit(0, ourSpec, signedTx), theirCommitment,
-            OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
+            OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
             Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }
@@ -157,7 +159,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
-      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(commitments, 0, None)
+      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(commitments, None)
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
@@ -186,7 +188,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
-      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(commitments, 0, None)
+      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(commitments, None)
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
@@ -266,16 +268,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(NORMAL) {
-    case Event(c@CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, htlcIdx, _)) =>
-      Try(Commitments.sendAdd(commitments, c.copy(id = Some(id_opt.getOrElse(htlcIdx + 1))))) match {
-        case Success((commitments1, add)) =>
-          them ! add
-          sender ! "ok"
-          stay using d.copy(htlcIdx = add.id, commitments = commitments.addOurProposal(add))
+    case Event(c@CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, _)) =>
+      Try(Commitments.sendAdd(commitments, c)) match {
+        case Success((commitments1, add)) => handleCommandSuccess(sender, add, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(add@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _, _)) =>
+    case Event(add@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
         case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleUnicloseError(cause, d)
@@ -283,10 +282,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(c@CMD_FULFILL_HTLC(id, r), d: DATA_NORMAL) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fullfill)) =>
-          them ! fullfill
-          sender ! "ok"
-          stay using d.copy(commitments = commitments1)
+        case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -298,10 +294,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(c@CMD_FAIL_HTLC(id, reason), d: DATA_NORMAL) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
-        case Success((commitments1, fail)) =>
-          them ! fail
-          sender ! "ok"
-          stay using d.copy(commitments = commitments1)
+        case Success((commitments1, fail)) => handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -361,7 +354,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         stay using d.copy(ourClearing = Some(ourCloseClearing))
       }
 
-    case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, _, ourClearingOpt)) =>
+    case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, ourClearingOpt)) =>
       val ourClearing: close_clearing = ourClearingOpt.getOrElse {
         val ourScriptPubKey: BinaryData = Script.write(Scripts.pay2pkh(commitments.ourParams.finalPubKey))
         log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
@@ -372,9 +365,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       if (commitments.hasNoPendingHtlcs) {
         val (finalTx, ourCloseSig) = makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
         them ! ourCloseSig
-        goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+        goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, ourClearing, theirClearing, ourCloseSig)
       } else {
-        goto(CLEARING) using DATA_CLEARING(commitments, d.htlcIdx, ourClearing, theirClearing)
+        goto(CLEARING) using DATA_CLEARING(commitments, ourClearing, theirClearing)
       }
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) => handleTheirSpent(tx, d)
@@ -397,10 +390,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(CLEARING) {
     case Event(c@CMD_FULFILL_HTLC(id, r), d: DATA_CLEARING) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fullfill)) =>
-          them ! fullfill
-          sender ! "ok"
-          stay using d.copy(commitments = commitments1)
+        case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -412,10 +402,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(c@CMD_FAIL_HTLC(id, reason), d: DATA_CLEARING) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
-        case Success((commitments1, fail)) =>
-          them ! fail
-          sender ! "ok"
-          stay using d.copy(commitments = commitments1)
+        case Success((commitments1, fail)) => handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -444,28 +431,28 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         }
       }
 
-    case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, _, ourClearing, theirClearing)) =>
+    case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, ourClearing, theirClearing)) =>
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) =>
           them ! revocation
           if (commitments1.hasNoPendingHtlcs) {
             val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
             them ! ourCloseSig
-            goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+            goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourClearing, theirClearing, ourCloseSig)
           } else {
             stay using d.copy(commitments = commitments1)
           }
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 
-    case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, _, ourClearing, theirClearing)) =>
+    case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, ourClearing, theirClearing)) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
         case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
           val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
           them ! ourCloseSig
-          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, d.htlcIdx, ourClearing, theirClearing, ourCloseSig)
+          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourClearing, theirClearing, ourCloseSig)
         case Success(commitments1) =>
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleUnicloseError(cause, d)
@@ -577,6 +564,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             888    888 888        888      888        888        888  T88b  Y88b  d88P
             888    888 8888888888 88888888 888        8888888888 888   T88b  "Y8888P"
      */
+
+  def handleCommandSuccess(sender: ActorRef, change: Change, newData: Data) = {
+    them ! change
+    sender ! "ok"
+    stay using newData
+  }
 
   def handleCommandError(sender: ActorRef, cause: Throwable) = {
     log.error(cause, "")

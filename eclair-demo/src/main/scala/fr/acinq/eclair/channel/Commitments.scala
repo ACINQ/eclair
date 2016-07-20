@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import com.google.protobuf.ByteString
+import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{Publish, WatchConfirmed}
@@ -25,6 +26,19 @@ class BasicTxDb extends TxDb {
   override def get(parentId: BinaryData): Option[Transaction] = db.get(parentId)
 }
 
+// @formatter:off
+
+object TypeDefs {
+  type Change = GeneratedMessage
+}
+case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
+case class TheirChanges(proposed: List[Change], acked: List[Change])
+case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
+case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
+case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
+
+// @formatter:on
+
 /**
   * about theirNextCommitInfo:
   * we either:
@@ -36,6 +50,7 @@ class BasicTxDb extends TxDb {
 case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelParams,
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
+                       ourCurrentHtlcId: Long,
                        theirNextCommitInfo: Either[TheirCommit, BinaryData],
                        anchorOutput: TxOut, theirPreimages: ShaChain, txDb: TxDb) {
   def anchorId: BinaryData = {
@@ -73,9 +88,10 @@ object Commitments {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
       // TODO: nodeIds are ignored
+      val id = cmd.id.getOrElse(commitments.ourCurrentHtlcId + 1)
       val steps = route(route_step(0, next = route_step.Next.End(true)) :: Nil)
-      val add = update_add_htlc(cmd.id.get, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(steps.toByteArray)))
-      val commitments1 = addOurProposal(commitments, add)
+      val add = update_add_htlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(steps.toByteArray)))
+      val commitments1 = addOurProposal(commitments, add).copy(ourCurrentHtlcId = id)
       (commitments1, add)
     }
   }

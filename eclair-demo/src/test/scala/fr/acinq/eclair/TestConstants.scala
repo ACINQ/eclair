@@ -34,7 +34,7 @@ object TestConstants {
       Alice.channelParams,
       TheirChannelParams(Bob.channelParams),
       OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, Bob.revocationHash(0)),
-      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
+      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
       Right(Bob.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)
 
   }
@@ -57,7 +57,7 @@ object TestConstants {
       Bob.channelParams,
       TheirChannelParams(Alice.channelParams),
       OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, Alice.revocationHash(0)),
-      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
+      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
       Right(Alice.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)
   }
 

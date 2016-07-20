@@ -75,7 +75,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice ! CMD_ADD_HTLC(500000, h, locktime(Blocks(3)))
       val htlc = alice2bob.expectMsgType[update_add_htlc]
       assert(htlc.id == 1 && htlc.rHash == h)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].htlcIdx == 1 && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCurrentHtlcId == 1 && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
     }
   }
 
