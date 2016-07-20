@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel.simulator.states.e
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -677,7 +677,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv BITCOIN_ANCHOR_SPENT (revoked commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_ANCHOR_SPENT (revoked commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -750,7 +750,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      assert(punishTx.txOut.forall(_.publicKeyScript == Script.write(Scripts.pay2wpkh(Alice.finalPubKey))))
+      // two main outputs + 4 htlc
+      assert(revokedTx.txOut.size == 6)
+      // the punishment tx consumes all output but ours (which already goes to our final key)
+      assert(punishTx.txIn.size == 5)
+      // TODO : when changefee is implemented we should set fee = 0 and check against 304 000
+      assert(punishTx.txOut == TxOut(Satoshi(301670), Script.write(Scripts.pay2wpkh(Alice.finalPubKey))))
     }
   }
 
