@@ -350,7 +350,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         c
       }
       if (commitments.hasNoPendingHtlcs) {
-        val (finalTx, ourCloseSig) = makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
+        val (_, ourCloseSig) = makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
         them ! ourCloseSig
         goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, ourClearing, theirClearing, ourCloseSig)
       } else {
