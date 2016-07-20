@@ -64,7 +64,7 @@ trait Service extends Logging {
                 (register ? ListChannels).mapTo[Iterable[ActorRef]]
                   .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
               case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JInt(expiry) :: tail) =>
-                val nodeIds = tail.map {
+                val nodeIds = tail.collect {
                   case JString(nodeId) => nodeId
                 }
                 Boot.system.actorSelection(Register.actorPathToNodeId(nodeIds.head))

@@ -68,7 +68,7 @@ object Commitments {
         val fulfill = update_fulfill_htlc(cmd.id, cmd.r)
         val commitments1 = addOurProposal(commitments, fulfill)
         (commitments1, fulfill)
-      case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc ${cmd.id}")
+      case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${cmd.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
     }
   }
@@ -76,7 +76,7 @@ object Commitments {
   def receiveFulfill(commitments: Commitments, fulfill: update_fulfill_htlc): Commitments = {
     commitments.ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == fulfill.id => u } match {
       case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(fulfill.r)) => addTheirProposal(commitments, fulfill)
-      case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc ${fulfill.id}")
+      case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO : we should fail the channel
     }
   }

@@ -13,7 +13,6 @@
 
     <name>${project.artifactId}</name>
 
-
     <build>
         <plugins>
             <plugin>

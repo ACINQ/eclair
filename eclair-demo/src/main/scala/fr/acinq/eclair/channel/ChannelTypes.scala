@@ -157,8 +157,8 @@ final case class DATA_NORMAL                          (commitments: Commitments,
                                                        ourClearing: Option[close_clearing]) extends Data with HasCommitments
 final case class DATA_CLEARING                        (commitments: Commitments, htlcIdx: Long,
                                                        ourClearing: close_clearing, theirClearing: close_clearing) extends Data with HasCommitments
-final case class DATA_NEGOCIATING                     (commitments: Commitments, htlcIdx: Long,
-                                                       ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data with HasCommitments
+final case class DATA_NEGOTIATING                     (commitments: Commitments, htlcIdx: Long,
+                                                      ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data with HasCommitments
 final case class DATA_CLOSING                         (commitments: Commitments,
                                                        ourSignature: Option[close_signature] = None,
                                                        mutualClosePublished: Option[Transaction] = None,
