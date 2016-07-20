@@ -68,6 +68,16 @@ class OpenWaitForCompleteOurAnchorStateSpec extends TestKit(ActorSystem("test"))
     }
   }
 
+  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      alice ! CMD_CLOSE(None)
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
   test("recv BITCOIN_ANCHOR_SPENT") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
@@ -82,16 +92,6 @@ class OpenWaitForCompleteOurAnchorStateSpec extends TestKit(ActorSystem("test"))
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       alice ! error(Some("oops"))
-      awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
-    }
-  }
-
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
-    within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]

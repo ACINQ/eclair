@@ -19,7 +19,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
 
-  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
+  type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val alice2bob = TestProbe()
@@ -43,14 +43,14 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test"
     bob2alice.expectMsgType[open_complete]
     bob2alice.forward(alice)
     awaitCond(bob.stateName == OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
-    test((bob, alice2bob, bob2alice, bob2blockchain))
+    test((alice, bob, alice2bob, bob2alice, bob2blockchain))
   }
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
   }
 
-  test("recv open_complete") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv open_complete") { case (_, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
       alice2bob.expectMsgType[open_complete]
       alice2bob.forward(bob)
@@ -58,25 +58,27 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test"
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv BITCOIN_ANCHOR_SPENT") { case (alice, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
+      // this is the fully signed tx that alice could decide to publish
+      val tx = alice.stateData.asInstanceOf[DATA_OPEN_WAITING].commitments.ourCommit.publishableTx
       // we have nothing at stake so we don't do anything with the tx
-      bob ! (BITCOIN_ANCHOR_SPENT, null)
+      bob ! (BITCOIN_ANCHOR_SPENT, tx)
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv CMD_CLOSE") { case (_, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! error(Some("oops"))
+      bob ! CMD_CLOSE(None)
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv error") { case (_, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! CMD_CLOSE(None)
+      bob ! error(Some("oops"))
       awaitCond(bob.stateName == CLOSED)
     }
   }

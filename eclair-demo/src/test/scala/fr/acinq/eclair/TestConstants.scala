@@ -1,6 +1,6 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Base58, Base58Check, Crypto, Hash, OutPoint, Satoshi, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, Hash, OutPoint, Satoshi, TxIn, TxOut}
 import fr.acinq.eclair.channel.{TheirChanges, _}
 import fr.acinq.eclair.crypto.ShaChain
 import lightning.locktime
@@ -33,8 +33,8 @@ object TestConstants {
     val commitments = Commitments(
       Alice.channelParams,
       TheirChannelParams(Bob.channelParams),
-      OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, Bob.revocationHash(0)),
-      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
+      OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Bob.revocationHash(0)),
+      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
       Right(Bob.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)
 
   }
@@ -56,8 +56,8 @@ object TestConstants {
     val commitments = Commitments(
       Bob.channelParams,
       TheirChannelParams(Alice.channelParams),
-      OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, Alice.revocationHash(0)),
-      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil),
+      OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Alice.revocationHash(0)),
+      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
       Right(Alice.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)
   }
 
