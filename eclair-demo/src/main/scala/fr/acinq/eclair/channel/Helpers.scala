@@ -238,7 +238,7 @@ object Helpers {
     // create a tx that sends everything to our private key
     val tx = Transaction(version = 2,
       txIn = Seq.empty[TxIn],
-      txOut = TxOut(totalAmount, pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+      txOut = TxOut(totalAmount, pay2wpkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
       witness = Seq.empty[ScriptWitness],
       lockTime = 0)
 
