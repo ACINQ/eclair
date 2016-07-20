@@ -305,22 +305,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
-      if (d.commitments.theirNextCommitInfo.isLeft) {
-        sender ! "cannot sign until next revocation hash is received"
-        stay
-      } /*else if (d.commitments.ourChanges.proposed.isEmpty) {
-        //TODO : check this
-        sender ! "cannot sign when there are no changes"
-        stay
-      }*/
-      else {
-        Try(Commitments.sendCommit(d.commitments)) match {
-          case Success((commitments1, commit)) =>
-            them ! commit
-            sender ! "ok"
-            stay using d.copy(commitments = commitments1)
-          case Failure(cause) => handleUnicloseError(cause, d)
-        }
+      Try(Commitments.sendCommit(d.commitments)) match {
+        case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
       }
 
     case Event(msg@update_commit(theirSig), d: DATA_NORMAL) =>
@@ -413,35 +400,21 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }
 
     case Event(CMD_SIGN, d: DATA_CLEARING) =>
-      if (d.commitments.theirNextCommitInfo.isLeft) {
-        sender ! "cannot sign until next revocation hash is received"
-        stay
-      } /*else if (d.commitments.ourChanges.proposed.isEmpty) {
-        //TODO : check this
-        sender ! "cannot sign when there are no changes"
-        stay
-      }*/
-      else {
-        Try(Commitments.sendCommit(d.commitments)) match {
-          case Success((commitments1, commit)) =>
-            them ! commit
-            sender ! "ok"
-            stay using d.copy(commitments = commitments1)
-          case Failure(cause) => handleUnicloseError(cause, d)
-        }
+      Try(Commitments.sendCommit(d.commitments)) match {
+        case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
       }
 
     case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, ourClearing, theirClearing)) =>
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
+        case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
+          them ! revocation
+          val (_, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
+          them ! ourCloseSig
+          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourClearing, theirClearing, ourCloseSig)
         case Success((commitments1, revocation)) =>
           them ! revocation
-          if (commitments1.hasNoPendingHtlcs) {
-            val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
-            them ! ourCloseSig
-            goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourClearing, theirClearing, ourCloseSig)
-          } else {
-            stay using d.copy(commitments = commitments1)
-          }
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 

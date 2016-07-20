@@ -147,6 +147,7 @@ object Commitments {
   }
 
   def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
+    // TODO : check empty changes
     import commitments._
     commitments.theirNextCommitInfo match {
       case Right(theirNextRevocationHash) =>
@@ -162,7 +163,7 @@ object Commitments {
           ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
         (commitments1, commit)
       case Left(theirNextCommit) =>
-        throw new RuntimeException("attempting to sign twice waiting for the first revocation message")
+        throw new RuntimeException("cannot sign until next revocation hash is received")
     }
   }
 
