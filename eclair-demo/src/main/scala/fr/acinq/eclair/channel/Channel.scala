@@ -114,16 +114,20 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
       val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_them_msat = 0, initial_amount_us_msat = anchorAmount * 1000, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
 
-      // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourRevocationHash = Crypto.sha256(ShaChain.shaChainFromSeed(ourParams.shaSeed, 0))
-      val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
+      // build and sign their commit tx
       val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
       log.info(s"signing their tx: $theirTx")
       val ourSigForThem = sign(ourParams, theirParams, Satoshi(anchorAmount), theirTx)
       them ! open_commit_sig(ourSigForThem)
+
+      // watch the anchor
       blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
       blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
+
       // FIXME: ourTx is not signed by them and cannot be published. We won't lose money since they are funding the chanel
+      val ourRevocationHash = Helpers.revocationHash(ourParams.shaSeed, 0)
+      val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
+
       val commitments = Commitments(ourParams, theirParams,
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
