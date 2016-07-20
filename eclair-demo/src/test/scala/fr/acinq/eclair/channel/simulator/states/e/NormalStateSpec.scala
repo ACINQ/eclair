@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel.simulator.states.e
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -222,6 +222,40 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       bob2alice.expectMsgType[update_revocation]
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc.id && h.direction == IN))
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.amount_us_msat == initialState.commitments.ourCommit.spec.amount_us_msat)
+    }
+  }
+
+  test("recv update_commit (two htlcs with same r)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r = sha256_hash(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc1 = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc2 = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: htlc2 :: Nil)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      // actual test begins
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+
+      // actual test begins
+      bob2alice.expectMsgType[update_revocation]
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc1.id && h.direction == IN))
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc2.id && h.direction == IN))
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.amount_us_msat == initialState.commitments.ourCommit.spec.amount_us_msat)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx.txOut.count(_.amount == Satoshi(5000)) == 2)
     }
   }
 
@@ -643,12 +677,80 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv BITCOIN_ANCHOR_SPENT") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  ignore("recv BITCOIN_ANCHOR_SPENT (revoked commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice ! (BITCOIN_ANCHOR_SPENT, null)
+      val sender = TestProbe()
+
+      // alice sends 300000 msat and bob fulfills
+      // we reuse the same r (it doesn't matter here)
+      val r = rval(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(300000000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      bob2alice.forward(alice)
+
+      sender.send(bob, CMD_FULFILL_HTLC(1, r))
+      sender.expectMsg("ok")
+      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      bob2alice.forward(alice)
+
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+      bob2alice.expectMsgType[update_commit]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[update_revocation]
+      alice2bob.forward(bob)
+
+      // at this point we have :
+      // alice = 700 000
+      //   bob = 300 000
+      var  i = 0
+      def send(): Transaction = {
+        // alice sends 1000 msat
+        // we reuse the same r (it doesn't matter here)
+        val r = rval(1, 2, 3, i)
+        i = i + 1
+        val h: sha256_hash = Crypto.sha256(r)
+
+        sender.send(alice, CMD_ADD_HTLC(1000000, h, locktime(Blocks(3))))
+        sender.expectMsg("ok")
+        val htlc = alice2bob.expectMsgType[update_add_htlc]
+        alice2bob.forward(bob)
+
+        sender.send(alice, CMD_SIGN)
+        sender.expectMsg("ok")
+        alice2bob.expectMsgType[update_commit]
+        alice2bob.forward(bob)
+        bob2alice.expectMsgType[update_revocation]
+        bob2alice.forward(alice)
+
+        bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      }
+      val txs = for (i <- 0 until 10) yield send()
+      // bob now has 10 spendable tx, 9 of them being revoked
+
+      // let's say that bob published this tx
+      val revokedTx = txs(3)
+      // channel state for this revoked tx is as follows:
+      // alice = 696 000
+      //   bob = 300 000
+      //  a->b =   4 000
+      alice ! (BITCOIN_ANCHOR_SPENT, revokedTx)
       alice2bob.expectMsgType[error]
-      // TODO
+      val punishTx = alice2blockchain.expectMsgType[Publish].tx
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(alice.stateName == CLOSING)
+      Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      assert(punishTx.txOut.forall(_.publicKeyScript == Script.write(Scripts.pay2wpkh(Alice.finalPubKey))))
     }
   }
 
