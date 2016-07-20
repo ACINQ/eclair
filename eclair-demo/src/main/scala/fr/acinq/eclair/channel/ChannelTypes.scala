@@ -1,8 +1,6 @@
 package fr.acinq.eclair.channel
 
-import com.trueaccord.scalapb.GeneratedMessage
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction, TxOut}
-import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
 import lightning._
 
 /**
@@ -131,16 +129,6 @@ final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_
   val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.amountMsat).sum
 }
 
-object TypeDefs {
-  type Change = GeneratedMessage
-}
-import TypeDefs._
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
-case class TheirChanges(proposed: List[Change], acked: List[Change])
-case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
-case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
-
 final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
 
 trait HasCommitments {
@@ -152,11 +140,11 @@ final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelPara
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAITING                    (commitments: Commitments, deferred: Option[open_complete]) extends Data with HasCommitments
-final case class DATA_NORMAL                          (commitments: Commitments, htlcIdx: Long,
+final case class DATA_NORMAL                          (commitments: Commitments,
                                                        ourClearing: Option[close_clearing]) extends Data with HasCommitments
-final case class DATA_CLEARING                        (commitments: Commitments, htlcIdx: Long,
+final case class DATA_CLEARING                        (commitments: Commitments,
                                                        ourClearing: close_clearing, theirClearing: close_clearing) extends Data with HasCommitments
-final case class DATA_NEGOTIATING                     (commitments: Commitments, htlcIdx: Long,
+final case class DATA_NEGOTIATING                     (commitments: Commitments,
                                                       ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data with HasCommitments
 final case class DATA_CLOSING                         (commitments: Commitments,
                                                        ourSignature: Option[close_signature] = None,

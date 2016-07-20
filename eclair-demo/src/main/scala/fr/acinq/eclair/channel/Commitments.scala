@@ -1,11 +1,42 @@
 package fr.acinq.eclair.channel
 
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction, TxOut}
+import com.trueaccord.scalapb.GeneratedMessage
+import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Scripts.TxTemplate
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
+
+trait TxDb {
+  def add(parentId: BinaryData, spending: Transaction): Unit
+
+  def get(parentId: BinaryData): Option[Transaction]
+}
+
+class BasicTxDb extends TxDb {
+  val db = collection.mutable.HashMap.empty[BinaryData, Transaction]
+
+  override def add(parentId: BinaryData, spending: Transaction): Unit = {
+    db += parentId -> spending
+  }
+
+  override def get(parentId: BinaryData): Option[Transaction] = db.get(parentId)
+}
+
+// @formatter:off
+
+object TypeDefs {
+  type Change = GeneratedMessage
+}
+case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
+case class TheirChanges(proposed: List[Change], acked: List[Change])
+case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
+case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
+case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: sha256_hash)
+
+// @formatter:on
 
 /**
   * about theirNextCommitInfo:
@@ -18,8 +49,9 @@ import lightning._
 case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelParams,
                        ourCommit: OurCommit, theirCommit: TheirCommit,
                        ourChanges: OurChanges, theirChanges: TheirChanges,
+                       ourCurrentHtlcId: Long,
                        theirNextCommitInfo: Either[TheirCommit, BinaryData],
-                       anchorOutput: TxOut, theirPreimages: ShaChain) {
+                       anchorOutput: TxOut, theirPreimages: ShaChain, txDb: TxDb) {
   def anchorId: BinaryData = {
     assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
     ourCommit.publishableTx.txIn(0).outPoint.hash
@@ -40,11 +72,41 @@ object Commitments {
     * @param proposal
     * @return an updated commitment instance
     */
-  def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
-    commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
+  private def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
+  commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
 
-  def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
+  private def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
     commitments.copy(theirChanges = commitments.theirChanges.copy(proposed = commitments.theirChanges.proposed :+ proposal))
+
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, update_add_htlc) = {
+    // our available funds as seen by them, including all pending changes
+    val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.acked ++ commitments.ourChanges.signed ++ commitments.ourChanges.proposed)
+    // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
+    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+    if (cmd.amountMsat > available) {
+      throw new RuntimeException(s"insufficient funds (available=$available msat)")
+    } else {
+      // TODO: nodeIds are ignored
+      val id = cmd.id.getOrElse(commitments.ourCurrentHtlcId + 1)
+      val steps = route(route_step(0, next = route_step.Next.End(true)) :: Nil)
+      val add = update_add_htlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(steps.toByteArray)))
+      val commitments1 = addOurProposal(commitments, add).copy(ourCurrentHtlcId = id)
+      (commitments1, add)
+    }
+  }
+
+  def receiveAdd(commitments: Commitments, add: update_add_htlc): Commitments = {
+    // their available funds as seen by us, including all pending changes
+    val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.acked ++ commitments.theirChanges.proposed)
+    // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
+    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+    if (add.amountMsat > available) {
+      throw new RuntimeException("Insufficient funds")
+    } else {
+      // TODO: nodeIds are ignored
+      addTheirProposal(commitments, add)
+    }
+  }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, update_fulfill_htlc) = {
     commitments.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == cmd.id => u } match {
@@ -84,21 +146,23 @@ object Commitments {
   }
 
   def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
+    // TODO : check empty changes
     import commitments._
     commitments.theirNextCommitInfo match {
       case Right(theirNextRevocationHash) =>
         // sign all our proposals + their acked proposals
         // their commitment now includes all our changes  + their acked changes
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
-        val theirTx = Helpers.makeTheirTx(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val theirTx = theirTxTemplate.makeTx
         val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
         val commit = update_commit(ourSig)
         val commitments1 = commitments.copy(
-          theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirNextRevocationHash)),
+          theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
           ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
         (commitments1, commit)
       case Left(theirNextCommit) =>
-        throw new RuntimeException("attempting to sign twice waiting for the first revocation message")
+        throw new RuntimeException("cannot sign until next revocation hash is received")
     }
   }
 
@@ -145,6 +209,13 @@ object Commitments {
       case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.revocationPreimage)) != BinaryData(theirCommit.theirRevocationHash) =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
+        // this is their revoked commit tx
+        val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirCommit.theirRevocationHash, theirCommit.spec)
+        val theirTx = theirTxTemplate.makeTx
+        val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, ourParams.finalPrivKey)
+        Transaction.correctlySpends(punishTx, Seq(theirTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        txDb.add(theirTx.txid, punishTx)
+
         commitments.copy(
           ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
           theirCommit = theirNextCommit,
@@ -152,6 +223,17 @@ object Commitments {
           theirPreimages = commitments.theirPreimages.addHash(revocation.revocationPreimage, 0xFFFFFFFFFFFFFFFFL - commitments.theirCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected update_revocation message")
+    }
+  }
+
+  def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {
+    commitments.theirNextCommitInfo match {
+      case Left(theirNextCommit) =>
+        Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+          theirNextCommit.theirRevocationHash, theirNextCommit.spec)
+      case Right(revocationHash) =>
+        Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+          commitments.theirCommit.theirRevocationHash, commitments.theirCommit.spec)
     }
   }
 }

@@ -3,12 +3,12 @@ package fr.acinq.eclair.channel.simulator.states.e
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair._
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, _}
+import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
@@ -16,6 +16,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
+import scala.util.Random
 
 /**
   * Created by PM on 05/07/2016.
@@ -69,13 +70,38 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     TestKit.shutdownActorSystem(system)
   }
 
+  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (rval, update_add_htlc) = {
+    val rand = new Random()
+    val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
+    val H: sha256_hash = Crypto.sha256(R)
+    val sender = TestProbe()
+    sender.send(s, CMD_ADD_HTLC(amountMsat, H, locktime(Blocks(3))))
+    sender.expectMsg("ok")
+    val htlc = s2r.expectMsgType[update_add_htlc]
+    s2r.forward(r)
+    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(htlc))
+    (R, htlc)
+  }
+
+  def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
+    val sender = TestProbe()
+    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index
+    sender.send(s, CMD_SIGN)
+    sender.expectMsg("ok")
+    s2r.expectMsgType[update_commit]
+    s2r.forward(r)
+    r2s.expectMsgType[update_revocation]
+    r2s.forward(s)
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
+  }
+
   test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val h = sha256_hash(1, 2, 3, 4)
       alice ! CMD_ADD_HTLC(500000, h, locktime(Blocks(3)))
       val htlc = alice2bob.expectMsgType[update_add_htlc]
       assert(htlc.id == 1 && htlc.rHash == h)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].htlcIdx == 1 && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCurrentHtlcId == 1 && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
     }
   }
 
@@ -161,11 +187,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_SIGN") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_add_htlc]
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
       alice2bob.expectMsgType[update_commit]
@@ -185,11 +207,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_add_htlc]
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirNextCommitInfo.isRight)
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
@@ -203,14 +221,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_commit") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
 
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
       sender.send(alice, CMD_SIGN)
@@ -222,6 +234,33 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       bob2alice.expectMsgType[update_revocation]
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc.id && h.direction == IN))
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.amount_us_msat == initialState.commitments.ourCommit.spec.amount_us_msat)
+    }
+  }
+
+  test("recv update_commit (two htlcs with same r)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r = sha256_hash(1, 2, 3, 4)
+      val h: sha256_hash = Crypto.sha256(r)
+
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc1 = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
+      val htlc2 = alice2bob.expectMsgType[update_add_htlc]
+      alice2bob.forward(bob)
+
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: htlc2 :: Nil)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sign(alice, bob, alice2bob, bob2alice)
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc1.id && h.direction == IN))
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc2.id && h.direction == IN))
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.amount_us_msat == initialState.commitments.ourCommit.spec.amount_us_msat)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx.txOut.count(_.amount == Satoshi(5000)) == 2)
     }
   }
 
@@ -241,14 +280,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_commit (invalid signature)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
 
       // actual test begins
@@ -263,14 +295,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_revocation") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
       sender.send(alice, CMD_SIGN)
@@ -290,14 +315,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
@@ -330,22 +348,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -371,22 +375,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_FULFILL_HTLC (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -399,22 +389,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_fulfill_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
@@ -443,22 +419,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
       sender.send(alice, update_fulfill_htlc(42, rval(0, 0, 0, 0)))
@@ -472,22 +434,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_FAIL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
@@ -513,22 +461,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_fail_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
       sender.expectMsg("ok")
@@ -587,14 +521,10 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv close_clearing (with unacked received htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  ignore("recv close_clearing (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       // actual test begins
       sender.send(alice, close_clearing(ByteString.EMPTY))
       alice2bob.expectMsgType[close_clearing]
@@ -602,14 +532,10 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv close_clearing (with unacked sent htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  ignore("recv close_clearing (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       // actual test begins
       sender.send(alice, close_clearing(ByteString.EMPTY))
       alice2bob.expectMsgType[close_clearing]
@@ -620,21 +546,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv close_clearing (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: rval = rval(1, 2, 3, 4)
-      val h: sha256_hash = Crypto.sha256(r)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
-      sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
-
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[update_commit]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[update_revocation]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == Nil && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.acked == htlc :: Nil)
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
       sender.send(alice, close_clearing(ByteString.EMPTY))
@@ -643,12 +556,54 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv BITCOIN_ANCHOR_SPENT") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_ANCHOR_SPENT (revoked commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice ! (BITCOIN_ANCHOR_SPENT, null)
+      val sender = TestProbe()
+
+      // alice sends 300 000 sat and bob fulfills
+      // we reuse the same r (it doesn't matter here)
+      val (r, htlc) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+
+      sender.send(bob, CMD_FULFILL_HTLC(1, r))
+      sender.expectMsg("ok")
+      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      bob2alice.forward(alice)
+
+      sign(bob, alice, bob2alice, alice2bob)
+
+      // at this point we have :
+      // alice = 700 000
+      //   bob = 300 000
+      def send(): Transaction = {
+        // alice sends 1 000 sat
+        // we reuse the same r (it doesn't matter here)
+        val (r, htlc) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
+        sign(alice, bob, alice2bob, bob2alice)
+
+        bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      }
+      val txs = for (i <- 0 until 10) yield send()
+      // bob now has 10 spendable tx, 9 of them being revoked
+
+      // let's say that bob published this tx
+      val revokedTx = txs(3)
+      // channel state for this revoked tx is as follows:
+      // alice = 696 000
+      //   bob = 300 000
+      //  a->b =   4 000
+      alice ! (BITCOIN_ANCHOR_SPENT, revokedTx)
       alice2bob.expectMsgType[error]
-      // TODO
+      val punishTx = alice2blockchain.expectMsgType[Publish].tx
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(alice.stateName == CLOSING)
+      Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // two main outputs + 4 htlc
+      assert(revokedTx.txOut.size == 6)
+      // the punishment tx consumes all output but ours (which already goes to our final key)
+      assert(punishTx.txIn.size == 5)
+      // TODO : when changefee is implemented we should set fee = 0 and check against 304 000
+      assert(punishTx.txOut == Seq(TxOut(Satoshi(301670), Script.write(Scripts.pay2wpkh(Alice.finalPubKey)))))
     }
   }
 
