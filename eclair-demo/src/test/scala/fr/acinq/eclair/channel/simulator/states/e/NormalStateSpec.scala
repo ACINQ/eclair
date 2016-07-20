@@ -560,9 +560,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     within(30 seconds) {
       val sender = TestProbe()
 
-      // alice sends 300000 msat and bob fulfills
+      // alice sends 300 000 sat and bob fulfills
       // we reuse the same r (it doesn't matter here)
-      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      val (r, htlc) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
 
       sender.send(bob, CMD_FULFILL_HTLC(1, r))
@@ -576,9 +576,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       // alice = 700 000
       //   bob = 300 000
       def send(): Transaction = {
-        // alice sends 1000 msat
+        // alice sends 1 000 sat
         // we reuse the same r (it doesn't matter here)
-        val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+        val (r, htlc) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
         sign(alice, bob, alice2bob, bob2alice)
 
         bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
