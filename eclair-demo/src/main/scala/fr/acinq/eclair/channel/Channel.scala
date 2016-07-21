@@ -600,7 +600,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       case None =>
         // the published tx was neither their current commitment nor a revoked one
         log.error(s"couldn't identify txid=${tx.txid}!")
-        goto(ERR_INFORMATION_LEAK)
+         goto(ERR_INFORMATION_LEAK)
     }
   }
 
