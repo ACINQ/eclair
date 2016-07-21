@@ -26,7 +26,6 @@ import scala.util.{Failure, Success}
 import akka.pattern.ask
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.Router.CreatePayment
-import org.jboss.netty.handler.codec.http.HttpHeaders
 
 /**
   * Created by PM on 25/01/2016.
@@ -93,6 +92,8 @@ trait Service extends Logging {
                 sendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))
               case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
                 sendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))
+              case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
+                sendCommand(channel, CMD_CLOSE(None))
               case JsonRPCBody(_, _, "help", _) =>
                 Future.successful(List(
                   "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",

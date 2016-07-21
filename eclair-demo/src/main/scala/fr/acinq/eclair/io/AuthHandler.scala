@@ -46,13 +46,13 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
   them ! Write(ByteString.fromArray(firstMessage))
 
-  def send(encryptor: Encryptor, message: BinaryData) : Encryptor = {
+  def send(encryptor: Encryptor, message: BinaryData): Encryptor = {
     val (encryptor1, ciphertext) = Encryptor.encrypt(encryptor, message)
     them ! Write(ByteString.fromArray(ciphertext))
     encryptor1
   }
 
-  def send(encryptor: Encryptor, message: pkt) : Encryptor = send(encryptor, message.toByteArray)
+  def send(encryptor: Encryptor, message: pkt): Encryptor = send(encryptor, message.toByteArray)
 
   startWith(IO_WAITING_FOR_SESSION_KEY, Nothing)
 
@@ -103,8 +103,9 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
             context.stop(self)
           }
           val channel = context.actorOf(Channel.props(self, blockchain, paymentHandler, our_params, their_nodeid.toString()), name = "channel")
+          context.watch(channel)
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
-     }
+      }
   }
 
   when(IO_NORMAL) {
@@ -119,7 +120,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"receiving $packet")
-      packet.pkt match {
+      (packet.pkt: @unchecked) match {
         case RegisterChannel(o) => Boot.router ! o
         case UnregisterChannel(o) => Boot.router ! o
         case Open(o) => channel ! o
@@ -138,7 +139,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       stay
 
     case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
-      val packet = msg match {
+      val packet = (msg: @unchecked) match {
         case o: open_channel => pkt(Open(o))
         case o: register_channel => pkt(RegisterChannel(o))
         case o: unregister_channel => pkt(UnregisterChannel(o))
@@ -160,6 +161,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
+      stay
+
+    case Event(Terminated(subject), n@Normal(channel, _)) if subject == channel =>
+      context stop self
       stay
   }
 

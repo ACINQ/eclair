@@ -1,9 +1,8 @@
 package fr.acinq.eclair.channel
 
-import com.trueaccord.scalapb.GeneratedMessage
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction, TxOut}
-import fr.acinq.eclair.crypto.ShaChain
-import lightning.{locktime, open_complete, sha256_hash, update_add_htlc}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
+import lightning._
+
 
 /**
   * Created by PM on 20/05/2016.
@@ -33,12 +32,8 @@ case object OPEN_WAITING_OURANCHOR extends State
 case object OPEN_WAIT_FOR_COMPLETE_OURANCHOR extends State
 case object OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR extends State
 case object NORMAL extends State
-case object CLOSE_CLEARING extends State
-case object CLOSE_CLEARING_WAIT_FOR_REV extends State
-case object CLOSE_CLEARING_WAIT_FOR_REV_THEIRSIG extends State
-case object CLOSE_CLEARING_WAIT_FOR_SIG extends State
-case object CLOSE_NEGOTIATING extends State
-case object WAIT_FOR_CLOSE_COMPLETE extends State
+case object CLEARING extends State
+case object NEGOTIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
 case object ERR_ANCHOR_LOST extends State
@@ -84,17 +79,14 @@ case object BITCOIN_CLOSE_DONE extends BlockchainEvent
 
 sealed trait Command
 /**
-  *
-  *
-  * @param amount
   * @param rHash
   * @param expiry
-  * @param nodeIds
+  * @param r
   * @param originChannelId
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amount: Int, rHash: sha256_hash, expiry: locktime, nodeIds: Seq[BinaryData] = Seq.empty[BinaryData], originChannelId: Option[BinaryData] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
-final case class CMD_FULFILL_HTLC(id: Long, r: sha256_hash, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Int, rHash: sha256_hash, expiry: locktime, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), originChannelId: Option[BinaryData] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_FULFILL_HTLC(id: Long, r: rval, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
@@ -121,53 +113,45 @@ final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, fi
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
 }
 final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
-
-final case class CommitmentSpec(htlcs_in: Set[update_add_htlc], htlcs_out: Set[update_add_htlc], feeRate: Long, initial_amount_us_msat : Long, initial_amount_them_msat: Long, amount_us_msat: Long, amount_them_msat: Long) {
-  val totalFunds = amount_us_msat + amount_them_msat + (htlcs_in ++ htlcs_out).map(_.amountMsat).sum
+object TheirChannelParams {
+  def apply(params: OurChannelParams) = new TheirChannelParams(params.delay, params.commitPubKey, params.finalPubKey, Some(params.minDepth), params.initialFeeRate)
 }
 
-trait CurrentCommitment {
-  def ourParams: OurChannelParams
-  def theirParams: TheirChannelParams
-  def shaChain: ShaChain
-  def ourCommit: OurCommit
-  def theirCommit: TheirCommit
-  def anchorId: BinaryData = {
-    assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
-    ourCommit.publishableTx.txIn(0).outPoint.hash
-  }
+sealed trait Direction
+case object IN extends Direction
+case object OUT extends Direction
+
+case class Htlc(direction: Direction, add: update_add_htlc, val previousChannelId: Option[BinaryData])
+
+final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_us_msat : Long, initial_amount_them_msat: Long, amount_us_msat: Long, amount_them_msat: Long) {
+  val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
 final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
+
+trait HasCommitments {
+  def commitments: Commitments
+}
 
 final case class DATA_OPEN_WAIT_FOR_OPEN              (ourParams: OurChannelParams) extends Data
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_ANCHOR            (ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG        (ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING                    (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit, theirNextRevocationHash: sha256_hash, deferred: Option[open_complete], anchorOutput: TxOut) extends Data with CurrentCommitment
-final case class DATA_NORMAL                          (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, htlcIdx: Long,
-                                                       ourCommit: OurCommit,
-                                                       theirCommit: TheirCommit,
-                                                       ourChanges: OurChanges,
-                                                       theirChanges: TheirChanges,
-                                                       theirNextRevocationHash: Option[sha256_hash],
-                                                       anchorOutput: TxOut,
-                                                       downstreams: Map[Long, Option[BinaryData]]) extends Data with CurrentCommitment
-
-object TypeDefs {
-  type Change = GeneratedMessage
-}
-import TypeDefs._
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
-case class TheirChanges(proposed: List[Change], acked: List[Change])
-case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
-case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-case class TheirCommit(index: Long, spec: CommitmentSpec, theirRevocationHash: sha256_hash)
-
-/*final case class DATA_CLEARING                        (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, staged: List[Change], commitment: Commitment, next: NextCommitment, closing: ClosingData) extends Data with CurrentCommitment
-final case class DATA_NEGOTIATING                     (ack_in: Long, ack_out: Long, ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, commitment: Commitment, closing: ClosingData) extends Data with CurrentCommitment
-*/final case class DATA_CLOSING                         (ourParams: OurChannelParams, theirParams: TheirChannelParams, shaChain: ShaChain, ourCommit: OurCommit, theirCommit: TheirCommit,
-                              mutualClosePublished: Option[Transaction] = None, ourCommitPublished: Option[Transaction] = None, theirCommitPublished: Option[Transaction] = None, revokedPublished: Seq[Transaction] = Seq()) extends Data with CurrentCommitment {
+final case class DATA_OPEN_WAITING                    (commitments: Commitments, deferred: Option[open_complete]) extends Data with HasCommitments
+final case class DATA_NORMAL                          (commitments: Commitments,
+                                                       ourClearing: Option[close_clearing],
+                                                       downstreams: Map[Long, Option[BinaryData]]) extends Data with HasCommitments
+final case class DATA_CLEARING                        (commitments: Commitments,
+                                                       ourClearing: close_clearing, theirClearing: close_clearing,
+                                                       downstreams: Map[Long, Option[BinaryData]]) extends Data with HasCommitments
+final case class DATA_NEGOTIATING                     (commitments: Commitments,
+                                                      ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data with HasCommitments
+final case class DATA_CLOSING                         (commitments: Commitments,
+                                                       ourSignature: Option[close_signature] = None,
+                                                       mutualClosePublished: Option[Transaction] = None,
+                                                       ourCommitPublished: Option[Transaction] = None,
+                                                       theirCommitPublished: Option[Transaction] = None,
+                                                       revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }
 

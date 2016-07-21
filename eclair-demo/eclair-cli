@@ -1,0 +1,26 @@
+#!/bin/bash
+
+[ -z "$1" ] && (
+echo "usage: "
+echo "eclair-cli list"
+echo "eclair-cli sign channel-id"
+echo "eclair-cli fulfill channel-id htlc-id htlc-preimage"
+) && exit 1
+
+case $1 in 
+"list")	
+
+	curl -X POST -d '{ "method": "list", "params" : [] }' "http://localhost:8080"
+	;;
+"sign")
+	curl -X POST -d '{ "method": "sign", "params" : ["'${2?"missing channel id"}'"] }' "http://localhost:8080"
+	;;	
+"add")
+	curl -X POST -d '{ "method": "addhtlc", "params" : ['${2?"missing amount"}', "'${3?"missing payment hash"}'", '${4?"missing expiry"}', "'${5?"missing node id"}'"] }' "http://localhost:8080"
+	;;	
+"fulfill")
+	curl -X POST -d '{ "method": "fulfillhtlc", "params" : ["'${2?"missing channel id"}'", '${3?"missing htlc id"}', "'${4?"missing htlc preimage"}'"] }' "http://localhost:8080"
+	;;	
+esac
+echo
+

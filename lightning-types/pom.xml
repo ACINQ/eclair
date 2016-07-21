@@ -5,14 +5,13 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.1-gossip-SNAPSHOT</version>
+        <version>0.2-gossip-SNAPSHOT</version>
     </parent>
 
     <artifactId>lightning-types_2.11</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
-
 
     <build>
         <plugins>

@@ -1,10 +1,10 @@
 package fr.acinq.eclair.blockchain
 
 
-import akka.actor.{Actor, ActorLogging, Cancellable}
+import akka.actor.{Actor, ActorLogging, Cancellable, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT}
+import fr.acinq.eclair.channel.BITCOIN_ANCHOR_SPENT
 import org.bouncycastle.util.encoders.Hex
 
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
@@ -27,6 +27,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
 
     case w: Watch if !watches.contains(w) =>
       log.info(s"adding watch $w for $sender")
+      context.watch(w.channel)
       val cancellable = context.system.scheduler.schedule(100 milliseconds, 10 seconds)(w match {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
           client.getTxConfirmations(txId.toString).map(_ match {
@@ -42,7 +43,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
           } yield {
             if (conf.isDefined && !unspent) {
               // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
-              client.findSpendingTransaction(txId.toString(), outputIndex).map(tx => channel ! (BITCOIN_ANCHOR_SPENT, tx))
+              client.findSpendingTransaction(txId.toString(), outputIndex).map(tx => channel !(BITCOIN_ANCHOR_SPENT, tx))
               self !('remove, w)
             } else {}
           }
@@ -54,12 +55,17 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
       context.become(watching(watches - w))
 
     case Publish(tx) =>
-      log.info(s"publishing tx $tx")
+      log.info(s"publishing tx ${tx.txid} $tx")
       client.publishTransaction(tx).onFailure {
-        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS))}")
+        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION))}")
       }
 
     case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
       client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)
+
+    case Terminated(subject) =>
+      val deadWatches = watches.keys.filter(_.channel == subject)
+      deadWatches.map(w => watches(w).cancel())
+      context.become(watching(watches -- deadWatches))
   }
 }

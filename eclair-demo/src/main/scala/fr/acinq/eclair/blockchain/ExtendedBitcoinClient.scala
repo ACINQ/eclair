@@ -17,11 +17,11 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   implicit val formats = org.json4s.DefaultFormats
 
   // TODO: this will probably not be needed once segwit is merged into core
-  val protocolVersion = Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_WITNESS
+  val protocolVersion = Protocol.PROTOCOL_VERSION
 
   def tx2Hex(tx: Transaction): String = Hex.toHexString(Transaction.write(tx, protocolVersion))
 
-  def hex2tx(hex: String) : Transaction = Transaction.read(hex, protocolVersion)
+  def hex2tx(hex: String): Transaction = Transaction.read(hex, protocolVersion)
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
@@ -44,14 +44,17 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     * @return a Future[txid] where txid (a String) is the is of the tx that sends the bitcoins
     */
   def sendFromAccount(account: String, destination: String, amount: Double)(implicit ec: ExecutionContext): Future[String] =
-    client.invoke("sendfrom", account, destination, amount).map {
+    client.invoke("sendfrom", account, destination, amount) collect {
       case JString(txid) => txid
     }
 
-  def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
-    client.invoke("getrawtransaction", txId) map {
-      case JString(raw) => Transaction.read(raw)
+  def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
+    client.invoke("getrawtransaction", txId) collect {
+      case JString(raw) => raw
     }
+
+  def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
+    getRawTransaction(txId).map(raw => Transaction.read(raw))
 
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
@@ -80,7 +83,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     signTransaction(tx2Hex(tx))
 
   def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
-    client.invoke("sendrawtransaction", hex).map {
+    client.invoke("sendrawtransaction", hex) collect {
       case JString(txid) => txid
     }
 
@@ -95,7 +98,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       bestblockhash <- client.invoke("getbestblockhash").map(_.extract[String])
       bestblock <- client.invoke("getblock", bestblockhash).map(b => (b \ "tx").extract[List[String]])
       txs <- Future {
-        for(txid <- mempool ++ bestblock) yield {
+        for (txid <- mempool ++ bestblock) yield {
           Await.result(client.invoke("getrawtransaction", txid).map(json => {
             Transaction.read(json.extract[String])
           }).recover {
@@ -131,12 +134,24 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
       tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
       pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-      sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount.toLong, 1, fundingPriv)
+      sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount, 1, fundingPriv)
       witness = ScriptWitness(Seq(sig, pub))
       tx2 = tx1.copy(witness = Seq(witness))
       Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
-    } yield(tx2, pos1)
+    } yield (tx2, pos1)
 
     future
   }
+
+  /**
+    * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent
+    * to time.now())
+    *
+    * @param ec
+    * @return the current number of blocks in the active chain
+    */
+  def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
+    client.invoke("getblockcount") collect {
+      case JInt(count) => count.toLong
+    }
 }

@@ -4,7 +4,6 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.Http
-import akka.http.scaladsl.server.Directives._
 import akka.util.Timeout
 import akka.stream.ActorMaterializer
 import com.typesafe.config.ConfigFactory
@@ -37,7 +36,7 @@ object Boot extends App with Logging {
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
-  val register = system.actorOf(Props[Register], name = "register")
+  val register = system.actorOf(Register.props(blockchain), name = "register")
   val router = system.actorOf(Props[Router], name = "router")
   val paymentHandler = config.getString("eclair.payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
