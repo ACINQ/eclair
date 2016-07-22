@@ -3,9 +3,8 @@ package fr.acinq.eclair.api
 import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
-import akka.http.scaladsl.model.HttpHeader.ParsingResult
-import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.util.Timeout
 import akka.http.scaladsl.server.Directives._
 import fr.acinq.bitcoin.BinaryData
@@ -13,8 +12,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.Boot
 import grizzled.slf4j.Logging
-import lightning.{channel_desc, locktime}
-import lightning.locktime.Locktime.Seconds
 import org.json4s.JsonAST.JString
 import org.json4s._
 import org.json4s.jackson.JsonMethods._
@@ -26,6 +23,7 @@ import scala.util.{Failure, Success}
 import akka.pattern.ask
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.Router.CreatePayment
+import lightning.channel_desc
 
 /**
   * Created by PM on 25/01/2016.

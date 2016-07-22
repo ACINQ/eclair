@@ -1,4 +1,0 @@
-mvn -f pom_generate_scalapb.xml package
-mkdir -p target/generated-sources/scala
-PATH=.:$PATH protoc --proto_path=src/main/protobuf --scala_out=target/generated-sources/scala src/main/protobuf/lightning.proto
-
