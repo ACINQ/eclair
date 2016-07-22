@@ -3,7 +3,8 @@ package fr.acinq.eclair.api
 import java.net.InetSocketAddress
 
 import akka.actor.ActorRef
-import akka.http.scaladsl.model.{HttpEntity, StatusCodes, ContentTypes, HttpResponse}
+import akka.http.scaladsl.model.headers.RawHeader
+import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.util.Timeout
 import akka.http.scaladsl.server.Directives._
 import fr.acinq.bitcoin.BinaryData
@@ -29,7 +30,9 @@ import fr.acinq.eclair.channel.Register.ListChannels
   */
 
 case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[JValue])
+
 case class Error(code: Int, message: String)
+
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 
 //TODO : use Json4sSupport ?
@@ -40,7 +43,9 @@ trait Service extends Logging {
   implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer
   implicit val timeout = Timeout(30 seconds)
 
-  def connect(addr: InetSocketAddress, amount: Long): Unit // amount in satoshis
+  def connect(addr: InetSocketAddress, amount: Long): Unit
+
+  // amount in satoshis
   def register: ActorRef
 
   def sendCommand(channel_id: String, cmd: Command): Future[String] = {
@@ -49,6 +54,12 @@ trait Service extends Logging {
       "ok"
     })
   }
+
+  val customHeaders = RawHeader("Access-Control-Allow-Origin", "*") ::
+    RawHeader("Access-Control-Allow-Headers", "Content-Type") ::
+    RawHeader("Access-Control-Allow-Methods", "PUT, GET, POST, DELETE, OPTIONS") ::
+    RawHeader("Cache-control", "public, no-store, max-age=0") ::
+    RawHeader("Access-Control-Allow-Headers", "x-requested-with") :: Nil
 
   val route =
     pathSingleSlash {
@@ -69,10 +80,10 @@ trait Service extends Logging {
                 }
                 Boot.system.actorSelection(Register.actorPathToNodeId(nodeIds.head))
                   .resolveOne(2 seconds)
-                    .map { channel =>
-                      channel ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
-                      channel.toString()
-                    }
+                  .map { channel =>
+                    channel ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Seconds(expiry.toInt)), nodeIds.drop(1))
+                    channel.toString()
+                  }
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
                 sendCommand(channel, CMD_SIGN)
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JInt(id) :: JString(r) :: Nil) =>
