@@ -4,7 +4,7 @@
 
 A scala implementation of the Lightning Network. Eclair is french for Lightning.
 
-More precisely, this is an implementation of Rusty's [deployable lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf). In particular it uses the same wire protocol, and almost the same state machine.
+This software follows the [BOLT specifications](https://github.com/rustyrussell/lightning-rfc), therefore it is compatible with Blockstream's [lightning-c](https://github.com/ElementsProject/lightning).
 
 ## Overview
 The general idea is to have an actor per channel, everything being non-blocking.
@@ -19,9 +19,9 @@ A "blockchain watcher" is responsible for monitoring the blockchain, and sending
 
 Prerequisites:
 - A JRE or JDK depending on wether you want to compile yourself or not (preferably > 1.8)
-- A running bitcoin-core (testnet or regtest)
+- A running bitcoin-demo (testnet or regtest)
 
-:warning: **eclair demo currently runs on testnet or regtest only. Do not try and modify it to run on bitcoin mainnet!**
+:warning: **eclair currently runs on segnet only. Do not try and modify it to run on bitcoin mainnet!**
 
 Either run from source:
 ```
@@ -64,8 +64,19 @@ eclair.bitcoind.rpcpassword (default: bar)
 - [X] Blockchain watcher
 - [ ] Storing states in a database
 
-## Ressources
+## Resources
+- [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
+- [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 
-- [1] Lightning Network by Joseph Poon and Thaddeus Dryja ([website](http://lightning.network)), [github repository (golang)](https://github.com/LightningNetwork/lnd)
-- [2] Deployable Lightning by Rusty Russell (Blockstream), [github repository (C)](https://github.com/ElementsProject/lightning)
-- [3] Thunder Network by Mats Jerratsch (Blockchain.info), [github repository (Java)](https://github.com/matsjj/thundernetwork)
+## Other implementations
+Name         | Language | Compatible
+-------------|----------|------------
+[Amiko-Pay]  | Python   | no
+[lightning-c]| C        | yes
+[lnd]        | Go       | no
+[Thunder]    | Java     | no
+
+[Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
+[lightning-c]: https://github.com/ElementsProject/lightning
+[lnd]: https://github.com/LightningNetwork/lnd
+[Thunder]: https://github.com/blockchain/thunder
