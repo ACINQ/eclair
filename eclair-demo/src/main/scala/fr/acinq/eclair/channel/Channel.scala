@@ -284,6 +284,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(NORMAL) {
+    case Event(c:CMD_ADD_HTLC, d: DATA_NORMAL) if d.ourClearing.isDefined =>
+      handleCommandError(sender, new RuntimeException("Cannot sent an update_add_htlc after a close_clearing message"))
+      stay
+
     case Event(c@CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, _)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success((commitments1, add)) => handleCommandSuccess(sender, add, d.copy(commitments = commitments1))

@@ -41,7 +41,7 @@ case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, thei
 /**
   * about theirNextCommitInfo:
   * we either:
-  * - have built and sign their next commit tx with their next revocation hash which can now be discarded
+  * - have built and signed their next commit tx with their next revocation hash which can now be discarded
   * - have their next revocation hash
   * So, when we've signed and sent a commit message and are waiting for their revocation message,
   * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next revocation hash

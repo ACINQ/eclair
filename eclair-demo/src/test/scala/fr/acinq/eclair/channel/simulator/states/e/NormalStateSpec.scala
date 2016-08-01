@@ -521,6 +521,20 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  test("do not send htlcs after you've sent a close_clearing message") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      alice2bob.expectMsgType[close_clearing]
+      val rand = new Random()
+      val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
+      val H: sha256_hash = Crypto.sha256(R)
+      sender.send(alice, CMD_ADD_HTLC(1000000, H, locktime(Blocks(3))))
+      alice2bob.expectNoMsg(500 milliseconds)
+      awaitCond(alice.stateName == NORMAL)
+    }
+  }
+
   ignore("recv close_clearing (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
