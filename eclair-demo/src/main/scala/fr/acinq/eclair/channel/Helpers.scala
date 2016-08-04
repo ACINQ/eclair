@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import Scripts._
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
@@ -195,4 +195,21 @@ object Helpers {
 
     tx1.copy(witness = witnesses)
   }
+
+  def claimReceivedHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, paymentPreimage: BinaryData, privateKey: BinaryData) : Transaction = {
+    require(htlcTemplate.htlc.rHash == bin2sha256(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
+    // find its index in their tx
+    val index = tx.txOut.indexOf(htlcTemplate.txOut)
+
+    val tx1 = Transaction(version = 2,
+      txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = Scripts.locktime2long_csv(htlcTemplate.delay)) :: Nil,
+      txOut = TxOut(htlcTemplate.amount, Scripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+      lockTime = Scripts.locktime2long_cltv(htlcTemplate.htlc.expiry))
+
+    val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
+    val witness = ScriptWitness(sig :: paymentPreimage :: htlcTemplate.redeemScript :: Nil)
+    val tx2 = tx1.copy(witness = Seq(witness))
+    tx2
+  }
+  //def claimTheirCurrentCommitTx(theirTxTemplate: TxTemplate, paymentHash: BinaryData) : Transaction
 }

@@ -35,6 +35,7 @@ case object CLEARING extends State
 case object NEGOTIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
+case object UNILATERAL_CLOSING extends State
 case object ERR_ANCHOR_LOST extends State
 case object ERR_ANCHOR_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State

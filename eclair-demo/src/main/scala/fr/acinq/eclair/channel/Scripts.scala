@@ -175,6 +175,15 @@ object Scripts {
     def redeemScript: BinaryData
   }
 
+  case class HtlcTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, delay: locktime, revocationHash: BinaryData) extends OutputTemplate {
+    override def amount = Satoshi(htlc.amountMsat / 1000)
+    override def redeemScript = htlc.direction match {
+      case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(delay), htlc.rHash, revocationHash))
+      case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(delay), htlc.rHash, revocationHash))
+    }
+    override def txOut = TxOut(amount, pay2wsh(redeemScript))
+  }
+
   case class P2WSH(amount: Satoshi, script: BinaryData) extends OutputTemplate {
     override def txOut: TxOut = TxOut(amount, pay2wsh(script))
     override def redeemScript = script
@@ -189,7 +198,7 @@ object Scripts {
     override def redeemScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(publicKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
   }
 
-  case class TxTemplate(inputs: Seq[TxIn], ourOutput: Option[OutputTemplate], theirOutput: Option[OutputTemplate], htlcSent: Seq[OutputTemplate], htlcReceived: Seq[OutputTemplate]) {
+  case class TxTemplate(inputs: Seq[TxIn], ourOutput: Option[OutputTemplate], theirOutput: Option[OutputTemplate], htlcSent: Seq[HtlcTemplate], htlcReceived: Seq[HtlcTemplate]) {
     def makeTx: Transaction = {
       val outputs = ourOutput.toSeq ++ theirOutput.toSeq ++ htlcSent ++ htlcReceived
       val tx = Transaction(
@@ -220,11 +229,11 @@ object Scripts {
     // when * they * publish a revoked commit tx we don't have anything special to do about it
     val theirOutput = if (amount_them_msat >= 546000) Some(P2WPKH(Satoshi(amount_them_msat / 1000), theirFinalKey)) else None
 
-    val sendOuts: Seq[OutputTemplate] = htlcs.filter(_.direction == OUT).map(htlc => {
-      P2WSH(Satoshi(htlc.amountMsat / 1000), scriptPubKeyHtlcSend(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash))
+    val sendOuts: Seq[HtlcTemplate] = htlcs.filter(_.direction == OUT).map(htlc => {
+      HtlcTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
     })
-    val receiveOuts: Seq[OutputTemplate] = htlcs.filter(_.direction == IN).map(htlc => {
-      P2WSH(Satoshi(htlc.amountMsat / 1000), scriptPubKeyHtlcReceive(ourFinalKey, theirFinalKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(theirDelay), htlc.rHash, revocationHash))
+    val receiveOuts: Seq[HtlcTemplate] = htlcs.filter(_.direction == IN).map(htlc => {
+      HtlcTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
     })
     TxTemplate(inputs, ourOutput, theirOutput, sendOuts, receiveOuts)
   }
