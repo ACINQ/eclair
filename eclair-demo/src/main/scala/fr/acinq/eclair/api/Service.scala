@@ -22,8 +22,7 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.pattern.ask
 import fr.acinq.eclair.channel.Register.ListChannels
-import fr.acinq.eclair.channel.Router.CreatePayment
-import lightning.channel_desc
+import fr.acinq.eclair.router.{ChannelDesc, CreatePayment}
 
 /**
   * Created by PM on 25/01/2016.
@@ -40,7 +39,7 @@ trait Service extends Logging {
 
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer + new ChannelDescSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer + new ShaChainSerializer
   implicit val timeout = Timeout(30 seconds)
 
   def connect(addr: InetSocketAddress, amount: Long): Unit
@@ -79,7 +78,7 @@ trait Service extends Logging {
                 (register ? ListChannels).mapTo[Iterable[ActorRef]]
                   .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
               case JsonRPCBody(_, _, "network", _) =>
-                (router ? 'network).mapTo[Iterable[channel_desc]]
+                (router ? 'network).mapTo[Iterable[ChannelDesc]]
               case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
                 (router ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ActorRef]
               case JsonRPCBody(_, _, "genh", _) =>

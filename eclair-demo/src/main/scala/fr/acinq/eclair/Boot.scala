@@ -16,13 +16,14 @@ import grizzled.slf4j.Logging
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
 import Globals._
+import fr.acinq.eclair.router.IRCRouter
 
 /**
   * Created by PM on 25/01/2016.
   */
 object Boot extends App with Logging {
 
-  implicit val system = ActorSystem()
+  implicit lazy val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
@@ -36,12 +37,12 @@ object Boot extends App with Logging {
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
-  val register = system.actorOf(Register.props(blockchain), name = "register")
-  val router = system.actorOf(Props[Router], name = "router")
   val paymentHandler = config.getString("eclair.payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
+  val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
+  val router = system.actorOf(Props[IRCRouter], name = "router")
 
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
   val api = new Service {

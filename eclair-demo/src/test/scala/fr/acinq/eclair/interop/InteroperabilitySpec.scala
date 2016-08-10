@@ -100,7 +100,8 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(btccli)), name = "blockchain")
-  val register = system.actorOf(Register.props(blockchain), name = "register")
+  val paymentHandler = system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
+  val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
 
   val lncli = new LightingCli(s"$prefix/lightning-cli --lightning-dir=${lightningddir.toString}")

@@ -3,9 +3,10 @@ package fr.acinq.eclair.api
 import fr.acinq.eclair._
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.State
-import lightning.{channel_desc, sha256_hash}
+import fr.acinq.eclair.crypto.ShaChain
+import lightning.sha256_hash
 import org.json4s.CustomSerializer
-import org.json4s.JsonAST.{JObject, JString}
+import org.json4s.JsonAST.{JNull, JString}
 
 /**
   * Created by PM on 28/01/2016.
@@ -40,12 +41,12 @@ class Sha256Serializer extends CustomSerializer[sha256_hash](format => (
   }
   ))
 
-class ChannelDescSerializer extends CustomSerializer[channel_desc](format => (
+class ShaChainSerializer extends CustomSerializer[ShaChain](format => (
   {
     case JString(x) if (false) => // NOT IMPLEMENTED
       ???
   },
   {
-    case x: channel_desc => JObject(("channelId", JString(BinaryData(x.id.toByteArray).toString())), ("A", JString(BinaryData(x.nodeIdA.toByteArray).toString)), ("B", JString(BinaryData(x.nodeIdB.toByteArray).toString())))
+    case x: ShaChain => JNull
   }
   ))

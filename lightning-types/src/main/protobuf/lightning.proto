@@ -76,22 +76,6 @@ message authenticate {
   optional uint64 ack = 3 [ default = 0 ];
 };
 
-// Description of a channel
-message channel_desc {
-  option (scalapb.message).extends = "lightning.ChannelDescToString";
-  required bytes id = 1;
-  required bytes node_id_a = 2;
-  required bytes node_id_b = 3;
-}
-
-message register_channel {
-  required channel_desc channel = 1;
-}
-
-message unregister_channel {
-  required channel_desc channel = 1;
-}
-
 // Set channel params.
 message open_channel {
   // Relative locktime for outputs going to us.
@@ -235,10 +219,6 @@ message pkt {
   oneof pkt {
     // Start of connection
     authenticate auth = 50;
-
-    // Gossip
-    register_channel register_channel = 10;
-    unregister_channel unregister_channel = 11;
 
     // Opening
     open_channel open = 20;

@@ -105,12 +105,3 @@ trait PubkeyToString {
 
   override def toString = s"bitcoin_pubkey(${DatatypeConverter.printHexBinary(key.toByteArray)})"
 }
-
-trait ChannelDescToString {
-
-  def id: ByteString
-  def nodeIdA: ByteString
-  def nodeIdB: ByteString
-
-  override def toString = s"channel_desc(id=${DatatypeConverter.printHexBinary(id.toByteArray)},a=${DatatypeConverter.printHexBinary(nodeIdA.toByteArray)},b=${DatatypeConverter.printHexBinary(nodeIdB.toByteArray)})"
-}

@@ -67,7 +67,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       else {
         val their_session_key_length = Protocol.uint32(buffer1.take(4)).toInt
         log.info(s"session key length: $their_session_key_length")
-        //self ! Received(buffer1.drop(4))
+        self ! Received(ByteString.empty)
         goto(IO_WAITING_FOR_SESSION_KEY) using WaitingForKey(their_session_key_length, buffer1.drop(4))
       }
   }
@@ -142,8 +142,6 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"receiving $packet")
       (packet.pkt: @unchecked) match {
-        case RegisterChannel(o) => Boot.router ! o
-        case UnregisterChannel(o) => Boot.router ! o
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
         case OpenCommitSig(o) => channel ! o
@@ -162,8 +160,6 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
     case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       val packet = (msg: @unchecked) match {
         case o: open_channel => pkt(Open(o))
-        case o: register_channel => pkt(RegisterChannel(o))
-        case o: unregister_channel => pkt(UnregisterChannel(o))
         case o: open_anchor => pkt(OpenAnchor(o))
         case o: open_commit_sig => pkt(OpenCommitSig(o))
         case o: open_complete => pkt(OpenComplete(o))

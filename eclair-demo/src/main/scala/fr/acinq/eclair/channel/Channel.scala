@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.router.IRCRouter
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 import lightning.route_step.Next
@@ -245,6 +246,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)(handleExceptions {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
+      IRCRouter.register(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid =>
@@ -263,6 +265,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)(handleExceptions {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
+      IRCRouter.register(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
@@ -569,6 +572,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         case _ => Hash.Zeroes
       }, stateName, stateData)
       stay
+
+    case Event("ok", _) => stay
 
     // TODO : them ! error(Some("Unexpected message")) ?
 

@@ -25,7 +25,7 @@ import fr.acinq.eclair.{Boot, Globals}
   * ├── client (0..m, transient)
   * └── api
   */
-class Register(blockchain: ActorRef) extends Actor with ActorLogging {
+class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
 
   import Register._
 
@@ -36,7 +36,7 @@ class Register(blockchain: ActorRef) extends Actor with ActorLogging {
       val commit_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 0L :: counter :: Nil)
       val final_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 1L :: counter :: Nil)
       val params = OurChannelParams(Globals.default_locktime, commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, Globals.Node.seed, amount)
-      context.actorOf(Props(classOf[AuthHandler], connection, blockchain, params), name = s"auth-handler-${counter}")
+      context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, params), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children
   }
@@ -44,7 +44,7 @@ class Register(blockchain: ActorRef) extends Actor with ActorLogging {
 
 object Register {
 
-  def props(blockchain: ActorRef = Boot.blockchain) = Props(classOf[Register], blockchain)
+  def props(blockchain: ActorRef, paymentHandler: ActorRef) = Props(classOf[Register], blockchain, paymentHandler)
 
   // @formatter:off
   case class CreateChannel(connection: ActorRef, anchorAmount: Option[Long])
