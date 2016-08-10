@@ -105,11 +105,11 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
         val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
 
         val encryptor = Encryptor(sending_key, 0)
-        val encryptor1 = send(encryptor, our_auth)
         val decryptor = Decryptor(receiving_key, 0)
-        val decryptor1 = Decryptor.add(decryptor, buffer1.drop(their_session_key_length))
+        self ! Received(buffer1.drop(their_session_key_length))
+        val encryptor1 = send(encryptor, our_auth)
 
-        goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor1, encryptor1)
+        goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor, encryptor1)
       }
   }
 
