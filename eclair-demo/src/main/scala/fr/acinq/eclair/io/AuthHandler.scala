@@ -26,10 +26,13 @@ import scala.annotation.tailrec
 
 sealed trait Data
 case object Nothing extends Data
+case class WaitingForKeyLength(buffer: ByteString) extends Data
+case class WaitingForKey(keyLength: Int, buffer: ByteString) extends Data
 case class SessionData(their_session_key: BinaryData, decryptor: Decryptor, encryptor: Encryptor) extends Data
 case class Normal(channel: ActorRef, sessionData: SessionData) extends Data
 
 sealed trait State
+case object IO_WAITING_FOR_SESSION_KEY_LENGTH extends State
 case object IO_WAITING_FOR_SESSION_KEY extends State
 case object IO_WAITING_FOR_AUTH extends State
 case object IO_NORMAL extends State
@@ -54,38 +57,56 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
   def send(encryptor: Encryptor, message: pkt): Encryptor = send(encryptor, message.toByteArray)
 
-  startWith(IO_WAITING_FOR_SESSION_KEY, Nothing)
+  startWith(IO_WAITING_FOR_SESSION_KEY_LENGTH, WaitingForKeyLength(ByteString.empty))
+
+  when(IO_WAITING_FOR_SESSION_KEY_LENGTH) {
+    case Event(Received(data), WaitingForKeyLength(buffer)) =>
+      val buffer1 = buffer ++ data
+      if (buffer1.length < 4)
+        stay using WaitingForKeyLength(buffer1)
+      else {
+        val their_session_key_length = Protocol.uint32(buffer1.take(4)).toInt
+        log.info(s"session key length: $their_session_key_length")
+        //self ! Received(buffer1.drop(4))
+        goto(IO_WAITING_FOR_SESSION_KEY) using WaitingForKey(their_session_key_length, buffer1.drop(4))
+      }
+  }
 
   when(IO_WAITING_FOR_SESSION_KEY) {
-    case Event(Received(data), _) =>
-      val their_session_key_length = Protocol.uint32(data.take(4))
-      log.info(s"session key length: $their_session_key_length")
-      val their_session_key: BinaryData = data.drop(4).take(33)
-      log.info(s"their_session_key=$their_session_key")
-      /**
-        * BOLT #1:
-        * sending-key: SHA256(shared-secret || sending-node-id)
-        * receiving-key: SHA256(shared-secret || receiving-node-id)
-        */
-      val shared_secret = ecdh(their_session_key, session_key.priv)
-      val sending_key: BinaryData = Crypto.sha256(shared_secret ++ session_key.pub)
-      val receiving_key: BinaryData = Crypto.sha256(shared_secret ++ their_session_key)
-      log.debug(s"shared_secret: $shared_secret")
-      log.debug(s"sending key: $sending_key")
-      log.debug(s"receiving key: $receiving_key")
-      /**
-        * node_id is the expected value for the sending node.
-        * session_sig is a valid secp256k1 ECDSA signature encoded as a 32-byte big endian R value, followed by a 32-byte big endian S value.
-        * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
-        */
-      val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
-      val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
+    case Event(Received(data), WaitingForKey(their_session_key_length, buffer)) =>
+      val buffer1 = buffer ++ data
+      if (buffer1.length < their_session_key_length) {
+        stay using WaitingForKey(their_session_key_length, buffer1)
+      }
+      else {
+        val their_session_key: BinaryData = buffer1.take(their_session_key_length)
+        log.info(s"their_session_key=$their_session_key")
+        /**
+          * BOLT #1:
+          * sending-key: SHA256(shared-secret || sending-node-id)
+          * receiving-key: SHA256(shared-secret || receiving-node-id)
+          */
+        val shared_secret = ecdh(their_session_key, session_key.priv)
+        val sending_key: BinaryData = Crypto.sha256(shared_secret ++ session_key.pub)
+        val receiving_key: BinaryData = Crypto.sha256(shared_secret ++ their_session_key)
+        log.debug(s"shared_secret: $shared_secret")
+        log.debug(s"sending key: $sending_key")
+        log.debug(s"receiving key: $receiving_key")
+        /**
+          * node_id is the expected value for the sending node.
+          * session_sig is a valid secp256k1 ECDSA signature encoded as a 32-byte big endian R value, followed by a 32-byte big endian S value.
+          * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
+          */
+        val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
+        val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
 
-      val encryptor = Encryptor(sending_key, 0)
-      val encryptor1 = send(encryptor, our_auth)
-      val decryptor = Decryptor(receiving_key, 0)
+        val encryptor = Encryptor(sending_key, 0)
+        val encryptor1 = send(encryptor, our_auth)
+        val decryptor = Decryptor(receiving_key, 0)
+        val decryptor1 = Decryptor.add(decryptor, buffer1.drop(their_session_key_length))
 
-      goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor, encryptor1)
+        goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor1, encryptor1)
+      }
   }
 
   when(IO_WAITING_FOR_AUTH) {
