@@ -29,7 +29,8 @@ object Globals {
   val default_mindepth = 3
   val commit_fee = config.getInt("eclair.commit-fee")
   val closing_fee = config.getInt("eclair.closing-fee")
-
+  val base_fee = config.getInt("eclair.base-fee")
+  val proportional_fee = config.getInt("eclair.proportional-fee")
   val default_anchor_amount = 1000000
 
   //def newChannelParameters = OurChannelParams(default_locktime, commit_priv, final_priv, default_mindepth, commit_fee, "sha-seed".getBytes(), None)

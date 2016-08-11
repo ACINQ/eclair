@@ -77,10 +77,14 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
         Boot.system.actorSelection(Register.actorPathToNodeId(next))
           .resolveOne(2 seconds)
           .map { channel =>
-            // TODO : no fees!
-            val r = lightning.route(others.map(n => route_step(c.amountMsat, next = Next.Bitcoin(n))) :+ route_step(0, next = route_step.Next.End(true)))
+            // build a route
+            val r = buildRoute(c.amountMsat, others)
+
+            // apply fee
+            val amountMsat = r.steps(0).amount
+            val fee = nodeFee(Globals.base_fee, Globals.proportional_fee, amountMsat).toInt
             // TODO : expiry is not correctly calculated
-            channel ! CMD_ADD_HTLC(c.amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 1)), r, commit = true)
+            channel ! CMD_ADD_HTLC(amountMsat + fee, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 1)), r, commit = true)
             s ! channel
           }
       }) onFailure {
@@ -115,11 +119,23 @@ object IRCRouter {
       }
       case None => throw new RuntimeException("route not found")
     }
-
   }
 
   def findRoute(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc])(implicit ec: ExecutionContext): Future[Seq[BinaryData]] = Future {
     findRouteDijkstra(myNodeId, targetNodeId, channels)
   }
 
+  def buildRoute(finalAmountMsat: Int, nodeIds: Seq[BinaryData]) : lightning.route = {
+
+    // FIXME: use actual fee parameters that are specific to each node
+    def fee(amountMsat: Int) = nodeFee(Globals.base_fee, Globals.proportional_fee, amountMsat).toInt
+
+    var amountMsat = finalAmountMsat
+    val steps = nodeIds.reverse.map(nodeId => {
+      val step = route_step(amountMsat, next = Next.Bitcoin(nodeId))
+      amountMsat = amountMsat + fee(amountMsat)
+      step
+    })
+    lightning.route(steps.reverse :+ route_step(0, next = route_step.Next.End(true)))
+  }
 }

@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.router.{ChannelDesc, IRCRouter}
+import lightning.route_step
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 import org.junit.runner.RunWith
@@ -79,4 +80,13 @@ class RouterSpec extends FunSuite {
     }
   }
 
+  test("compute fees") {
+    val nodeIds = Seq(BinaryData("00"), BinaryData("01"), BinaryData("02"))
+    val amountMsat = 1000000
+    val route = IRCRouter.buildRoute(amountMsat, nodeIds)
+    assert(route.steps.length == 4 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
+    assert(route.steps(2).amount == amountMsat)
+    assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
+    assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.base_fee, Globals.proportional_fee, route.steps(1).amount))
+  }
 }

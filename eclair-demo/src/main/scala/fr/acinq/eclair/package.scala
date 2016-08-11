@@ -125,4 +125,13 @@ package object eclair {
   def computeFee(feeRate: Long, numberOfHtlcs: Int): Long = {
     Math.floorDiv((338 + 32 * numberOfHtlcs) * feeRate, 2000) * 2
   }
+
+  /**
+    *
+    * @param base fixed fee
+    * @param proportional proportional fee
+    * @param msat amount in millisatoshi
+    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
+    */
+  def nodeFee(base: Long, proportional: Long, msat: Long): Long = base + (proportional * msat) / 1000000
 }
