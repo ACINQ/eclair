@@ -60,7 +60,9 @@ class IRCRouter extends Actor with ActorLogging {
   }
 
   def main(channels: Map[BinaryData, ChannelDesc]): Receive = {
-    case ChannelDesc(id, a, b) => ircClient.sendMessage(channel, s"$id: $a-$b")
+    case c@ChannelDesc(id, a, b) =>
+      self ! ChannelRegister(c)
+      ircClient.sendMessage(channel, s"$id: $a-$b")
     case ChannelRegister(c) => context become main(channels + (c.id -> c))
     case ChannelUnregister(c) => context become main(channels - c.id)
     case 'network => sender ! channels.values
