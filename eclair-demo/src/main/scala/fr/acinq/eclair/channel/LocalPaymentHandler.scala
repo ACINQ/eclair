@@ -34,7 +34,9 @@ class LocalPaymentHandler extends Actor with ActorLogging {
 
     case htlc: update_add_htlc =>
       val r = h2r(htlc.rHash)
-      sender ! CMD_FULFILL_HTLC(htlc.id, r, true)
+      sender ! CMD_SIGN
+      sender ! CMD_FULFILL_HTLC(htlc.id, r)
+      sender ! CMD_SIGN
       context.become(run(h2r - htlc.rHash))
 
   }

@@ -209,7 +209,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv CMD_SIGN (while waiting for update_revocation)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  ignore("recv CMD_SIGN (while waiting for update_revocation)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()

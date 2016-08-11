@@ -337,6 +337,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 
+    case Event(CMD_SIGN, d: DATA_NORMAL) if d.commitments.theirNextCommitInfo.isLeft =>
+      //TODO : this is a temporary fix
+      log.info(s"already in the process of signing, delaying CMD_SIGN")
+      import scala.concurrent.ExecutionContext.Implicits.global
+      context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
+      stay
+
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
       Try(Commitments.sendCommit(d.commitments)) match {
         case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
@@ -441,6 +448,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
         case Failure(cause) => handleUnicloseError(cause, d)
       }
+
+    case Event(CMD_SIGN, d: DATA_CLEARING) if d.commitments.theirNextCommitInfo.isLeft =>
+      //TODO : this is a temporary fix
+      log.info(s"already in the process of signing, delaying CMD_SIGN")
+      import scala.concurrent.ExecutionContext.Implicits.global
+      context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
+      stay
 
     case Event(CMD_SIGN, d: DATA_CLEARING) =>
       Try(Commitments.sendCommit(d.commitments)) match {
@@ -603,7 +617,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
               log.info(s"forwarding htlc #${add.id} to upstream=$upstream")
               val upstream_route = route(rest)
               // TODO : we should decrement expiry !!
-              upstream ! CMD_ADD_HTLC(amountMsat, add.rHash, add.expiry, upstream_route, Some(anchorId), commit = true)
+              upstream ! CMD_ADD_HTLC(amountMsat, add.rHash, add.expiry, upstream_route, Some(anchorId))
+              upstream ! CMD_SIGN
             case Failure(t: Throwable) =>
               // TODO : send "fail route error"
               log.warning(s"couldn't resolve upstream node, htlc #${add.id} will timeout", t)
@@ -616,8 +631,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   def propagateDownstream(fulfill_or_fail: Either[update_fail_htlc, update_fulfill_htlc], downstreams: Map[Long, Option[BinaryData]]) = {
     val (id, short, cmd: Command) = fulfill_or_fail match {
-      case Left(fail) => (fail.id, "fail", CMD_FAIL_HTLC(fail.id, fail.reason.info.toStringUtf8, commit = true))
-      case Right(fulfill) => (fulfill.id, "fulfill", CMD_FULFILL_HTLC(fulfill.id, fulfill.r, commit = true))
+      case Left(fail) => (fail.id, "fail", CMD_FAIL_HTLC(fail.id, fail.reason.info.toStringUtf8))
+      case Right(fulfill) => (fulfill.id, "fulfill", CMD_FULFILL_HTLC(fulfill.id, fulfill.r))
     }
     downstreams(id) match {
       case Some(previousChannelId) =>
@@ -628,7 +643,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           .onComplete {
             case Success(downstream) =>
               log.info(s"forwarding $short to downstream=$downstream")
+              downstream ! CMD_SIGN
               downstream ! cmd
+              downstream ! CMD_SIGN
             case Failure(t: Throwable) =>
               log.warning(s"couldn't resolve downstream node, htlc #$id will timeout", t)
           }
