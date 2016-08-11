@@ -97,13 +97,14 @@ trait Service extends Logging {
                 sendCommand(channel, CMD_CLOSE(None))
               case JsonRPCBody(_, _, "help", _) =>
                 Future.successful(List(
-                  "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",
-                  "list: lists existing channels",
-                  "addhtlc (amount, rhash, nodeId): sends an htlc",
-                  "sign (channel_id): updates the commitment transaction",
-                  "fulfillhtlc (channel_id, htlc_id, r): fulfills an htlc",
-                  "close (channel_id): closes a channel",
-                  "help: displays this message"))
+                  "info: display basic node information",
+                  "connect (host, port, anchor_amount): open a channel with another eclair or lightningd instance",
+                  "list: list existing channels",
+                  "addhtlc (amount, rhash, nodeId): send an htlc",
+                  "sign (channel_id): update the commitment transaction",
+                  "fulfillhtlc (channel_id, htlc_id, r): fulfill an htlc",
+                  "close (channel_id): close a channel",
+                  "help: display this message"))
               case _ => Future.failed(new RuntimeException("method not found"))
             }
 

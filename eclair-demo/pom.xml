@@ -28,18 +28,18 @@
                 </executions>
             </plugin>
             <plugin>
-                <groupId>com.github.chrischristo</groupId>
+                <groupId>sg.enixsoft</groupId>
                 <artifactId>capsule-maven-plugin</artifactId>
-                <version>1.0.3</version>
+                <version>1.3.0</version>
                 <executions>
                     <execution>
                         <goals>
                             <goal>build</goal>
                         </goals>
                         <configuration>
-                            <types>fat</types>
                             <appClass>fr.acinq.eclair.Boot</appClass>
-                            <customDescriptorFat>-${git.commit.id.abbrev}-capsule-fat</customDescriptorFat>
+                            <type>fat</type>
+                            <customDescriptor>-${git.commit.id.abbrev}-capsule-fat</customDescriptor>
                         </configuration>
                     </execution>
                 </executions>
