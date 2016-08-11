@@ -44,7 +44,7 @@ object Boot extends App with Logging {
   val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val router = system.actorOf(Props[IRCRouter], name = "router")
 
-  val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port")), "server")
+  val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port")), "server")
   val api = new Service {
     override val register: ActorRef = Boot.register
     override val router: ActorRef = Boot.router
@@ -52,6 +52,6 @@ object Boot extends App with Logging {
 
     override def connect(addr: InetSocketAddress, amount: Long): Unit = system.actorOf(Props(classOf[Client], addr, amount))
   }
-  Http().bindAndHandle(api.route, config.getString("eclair.api.address"), config.getInt("eclair.api.port"))
+  Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port"))
 
 }
