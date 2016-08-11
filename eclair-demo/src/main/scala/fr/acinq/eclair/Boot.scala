@@ -42,7 +42,7 @@ object Boot extends App with Logging {
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
   val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
-  val router = system.actorOf(Props[IRCRouter], name = "router")
+  val router = system.actorOf(IRCRouter.props(new ExtendedBitcoinClient(bitcoin_client)), name = "router")
 
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port")), "server")
   val api = new Service {

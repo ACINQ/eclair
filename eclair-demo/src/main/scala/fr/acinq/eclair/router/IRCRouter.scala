@@ -3,6 +3,7 @@ package fr.acinq.eclair.router
 import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.{AliasActor, CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.{Boot, Globals, _}
 import lightning.locktime.Locktime.Blocks
@@ -22,7 +23,7 @@ import scala.collection.JavaConversions._
 /**
   * Created by PM on 24/05/2016.
   */
-class IRCRouter extends Actor with ActorLogging {
+class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLogging {
 
   import IRCRouter._
 
@@ -66,15 +67,18 @@ class IRCRouter extends Actor with ActorLogging {
     case 'network => sender ! channels.values
     case c: CreatePayment =>
       val s = sender
-      findRoute(Globals.Node.publicKey, c.targetNodeId, channels).map(_ match {
+      (for {
+        route <- findRoute(Globals.Node.publicKey, c.targetNodeId, channels)
+        blockCount <- bitcoinClient.getBlockCount
+      } yield route match {
         case us :: next :: others =>
         Boot.system.actorSelection(Register.actorPathToNodeId(next))
           .resolveOne(2 seconds)
           .map { channel =>
             // TODO : no fees!
-            val r = route(others.map(n => route_step(c.amountMsat, next = Next.Bitcoin(n))) :+ route_step(0, next = route_step.Next.End(true)))
+            val r = lightning.route(others.map(n => route_step(c.amountMsat, next = Next.Bitcoin(n))) :+ route_step(0, next = route_step.Next.End(true)))
             // TODO : expiry is not correctly calculated
-            channel ! CMD_ADD_HTLC(c.amountMsat, c.h, locktime(Blocks(800 + r.steps.size - 1)), r, commit = true)
+            channel ! CMD_ADD_HTLC(c.amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 1)), r, commit = true)
             s ! channel
           }
       }) onFailure {
@@ -85,6 +89,8 @@ class IRCRouter extends Actor with ActorLogging {
 }
 
 object IRCRouter {
+
+  def props(bitcoinClient: ExtendedBitcoinClient) = Props(classOf[IRCRouter], bitcoinClient)
 
   def register(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
     context.actorSelection(Boot.system / "router") ! ChannelDesc(anchor_id, Globals.Node.publicKey, node_id)
