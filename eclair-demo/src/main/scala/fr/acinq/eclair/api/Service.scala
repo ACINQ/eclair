@@ -34,6 +34,8 @@ case class Error(code: Int, message: String)
 
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 
+case class Status(node_id: String)
+
 //TODO : use Json4sSupport ?
 trait Service extends Logging {
 
@@ -73,14 +75,16 @@ trait Service extends Logging {
             val f_res: Future[AnyRef] = json match {
               case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
                 connect(new InetSocketAddress(host, port.toInt), anchor_amount.toLong)
-                Future.successful("")
+                Future.successful("ok")
+              case JsonRPCBody(_, _, "info", _) =>
+                Future.successful(Status(Globals.Node.id))
               case JsonRPCBody(_, _, "list", _) =>
                 (register ? ListChannels).mapTo[Iterable[ActorRef]]
                   .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
               case JsonRPCBody(_, _, "network", _) =>
                 (router ? 'network).mapTo[Iterable[ChannelDesc]]
               case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
-                (router ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ActorRef]
+                (router ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ActorRef].map(_ => "ok")
               case JsonRPCBody(_, _, "genh", _) =>
                 (paymentHandler ? 'genh).mapTo[BinaryData]
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
@@ -93,13 +97,14 @@ trait Service extends Logging {
                 sendCommand(channel, CMD_CLOSE(None))
               case JsonRPCBody(_, _, "help", _) =>
                 Future.successful(List(
-                  "connect (host, port, anchor_amount): opens a channel with another eclair or lightningd instance",
-                  "list: lists existing channels",
-                  "addhtlc (amount, rhash, nodeId): sends an htlc",
-                  "sign (channel_id): updates the commitment transaction",
-                  "fulfillhtlc (channel_id, htlc_id, r): fulfills an htlc",
-                  "close (channel_id): closes a channel",
-                  "help: displays this message"))
+                  "info: display basic node information",
+                  "connect (host, port, anchor_amount): open a channel with another eclair or lightningd instance",
+                  "list: list existing channels",
+                  "addhtlc (amount, rhash, nodeId): send an htlc",
+                  "sign (channel_id): update the commitment transaction",
+                  "fulfillhtlc (channel_id, htlc_id, r): fulfill an htlc",
+                  "close (channel_id): close a channel",
+                  "help: display this message"))
               case _ => Future.failed(new RuntimeException("method not found"))
             }
 
