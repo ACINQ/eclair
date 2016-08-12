@@ -621,6 +621,31 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  test("react when the other party published their commit tx") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      // alice sends 300 000 sat and bob fulfills
+      // we reuse the same r (it doesn't matter here)
+      val (r, htlc) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+      sign(bob, alice, bob2alice, alice2bob)
+
+      sender.send(bob, CMD_FULFILL_HTLC(1, r))
+      sender.expectMsg("ok")
+
+      // now we suppose that Alice publishes her current commit tx
+      bob ! (BITCOIN_ANCHOR_SPENT, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx)
+      bob2blockchain.expectMsgType[PublishAsap]
+
+      val blockchain = TestActorRef(new PollingWatcher(new TestBitcoinClient(Some(sender.ref))))
+      bob2blockchain.forward(blockchain)
+      blockchain ! ('currentBlockCount, 10000L)
+      val tx = sender.expectMsgType[Transaction]
+      awaitCond(bob.stateName == UNILATERAL_CLOSING)
+    }
+  }
+
   test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx

@@ -30,7 +30,9 @@ class BasicTxDb extends TxDb {
 object TypeDefs {
   type Change = GeneratedMessage
 }
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
+case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change]) {
+  def all: List[Change] = proposed ++ signed ++ acked
+}
 case class TheirChanges(proposed: List[Change], acked: List[Change])
 case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)

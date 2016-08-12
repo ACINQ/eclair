@@ -158,9 +158,10 @@ object Helpers {
   /**
     * Claim a revoked commit tx using the matching revocation preimage, which allows us to claim all its inputs without a
     * delay
-    * @param theirTxTemplate revoked commit tx template
+    *
+    * @param theirTxTemplate    revoked commit tx template
     * @param revocationPreimage revocation preimage (which must match this specific commit tx)
-    * @param privateKey private key to send the claimed funds to (the returned tx will include a single P2WPKH output)
+    * @param privateKey         private key to send the claimed funds to (the returned tx will include a single P2WPKH output)
     * @return a signed transaction that spends the revoked commit tx
     */
   def claimRevokedCommitTx(theirTxTemplate: TxTemplate, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = {
@@ -187,7 +188,7 @@ object Helpers {
 
     // and sign them
     val tx1 = tx.copy(txIn = inputs)
-    val witnesses = for(i <- 0 until tx1.txIn.length) yield {
+    val witnesses = for (i <- 0 until tx1.txIn.length) yield {
       val sig = Transaction.signInput(tx1, i, outputsToClaim(i).redeemScript, SIGHASH_ALL, outputsToClaim(i).amount, 1, privateKey)
       val witness = ScriptWitness(sig :: revocationPreimage :: outputsToClaim(i).redeemScript :: Nil)
       witness
@@ -196,7 +197,19 @@ object Helpers {
     tx1.copy(witness = witnesses)
   }
 
-  def claimReceivedHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, paymentPreimage: BinaryData, privateKey: BinaryData) : Transaction = {
+  /**
+    * claim an HTLC that we received using its payment preimage. This is used only when the other party publishes its
+    * current commit tx which contains pending HTLCs.
+    *
+    * @param tx              commit tx published by the other party
+    * @param htlcTemplate    HTLC template for an HTLC in the commit tx for which we have the preimage
+    * @param paymentPreimage HTLC preimage
+    * @param privateKey      private key which matches the pubkey  that the HTLC was sent to
+    * @return a signed transaction that spends the HTLC in their published commit tx.
+    *         This tx is not spendable right away: it has both an absolute CLTV time-out and a relative CSV time-out
+    *         before which it can be published
+    */
+  def claimReceivedHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = {
     require(htlcTemplate.htlc.rHash == bin2sha256(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
     // find its index in their tx
     val index = tx.txOut.indexOf(htlcTemplate.txOut)
@@ -211,5 +224,33 @@ object Helpers {
     val tx2 = tx1.copy(witness = Seq(witness))
     tx2
   }
-  //def claimTheirCurrentCommitTx(theirTxTemplate: TxTemplate, paymentHash: BinaryData) : Transaction
+
+  /**
+    * claim all the HTLCs that we've received from their current commit tx
+    *
+    * @param tx          commit tx published by the other party
+    * @param commitments our commitment data, which include payment preimages
+    * @return a list of transactions (one per HTLC that we can claim)
+    */
+  def claimReceivedHtlcs(tx: Transaction, commitments: Commitments): Seq[Transaction] = {
+    val theirTxTemplate = Commitments.makeTheirTxTemplate(commitments)
+    val theirTx = theirTxTemplate.makeTx
+    assert(theirTx.txOut == tx.txOut)
+
+    val preImages = commitments.ourChanges.all.collect { case update_fulfill_htlc(id, r) => rval2bin(r) }
+    val htlcTemplates = theirTxTemplate.htlcSent
+
+    def loop(htlcs: Seq[HtlcTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = {
+      if (htlcs.isEmpty) acc
+      else {
+        val htlcTemplate = htlcs.head
+        preImages.find(preImage => htlcTemplate.htlc.rHash == bin2sha256(Crypto.sha256(preImage))) match {
+          case Some(preImage) => loop(htlcs.tail, claimReceivedHtlc(tx, htlcTemplate, preImage, commitments.ourParams.finalPrivKey) +: acc)
+          case None => loop(htlcs.tail, acc)
+        }
+      }
+    }
+
+    loop(htlcTemplates)
+  }
 }

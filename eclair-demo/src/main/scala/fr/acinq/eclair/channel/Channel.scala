@@ -284,7 +284,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(NORMAL) {
-    case Event(c:CMD_ADD_HTLC, d: DATA_NORMAL) if d.ourClearing.isDefined =>
+    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.ourClearing.isDefined =>
       handleCommandError(sender, new RuntimeException("Cannot sent an update_add_htlc after a close_clearing message"))
       stay
 
@@ -522,6 +522,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       stop(FSM.Normal)
   }
 
+  when(UNILATERAL_CLOSING) {
+    case Event(_, _) => stay
+  }
+
   when(ERR_INFORMATION_LEAK, stateTimeout = 30 seconds) {
     case Event(StateTimeout, _) =>
       log.info("shutting down")
@@ -588,8 +592,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
   def handleTheirSpentCurrent(tx: Transaction, d: HasCommitments) = {
     log.warning(s"they published their current commit in txid=${tx.txid}")
-    // TODO
-    ???
+    val theirTxTemplate = Commitments.makeTheirTxTemplate(d.commitments)
+    val theirTx = theirTxTemplate.makeTx
+    assert(theirTx.txOut == tx.txOut)
+
+    val txs = Helpers.claimReceivedHtlcs(tx, d.commitments)
+    txs.map {
+      tx =>
+        blockchain ! PublishAsap(tx)
+        blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+    }
+    goto(UNILATERAL_CLOSING) using DATA_CLOSING(d.commitments, theirCommitPublished = Some(tx))
   }
 
   def handleTheirSpentOther(tx: Transaction, d: HasCommitments) = {
@@ -604,7 +617,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       case None =>
         // the published tx was neither their current commitment nor a revoked one
         log.error(s"couldn't identify txid=${tx.txid}!")
-         goto(ERR_INFORMATION_LEAK)
+        goto(ERR_INFORMATION_LEAK)
     }
   }
 

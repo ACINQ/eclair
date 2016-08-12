@@ -38,16 +38,18 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     // Alice publishes her current commit tx
     val tx = alice3.ourCommit.publishableTx
 
+
+    // suppose we have the payment preimage, what do we do ?
+    val (bob4, _) = Commitments.sendFulfill(bob3, CMD_FULFILL_HTLC(1, R))
+
     // we're Bob. Check that our view of Alice's commit tx is right
-    val theirTxTemplate = Commitments.makeTheirTxTemplate(bob3)
+    val theirTxTemplate = Commitments.makeTheirTxTemplate(bob4)
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txOut === tx.txOut)
 
-    // suppose we have the payment preimage, what do we do ?
-    val paymentPreimage = R
-    val htlcTemplate = theirTxTemplate.htlcSent.find(_.htlc.rHash == bin2sha256(H)).get
-
-    val tx1 = Helpers.claimReceivedHtlc(tx, htlcTemplate, paymentPreimage, bob3.ourParams.finalPrivKey)
+    val Seq(tx1) = Helpers.claimReceivedHtlcs(tx, bob4)
+    assert(tx1.txIn.length == 1)
+    assert(tx1.txOut.length == 1 && tx1.txOut(0).amount == Satoshi(70000))
     Transaction.correctlySpends(tx1, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 }

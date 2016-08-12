@@ -274,4 +274,31 @@ object Scripts {
     tx.txOut.zipWithIndex.find {
       case (TxOut(_, script), _) => script == publicKeyScript
     } map (_._2)
+
+  /**
+    *
+    * @param tx
+    * @return the block height before which this tx cannot be published
+    */
+  def cltvTimeout(tx: Transaction): Long = {
+    require(tx.lockTime <= LockTimeThreshold)
+    tx.lockTime
+  }
+
+  /**
+    *
+    * @param tx
+    * @return the number of confirmations of the tx parent before which it can be published
+    */
+  def csvTimeout(tx: Transaction): Long = {
+    def sequenceToBlockHeight(sequence: Long) : Long = {
+      if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) 0
+      else {
+        require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
+        sequence & TxIn.SEQUENCE_LOCKTIME_MASK
+      }
+    }
+    if (tx.version < 2) 0
+    else tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
+  }
 }

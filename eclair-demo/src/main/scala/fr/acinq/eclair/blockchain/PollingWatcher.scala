@@ -4,9 +4,10 @@ package fr.acinq.eclair.blockchain
 import akka.actor.{Actor, ActorLogging, Cancellable, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.BITCOIN_ANCHOR_SPENT
+import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, Scripts}
 import org.bouncycastle.util.encoders.Hex
 
+import scala.collection.SortedMap
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 import scala.concurrent.duration._
 
@@ -17,11 +18,20 @@ import scala.concurrent.duration._
   */
 class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
-  context.become(watching(Map()))
-
   override def receive: Receive = ???
 
-  def watching(watches: Map[Watch, Cancellable]): Receive = {
+  context.become(watching(Map()))
+
+  context.system.scheduler.schedule(150 milliseconds, 10 seconds)(client.getBlockCount.map(count => ('currentBlockCount, count)).pipeTo(self))
+
+  def publish(tx: Transaction): Unit = {
+    log.info(s"publishing tx ${tx.txid} $tx")
+    client.publishTransaction(tx).onFailure {
+      case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION))}")
+    }
+  }
+
+  def watching(watches: Map[Watch, Cancellable], block2tx: SortedMap[Long, Seq[Transaction]] = SortedMap.empty[Long, Seq[Transaction]], currentBlockCount: Long = 0): Receive = {
 
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
 
@@ -54,11 +64,20 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
       watches(w).cancel()
       context.become(watching(watches - w))
 
-    case Publish(tx) =>
-      log.info(s"publishing tx ${tx.txid} $tx")
-      client.publishTransaction(tx).onFailure {
-        case t: Throwable => log.error(t, s"cannot publish tx ${Hex.toHexString(Transaction.write(tx, Protocol.PROTOCOL_VERSION))}")
-      }
+    case ('currentBlockCount, count: Long) => {
+      val topublish = block2tx.filterKeys(_ <= count)
+      topublish.values.flatten.map(publish)
+      context.become(watching(watches, block2tx -- topublish.keys, count))
+    }
+
+    case Publish(tx) => publish(tx)
+
+    case PublishAsap(tx) =>
+      val cltvTimeout = Scripts.csvTimeout(tx)
+      val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
+      val timeout = Math.max(cltvTimeout, csvTimeout)
+      val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
+      context.become(watching(watches, block2tx1, currentBlockCount))
 
     case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
       client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)
@@ -68,4 +87,8 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
       deadWatches.map(w => watches(w).cancel())
       context.become(watching(watches -- deadWatches))
   }
+}
+
+object PollingWatcher {
+
 }
