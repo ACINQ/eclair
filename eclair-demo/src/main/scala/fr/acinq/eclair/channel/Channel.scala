@@ -523,6 +523,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   }
 
   when(UNILATERAL_CLOSING) {
+    case Event(TransactionConfirmed(tx), d: DATA_UNILATERAL_CLOSING) if !d.watchedTransaction.contains(tx) =>
+      log.warning(s"received confirmation for tx ${tx.txid} that we are not watching")
+      stay()
+
+    case Event(TransactionConfirmed(tx), d: DATA_UNILATERAL_CLOSING) =>
+      val watched1 = d.watchedTransaction - tx
+      if (watched1.isEmpty) {
+        goto(CLOSED)
+      } else stay using d.copy(watchedTransaction = watched1)
+
     case Event(_, _) => stay
   }
 
@@ -596,13 +606,18 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txOut == tx.txOut)
 
-    val txs = Helpers.claimReceivedHtlcs(tx, d.commitments)
+    val txs = Helpers.claimReceivedHtlcs(tx, d.commitments) ++ Helpers.claimSentHtlcs(tx, d.commitments)
     txs.map {
       tx =>
         blockchain ! PublishAsap(tx)
-        blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
+        blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, TransactionConfirmed(tx))
     }
-    goto(UNILATERAL_CLOSING) using DATA_CLOSING(d.commitments, theirCommitPublished = Some(tx))
+    if (txs.isEmpty) {
+      log.info(s"no pending HTLCs to redeem, we can close the channel")
+      goto(CLOSED)
+    } else {
+      goto(UNILATERAL_CLOSING) using DATA_UNILATERAL_CLOSING(d.commitments, theirCommitPublished = Some(tx), watchedTransaction = txs.toSet)
+    }
   }
 
   def handleTheirSpentOther(tx: Transaction, d: HasCommitments) = {

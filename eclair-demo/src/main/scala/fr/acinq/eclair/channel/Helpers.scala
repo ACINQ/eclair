@@ -253,4 +253,25 @@ object Helpers {
 
     loop(htlcTemplates)
   }
+
+  def claimSentHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, privateKey: BinaryData): Transaction = {
+    val index = tx.txOut.indexOf(htlcTemplate.txOut)
+    val tx1 = Transaction(
+      version = 2,
+      txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = Scripts.locktime2long_csv(htlcTemplate.delay)) :: Nil,
+      txOut = TxOut(htlcTemplate.amount, Scripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+      lockTime = Scripts.locktime2long_cltv(htlcTemplate.htlc.expiry))
+
+    val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
+    val witness = ScriptWitness(sig :: Hash.Zeroes :: htlcTemplate.redeemScript :: Nil)
+    tx1.copy(witness = Seq(witness))
+  }
+
+  def claimSentHtlcs(tx: Transaction, commitments: Commitments): Seq[Transaction] = {
+    val theirTxTemplate = Commitments.makeTheirTxTemplate(commitments)
+    val theirTx = theirTxTemplate.makeTx
+    assert(theirTx.txOut == tx.txOut)
+
+    theirTxTemplate.htlcReceived.map(htlcTemplate => claimSentHtlc(theirTx, htlcTemplate, commitments.ourParams.finalPrivKey))
+  }
 }

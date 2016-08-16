@@ -20,7 +20,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
 
   override def receive: Receive = ???
 
-  context.become(watching(Map()))
+  context.become(watching(Map(), SortedMap(), 0))
 
   context.system.scheduler.schedule(150 milliseconds, 10 seconds)(client.getBlockCount.map(count => ('currentBlockCount, count)).pipeTo(self))
 
@@ -31,7 +31,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
     }
   }
 
-  def watching(watches: Map[Watch, Cancellable], block2tx: SortedMap[Long, Seq[Transaction]] = SortedMap.empty[Long, Seq[Transaction]], currentBlockCount: Long = 0): Receive = {
+  def watching(watches: Map[Watch, Cancellable], block2tx: SortedMap[Long, Seq[Transaction]], currentBlockCount: Long): Receive = {
 
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
 
@@ -43,7 +43,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
           client.getTxConfirmations(txId.toString).map(_ match {
             case Some(confirmations) if confirmations >= minDepth =>
               channel ! event
-              self !('remove, w)
+              self ! ('remove, w)
             case _ => {}
           })
         case w@WatchSpent(channel, txId, outputIndex, minDepth, event) =>
@@ -53,16 +53,16 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
           } yield {
             if (conf.isDefined && !unspent) {
               // NOTE : isSpent=!isUnspent only works if the parent transaction actually exists (which we assume to be true)
-              client.findSpendingTransaction(txId.toString(), outputIndex).map(tx => channel !(BITCOIN_ANCHOR_SPENT, tx))
-              self !('remove, w)
+              client.findSpendingTransaction(txId.toString(), outputIndex).map(tx => channel ! (BITCOIN_ANCHOR_SPENT, tx))
+              self ! ('remove, w)
             } else {}
           }
       })
-      context.become(watching(watches + (w -> cancellable)))
+      context.become(watching(watches + (w -> cancellable), block2tx, currentBlockCount))
 
     case ('remove, w: Watch) if watches.contains(w) =>
       watches(w).cancel()
-      context.become(watching(watches - w))
+      context.become(watching(watches - w, block2tx, currentBlockCount))
 
     case ('currentBlockCount, count: Long) => {
       val topublish = block2tx.filterKeys(_ <= count)
@@ -85,7 +85,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
     case Terminated(subject) =>
       val deadWatches = watches.keys.filter(_.channel == subject)
       deadWatches.map(w => watches(w).cancel())
-      context.become(watching(watches -- deadWatches))
+      context.become(watching(watches -- deadWatches, block2tx, currentBlockCount))
   }
 }
 

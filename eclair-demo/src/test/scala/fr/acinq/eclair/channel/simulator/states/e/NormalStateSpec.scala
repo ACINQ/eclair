@@ -621,7 +621,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("react when the other party published their commit tx") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  test("react when the other party published their commit tx with pending received htlcs") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
 
@@ -635,14 +635,45 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       sender.expectMsg("ok")
 
       // now we suppose that Alice publishes her current commit tx
+      val blockchain = TestActorRef(new PollingWatcher(new TestBitcoinClient(Some(sender.ref))))
       bob ! (BITCOIN_ANCHOR_SPENT, alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx)
       bob2blockchain.expectMsgType[PublishAsap]
-
-      val blockchain = TestActorRef(new PollingWatcher(new TestBitcoinClient(Some(sender.ref))))
       bob2blockchain.forward(blockchain)
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      bob2blockchain.forward(blockchain)
+      awaitCond(bob.stateName == UNILATERAL_CLOSING)
+
       blockchain ! ('currentBlockCount, 10000L)
       val tx = sender.expectMsgType[Transaction]
-      awaitCond(bob.stateName == UNILATERAL_CLOSING)
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("react when the other party published their commit tx with pending sent htlcs") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      // alice sends 300 000 sat and bob fulfills
+      // we reuse the same r (it doesn't matter here)
+      val (r, htlc) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+      sign(bob, alice, bob2alice, alice2bob)
+
+      sender.send(bob, CMD_FULFILL_HTLC(1, r))
+      sender.expectMsg("ok")
+
+      // now we suppose that Bob publishes his current commit tx
+      val blockchain = TestActorRef(new PollingWatcher(new TestBitcoinClient(Some(sender.ref))))
+      alice ! (BITCOIN_ANCHOR_SPENT, bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx)
+      alice2blockchain.expectMsgType[PublishAsap]
+      alice2blockchain.forward(blockchain)
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.forward(blockchain)
+      awaitCond(alice.stateName == UNILATERAL_CLOSING)
+
+      blockchain ! ('currentBlockCount, 10000L)
+      val tx = sender.expectMsgType[Transaction]
+      awaitCond(alice.stateName == CLOSED)
     }
   }
 
