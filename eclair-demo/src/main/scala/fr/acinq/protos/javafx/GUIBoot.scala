@@ -36,17 +36,8 @@ class GUIBoot extends Application {
   val menuBar = new MenuBar()
   val menuFile = new Menu("File")
   val itemConnect = new MenuItem("Open channel")
-  itemConnect.setOnAction(new EventHandler[ActionEvent] {
-    override def handle(event: ActionEvent): Unit = new DialogOpen().showAndWait()
-  })
   val itemSend = new MenuItem("Send")
-  itemSend.setOnAction(new EventHandler[ActionEvent] {
-    override def handle(event: ActionEvent): Unit = new DialogSend().showAndWait()
-  })
   val itemReceive = new MenuItem("Receive")
-  itemReceive.setOnAction(new EventHandler[ActionEvent] {
-    override def handle(event: ActionEvent): Unit = new DialogReceive().showAndWait()
-  })
 
   menuFile.getItems.addAll(itemConnect, new SeparatorMenuItem(), itemSend, itemReceive)
   menuBar.getMenus().addAll(menuFile)
@@ -74,6 +65,15 @@ class GUIBoot extends Application {
   override def start(primaryStage: Stage): Unit = {
     primaryStage.setTitle(s"Eclair ${Globals.Node.id}")
     primaryStage.setScene(scene)
+    itemConnect.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent): Unit = new DialogOpen(primaryStage).showAndWait()
+    })
+    itemSend.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent): Unit = new DialogSend(primaryStage).showAndWait()
+    })
+    itemReceive.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent): Unit = new DialogReceive(primaryStage).showAndWait()
+    })
     primaryStage.show()
     val guiUpdater = GUIBoot.system.actorOf(Props(classOf[GUIUpdater], this), "gui-updater")
     GUIBoot.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])

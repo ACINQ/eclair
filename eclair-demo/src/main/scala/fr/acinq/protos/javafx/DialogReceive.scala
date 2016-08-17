@@ -9,9 +9,15 @@ import javafx.stage.{Modality, Stage, StageStyle}
 /**
   * Created by PM on 16/08/2016.
   */
-class DialogReceive() extends Stage() {
+class DialogReceive(primaryStage: Stage) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.UTILITY)
+  initOwner(primaryStage)
+  setWidth(400)
+  setHeight(60)
+  // center on parent
+  setX(primaryStage.getX() + primaryStage.getWidth() / 2 - getWidth() / 2)
+  setY(primaryStage.getY() + primaryStage.getHeight() / 2 - getHeight() / 2)
   setAlwaysOnTop(true)
   setTitle("Receive")
   setResizable(false)
@@ -31,6 +37,6 @@ class DialogReceive() extends Stage() {
 
   GUIBoot.handlers.getH(textFieldH)
 
-  val scene = new Scene(grid, 400, 60)
+  val scene = new Scene(grid)
   setScene(scene)
 }

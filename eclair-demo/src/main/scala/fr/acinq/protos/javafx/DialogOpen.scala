@@ -10,9 +10,15 @@ import javafx.stage.{Modality, Stage, StageStyle}
 /**
   * Created by PM on 16/08/2016.
   */
-class DialogOpen() extends Stage() {
+class DialogOpen(primaryStage: Stage) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.UTILITY)
+  initOwner(primaryStage)
+  setWidth(300)
+  setHeight(100)
+  // center on parent
+  setX(primaryStage.getX() + primaryStage.getWidth() / 2 - getWidth() / 2)
+  setY(primaryStage.getY() + primaryStage.getHeight() / 2 - getHeight() / 2)
   setAlwaysOnTop(true)
   setTitle("Open a new channel")
   setResizable(false)
@@ -36,6 +42,6 @@ class DialogOpen() extends Stage() {
   })
   grid.add(btn, 1, 1)
 
-  val scene = new Scene(grid, 300, 100)
+  val scene = new Scene(grid)
   setScene(scene)
 }
