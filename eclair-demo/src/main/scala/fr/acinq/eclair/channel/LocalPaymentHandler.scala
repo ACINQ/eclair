@@ -32,12 +32,17 @@ class LocalPaymentHandler extends Actor with ActorLogging {
       sender ! h
       context.become(run(h2r + (h -> r)))
 
-    case htlc: update_add_htlc =>
+    case htlc: update_add_htlc if h2r.contains(htlc.rHash) =>
       val r = h2r(htlc.rHash)
       sender ! CMD_SIGN
       sender ! CMD_FULFILL_HTLC(htlc.id, r)
       sender ! CMD_SIGN
       context.become(run(h2r - htlc.rHash))
+
+    case htlc: update_add_htlc =>
+      sender ! CMD_SIGN
+      sender ! CMD_FAIL_HTLC(htlc.id, "unkown H")
+      sender ! CMD_SIGN
 
   }
 
