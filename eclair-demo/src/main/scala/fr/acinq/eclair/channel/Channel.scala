@@ -659,6 +659,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
               log.warning(s"couldn't resolve downstream node, htlc #$id will timeout", t)
           }
       case None =>
+        // TODO
+        import scala.concurrent.duration._
+        import ExecutionContext.Implicits.global
+        context.system.scheduler.scheduleOnce(300 milliseconds, self, CMD_SIGN)
         log.info(s"we were the origin payer for htlc #$id")
     }
   }
