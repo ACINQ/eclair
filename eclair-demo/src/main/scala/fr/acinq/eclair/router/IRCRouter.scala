@@ -5,7 +5,7 @@ import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.{AliasActor, CMD_ADD_HTLC, Register}
-import fr.acinq.eclair.{Boot, Globals, _}
+import fr.acinq.eclair.{Globals, _}
 import lightning.locktime.Locktime.Blocks
 import lightning.route_step.Next
 import lightning.{route_step, _}
@@ -74,17 +74,15 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
         blockCount <- bitcoinClient.getBlockCount
       } yield route match {
         case us :: next :: others =>
-        Boot.system.actorSelection(Register.actorPathToNodeId(next))
+        context.system.actorSelection(Register.actorPathToNodeId(next))
           .resolveOne(2 seconds)
           .map { channel =>
             // build a route
-            val r = buildRoute(c.amountMsat, others)
+            val r = buildRoute(c.amountMsat, next +: others)
 
             // apply fee
             val amountMsat = r.steps(0).amount
-            val fee = nodeFee(Globals.base_fee, Globals.proportional_fee, amountMsat).toInt
-            // TODO : expiry is not correctly calculated
-            channel ! CMD_ADD_HTLC(amountMsat + fee, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 1)), r, commit = true)
+            channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
             s ! channel
           }
       }) onFailure {
@@ -99,7 +97,7 @@ object IRCRouter {
   def props(bitcoinClient: ExtendedBitcoinClient) = Props(classOf[IRCRouter], bitcoinClient)
 
   def register(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
-    context.actorSelection(Boot.system / "router") ! ChannelDesc(anchor_id, Globals.Node.publicKey, node_id)
+    context.actorSelection(context.system / "router") ! ChannelDesc(anchor_id, Globals.Node.publicKey, node_id)
 
   def findRouteDijkstra(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc]): Seq[BinaryData] = {
     class NamedEdge(val id: BinaryData) extends DefaultEdge

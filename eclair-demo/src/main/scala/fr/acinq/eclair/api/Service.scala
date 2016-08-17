@@ -1,7 +1,5 @@
 package fr.acinq.eclair.api
 
-import java.net.InetSocketAddress
-
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
@@ -10,7 +8,6 @@ import akka.http.scaladsl.server.Directives._
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.Boot
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JString
 import org.json4s._
@@ -18,11 +15,12 @@ import org.json4s.jackson.JsonMethods._
 import org.json4s.jackson.Serialization
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 import akka.pattern.ask
-import fr.acinq.eclair.channel.Register.ListChannels
+import fr.acinq.eclair.channel.Register.{ListChannels, SendCommand}
 import fr.acinq.eclair.router.{ChannelDesc, CreatePayment}
+
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 25/01/2016.
@@ -44,21 +42,13 @@ trait Service extends Logging {
   implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer + new ShaChainSerializer
   implicit val timeout = Timeout(30 seconds)
 
-  def connect(addr: InetSocketAddress, amount: Long): Unit
+  def connect(host: String, port: Int, amount: Long): Unit
 
-  // amount in satoshis
   def register: ActorRef
 
   def router: ActorRef
 
   def paymentHandler: ActorRef
-
-  def sendCommand(channel_id: String, cmd: Command): Future[String] = {
-    Boot.system.actorSelection(Register.actorPathToChannelId(channel_id)).resolveOne().map(actor => {
-      actor ! cmd
-      "ok"
-    })
-  }
 
   val customHeaders = RawHeader("Access-Control-Allow-Origin", "*") ::
     RawHeader("Access-Control-Allow-Headers", "Content-Type") ::
@@ -74,7 +64,7 @@ trait Service extends Logging {
             val json = parse(body).extract[JsonRPCBody]
             val f_res: Future[AnyRef] = json match {
               case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
-                connect(new InetSocketAddress(host, port.toInt), anchor_amount.toLong)
+                connect(host, port.toInt, anchor_amount.toLong)
                 Future.successful("ok")
               case JsonRPCBody(_, _, "info", _) =>
                 Future.successful(Status(Globals.Node.id))
@@ -88,13 +78,13 @@ trait Service extends Logging {
               case JsonRPCBody(_, _, "genh", _) =>
                 (paymentHandler ? 'genh).mapTo[BinaryData]
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
-                sendCommand(channel, CMD_SIGN)
+                (register ? SendCommand(channel, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
               case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
-                sendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))
+                (register ? SendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
               case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
-                sendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))
+                (register ? SendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
               case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                sendCommand(channel, CMD_CLOSE(None))
+                (register ? SendCommand(channel, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")
               case JsonRPCBody(_, _, "help", _) =>
                 Future.successful(List(
                   "info: display basic node information",

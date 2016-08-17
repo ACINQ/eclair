@@ -80,7 +80,7 @@ class RouterSpec extends FunSuite {
     }
   }
 
-  test("compute fees") {
+  test("compute fees 2") {
     val nodeIds = Seq(BinaryData("00"), BinaryData("01"), BinaryData("02"))
     val amountMsat = 1000000
     val route = IRCRouter.buildRoute(amountMsat, nodeIds)
@@ -89,4 +89,22 @@ class RouterSpec extends FunSuite {
     assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
     assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.base_fee, Globals.proportional_fee, route.steps(1).amount))
   }
+
+  test("route to neighbor") {
+    val channels: Map[BinaryData, ChannelDesc] = Map(
+      BinaryData("0a") -> ChannelDesc(BinaryData("0a"), BinaryData("01"), BinaryData("02"))
+    )
+    IRCRouter.findRouteDijkstra(BinaryData("01"), BinaryData("02"), channels)
+  }
+
+  test("compute fees") {
+    val nodeIds = Seq(BinaryData("00"), BinaryData("01"))
+    val amountMsat = 300000000
+    val route = IRCRouter.buildRoute(amountMsat, nodeIds)
+    assert(route.steps.length == 4 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
+    assert(route.steps(2).amount == amountMsat)
+    assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
+    assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.base_fee, Globals.proportional_fee, route.steps(1).amount))
+  }
+
 }

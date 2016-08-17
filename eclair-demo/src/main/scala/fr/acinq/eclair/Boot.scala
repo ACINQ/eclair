@@ -3,6 +3,7 @@ package fr.acinq.eclair
 import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSystem, Props}
+import com.typesafe.config.Config
 import akka.http.scaladsl.Http
 import akka.util.Timeout
 import akka.stream.ActorMaterializer
@@ -23,16 +24,16 @@ import fr.acinq.eclair.router.IRCRouter
   */
 object Boot extends App with Logging {
 
+  logger.info(s"hello!")
+  logger.info(s"nodeid=${Globals.Node.publicKey}")
+  val config = ConfigFactory.load()
+
   implicit lazy val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  logger.info(s"hello!")
-  logger.info(s"nodeid=${Globals.Node.publicKey}")
-
-  val config = ConfigFactory.load()
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
@@ -44,14 +45,17 @@ object Boot extends App with Logging {
   val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val router = system.actorOf(IRCRouter.props(new ExtendedBitcoinClient(bitcoin_client)), name = "router")
 
-  val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port")), "server")
+  val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
+  val _setup = this
   val api = new Service {
-    override val register: ActorRef = Boot.register
-    override val router: ActorRef = Boot.router
-    override def paymentHandler: ActorRef = Boot.paymentHandler
+    override val register: ActorRef = _setup.register
+    override val router: ActorRef = _setup.router
+    override def paymentHandler: ActorRef = _setup.paymentHandler
 
-    override def connect(addr: InetSocketAddress, amount: Long): Unit = system.actorOf(Props(classOf[Client], addr, amount))
+    override def connect(host: String, port: Int, amount: Long): Unit = system.actorOf(Client.props(host, port, amount, register))
   }
+
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port"))
 
 }
+

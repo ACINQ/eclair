@@ -1,7 +1,6 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
-import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -30,6 +29,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   log.info(s"commit pubkey: ${params.commitPubKey}")
   log.info(s"final pubkey: ${params.finalPubKey}")
+
+  context.system.eventStream.publish(ChannelCreated(self, params, theirNodeId))
 
   params.anchorAmount match {
     case None =>
@@ -137,6 +138,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
         Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
+      context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId))
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -172,6 +174,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             OurCommit(0, ourSpec, signedTx), theirCommitment,
             OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
             Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
+          context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }
 
@@ -358,6 +362,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           (commitments1.ourCommit.spec.htlcs -- d.commitments.ourCommit.spec.htlcs)
             .filter(_.direction == IN)
             .foreach(htlc => propagateUpstream(htlc.add, d.commitments.anchorId))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleUnicloseError(cause, d)
       }
@@ -593,6 +598,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   }
 
+  onTransition {
+    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, previousState, currentState, stateData))
+  }
+
   /*
           888    888        d8888 888b    888 8888888b.  888      8888888888 8888888b.   .d8888b.
           888    888       d88888 8888b   888 888  "Y88b 888      888        888   Y88b d88P  Y88b
@@ -610,7 +619,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       case route_step(amountMsat, Next.Bitcoin(nextNodeId)) +: rest =>
         log.debug(s"propagating htlc #${add.id} to $nextNodeId")
         import ExecutionContext.Implicits.global
-        Boot.system.actorSelection(Register.actorPathToNodeId(nextNodeId))
+        context.system.actorSelection(Register.actorPathToNodeId(nextNodeId))
           .resolveOne(3 seconds)
           .onComplete {
             case Success(upstream) =>
@@ -638,7 +647,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       case Some(previousChannelId) =>
         log.debug(s"propagating $short for htlc #$id to $previousChannelId")
         import ExecutionContext.Implicits.global
-        Boot.system.actorSelection(Register.actorPathToChannelId(previousChannelId))
+        context.system.actorSelection(Register.actorPathToChannelId(previousChannelId))
           .resolveOne(3 seconds)
           .onComplete {
             case Success(downstream) =>
