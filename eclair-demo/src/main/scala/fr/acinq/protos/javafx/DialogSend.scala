@@ -2,7 +2,7 @@ package fr.acinq.protos.javafx
 
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.geometry.{Insets, Pos}
-import javafx.scene.Scene
+import javafx.scene.{Node, Scene}
 import javafx.scene.control.{Button, Label, TextField}
 import javafx.scene.layout.GridPane
 import javafx.stage.{Modality, Stage, StageStyle}
@@ -49,8 +49,10 @@ class DialogSend(primaryStage: Stage) extends Stage() {
 
   val btn = new Button("Send")
   btn.setOnAction(new EventHandler[ActionEvent] {
-    override def handle(event: ActionEvent): Unit =
+    override def handle(event: ActionEvent): Unit = {
       GUIBoot.handlers.send(textFieldNodeId.getText, textFieldH.getText, textFieldAmountMsat.getText)
+      event.getSource.asInstanceOf[Node].getScene.getWindow.hide()
+    }
   })
   grid.add(btn, 1, 3)
 
