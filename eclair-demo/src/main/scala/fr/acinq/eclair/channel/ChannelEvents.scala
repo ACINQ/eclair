@@ -11,7 +11,7 @@ trait ChannelEvent
 
 case class ChannelCreated(channel: ActorRef, params: OurChannelParams, theirNodeId: String) extends ChannelEvent
 
-case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData) extends ChannelEvent
+case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: Long) extends ChannelEvent
 
 case class ChannelChangedState(channel: ActorRef, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 

@@ -52,7 +52,7 @@ class GUIBoot extends Application {
   hBoxPane.setSpacing(4)
   hBoxPane.setPadding(new Insets(0, 4, 0, 4))
   hBoxPane.setAlignment(Pos.CENTER_RIGHT)
-  val labelApi = new Label(s"Listenening on HTTP ${GUIBoot.config.getInt("eclair.api.port")}")
+  val labelApi = new Label(s"Listening on HTTP ${GUIBoot.config.getInt("eclair.api.port")}")
   val separator1 = new Separator(Orientation.VERTICAL)
   val labelServer = new Label(s"Listening on TCP ${GUIBoot.config.getInt("eclair.server.port")}")
   val separator2 = new Separator(Orientation.VERTICAL)
