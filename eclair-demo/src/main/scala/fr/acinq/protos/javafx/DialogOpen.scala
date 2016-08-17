@@ -10,7 +10,7 @@ import javafx.stage.{Modality, Stage, StageStyle}
 /**
   * Created by PM on 16/08/2016.
   */
-class DialogOpen(primaryStage: Stage) extends Stage() {
+class DialogOpen(primaryStage: Stage, handlers: Handlers) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.UTILITY)
   initOwner(primaryStage)
@@ -38,7 +38,7 @@ class DialogOpen(primaryStage: Stage) extends Stage() {
   val btn = new Button("Connect")
   btn.setOnAction(new EventHandler[ActionEvent] {
     override def handle(event: ActionEvent): Unit = {
-      GUIBoot.handlers.open(textFieldHostPort.getText)
+      handlers.open(textFieldHostPort.getText)
       event.getSource.asInstanceOf[Node].getScene.getWindow.hide()
     }
   })

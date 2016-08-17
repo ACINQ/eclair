@@ -13,9 +13,9 @@ import grizzled.slf4j.Logging
 /**
   * Created by PM on 16/08/2016.
   */
-class Handlers() extends Logging {
+class Handlers(setup: Setup) extends Logging {
 
-  import GUIBoot._
+  import setup._
 
   def open(hostPort: String) = {
     val regex = "([a-zA-Z0-9\\.\\-_]+):([0-9]+)".r

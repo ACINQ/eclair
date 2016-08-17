@@ -9,7 +9,7 @@ import javafx.stage.{Modality, Stage, StageStyle}
 /**
   * Created by PM on 16/08/2016.
   */
-class DialogReceive(primaryStage: Stage) extends Stage() {
+class DialogReceive(primaryStage: Stage, handlers: Handlers) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.UTILITY)
   initOwner(primaryStage)
@@ -35,7 +35,7 @@ class DialogReceive(primaryStage: Stage) extends Stage() {
   textFieldH.setEditable(false)
   grid.add(textFieldH, 1, 0)
 
-  GUIBoot.handlers.getH(textFieldH)
+  handlers.getH(textFieldH)
 
   val scene = new Scene(grid)
   setScene(scene)

@@ -23,6 +23,10 @@ import fr.acinq.eclair.router.IRCRouter
   * Created by PM on 25/01/2016.
   */
 object Boot extends App with Logging {
+  new Setup()
+}
+
+class Setup extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"nodeid=${Globals.Node.publicKey}")
@@ -36,6 +40,7 @@ object Boot extends App with Logging {
 
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
+  val bitcoinVersion = Await.result(bitcoin_client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
 
   val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
   val paymentHandler = config.getString("eclair.payment-handler") match {
@@ -50,12 +55,10 @@ object Boot extends App with Logging {
   val api = new Service {
     override val register: ActorRef = _setup.register
     override val router: ActorRef = _setup.router
+
     override def paymentHandler: ActorRef = _setup.paymentHandler
 
     override def connect(host: String, port: Int, amount: Long): Unit = system.actorOf(Client.props(host, port, amount, register))
   }
-
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port"))
-
 }
-

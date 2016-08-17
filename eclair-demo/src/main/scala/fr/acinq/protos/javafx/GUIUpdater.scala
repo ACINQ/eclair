@@ -4,15 +4,17 @@ import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.geometry.Orientation
 import javafx.scene.control.Separator
+import javafx.stage.Stage
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
+import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel._
 
 
 /**
   * Created by PM on 16/08/2016.
   */
-class GUIUpdater(helloWorld: GUIBoot) extends Actor with ActorLogging {
+class GUIUpdater(primaryStage: Stage, helloWorld: GUIBoot, setup: Setup) extends Actor with ActorLogging {
 
   def receive: Receive = main(Map())
 
@@ -65,5 +67,6 @@ class GUIUpdater(helloWorld: GUIBoot) extends Actor with ActorLogging {
       })
 
     case e: ChannelEvent => log.warning(s"channel event: $e")
+
   }
 }

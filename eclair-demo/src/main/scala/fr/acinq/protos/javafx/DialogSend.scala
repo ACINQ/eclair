@@ -10,7 +10,7 @@ import javafx.stage.{Modality, Stage, StageStyle}
 /**
   * Created by PM on 16/08/2016.
   */
-class DialogSend(primaryStage: Stage) extends Stage() {
+class DialogSend(primaryStage: Stage, handlers: Handlers) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.UTILITY)
   initOwner(primaryStage)
@@ -50,7 +50,7 @@ class DialogSend(primaryStage: Stage) extends Stage() {
   val btn = new Button("Send")
   btn.setOnAction(new EventHandler[ActionEvent] {
     override def handle(event: ActionEvent): Unit = {
-      GUIBoot.handlers.send(textFieldNodeId.getText, textFieldH.getText, textFieldAmountMsat.getText)
+      handlers.send(textFieldNodeId.getText, textFieldH.getText, textFieldAmountMsat.getText)
       event.getSource.asInstanceOf[Node].getScene.getWindow.hide()
     }
   })
