@@ -3,7 +3,6 @@ package fr.acinq.eclair
 import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import com.typesafe.config.Config
 import akka.http.scaladsl.Http
 import akka.util.Timeout
 import akka.stream.ActorMaterializer
@@ -16,7 +15,7 @@ import grizzled.slf4j.Logging
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
-import Globals._
+import fr.acinq.bitcoin.BitcoinJsonRPCClient
 import fr.acinq.eclair.router.IRCRouter
 
 /**
@@ -37,6 +36,12 @@ class Setup extends Logging {
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+
+  val bitcoin_client = new BitcoinJsonRPCClient(
+    user = config.getString("eclair.bitcoind.rpcuser"),
+    password = config.getString("eclair.bitcoind.rpcpassword"),
+    host = config.getString("eclair.bitcoind.host"),
+    port = config.getInt("eclair.bitcoind.port"))
 
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")

@@ -32,12 +32,4 @@ object Globals {
   val base_fee = config.getInt("eclair.base-fee")
   val proportional_fee = config.getInt("eclair.proportional-fee")
   val default_anchor_amount = 1000000
-
-  //def newChannelParameters = OurChannelParams(default_locktime, commit_priv, final_priv, default_mindepth, commit_fee, "sha-seed".getBytes(), None)
-
-  val bitcoin_client = new BitcoinJsonRPCClient(
-    user = config.getString("eclair.bitcoind.rpcuser"),
-    password = config.getString("eclair.bitcoind.rpcpassword"),
-    host = config.getString("eclair.bitcoind.host"),
-    port = config.getInt("eclair.bitcoind.port"))
 }

@@ -92,6 +92,8 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
       }
   }
 
+  @scala.throws[Exception](classOf[Exception])
+  override def postStop(): Unit = ircClient.shutdown()
 }
 
 object IRCRouter {

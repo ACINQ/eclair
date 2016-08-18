@@ -9,7 +9,7 @@ import javafx.scene.Scene
 import javafx.scene.control.TabPane.TabClosingPolicy
 import javafx.scene.control._
 import javafx.scene.layout.{BorderPane, HBox, StackPane, VBox}
-import javafx.stage.Stage
+import javafx.stage.{Stage, WindowEvent}
 
 import akka.actor.Props
 import com.mxgraph.swing.mxGraphComponent
@@ -17,6 +17,9 @@ import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.router.RouteEvent
 import grizzled.slf4j.Logging
+
+import scala.concurrent.Await
+import scala.concurrent.duration.Duration
 
 
 /**
@@ -97,7 +100,7 @@ class GUIBoot extends Application {
                   component.doLayout()
                   component.repaint()
                   component.refresh()
-                case None => {}
+                case _ => {}
               }
             }
 
@@ -114,6 +117,14 @@ class GUIBoot extends Application {
             primaryStage.heightProperty().addListener(new ChangeListener[Number] {
               override def changed(observable: ObservableValue[_ <: Number], oldValue: Number, newValue: Number): Unit = refreshGraph
             })
+            primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
+              override def handle(event: WindowEvent): Unit = {
+                setup.bitcoin_client.client.close()
+                setup.system.terminate()
+                Await.result(setup.system.whenTerminated, Duration.Inf)
+              }
+            })
+
             primaryStage.setScene(scene)
             primaryStage.show()
             dialogSplash.hide()
