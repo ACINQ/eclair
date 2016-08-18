@@ -1,18 +1,22 @@
 package fr.acinq.protos.javafx
 
 import javafx.application.{Application, Platform}
-import javafx.event.{ActionEvent, EventHandler}
-import javafx.geometry.{Insets, Orientation, Pos}
+import javafx.beans.value.{ChangeListener, ObservableValue}
+import javafx.embed.swing.SwingNode
+import javafx.event.{ActionEvent, Event, EventHandler, EventType}
+import javafx.geometry.{Bounds, Insets, Orientation, Pos}
 import javafx.scene.Scene
+import javafx.scene.control.TabPane.TabClosingPolicy
 import javafx.scene.control._
-import javafx.scene.layout.{BorderPane, HBox, VBox}
+import javafx.scene.layout.{BorderPane, HBox, StackPane, VBox}
 import javafx.stage.Stage
 
 import akka.actor.Props
+import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.channel.ChannelEvent
+import fr.acinq.eclair.router.RouteEvent
 import grizzled.slf4j.Logging
-
 
 
 /**
@@ -32,10 +36,19 @@ class GUIBoot extends Application {
   menuBar.getMenus().addAll(menuFile)
   root.setTop(menuBar)
 
+  val tabChannels = new Tab("Channels")
   val vBoxPane = new VBox()
   vBoxPane.setSpacing(4)
   vBoxPane.setPadding(new Insets(8, 4, 4, 8))
-  root.setCenter(vBoxPane)
+  tabChannels.setContent(vBoxPane)
+
+  val tabGraph = new Tab("Graph")
+  val swingNode = new SwingNode()
+  tabGraph.setContent(swingNode)
+
+  val paneTab = new TabPane(tabChannels, tabGraph)
+  paneTab.setTabClosingPolicy(TabClosingPolicy.UNAVAILABLE)
+  root.setCenter(paneTab)
 
   val scene = new Scene(root, 1200, 250)
 
@@ -50,6 +63,7 @@ class GUIBoot extends Application {
         val setup = new Setup
         val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, _this, setup), "gui-updater")
         setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
+        setup.system.eventStream.subscribe(guiUpdater, classOf[RouteEvent])
         val handlers = new Handlers(setup)
         Platform.runLater(new Runnable {
           override def run(): Unit = {
@@ -75,6 +89,30 @@ class GUIBoot extends Application {
             })
             itemReceive.setOnAction(new EventHandler[ActionEvent] {
               override def handle(event: ActionEvent): Unit = new DialogReceive(primaryStage, handlers).showAndWait()
+            })
+
+            def refreshGraph: Unit = {
+              Option(swingNode.getContent) match {
+                case Some(component: mxGraphComponent) =>
+                  component.doLayout()
+                  component.repaint()
+                  component.refresh()
+                case None => {}
+              }
+            }
+
+            tabGraph.setOnSelectionChanged(new EventHandler[Event] {
+              override def handle(event: Event): Unit = {
+                if (event.getTarget == tabGraph) {
+                  refreshGraph
+                }
+              }
+            })
+            primaryStage.widthProperty().addListener(new ChangeListener[Number] {
+              override def changed(observable: ObservableValue[_ <: Number], oldValue: Number, newValue: Number): Unit = refreshGraph
+            })
+            primaryStage.heightProperty().addListener(new ChangeListener[Number] {
+              override def changed(observable: ObservableValue[_ <: Number], oldValue: Number, newValue: Number): Unit = refreshGraph
             })
             primaryStage.setScene(scene)
             primaryStage.show()

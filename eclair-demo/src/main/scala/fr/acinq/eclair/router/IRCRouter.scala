@@ -64,7 +64,9 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
     case c@ChannelDesc(id, a, b) =>
       self ! ChannelRegister(c)
       ircClient.sendMessage(channel, s"$id: $a-$b")
-    case ChannelRegister(c) => context become main(channels + (c.id -> c))
+    case ChannelRegister(c) =>
+      context.system.eventStream.publish(ChannelDiscovered(c.id, c.a, c.b))
+      context become main(channels + (c.id -> c))
     case ChannelUnregister(c) => context become main(channels - c.id)
     case 'network => sender ! channels.values
     case c: CreatePayment =>
