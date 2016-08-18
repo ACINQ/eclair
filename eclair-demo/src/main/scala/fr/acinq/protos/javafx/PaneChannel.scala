@@ -27,7 +27,6 @@ class PaneChannel extends VBox {
   grid.getColumnConstraints().add(new ColumnConstraints(500))
   grid.getColumnConstraints().add(new ColumnConstraints(100))
   grid.getColumnConstraints().add(new ColumnConstraints(300))
-  grid.getColumnConstraints().add(new ColumnConstraints(50))
 
   val labelNodeId = new Label(s"Node id:")
   grid.add(labelNodeId, 0, 0)
