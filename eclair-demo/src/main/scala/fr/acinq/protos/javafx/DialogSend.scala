@@ -54,6 +54,8 @@ class DialogSend(primaryStage: Stage, handlers: Handlers) extends Stage() {
       event.getSource.asInstanceOf[Node].getScene.getWindow.hide()
     }
   })
+  // click on enter
+  btn.defaultButtonProperty().bind(btn.focusedProperty())
   grid.add(btn, 1, 3)
 
   val scene = new Scene(grid)

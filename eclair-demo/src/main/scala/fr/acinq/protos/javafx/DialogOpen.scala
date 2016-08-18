@@ -4,6 +4,7 @@ import javafx.event.{ActionEvent, EventHandler}
 import javafx.geometry.{Insets, Pos}
 import javafx.scene.{Node, Scene}
 import javafx.scene.control.{Button, Label, TextField}
+import javafx.scene.input.{KeyCode, KeyEvent}
 import javafx.scene.layout.GridPane
 import javafx.stage.{Modality, Stage, StageStyle}
 
@@ -42,6 +43,8 @@ class DialogOpen(primaryStage: Stage, handlers: Handlers) extends Stage() {
       event.getSource.asInstanceOf[Node].getScene.getWindow.hide()
     }
   })
+  // click on enter
+  btn.defaultButtonProperty().bind(btn.focusedProperty())
   grid.add(btn, 1, 1)
 
   val scene = new Scene(grid)
