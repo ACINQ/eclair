@@ -81,10 +81,6 @@ case object BITCOIN_CLOSE_DONE extends BlockchainEvent
 
 sealed trait Command
 /**
-  * @param rHash
-  * @param expiry
-  * @param rHash
-  * @param originChannelId
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
 final case class CMD_ADD_HTLC(amountMsat: Int, rHash: sha256_hash, expiry: locktime, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), originChannelId: Option[BinaryData] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
