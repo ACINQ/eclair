@@ -101,8 +101,8 @@ class RouterSpec extends FunSuite {
     val nodeIds = Seq(BinaryData("00"), BinaryData("01"))
     val amountMsat = 300000000
     val route = IRCRouter.buildRoute(amountMsat, nodeIds)
-    assert(route.steps.length == 4 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
-    assert(route.steps(2).amount == amountMsat)
+    assert(route.steps.length == 3 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
+    assert(route.steps(1).amount == amountMsat)
     assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
     assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.base_fee, Globals.proportional_fee, route.steps(1).amount))
   }
