@@ -205,7 +205,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
-      sender.expectMsg("cannot sign when there are no changes")
+      sender.expectNoMsg() // just ignored
+      //sender.expectMsg("cannot sign when there are no changes")
     }
   }
 

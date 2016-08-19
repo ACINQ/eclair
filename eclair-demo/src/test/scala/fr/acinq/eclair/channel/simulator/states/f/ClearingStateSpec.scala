@@ -231,7 +231,8 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
-      sender.expectMsg("cannot sign when there are no changes")
+      sender.expectNoMsg() // just ignored
+      //sender.expectMsg("cannot sign when there are no changes")
     }
   }
 

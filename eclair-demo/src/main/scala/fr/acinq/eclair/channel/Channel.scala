@@ -32,6 +32,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   context.system.eventStream.publish(ChannelCreated(self, params, theirNodeId))
 
+  import ExecutionContext.Implicits.global
+
   params.anchorAmount match {
     case None =>
       them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
@@ -251,8 +253,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       IRCRouter.register(theirNodeId, d.commitments.anchorId)
-      import ExecutionContext.Implicits.global
-      d.commitments.ourParams.autoSignInterval.map(interval => context.system.scheduler.schedule(interval, interval, self, CMD_SIGN))
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid =>
@@ -272,8 +272,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       IRCRouter.register(theirNodeId, d.commitments.anchorId)
-      import ExecutionContext.Implicits.global
-      d.commitments.ourParams.autoSignInterval.map(interval => context.system.scheduler.schedule(interval, interval, self, CMD_SIGN))
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
@@ -309,7 +307,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(add@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) =>
+          commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleUnicloseError(cause, d)
       }
 
@@ -325,6 +325,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(commitments1) =>
           propagateDownstream(Right(fulfill), downstreams)
+          commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
         case Failure(cause) => handleUnicloseError(cause, d)
       }
@@ -341,6 +342,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(commitments1) =>
           propagateDownstream(Left(fail), downstreams)
+          commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
         case Failure(cause) => handleUnicloseError(cause, d)
       }
@@ -351,6 +353,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       import scala.concurrent.ExecutionContext.Implicits.global
       context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
       stay
+
+    case Event(CMD_SIGN, d: DATA_NORMAL) if !Commitments.weHaveChanges(d.commitments) =>
+      // nothing to sign, just ignoring
+      log.info("ignoring CMD_SIGN (nothing to sign)")
+      stay()
 
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
       Try(Commitments.sendCommit(d.commitments)) match {
@@ -464,6 +471,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       import scala.concurrent.ExecutionContext.Implicits.global
       context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
       stay
+
+    case Event(CMD_SIGN, d: DATA_CLEARING) if !Commitments.weHaveChanges(d.commitments) =>
+      // nothing to sign, just ignoring
+      log.info("ignoring CMD_SIGN (nothing to sign)")
+      stay()
 
     case Event(CMD_SIGN, d: DATA_CLEARING) =>
       Try(Commitments.sendCommit(d.commitments)) match {
@@ -663,15 +675,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
               log.warning(s"couldn't resolve downstream node, htlc #$id will timeout", t)
           }
       case None =>
-        // TODO
-        //import scala.concurrent.duration._
-        //import ExecutionContext.Implicits.global
-        //context.system.scheduler.scheduleOnce(300 milliseconds, self, CMD_SIGN)
         log.info(s"we were the origin payer for htlc #$id")
     }
   }
 
-  def handleCommandSuccess(sender: ActorRef, change: Change, newData: Data) = {
+  def handleCommandSuccess(sender: ActorRef, change: Change, newData: HasCommitments) = {
     them ! change
     sender ! "ok"
     stay using newData
