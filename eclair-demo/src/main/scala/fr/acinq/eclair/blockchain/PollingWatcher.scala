@@ -73,7 +73,7 @@ class PollingWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContex
     case Publish(tx) => publish(tx)
 
     case PublishAsap(tx) =>
-      val cltvTimeout = Scripts.csvTimeout(tx)
+      val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
       val timeout = Math.max(cltvTimeout, csvTimeout)
       val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
