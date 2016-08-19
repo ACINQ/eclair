@@ -3,6 +3,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
 import lightning._
 
+import scala.concurrent.duration.FiniteDuration
+
 
 /**
   * Created by PM on 20/05/2016.
@@ -81,7 +83,7 @@ sealed trait Command
 /**
   * @param rHash
   * @param expiry
-  * @param r
+  * @param rHash
   * @param originChannelId
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
@@ -108,7 +110,7 @@ final case class RES_GETINFO(nodeid: BinaryData, channelid: BinaryData, state: S
 
 sealed trait Data
 case object Nothing extends Data
-final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, initialFeeRate: Long, shaSeed: BinaryData, anchorAmount: Option[Long]) {
+final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, initialFeeRate: Long, shaSeed: BinaryData, anchorAmount: Option[Long], autoSignInterval: Option[FiniteDuration] = None) {
   val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
 }

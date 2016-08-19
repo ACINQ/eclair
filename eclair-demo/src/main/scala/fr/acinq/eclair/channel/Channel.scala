@@ -251,6 +251,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       IRCRouter.register(theirNodeId, d.commitments.anchorId)
+      import ExecutionContext.Implicits.global
+      d.commitments.ourParams.autoSignInterval.map(interval => context.system.scheduler.schedule(interval, interval, self, CMD_SIGN))
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid =>
@@ -270,6 +272,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       IRCRouter.register(theirNodeId, d.commitments.anchorId)
+      import ExecutionContext.Implicits.global
+      d.commitments.ourParams.autoSignInterval.map(interval => context.system.scheduler.schedule(interval, interval, self, CMD_SIGN))
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
@@ -660,9 +664,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           }
       case None =>
         // TODO
-        import scala.concurrent.duration._
-        import ExecutionContext.Implicits.global
-        context.system.scheduler.scheduleOnce(300 milliseconds, self, CMD_SIGN)
+        //import scala.concurrent.duration._
+        //import ExecutionContext.Implicits.global
+        //context.system.scheduler.scheduleOnce(300 milliseconds, self, CMD_SIGN)
         log.info(s"we were the origin payer for htlc #$id")
     }
   }

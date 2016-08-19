@@ -1,12 +1,11 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Crypto, DeterministicWallet}
-import fr.acinq.eclair.api.BinaryDataSerializer
-import fr.acinq.eclair.channel.OurChannelParams
-import fr.acinq.eclair.crypto.LightningCrypto
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import lightning.locktime
-import lightning.locktime.Locktime.{Blocks, Seconds}
+import lightning.locktime.Locktime.{Blocks}
+
+import scala.concurrent.duration._
 
 
 /**
@@ -32,4 +31,5 @@ object Globals {
   val base_fee = config.getInt("eclair.base-fee")
   val proportional_fee = config.getInt("eclair.proportional-fee")
   val default_anchor_amount = 1000000
+  val autosign_interval = 300 milliseconds
 }

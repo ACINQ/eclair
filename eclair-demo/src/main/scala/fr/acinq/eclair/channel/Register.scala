@@ -38,7 +38,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
     case CreateChannel(connection, amount) =>
       val commit_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 0L :: counter :: Nil)
       val final_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 1L :: counter :: Nil)
-      val params = OurChannelParams(Globals.default_locktime, commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, Globals.Node.seed, amount)
+      val params = OurChannelParams(Globals.default_locktime, commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, Globals.Node.seed, amount, Some(Globals.autosign_interval))
       val channel = context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, params), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children
