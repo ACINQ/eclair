@@ -679,7 +679,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     }
   }
 
-  def handleCommandSuccess(sender: ActorRef, change: Change, newData: HasCommitments) = {
+  def handleCommandSuccess(sender: ActorRef, change: Change, newData: Data) = {
     them ! change
     sender ! "ok"
     stay using newData
