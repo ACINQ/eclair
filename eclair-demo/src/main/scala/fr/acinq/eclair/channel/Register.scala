@@ -48,7 +48,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
       import scala.concurrent.ExecutionContext.Implicits.global
       context.system.actorSelection(actorPathToChannelId(channelId)).resolveOne().map(actor => {
         actor ! cmd
-        s ! "ok"
+        actor
       })
   }
 }
