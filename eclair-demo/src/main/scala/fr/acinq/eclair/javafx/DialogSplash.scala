@@ -15,7 +15,6 @@ class DialogSplash(primaryStage: Stage) extends Stage() {
 
   setWidth(500)
   setHeight(500)
-  setAlwaysOnTop(true)
   setResizable(false)
 
   val image = new Image("/eclair01.png", true)

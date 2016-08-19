@@ -20,7 +20,6 @@ class DialogOpen(primaryStage: Stage, handlers: Handlers) extends Stage() {
   // center on parent
   setX(primaryStage.getX() + primaryStage.getWidth() / 2 - getWidth() / 2)
   setY(primaryStage.getY() + primaryStage.getHeight() / 2 - getHeight() / 2)
-  setAlwaysOnTop(true)
   setTitle("Open a new channel")
   setResizable(false)
 

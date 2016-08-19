@@ -85,13 +85,13 @@ class GUIBoot extends Application {
             hBoxPane.getChildren.addAll(labelNodeId, separator1, labelApi, separator2, labelServer, separator3, labelBitcoin)
             root.setBottom(hBoxPane)
             itemConnect.setOnAction(new EventHandler[ActionEvent] {
-              override def handle(event: ActionEvent): Unit = new DialogOpen(primaryStage, handlers).showAndWait()
+              override def handle(event: ActionEvent): Unit = new DialogOpen(primaryStage, handlers).show()
             })
             itemSend.setOnAction(new EventHandler[ActionEvent] {
-              override def handle(event: ActionEvent): Unit = new DialogSend(primaryStage, handlers).showAndWait()
+              override def handle(event: ActionEvent): Unit = new DialogSend(primaryStage, handlers).show()
             })
             itemReceive.setOnAction(new EventHandler[ActionEvent] {
-              override def handle(event: ActionEvent): Unit = new DialogReceive(primaryStage, handlers).showAndWait()
+              override def handle(event: ActionEvent): Unit = new DialogReceive(primaryStage, handlers).show()
             })
 
             def refreshGraph: Unit = {
