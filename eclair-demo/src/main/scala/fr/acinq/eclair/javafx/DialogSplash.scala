@@ -1,4 +1,4 @@
-package fr.acinq.protos.javafx
+package fr.acinq.eclair.javafx
 
 import javafx.scene.image.{Image, ImageView}
 import javafx.scene.layout.StackPane

@@ -1,4 +1,4 @@
-package fr.acinq.protos.javafx
+package fr.acinq.eclair.javafx
 
 import javafx.application.{Application, Platform}
 import javafx.beans.value.{ChangeListener, ObservableValue}

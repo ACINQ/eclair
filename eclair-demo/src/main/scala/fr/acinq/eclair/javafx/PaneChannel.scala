@@ -1,4 +1,4 @@
-package fr.acinq.protos.javafx
+package fr.acinq.eclair.javafx
 
 import javafx.geometry.Pos
 import javafx.scene.control.{Button, Label, ProgressBar, TextField}

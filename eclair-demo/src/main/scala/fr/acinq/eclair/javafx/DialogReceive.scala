@@ -1,4 +1,4 @@
-package fr.acinq.protos.javafx
+package fr.acinq.eclair.javafx
 
 import javafx.geometry.{Insets, Pos}
 import javafx.scene.Scene
