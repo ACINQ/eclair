@@ -516,12 +516,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       goto(CLOSED)
   }
 
-  when(CLOSED, stateTimeout = 30 seconds) {
-    case Event(StateTimeout, _) =>
-      log.info("shutting down")
-      stop(FSM.Normal)
-  }
-
   when(UNILATERAL_CLOSING) {
     case Event(TransactionConfirmed(tx), d: DATA_UNILATERAL_CLOSING) if !d.watchedTransaction.contains(tx) =>
       log.warning(s"received confirmation for tx ${tx.txid} that we are not watching")
@@ -532,8 +526,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       if (watched1.isEmpty) {
         goto(CLOSED)
       } else stay using d.copy(watchedTransaction = watched1)
+  }
 
-    case Event(_, _) => stay
+  when(CLOSED, stateTimeout = 30 seconds) {
+    case Event(StateTimeout, _) =>
+      log.info("shutting down")
+      stop(FSM.Normal)
   }
 
   when(ERR_INFORMATION_LEAK, stateTimeout = 30 seconds) {
