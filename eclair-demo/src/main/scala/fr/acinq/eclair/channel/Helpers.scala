@@ -46,8 +46,7 @@ object Helpers {
   }
 
   def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
-    val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
-    val spec1 = ourChanges.foldLeft(spec) {
+    val spec1 = ourChanges.foldLeft(ourCommitSpec) {
       case (spec, u: update_add_htlc) => addHtlc(spec, OUT, u)
       case (spec, _) => spec
     }

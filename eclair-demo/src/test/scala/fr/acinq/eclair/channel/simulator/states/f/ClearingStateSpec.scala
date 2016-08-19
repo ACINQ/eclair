@@ -211,7 +211,15 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
   test("recv CMD_SIGN") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, update_fulfill_htlc(1, rval(1, 2, 3, 4)))
+      // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      bob2alice.expectMsgType[update_fulfill_htlc]
+      bob2alice.forward(alice)
+      sender.send(bob, CMD_SIGN)
+      bob2alice.expectMsgType[update_commit]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[update_revocation]
+      alice2bob.forward(bob)
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
       alice2bob.expectMsgType[update_commit]
@@ -219,7 +227,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     }
   }
 
-  ignore("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -256,7 +264,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     }
   }
 
-  ignore("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
       val sender = TestProbe()

@@ -201,7 +201,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -270,7 +270,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
