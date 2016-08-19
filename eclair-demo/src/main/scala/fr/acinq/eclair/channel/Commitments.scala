@@ -143,10 +143,14 @@ object Commitments {
     }
   }
 
+  def weHaveChanges(commitments: Commitments): Boolean = commitments.theirChanges.acked.size > 0 || commitments.ourChanges.proposed.size > 0
+
+  def theyHaveChanges(commitments: Commitments): Boolean = commitments.ourChanges.acked.size > 0 || commitments.theirChanges.proposed.size > 0
+
   def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
     import commitments._
     commitments.theirNextCommitInfo match {
-      case Right(theirNextRevocationHash) if theirChanges.acked.isEmpty && ourChanges.proposed.isEmpty =>
+      case Right(theirNextRevocationHash) if !weHaveChanges(commitments) =>
         throw new RuntimeException("cannot sign when there are no changes")
       case Right(theirNextRevocationHash) =>
         // sign all our proposals + their acked proposals
@@ -177,7 +181,7 @@ object Commitments {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
-    if (ourChanges.acked.isEmpty && commitments.theirChanges.proposed.isEmpty)
+    if (!theyHaveChanges(commitments))
       throw new RuntimeException("cannot sign when there are no changes")
 
     // check that their signature is valid
