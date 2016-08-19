@@ -1,14 +1,14 @@
-package fr.acinq.eclair.javafx
+package fr.acinq.eclair.gui
 
 import javafx.application.{Application, Platform}
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.embed.swing.SwingNode
-import javafx.event.{ActionEvent, Event, EventHandler, EventType}
-import javafx.geometry.{Bounds, Insets, Orientation, Pos}
+import javafx.event.{ActionEvent, Event, EventHandler}
+import javafx.geometry.{Insets, Orientation, Pos}
 import javafx.scene.Scene
 import javafx.scene.control.TabPane.TabClosingPolicy
 import javafx.scene.control._
-import javafx.scene.layout.{BorderPane, HBox, StackPane, VBox}
+import javafx.scene.layout.{BorderPane, HBox, VBox}
 import javafx.stage.{Stage, WindowEvent}
 
 import akka.actor.Props
@@ -25,7 +25,7 @@ import scala.concurrent.duration.Duration
 /**
   * Created by PM on 16/08/2016.
   */
-class GUIBoot extends Application {
+class MainWindow extends Application {
 
   val root = new BorderPane()
 
@@ -49,7 +49,8 @@ class GUIBoot extends Application {
   val swingNode = new SwingNode()
   tabGraph.setContent(swingNode)
 
-  val paneTab = new TabPane(tabChannels, tabGraph)
+  val paneTab = new TabPane()
+  paneTab.getTabs.addAll(tabChannels, tabGraph)
   paneTab.setTabClosingPolicy(TabClosingPolicy.UNAVAILABLE)
   root.setCenter(paneTab)
 
@@ -136,6 +137,6 @@ class GUIBoot extends Application {
 
 }
 
-object GUIBoot extends App with Logging {
-  Application.launch(classOf[GUIBoot])
+object MainWindow extends App with Logging {
+  Application.launch(classOf[MainWindow])
 }

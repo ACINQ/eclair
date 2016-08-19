@@ -1,4 +1,4 @@
-package fr.acinq.eclair.javafx
+package fr.acinq.eclair.gui
 
 
 import javafx.application.Platform

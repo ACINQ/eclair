@@ -1,6 +1,6 @@
 package fr.acinq.eclair
 
-import java.net.InetSocketAddress
+import javafx.application.Application
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.Http
@@ -16,13 +16,17 @@ import grizzled.slf4j.Logging
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
 import fr.acinq.bitcoin.BitcoinJsonRPCClient
+import fr.acinq.eclair.gui.MainWindow
 import fr.acinq.eclair.router.IRCRouter
 
 /**
   * Created by PM on 25/01/2016.
   */
 object Boot extends App with Logging {
-  new Setup()
+  args.toList match {
+    case "headless" :: rest => new Setup()
+    case _ => Application.launch(classOf[MainWindow])
+  }
 }
 
 class Setup extends Logging {
