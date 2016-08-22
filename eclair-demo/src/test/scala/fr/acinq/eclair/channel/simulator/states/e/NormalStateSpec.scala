@@ -32,8 +32,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     val alice2blockchain = TestProbe()
     val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val bob2blockchain = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, Bob.channelParams, "A"))
+    val paymentHandler = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     alice2bob.expectMsgType[open_channel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[open_channel]
@@ -97,11 +98,16 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
 
   test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val sender = TestProbe()
       val h = sha256_hash(1, 2, 3, 4)
-      alice ! CMD_ADD_HTLC(500000, h, locktime(Blocks(3)))
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.expectMsg("ok")
       val htlc = alice2bob.expectMsgType[update_add_htlc]
       assert(htlc.id == 1 && htlc.rHash == h)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCurrentHtlcId == 1 && alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourChanges.proposed == htlc :: Nil)
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(ourCurrentHtlcId = 1, ourChanges = initialState.commitments.ourChanges.copy(proposed = htlc :: Nil)),
+        downstreams = Map(htlc.id -> None)))
     }
   }
 
@@ -134,6 +140,19 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       sender.expectMsg("ok")
       sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3))))
       sender.expectMsg("insufficient funds (available=400000000 msat)")
+    }
+  }
+
+  test("recv CMD_ADD_HTLC (while waiting for close_clearing)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+
+      // actual test starts here
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.expectMsg("cannot send new htlcs, closing in progress")
     }
   }
 
@@ -195,15 +214,16 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  ignore("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
-      sender.expectMsg("cannot sign when there are no changes")
+      sender.expectNoMsg() // just ignored
+      //sender.expectMsg("cannot sign when there are no changes")
     }
   }
 
-  test("recv CMD_SIGN (while waiting for update_revocation)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  ignore("recv CMD_SIGN (while waiting for update_revocation)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
@@ -232,7 +252,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.forward(bob)
 
       bob2alice.expectMsgType[update_revocation]
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc.id && h.direction == IN))
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.amount_us_msat == initialState.commitments.ourCommit.spec.amount_us_msat)
     }
   }
@@ -257,14 +277,14 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
       sign(alice, bob, alice2bob, bob2alice)
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc1.id && h.direction == IN))
-      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.id == htlc2.id && h.direction == IN))
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.add.id == htlc1.id && h.direction == IN))
+      awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.htlcs.exists(h => h.add.id == htlc2.id && h.direction == IN))
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.spec.amount_us_msat == initialState.commitments.ourCommit.spec.amount_us_msat)
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx.txOut.count(_.amount == Satoshi(5000)) == 2)
     }
   }
 
-  ignore("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv update_commit (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
@@ -399,7 +419,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       bob2alice.forward(alice)
-      awaitCond(alice.stateData == initialState.copy(commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill))))
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)),
+        downstreams = Map()))
     }
   }
 
@@ -471,7 +493,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       bob2alice.forward(alice)
-      awaitCond(alice.stateData == initialState.copy(commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill))))
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)),
+        downstreams = Map()))
     }
   }
 
@@ -518,20 +542,6 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[close_clearing]
       alice2bob.expectMsgType[close_signature]
       awaitCond(alice.stateName == NEGOTIATING)
-    }
-  }
-
-  test("do not send htlcs after you've sent a close_clearing message") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
-    within(30 seconds) {
-      val sender = TestProbe()
-      sender.send(alice, CMD_CLOSE(None))
-      alice2bob.expectMsgType[close_clearing]
-      val rand = new Random()
-      val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
-      val H: sha256_hash = Crypto.sha256(R)
-      sender.send(alice, CMD_ADD_HTLC(1000000, H, locktime(Blocks(3))))
-      alice2bob.expectNoMsg(500 milliseconds)
-      awaitCond(alice.stateName == NORMAL)
     }
   }
 

@@ -76,12 +76,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.theirCommit.spec.htlcs.head
-          assert(htlc.rHash == bin2sha256(H))
+          assert(htlc.add.rHash == bin2sha256(H))
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.ourCommit.spec.htlcs.head
-          assert(htlc.rHash == bin2sha256(H))
+          assert(htlc.add.rHash == bin2sha256(H))
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)
@@ -128,12 +128,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.theirCommit.spec.htlcs.head
-          assert(htlc.rHash == bin2sha256(H1))
+          assert(htlc.add.rHash == bin2sha256(H1))
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.ourCommit.spec.htlcs.head
-          assert(htlc.rHash == bin2sha256(H1))
+          assert(htlc.add.rHash == bin2sha256(H1))
       }
 
       bob ! CMD_FULFILL_HTLC(2, R1)

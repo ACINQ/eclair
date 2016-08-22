@@ -176,10 +176,10 @@ object Scripts {
   }
 
   case class HtlcTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, delay: locktime, revocationHash: BinaryData) extends OutputTemplate {
-    override def amount = Satoshi(htlc.amountMsat / 1000)
+    override def amount = Satoshi(htlc.add.amountMsat / 1000)
     override def redeemScript = htlc.direction match {
-      case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(delay), htlc.rHash, revocationHash))
-      case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, locktime2long_cltv(htlc.expiry), locktime2long_csv(delay), htlc.rHash, revocationHash))
+      case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, locktime2long_cltv(htlc.add.expiry), locktime2long_csv(delay), htlc.add.rHash, revocationHash))
+      case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, locktime2long_cltv(htlc.add.expiry), locktime2long_csv(delay), htlc.add.rHash, revocationHash))
     }
     override def txOut = TxOut(amount, pay2wsh(redeemScript))
   }
@@ -213,7 +213,7 @@ object Scripts {
 
   def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): TxTemplate = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
-    val htlcs = commitmentSpec.htlcs.filter(_.amountMsat >= 546000).toSeq
+    val htlcs = commitmentSpec.htlcs.filter(_.add.amountMsat >= 546000).toSeq
     val fee_msat = computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
     val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.amount_us_msat, commitmentSpec.amount_them_msat) match {
       case (us, them) if us >= fee_msat / 2 && them >= fee_msat / 2 => (us - fee_msat / 2, them - fee_msat / 2)

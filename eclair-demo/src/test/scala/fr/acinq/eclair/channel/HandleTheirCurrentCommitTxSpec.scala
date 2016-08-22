@@ -49,7 +49,7 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txOut === tx.txOut)
 
-    val Seq(tx1, tx2) = Helpers.claimReceivedHtlcs(tx, bob5)
+    val Seq(tx1, tx2) = Helpers.claimReceivedHtlcs(tx, theirTxTemplate, bob5)
     assert(tx1.txIn.length == 1 && tx1.txOut.length == 1 && tx2.txIn.length == 1 && tx2.txOut.length == 1)
     assert(Set(tx1.txOut(0).amount, tx2.txOut(0).amount) == Set(Satoshi(70000), Satoshi(80000)))
     Transaction.correctlySpends(tx1, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -78,7 +78,7 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txOut === tx.txOut)
 
-    val Seq(tx1, tx2) = Helpers.claimSentHtlcs(tx, alice3)
+    val Seq(tx1, tx2) = Helpers.claimSentHtlcs(tx, theirTxTemplate, alice3)
     assert(tx1.txIn.length == 1 && tx1.txOut.length == 1 && tx2.txIn.length == 1 && tx2.txOut.length == 1)
     assert(Set(tx1.txOut(0).amount, tx2.txOut(0).amount) == Set(Satoshi(70000), Satoshi(80000)))
     Transaction.correctlySpends(tx1, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

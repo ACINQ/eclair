@@ -45,8 +45,11 @@ message locktime {
   }
 }
 
+
+
 // Pubkey for commitment transaction input.
 message bitcoin_pubkey {
+  option (scalapb.message).extends = "lightning.PubkeyToString";
   // Must be 33 bytes.
   required bytes key = 1;
 }
@@ -216,6 +219,7 @@ message pkt {
   oneof pkt {
     // Start of connection
     authenticate auth = 50;
+
     // Opening
     open_channel open = 20;
     open_anchor open_anchor = 21;

@@ -21,34 +21,33 @@ object Helpers {
   })
 
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: update_add_htlc): CommitmentSpec = {
-    val htlc = Htlc(direction, update.id, update.amountMsat, update.rHash, update.expiry, previousChannelId = None)
+    val htlc = Htlc(direction, update, previousChannelId = None)
     direction match {
-      case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
-      case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.amountMsat, htlcs = spec.htlcs + htlc)
+      case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
+      case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
     }
   }
 
   // OUT means we are sending an update_fulfill_htlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: update_fulfill_htlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.id == update.id && htlc.rHash == bin2sha256(Crypto.sha256(update.r))) match {
-      case Some(htlc) if direction == OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+    spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.rHash == bin2sha256(Crypto.sha256(update.r))) match {
+      case Some(htlc) if direction == OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
     }
   }
 
   // OUT means we are sending an update_fail_htlc message which means that we are failing an HTLC that they sent
   def failHtlc(spec: CommitmentSpec, direction: Direction, update: update_fail_htlc): CommitmentSpec = {
-    spec.htlcs.find(_.id == update.id) match {
-      case Some(htlc) if direction == OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.amountMsat, htlcs = spec.htlcs - htlc)
+    spec.htlcs.find(_.add.id == update.id) match {
+      case Some(htlc) if direction == OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == IN => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
     }
   }
 
   def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
-    val spec = ourCommitSpec.copy(htlcs = Set(), amount_us_msat = ourCommitSpec.initial_amount_us_msat, amount_them_msat = ourCommitSpec.initial_amount_them_msat)
-    val spec1 = ourChanges.foldLeft(spec) {
+    val spec1 = ourChanges.foldLeft(ourCommitSpec) {
       case (spec, u: update_add_htlc) => addHtlc(spec, OUT, u)
       case (spec, _) => spec
     }
@@ -68,6 +67,9 @@ object Helpers {
     }
     spec4
   }
+
+  def makeOurTxTemplate(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): TxTemplate =
+    makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
   def makeOurTx(ourParams: OurChannelParams, theirParams: TheirChannelParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
@@ -211,14 +213,14 @@ object Helpers {
     *         before which it can be published
     */
   def claimReceivedHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = {
-    require(htlcTemplate.htlc.rHash == bin2sha256(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
+    require(htlcTemplate.htlc.add.rHash == bin2sha256(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
     // find its index in their tx
     val index = tx.txOut.indexOf(htlcTemplate.txOut)
 
     val tx1 = Transaction(version = 2,
       txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = Scripts.locktime2long_csv(htlcTemplate.delay)) :: Nil,
       txOut = TxOut(htlcTemplate.amount, Scripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
-      lockTime = Scripts.locktime2long_cltv(htlcTemplate.htlc.expiry))
+      lockTime = Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry))
 
     val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
     val witness = ScriptWitness(sig :: paymentPreimage :: htlcTemplate.redeemScript :: Nil)
@@ -229,27 +231,23 @@ object Helpers {
   /**
     * claim all the HTLCs that we've received from their current commit tx
     *
-    * @param tx          commit tx published by the other party
+    * @param txTemplate  commit tx published by the other party
     * @param commitments our commitment data, which include payment preimages
     * @return a list of transactions (one per HTLC that we can claim)
     */
-  def claimReceivedHtlcs(tx: Transaction, commitments: Commitments): Seq[Transaction] = {
-    val theirTxTemplate = Commitments.makeTheirTxTemplate(commitments)
-    val theirTx = theirTxTemplate.makeTx
-    assert(theirTx.txOut == tx.txOut)
-
+  def claimReceivedHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = {
     val preImages = commitments.ourChanges.all.collect { case update_fulfill_htlc(id, r) => rval2bin(r) }
-    val htlcTemplates = theirTxTemplate.htlcSent
+    val htlcTemplates = txTemplate.htlcSent
 
     @tailrec
     def loop(htlcs: Seq[HtlcTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = {
-      htlcs match {
-        case Nil => acc
-        case head :: rest =>
-          preImages.find(preImage => head.htlc.rHash == bin2sha256(Crypto.sha256(preImage))) match {
+      htlcs.headOption match {
+        case Some(head) =>
+          preImages.find(preImage => head.htlc.add.rHash == bin2sha256(Crypto.sha256(preImage))) match {
             case Some(preImage) => loop(htlcs.tail, claimReceivedHtlc(tx, head, preImage, commitments.ourParams.finalPrivKey) +: acc)
-            case None => loop(rest, acc)
+            case None => loop(htlcs.tail, acc)
           }
+        case None => acc
       }
     }
     loop(htlcTemplates)
@@ -261,18 +259,14 @@ object Helpers {
       version = 2,
       txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = Scripts.locktime2long_csv(htlcTemplate.delay)) :: Nil,
       txOut = TxOut(htlcTemplate.amount, Scripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
-      lockTime = Scripts.locktime2long_cltv(htlcTemplate.htlc.expiry))
+      lockTime = Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry))
 
     val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
     val witness = ScriptWitness(sig :: Hash.Zeroes :: htlcTemplate.redeemScript :: Nil)
     tx1.copy(witness = Seq(witness))
   }
 
-  def claimSentHtlcs(tx: Transaction, commitments: Commitments): Seq[Transaction] = {
-    val theirTxTemplate = Commitments.makeTheirTxTemplate(commitments)
-    val theirTx = theirTxTemplate.makeTx
-    assert(theirTx.txOut == tx.txOut)
-
-    theirTxTemplate.htlcReceived.map(htlcTemplate => claimSentHtlc(theirTx, htlcTemplate, commitments.ourParams.finalPrivKey))
+  def claimSentHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = {
+    txTemplate.htlcReceived.map(htlcTemplate => claimSentHtlc(tx, htlcTemplate, commitments.ourParams.finalPrivKey))
   }
 }

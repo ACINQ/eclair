@@ -82,16 +82,14 @@ object Commitments {
 
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, update_add_htlc) = {
     // our available funds as seen by them, including all pending changes
-    val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.acked ++ commitments.ourChanges.signed ++ commitments.ourChanges.proposed)
+    val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.proposed)
     // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
-    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.add.amountMsat).sum
     if (cmd.amountMsat > available) {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
-      // TODO: nodeIds are ignored
       val id = cmd.id.getOrElse(commitments.ourCurrentHtlcId + 1)
-      val steps = route(route_step(0, next = route_step.Next.End(true)) :: Nil)
-      val add = update_add_htlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(steps.toByteArray)))
+      val add = update_add_htlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(cmd.payment_route.toByteArray)))
       val commitments1 = addOurProposal(commitments, add).copy(ourCurrentHtlcId = id)
       (commitments1, add)
     }
@@ -99,9 +97,9 @@ object Commitments {
 
   def receiveAdd(commitments: Commitments, add: update_add_htlc): Commitments = {
     // their available funds as seen by us, including all pending changes
-    val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.acked ++ commitments.theirChanges.proposed)
+    val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.proposed)
     // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
-    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.amountMsat).sum
+    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.add.amountMsat).sum
     if (add.amountMsat > available) {
       throw new RuntimeException("Insufficient funds")
     } else {
@@ -111,7 +109,7 @@ object Commitments {
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, update_fulfill_htlc) = {
-    commitments.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == cmd.id => u } match {
+    commitments.ourCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
       case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(cmd.r)) =>
         val fulfill = update_fulfill_htlc(cmd.id, cmd.r)
         val commitments1 = addOurProposal(commitments, fulfill)
@@ -122,7 +120,7 @@ object Commitments {
   }
 
   def receiveFulfill(commitments: Commitments, fulfill: update_fulfill_htlc): Commitments = {
-    commitments.ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == fulfill.id => u } match {
+    commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
       case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(fulfill.r)) => addTheirProposal(commitments, fulfill)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO : we should fail the channel
@@ -147,21 +145,27 @@ object Commitments {
     }
   }
 
+  def weHaveChanges(commitments: Commitments): Boolean = commitments.theirChanges.acked.size > 0 || commitments.ourChanges.proposed.size > 0
+
+  def theyHaveChanges(commitments: Commitments): Boolean = commitments.ourChanges.acked.size > 0 || commitments.theirChanges.proposed.size > 0
+
   def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
-    // TODO : check empty changes
     import commitments._
     commitments.theirNextCommitInfo match {
+      case Right(theirNextRevocationHash) if !weHaveChanges(commitments) =>
+        throw new RuntimeException("cannot sign when there are no changes")
       case Right(theirNextRevocationHash) =>
         // sign all our proposals + their acked proposals
         // their commitment now includes all our changes  + their acked changes
-        val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.acked ++ ourChanges.signed ++ ourChanges.proposed)
+        val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.proposed)
         val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
         val theirTx = theirTxTemplate.makeTx
         val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
         val commit = update_commit(ourSig)
         val commitments1 = commitments.copy(
           theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
-          ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.signed ++ ourChanges.proposed))
+          ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.proposed),
+          theirChanges = theirChanges.copy(acked = Nil))
         (commitments1, commit)
       case Left(theirNextCommit) =>
         throw new RuntimeException("cannot sign until next revocation hash is received")
@@ -179,12 +183,11 @@ object Commitments {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
-    // check that there have been changes
-    /*if (commitments.theirChanges.proposed.isEmpty)
-      throw new RuntimeException("cannot sign if there are no changes")*/
+    if (!theyHaveChanges(commitments))
+      throw new RuntimeException("cannot sign when there are no changes")
 
     // check that their signature is valid
-    val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.acked ++ theirChanges.proposed)
+    val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.proposed)
     val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
     val ourTx = Helpers.makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
     val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
@@ -198,8 +201,9 @@ object Commitments {
 
     // update our commitment data
     val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = signedTx)
+    val ourChanges1 = ourChanges.copy(acked = Nil)
     val theirChanges1 = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed)
-    val commitments1 = commitments.copy(ourCommit = ourCommit1, theirChanges = theirChanges1)
+    val commitments1 = commitments.copy(ourCommit = ourCommit1, ourChanges = ourChanges1, theirChanges = theirChanges1)
 
     (commitments1, revocation)
   }
@@ -226,6 +230,11 @@ object Commitments {
       case Right(_) =>
         throw new RuntimeException("received unexpected update_revocation message")
     }
+  }
+
+  def makeOurTxTemplate(commitments: Commitments): TxTemplate = {
+        Helpers.makeOurTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+          Helpers.revocationHash(commitments.ourParams.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
   }
 
   def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {

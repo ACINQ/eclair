@@ -26,8 +26,9 @@ class OpenWaitForAnchorStateSpec extends TestKit(ActorSystem("test")) with fixtu
     val bob2alice = TestProbe()
     val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val bob2blockchain = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, Bob.channelParams, "A"))
+    val paymentHandler = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     alice2bob.expectMsgType[open_channel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[open_channel]

@@ -7,24 +7,32 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.router.IRCRouter
 import lightning._
 import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
+import lightning.route_step.Next
 
+import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
+
 
 /**
   * Created by PM on 20/08/2015.
   */
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, params: OurChannelParams, theirNodeId: String = Hash.Zeroes.toString()) = Props(new Channel(them, blockchain, params, theirNodeId))
+  def props(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, params: OurChannelParams, theirNodeId: String) = Props(new Channel(them, blockchain, paymentHandler, params, theirNodeId))
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] {
+class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: ActorRef, val params: OurChannelParams, theirNodeId: String) extends LoggingFSM[State, Data] {
 
   log.info(s"commit pubkey: ${params.commitPubKey}")
   log.info(s"final pubkey: ${params.finalPubKey}")
+
+  context.system.eventStream.publish(ChannelCreated(self, params, theirNodeId))
+
+  import ExecutionContext.Implicits.global
 
   params.anchorAmount match {
     case None =>
@@ -132,6 +140,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
         Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
+      context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, anchorAmount))
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -167,6 +176,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
             OurCommit(0, ourSpec, signedTx), theirCommitment,
             OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
             Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
+          context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, anchorAmount.amount))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }
 
@@ -187,7 +198,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
-      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(commitments, None)
+      goto(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) using DATA_NORMAL(commitments, None, Map())
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
@@ -218,7 +229,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       them ! open_complete(None)
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
-      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(commitments, None)
+      goto(OPEN_WAIT_FOR_COMPLETE_OURANCHOR) using DATA_NORMAL(commitments, None, Map())
 
     case Event(BITCOIN_ANCHOR_TIMEOUT, _) =>
       them ! error(Some("Anchor timed out"))
@@ -241,6 +252,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)(handleExceptions {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
+      IRCRouter.register(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid =>
@@ -259,6 +271,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
   when(OPEN_WAIT_FOR_COMPLETE_OURANCHOR)(handleExceptions {
     case Event(open_complete(blockid_opt), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
+      IRCRouter.register(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 
     case Event((BITCOIN_ANCHOR_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
@@ -284,45 +297,72 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(NORMAL) {
+
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.ourClearing.isDefined =>
-      handleCommandError(sender, new RuntimeException("Cannot sent an update_add_htlc after a close_clearing message"))
+      handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
       stay
 
-    case Event(c@CMD_ADD_HTLC(amount, rHash, expiry, nodeIds, origin, id_opt), d@DATA_NORMAL(commitments, _)) =>
+    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin, id_opt, do_commit), d@DATA_NORMAL(commitments, _, downstreams)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
-        case Success((commitments1, add)) => handleCommandSuccess(sender, add, d.copy(commitments = commitments1))
+        case Success((commitments1, add)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, add, d.copy(commitments = commitments1, downstreams = downstreams + (add.id -> origin)))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(add@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _)) =>
+    case Event(add@update_add_htlc(htlcId, amount, rHash, expiry, nodeIds), d@DATA_NORMAL(commitments, _, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) =>
+          commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(c@CMD_FULFILL_HTLC(id, r), d: DATA_NORMAL) =>
+    case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
+        case Success((commitments1, fulfill)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_NORMAL) =>
+    case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_NORMAL(commitments, _, downstreams)) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) =>
+          propagateDownstream(Right(fulfill), downstreams)
+          commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
+          stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(c@CMD_FAIL_HTLC(id, reason), d: DATA_NORMAL) =>
+    case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
-        case Success((commitments1, fail)) => handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fail@update_fail_htlc(id, reason), d: DATA_NORMAL) =>
+    case Event(fail@update_fail_htlc(id, reason), d@DATA_NORMAL(commitments, _, downstreams)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) =>
+          propagateDownstream(Left(fail), downstreams)
+          commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
+          stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
       }
+
+    case Event(CMD_SIGN, d: DATA_NORMAL) if d.commitments.theirNextCommitInfo.isLeft =>
+      //TODO : this is a temporary fix
+      log.info(s"already in the process of signing, delaying CMD_SIGN")
+      import scala.concurrent.ExecutionContext.Implicits.global
+      context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
+      stay
+
+    case Event(CMD_SIGN, d: DATA_NORMAL) if !Commitments.weHaveChanges(d.commitments) =>
+      // nothing to sign, just ignoring
+      log.info("ignoring CMD_SIGN (nothing to sign)")
+      stay()
 
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
       Try(Commitments.sendCommit(d.commitments)) match {
@@ -334,6 +374,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) =>
           them ! revocation
+          // now that we have their sig, we should propagate the htlcs newly received
+          (commitments1.ourCommit.spec.htlcs -- d.commitments.ourCommit.spec.htlcs)
+            .filter(_.direction == IN)
+            .foreach(htlc => propagateUpstream(htlc.add, d.commitments.anchorId))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleOurError(cause, d)
       }
@@ -361,7 +406,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         stay using d.copy(ourClearing = Some(ourCloseClearing))
       }
 
-    case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, ourClearingOpt)) =>
+    case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, ourClearingOpt, downstreams)) =>
       val ourClearing: close_clearing = ourClearingOpt.getOrElse {
         val ourScriptPubKey: BinaryData = Script.write(Scripts.pay2pkh(commitments.ourParams.finalPubKey))
         log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
@@ -374,7 +419,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         them ! ourCloseSig
         goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, ourClearing, theirClearing, ourCloseSig)
       } else {
-        goto(CLEARING) using DATA_CLEARING(commitments, ourClearing, theirClearing)
+        goto(CLEARING) using DATA_CLEARING(commitments, ourClearing, theirClearing, downstreams)
       }
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
@@ -397,7 +442,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
    */
 
   when(CLEARING) {
-    case Event(c@CMD_FULFILL_HTLC(id, r), d: DATA_CLEARING) =>
+    case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_CLEARING) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
@@ -405,11 +450,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_CLEARING) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) =>
+          propagateDownstream(Right(fulfill), d.downstreams)
+          stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(c@CMD_FAIL_HTLC(id, reason), d: DATA_CLEARING) =>
+    case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_CLEARING) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
         case Success((commitments1, fail)) => handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
@@ -417,9 +464,23 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     case Event(fail@update_fail_htlc(id, reason), d: DATA_CLEARING) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) =>
+          propagateDownstream(Left(fail), d.downstreams)
+          stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
       }
+
+    case Event(CMD_SIGN, d: DATA_CLEARING) if d.commitments.theirNextCommitInfo.isLeft =>
+      //TODO : this is a temporary fix
+      log.info(s"already in the process of signing, delaying CMD_SIGN")
+      import scala.concurrent.ExecutionContext.Implicits.global
+      context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
+      stay
+
+    case Event(CMD_SIGN, d: DATA_CLEARING) if !Commitments.weHaveChanges(d.commitments) =>
+      // nothing to sign, just ignoring
+      log.info("ignoring CMD_SIGN (nothing to sign)")
+      stay()
 
     case Event(CMD_SIGN, d: DATA_CLEARING) =>
       Try(Commitments.sendCommit(d.commitments)) match {
@@ -427,7 +488,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, ourClearing, theirClearing)) =>
+    case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, ourClearing, theirClearing, _)) =>
+      // TODO : we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
           them ! revocation
@@ -440,7 +502,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, ourClearing, theirClearing)) =>
+    case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, ourClearing, theirClearing, _)) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
@@ -569,6 +631,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
       }, stateName, stateData)
       stay
 
+    // because channels send CMD to each others when relaying payments
+    case Event("ok", _) => stay
+  }
+
+  onTransition {
+    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, previousState, currentState, stateData))
   }
 
   /*
@@ -581,6 +649,56 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
           888    888  d8888888888 888   Y8888 888  .d88P 888      888        888  T88b  Y88b  d88P
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
+
+  def propagateUpstream(add: update_add_htlc, anchorId: BinaryData) = {
+    val r = route.parseFrom(add.route.info.toByteArray)
+    r.steps match {
+      case route_step(amountMsat, Next.Bitcoin(nextNodeId)) +: rest =>
+        log.debug(s"propagating htlc #${add.id} to $nextNodeId")
+        import ExecutionContext.Implicits.global
+        context.system.actorSelection(Register.actorPathToNodeId(nextNodeId))
+          .resolveOne(3 seconds)
+          .onComplete {
+            case Success(upstream) =>
+              log.info(s"forwarding htlc #${add.id} to upstream=$upstream")
+              val upstream_route = route(rest)
+              // TODO : we should decrement expiry !!
+              upstream ! CMD_ADD_HTLC(amountMsat, add.rHash, add.expiry, upstream_route, Some(anchorId))
+              upstream ! CMD_SIGN
+            case Failure(t: Throwable) =>
+              // TODO : send "fail route error"
+              log.warning(s"couldn't resolve upstream node, htlc #${add.id} will timeout", t)
+          }
+      case route_step(amount, Next.End(true)) +: rest =>
+        log.info(s"we are the final recipient of htlc #${add.id}")
+        paymentHandler ! add
+    }
+  }
+
+  def propagateDownstream(fulfill_or_fail: Either[update_fail_htlc, update_fulfill_htlc], downstreams: Map[Long, Option[BinaryData]]) = {
+    val (id, short, cmd: Command) = fulfill_or_fail match {
+      case Left(fail) => (fail.id, "fail", CMD_FAIL_HTLC(fail.id, fail.reason.info.toStringUtf8))
+      case Right(fulfill) => (fulfill.id, "fulfill", CMD_FULFILL_HTLC(fulfill.id, fulfill.r))
+    }
+    downstreams(id) match {
+      case Some(previousChannelId) =>
+        log.debug(s"propagating $short for htlc #$id to $previousChannelId")
+        import ExecutionContext.Implicits.global
+        context.system.actorSelection(Register.actorPathToChannelId(previousChannelId))
+          .resolveOne(3 seconds)
+          .onComplete {
+            case Success(downstream) =>
+              log.info(s"forwarding $short to downstream=$downstream")
+              downstream ! CMD_SIGN
+              downstream ! cmd
+              downstream ! CMD_SIGN
+            case Failure(t: Throwable) =>
+              log.warning(s"couldn't resolve downstream node, htlc #$id will timeout", t)
+          }
+      case None =>
+        log.info(s"we were the origin payer for htlc #$id")
+    }
+  }
 
   def handleCommandSuccess(sender: ActorRef, change: Change, newData: Data) = {
     them ! change
@@ -611,7 +729,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
     blockchain ! Publish(tx)
     blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, BITCOIN_SPEND_OURS_DONE)
 
-    (Helpers.claimReceivedHtlcs(tx, d.commitments) ++ Helpers.claimSentHtlcs(tx, d.commitments))
+    (Helpers.claimReceivedHtlcs(tx, Commitments.makeOurTxTemplate(d.commitments), d.commitments) ++ Helpers.claimSentHtlcs(tx, Commitments.makeOurTxTemplate(d.commitments), d.commitments))
       .map(tx => blockchain ! PublishAsap(tx))
 
     val nextData = d match {
@@ -628,7 +746,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, val params: OurChann
 
     blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, BITCOIN_SPEND_THEIRS_DONE)
 
-    (Helpers.claimReceivedHtlcs(tx, d.commitments) ++ Helpers.claimSentHtlcs(tx, d.commitments))
+    (Helpers.claimReceivedHtlcs(tx, Commitments.makeTheirTxTemplate(d.commitments), d.commitments) ++ Helpers.claimSentHtlcs(tx, Commitments.makeTheirTxTemplate(d.commitments),d.commitments))
       .map(tx => blockchain ! PublishAsap(tx))
 
     val nextData = d match {

@@ -100,7 +100,8 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
   val blockchain = system.actorOf(Props(new PollingWatcher(btccli)), name = "blockchain")
-  val register = system.actorOf(Register.props(blockchain), name = "register")
+  val paymentHandler = system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
+  val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
 
   val lncli = new LightingCli(s"$prefix/lightning-cli --lightning-dir=${lightningddir.toString}")
@@ -181,7 +182,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // we fulfill it
-      htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.id)
+      htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.add.id)
       _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Helpers.revocationPreimage(seed, 0)))
       _ <- sendCommand(channelId, CMD_SIGN)
       peer1 = lncli.getPeers.head
@@ -191,7 +192,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
-      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.id)
+      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.add.id)
       _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Helpers.revocationPreimage(seed, 1)))
       _ <- sendCommand(channelId, CMD_SIGN)
       peer2 = lncli.getPeers.head

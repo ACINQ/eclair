@@ -1,12 +1,11 @@
 package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Crypto, DeterministicWallet}
-import fr.acinq.eclair.api.BinaryDataSerializer
-import fr.acinq.eclair.channel.OurChannelParams
-import fr.acinq.eclair.crypto.LightningCrypto
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import lightning.locktime
-import lightning.locktime.Locktime.{Blocks, Seconds}
+import lightning.locktime.Locktime.{Blocks}
+
+import scala.concurrent.duration._
 
 
 /**
@@ -29,14 +28,8 @@ object Globals {
   val default_mindepth = 3
   val commit_fee = config.getInt("eclair.commit-fee")
   val closing_fee = config.getInt("eclair.closing-fee")
-
+  val base_fee = config.getInt("eclair.base-fee")
+  val proportional_fee = config.getInt("eclair.proportional-fee")
   val default_anchor_amount = 1000000
-
-  //def newChannelParameters = OurChannelParams(default_locktime, commit_priv, final_priv, default_mindepth, commit_fee, "sha-seed".getBytes(), None)
-
-  val bitcoin_client = new BitcoinJsonRPCClient(
-    user = config.getString("eclair.bitcoind.rpcuser"),
-    password = config.getString("eclair.bitcoind.rpcpassword"),
-    host = config.getString("eclair.bitcoind.address"),
-    port = config.getInt("eclair.bitcoind.port"))
+  val autosign_interval = 300 milliseconds
 }

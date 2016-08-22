@@ -30,9 +30,10 @@ class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val alice2blockchain = TestProbe()
     val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val bob2blockchain = TestProbe()
+    val paymentHandler = TestProbe()
     // note that alice.initialFeeRate != bob.initialFeeRate
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, Bob.channelParams.copy(initialFeeRate = 20000), "A"))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(initialFeeRate = 20000), "A"))
     alice2bob.expectMsgType[open_channel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[open_channel]

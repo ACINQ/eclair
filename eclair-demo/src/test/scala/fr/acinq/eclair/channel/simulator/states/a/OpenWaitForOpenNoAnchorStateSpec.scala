@@ -24,8 +24,9 @@ class OpenWaitForOpenNoAnchorStateSpec extends TestKit(ActorSystem("test"))  wit
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, Bob.channelParams, "A"))
+    val paymentHandler = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
       bob2alice.expectMsgType[open_channel]
       awaitCond(bob.stateName == OPEN_WAIT_FOR_OPEN_NOANCHOR)

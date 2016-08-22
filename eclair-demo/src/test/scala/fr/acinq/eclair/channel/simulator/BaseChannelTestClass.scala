@@ -19,8 +19,9 @@ abstract class BaseChannelTestClass extends TestKit(ActorSystem("test")) with Ma
     val pipe: ActorRef = system.actorOf(Props[Pipe])
     val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
     val blockchainB = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, Bob.channelParams, "A"))
+    val paymentHandler = TestActorRef(new NoopPaymentHandler())
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "A"))
     test((alice, bob, pipe))
   }
 

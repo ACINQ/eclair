@@ -41,7 +41,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
     def resolve(x: String) = if (x == "A") a else b
     script match {
       case offer(x, id, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Blocks(4)), Seq(), id = Some(id.toLong))
+        resolve(x) ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Blocks(4)), id = Some(id.toLong))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, BinaryData(r))
@@ -138,15 +138,15 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       val l = List(
         "LOCAL COMMITS:",
         s" Commit ${d.commitments.ourCommit.index}:",
-        s"  Offered htlcs: ${ourCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.id, h.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${ourCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.id, h.amountMsat)).mkString(" ")}",
+        s"  Offered htlcs: ${ourCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Received htlcs: ${ourCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
         s"  Balance us: ${ourCommit.spec.amount_us_msat}",
         s"  Balance them: ${ourCommit.spec.amount_them_msat}",
         s"  Fee rate: ${ourCommit.spec.feeRate}",
         "REMOTE COMMITS:",
         s" Commit ${theirCommit.index}:",
-        s"  Offered htlcs: ${theirCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.id, h.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${theirCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.id, h.amountMsat)).mkString(" ")}",
+        s"  Offered htlcs: ${theirCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Received htlcs: ${theirCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
         s"  Balance us: ${theirCommit.spec.amount_us_msat}",
         s"  Balance them: ${theirCommit.spec.amount_them_msat}",
         s"  Fee rate: ${theirCommit.spec.feeRate}")
