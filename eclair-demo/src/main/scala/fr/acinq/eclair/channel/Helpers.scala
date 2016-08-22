@@ -7,6 +7,7 @@ import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import lightning._
 
+import scala.annotation.tailrec
 import scala.util.Try
 
 /**
@@ -240,17 +241,17 @@ object Helpers {
     val preImages = commitments.ourChanges.all.collect { case update_fulfill_htlc(id, r) => rval2bin(r) }
     val htlcTemplates = theirTxTemplate.htlcSent
 
+    @tailrec
     def loop(htlcs: Seq[HtlcTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = {
-      if (htlcs.isEmpty) acc
-      else {
-        val htlcTemplate = htlcs.head
-        preImages.find(preImage => htlcTemplate.htlc.rHash == bin2sha256(Crypto.sha256(preImage))) match {
-          case Some(preImage) => loop(htlcs.tail, claimReceivedHtlc(tx, htlcTemplate, preImage, commitments.ourParams.finalPrivKey) +: acc)
-          case None => loop(htlcs.tail, acc)
-        }
+      htlcs match {
+        case Nil => acc
+        case head :: rest =>
+          preImages.find(preImage => head.htlc.rHash == bin2sha256(Crypto.sha256(preImage))) match {
+            case Some(preImage) => loop(htlcs.tail, claimReceivedHtlc(tx, head, preImage, commitments.ourParams.finalPrivKey) +: acc)
+            case None => loop(rest, acc)
+          }
       }
     }
-
     loop(htlcTemplates)
   }
 

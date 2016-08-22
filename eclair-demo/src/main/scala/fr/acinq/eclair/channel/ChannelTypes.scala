@@ -51,8 +51,6 @@ case object CLOSING extends State
 
 case object CLOSED extends State
 
-case object UNILATERAL_CLOSING extends State
-
 case object ERR_ANCHOR_LOST extends State
 
 case object ERR_ANCHOR_TIMEOUT extends State
@@ -74,6 +72,8 @@ case object INPUT_NO_MORE_HTLCS
 
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
+
+
 
 sealed trait BlockchainEvent
 
@@ -178,7 +178,7 @@ final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_
 
 final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
 
-trait HasCommitments {
+trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
@@ -208,14 +208,6 @@ final case class DATA_CLOSING(commitments: Commitments,
                               theirCommitPublished: Option[Transaction] = None,
                               revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
-}
-
-final case class DATA_UNILATERAL_CLOSING(commitments: Commitments,
-                                         ourCommitPublished: Option[Transaction] = None,
-                                         theirCommitPublished: Option[Transaction] = None,
-                                         revokedPublished: Seq[Transaction] = Seq(),
-                                         watchedTransaction: Set[Transaction] = Set()) extends Data with HasCommitments {
-  assert(ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }
 
 // @formatter:on
