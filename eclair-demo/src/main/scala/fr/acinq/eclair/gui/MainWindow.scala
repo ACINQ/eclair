@@ -30,13 +30,13 @@ class MainWindow extends Application {
   val root = new BorderPane()
 
   val menuBar = new MenuBar()
-  val menuFile = new Menu("File")
+  val menuChannels = new Menu("Channels")
   val itemConnect = new MenuItem("Open channel")
-  val itemSend = new MenuItem("Send")
-  val itemReceive = new MenuItem("Receive")
+  val itemSend = new MenuItem("Pay")
+  val itemReceive = new MenuItem("Receive payment")
 
-  menuFile.getItems.addAll(itemConnect, new SeparatorMenuItem(), itemSend, itemReceive)
-  menuBar.getMenus().addAll(menuFile)
+  menuChannels.getItems.addAll(itemConnect, new SeparatorMenuItem(), itemSend, itemReceive)
+  menuBar.getMenus().addAll(menuChannels)
   root.setTop(menuBar)
 
   val tabChannels = new Tab("Channels")

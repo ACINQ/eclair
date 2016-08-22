@@ -18,6 +18,7 @@ class DialogSplash(primaryStage: Stage) extends Stage() {
   setResizable(false)
 
   val image = new Image("/eclair01.png", true)
+  primaryStage.getIcons().add(image)
   val view = new ImageView(image)
 
   val pane = new StackPane()

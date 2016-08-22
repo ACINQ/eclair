@@ -2,7 +2,7 @@ package fr.acinq.eclair.gui
 
 
 import javafx.application.Platform
-import javafx.scene.control.TextField
+import javafx.scene.control.{TextArea, TextField}
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.io.Client
@@ -39,6 +39,17 @@ class Handlers(setup: Setup) extends Logging {
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
           textField.setText(h.toString())
+        }
+      })
+    }
+  }
+
+  def getPaymentRequest(amountMsat: Long, textField: TextArea): Unit = {
+    import akka.pattern.ask
+    (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
+      Platform.runLater(new Runnable() {
+        override def run(): Unit = {
+          textField.setText(s"${Globals.Node.id}:$amountMsat:${h.toString()}")
         }
       })
     }
