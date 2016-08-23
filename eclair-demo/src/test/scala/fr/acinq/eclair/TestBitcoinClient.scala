@@ -13,10 +13,10 @@ class TestBitcoinClient extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("
 
   client.client.close()
 
-  override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+  override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
-      txOut = TxOut(Satoshi(amount), Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
+      txOut = TxOut(amount, Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
       lockTime = 0
     )
     Future.successful((anchorTx, 0))

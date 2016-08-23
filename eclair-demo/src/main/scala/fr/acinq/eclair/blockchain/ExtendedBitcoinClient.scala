@@ -44,9 +44,9 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     * @return a Future[txid] where txid (a String) is the is of the tx that sends the bitcoins
     */
   def sendFromAccount(account: String, destination: String, amount: Double)(implicit ec: ExecutionContext): Future[String] =
-    client.invoke("sendfrom", account, destination, amount) collect {
-      case JString(txid) => txid
-    }
+  client.invoke("sendfrom", account, destination, amount) collect {
+    case JString(txid) => txid
+  }
 
   def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
     client.invoke("getrawtransaction", txId) collect {
@@ -110,9 +110,9 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     } yield tx
   }
 
-  def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+  def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
-    val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(Satoshi(amount), anchorOutputScript) :: Nil, lockTime = 0)
+    val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
     val future = for {
       FundTransactionResponse(tx1, changepos, fee) <- fundTransaction(tx)
       SignTransactionResponse(anchorTx, true) <- signTransaction(tx1)
@@ -151,7 +151,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     * @return the current number of blocks in the active chain
     */
   def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
-    client.invoke("getblockcount") collect {
-      case JInt(count) => count.toLong
-    }
+  client.invoke("getblockcount") collect {
+    case JInt(count) => count.toLong
+  }
 }

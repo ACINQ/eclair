@@ -19,7 +19,7 @@ object TestConstants {
   object Alice {
     val (Base58.Prefix.SecretKeyTestnet, commitPrivKey) = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")
     val (Base58.Prefix.SecretKeyTestnet, finalPrivKey) = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")
-    val channelParams = OurChannelParams(locktime(Blocks(4)), commitPrivKey, finalPrivKey, 1, 10000, Crypto.sha256("alice-seed".getBytes()), Some(anchorAmount))
+    val channelParams = OurChannelParams(locktime(Blocks(4)), commitPrivKey, finalPrivKey, 1, 10000, Crypto.sha256("alice-seed".getBytes()), Some(Satoshi(anchorAmount)))
     val finalPubKey = channelParams.finalPubKey
 
     def revocationHash(index: Long) = Helpers.revocationHash(channelParams.shaSeed, index)

@@ -5,7 +5,7 @@ import akka.http.scaladsl.model.headers.RawHeader
 import akka.http.scaladsl.model.{ContentTypes, HttpEntity, HttpResponse, StatusCodes}
 import akka.util.Timeout
 import akka.http.scaladsl.server.Directives._
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import grizzled.slf4j.Logging
@@ -42,7 +42,7 @@ trait Service extends Logging {
   implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new Sha256Serializer + new ShaChainSerializer
   implicit val timeout = Timeout(30 seconds)
 
-  def connect(host: String, port: Int, amount: Long): Unit
+  def connect(host: String, port: Int, amount: Satoshi): Unit
 
   def register: ActorRef
 
@@ -64,7 +64,7 @@ trait Service extends Logging {
             val json = parse(body).extract[JsonRPCBody]
             val f_res: Future[AnyRef] = json match {
               case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
-                connect(host, port.toInt, anchor_amount.toLong)
+                connect(host, port.toInt, Satoshi(anchor_amount.toLong))
                 Future.successful("ok")
               case JsonRPCBody(_, _, "info", _) =>
                 Future.successful(Status(Globals.Node.id))

@@ -15,7 +15,7 @@ import grizzled.slf4j.Logging
 
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
-import fr.acinq.bitcoin.BitcoinJsonRPCClient
+import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
 import fr.acinq.eclair.gui.MainWindow
 import fr.acinq.eclair.router.IRCRouter
 
@@ -35,21 +35,21 @@ class Setup extends Logging {
   logger.info(s"nodeid=${Globals.Node.publicKey}")
   val config = ConfigFactory.load()
 
-  implicit lazy val system = ActorSystem()
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
-  implicit val formats = org.json4s.DefaultFormats
-  implicit val ec = ExecutionContext.Implicits.global
-
   val bitcoin_client = new BitcoinJsonRPCClient(
     user = config.getString("eclair.bitcoind.rpcuser"),
     password = config.getString("eclair.bitcoind.rpcpassword"),
     host = config.getString("eclair.bitcoind.host"),
     port = config.getInt("eclair.bitcoind.port"))
 
+  implicit val formats = org.json4s.DefaultFormats
+  implicit val ec = ExecutionContext.Implicits.global
   val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   val bitcoinVersion = Await.result(bitcoin_client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
+
+  implicit lazy val system = ActorSystem()
+  implicit val materializer = ActorMaterializer()
+  implicit val timeout = Timeout(30 seconds)
 
   val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
   val paymentHandler = config.getString("eclair.payment-handler") match {
@@ -67,7 +67,7 @@ class Setup extends Logging {
 
     override def paymentHandler: ActorRef = _setup.paymentHandler
 
-    override def connect(host: String, port: Int, amount: Long): Unit = system.actorOf(Client.props(host, port, amount, register))
+    override def connect(host: String, port: Int, amount: Satoshi): Unit = system.actorOf(Client.props(host, port, amount, register))
   }
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port"))
 }

@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor._
 import akka.util.Timeout
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.io.AuthHandler
 import fr.acinq.eclair.Globals
 
@@ -58,7 +58,7 @@ object Register {
   def props(blockchain: ActorRef, paymentHandler: ActorRef) = Props(classOf[Register], blockchain, paymentHandler)
 
   // @formatter:off
-  case class CreateChannel(connection: ActorRef, anchorAmount: Option[Long])
+  case class CreateChannel(connection: ActorRef, anchorAmount: Option[Satoshi])
 
   case class ListChannels()
 
