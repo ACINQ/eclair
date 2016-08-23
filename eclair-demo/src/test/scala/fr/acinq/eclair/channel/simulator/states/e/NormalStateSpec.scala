@@ -8,6 +8,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.simulator.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -15,14 +16,13 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, fixture}
 
-import scala.util.Random
 import scala.concurrent.duration._
 
 /**
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -69,40 +69,6 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
-  }
-
-  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (rval, update_add_htlc) = {
-    val rand = new Random()
-    val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
-    val H: sha256_hash = Crypto.sha256(R)
-    val sender = TestProbe()
-    sender.send(s, CMD_ADD_HTLC(amountMsat, H, locktime(Blocks(1440))))
-    sender.expectMsg("ok")
-    val htlc = s2r.expectMsgType[update_add_htlc]
-    s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(htlc))
-    (R, htlc)
-  }
-
-  def fulfillHtlc(id: Long, R: rval, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
-    val sender = TestProbe()
-    sender.send(s, CMD_FULFILL_HTLC(id, R))
-    sender.expectMsg("ok")
-    val fulfill = s2r.expectMsgType[update_fulfill_htlc]
-    s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(fulfill))
-  }
-
-  def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
-    val sender = TestProbe()
-    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index
-    sender.send(s, CMD_SIGN)
-    sender.expectMsg("ok")
-    s2r.expectMsgType[update_commit]
-    s2r.forward(r)
-    r2s.expectMsgType[update_revocation]
-    r2s.forward(s)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
   }
 
   test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>

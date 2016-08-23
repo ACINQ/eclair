@@ -3,10 +3,11 @@ package fr.acinq.eclair.channel.simulator.states.f
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.simulator.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -20,7 +21,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -66,8 +67,8 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     // alice sends an HTLC to bob
     val r: rval = rval(1, 2, 3, 4)
     val h: sha256_hash = Crypto.sha256(r)
-    val amount = 500000
-    sender.send(alice, CMD_ADD_HTLC(amount, h, locktime(Blocks(3))))
+    val amount = 300000000
+    sender.send(alice, CMD_ADD_HTLC(amount, h, locktime(Blocks(1440))))
     sender.expectMsg("ok")
     val htlc = alice2bob.expectMsgType[update_add_htlc]
     alice2bob.forward(bob)
@@ -358,6 +359,28 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv BITCOIN_ANCHOR_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      // bob publishes his current commit tx, which contains one  pending htlc alice->bob
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
+      assert(bobCommitTx.txOut.size == 2) // one main outputs (bob has zero) and 1 pending htlc
+      alice ! (BITCOIN_ANCHOR_SPENT, bobCommitTx)
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+      val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      assert(claimHtlcTx.txIn.size == 1)
+      val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
+      Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      assert(claimHtlcTx.txOut.size == 1)
+      assert(claimHtlcTx.txOut(0).amount == Satoshi(300000))
+
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
     }
   }
 
