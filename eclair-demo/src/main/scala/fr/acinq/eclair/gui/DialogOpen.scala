@@ -37,7 +37,7 @@ class DialogOpen(primaryStage: Stage, handlers: Handlers) extends Stage() {
   val textFieldHostPort = new TextField()
   grid.add(textFieldHostPort, 1, 0)
 
-  val labelAmount = new Label("Amount (msat)")
+  val labelAmount = new Label("Amount")
   grid.add(labelAmount, 0, 1)
 
   val textFieldAmount = new TextField("10")
