@@ -16,7 +16,7 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
-import scala.util.Random
+import scala.util.{Random, Try}
 
 /**
   * Created by PM on 05/07/2016.
@@ -76,12 +76,21 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
     val H: sha256_hash = Crypto.sha256(R)
     val sender = TestProbe()
-    sender.send(s, CMD_ADD_HTLC(amountMsat, H, locktime(Blocks(3))))
+    sender.send(s, CMD_ADD_HTLC(amountMsat, H, locktime(Blocks(1440))))
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[update_add_htlc]
     s2r.forward(r)
     awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(htlc))
     (R, htlc)
+  }
+
+  def fulfillHtlc(id: Long, R: rval, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
+    val sender = TestProbe()
+    sender.send(s, CMD_FULFILL_HTLC(id, R))
+    sender.expectMsg("ok")
+    val fulfill = s2r.expectMsgType[update_fulfill_htlc]
+    s2r.forward(r)
+    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(fulfill))
   }
 
   def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
@@ -96,7 +105,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
   }
 
-  test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
+  /*test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
@@ -578,22 +587,55 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[close_clearing]
       awaitCond(alice.stateName == CLEARING)
     }
-  }
+  }*/
 
   test("recv BITCOIN_ANCHOR_SPENT (their commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
 
       // alice sends 300 000 sat and bob fulfills
-      val (r, htlc) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
+      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
+      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
+      val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
       sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob) // id 1
+      val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(2, r2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, r4, alice, bob, alice2bob, bob2alice)
+
+      // at this point here is the situation from alice pov and what she should do :
+      // balances :
+      //    alice's balance : 400 000 000                             => nothing to do
+      //    bob's balance   :  30 000 000                             => nothing to do
+      // htlcs :
+      //    alice -> bob    : 200 000 000 (bob has the r)             => if bob does not use the r, wait for the timeout and spend
+      //    alice -> bob    : 100 000 000 (bob does not have the r)   => wait for the timeout and spend
+      //    bob -> alice    : 150 000 000 (alice has the r)           => spend immediately using the r
+      //    bob -> alice    : 120 000 000 (alice does not have the r) => nothing to do, bob will get his money back after the timeout
 
       // bob publishes his current commit tx
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
       alice ! (BITCOIN_ANCHOR_SPENT, bobCommitTx)
-      alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishAsap]
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+      val amountClaimed = (for (i <- 0 until 3) yield { // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
+        Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assert(claimHtlcTx.txOut.size == 1)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      assert(amountClaimed == Satoshi(450000))
+
       awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
     }
   }
 
@@ -648,13 +690,52 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      // alice sends 300 000 sat and bob fulfills
+      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
+      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
+      val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob) // id 1
+      val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(2, r2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, r4, alice, bob, alice2bob, bob2alice)
+
+      // at this point here is the situation from alice pov and what she should do :
+      // balances :
+      //    alice's balance : 400 000 000                             => nothing to do
+      //    bob's balance   :  30 000 000                             => nothing to do
+      // htlcs :
+      //    alice -> bob    : 200 000 000 (bob has the r)             => if bob does not use the r, wait for the timeout and spend
+      //    alice -> bob    : 100 000 000 (bob does not have the r)   => wait for the timeout and spend
+      //    bob -> alice    : 150 000 000 (alice has the r)           => spend immediately using the r
+      //    bob -> alice    : 120 000 000 (alice does not have the r) => nothing to do, bob will get his money back after the timeout
+
+      // an error occurs and alice publishes her commit tx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       alice ! error(Some("oops"))
+      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
+      val amountClaimed = (for (i <- 0 until 3) yield { // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+      val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> aliceCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
+        Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assert(claimHtlcTx.txOut.size == 1)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      assert(amountClaimed == Satoshi(450000))
+
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
     }
   }
 

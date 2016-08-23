@@ -83,8 +83,8 @@ object Commitments {
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, update_add_htlc) = {
     // our available funds as seen by them, including all pending changes
     val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.proposed)
-    // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
-    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.add.amountMsat).sum
+    // a node cannot spend pending incoming htlcs
+    val available = reduced.amount_them_msat
     if (cmd.amountMsat > available) {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
@@ -98,8 +98,8 @@ object Commitments {
   def receiveAdd(commitments: Commitments, add: update_add_htlc): Commitments = {
     // their available funds as seen by us, including all pending changes
     val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.proposed)
-    // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
-    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.add.amountMsat).sum
+    // a node cannot spend pending incoming htlcs
+    val available = reduced.amount_them_msat
     if (add.amountMsat > available) {
       throw new RuntimeException("Insufficient funds")
     } else {

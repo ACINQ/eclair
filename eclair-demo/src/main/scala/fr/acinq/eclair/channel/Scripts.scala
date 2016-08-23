@@ -122,6 +122,8 @@ object Scripts {
   }
 
   def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
+    // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
+    assert(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
     OP_SIZE :: OP_PUSHDATA(encodeNumber(32)) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::
@@ -137,6 +139,8 @@ object Scripts {
   }
 
   def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
+    // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
+    assert(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
     OP_SIZE :: OP_PUSHDATA(encodeNumber(32)) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::
@@ -177,15 +181,18 @@ object Scripts {
 
   case class HtlcTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, delay: locktime, revocationHash: BinaryData) extends OutputTemplate {
     override def amount = Satoshi(htlc.add.amountMsat / 1000)
+
     override def redeemScript = htlc.direction match {
       case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, locktime2long_cltv(htlc.add.expiry), locktime2long_csv(delay), htlc.add.rHash, revocationHash))
       case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, locktime2long_cltv(htlc.add.expiry), locktime2long_csv(delay), htlc.add.rHash, revocationHash))
     }
+
     override def txOut = TxOut(amount, pay2wsh(redeemScript))
   }
 
   case class P2WSH(amount: Satoshi, script: BinaryData) extends OutputTemplate {
     override def txOut: TxOut = TxOut(amount, pay2wsh(script))
+
     override def redeemScript = script
   }
 
@@ -195,6 +202,7 @@ object Scripts {
 
   case class P2WPKH(amount: Satoshi, publicKey: BinaryData) extends OutputTemplate {
     override def txOut: TxOut = TxOut(amount, pay2wpkh(publicKey))
+
     override def redeemScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(publicKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
   }
 
@@ -291,7 +299,7 @@ object Scripts {
     * @return the number of confirmations of the tx parent before which it can be published
     */
   def csvTimeout(tx: Transaction): Long = {
-    def sequenceToBlockHeight(sequence: Long) : Long = {
+    def sequenceToBlockHeight(sequence: Long): Long = {
       if ((sequence & TxIn.SEQUENCE_LOCKTIME_DISABLE_FLAG) != 0) 0
       else {
         require((sequence & TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG) == 0, "CSV timeout must use block heights, not block times")
