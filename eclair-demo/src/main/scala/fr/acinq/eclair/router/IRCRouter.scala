@@ -33,7 +33,7 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
 
   context.system.scheduler.schedule(5 seconds, 10 seconds, self, 'tick)
 
-   class IRCListener {
+  class IRCListener {
     @Handler
     def onClientConnected(event: ClientConnectedEvent) {
       log.info(s"connected to IRC: ${event.getServerInfo}")
@@ -69,6 +69,7 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
       context become main(channels + (c.id -> c))
     case ChannelUnregister(c) => context become main(channels - c.id)
     case 'network => sender ! channels.values
+    case 'tick => channels.values.map(c => ircClient.sendMessage(channel, s"${c.id}: ${c.a}-${c.b}"))
     case c: CreatePayment =>
       val s = sender
       (for {
@@ -76,17 +77,17 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
         blockCount <- bitcoinClient.getBlockCount
       } yield route match {
         case us :: next :: others =>
-        context.system.actorSelection(Register.actorPathToNodeId(next))
-          .resolveOne(2 seconds)
-          .map { channel =>
-            // build a route
-            val r = buildRoute(c.amountMsat, next +: others)
+          context.system.actorSelection(Register.actorPathToNodeId(next))
+            .resolveOne(2 seconds)
+            .map { channel =>
+              // build a route
+              val r = buildRoute(c.amountMsat, next +: others)
 
-            // apply fee
-            val amountMsat = r.steps(0).amount
-            channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
-            s ! channel
-          }
+              // apply fee
+              val amountMsat = r.steps(0).amount
+              channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
+              s ! channel
+            }
       }) onFailure {
         case t: Throwable => s ! Failure(t)
       }
@@ -127,7 +128,7 @@ object IRCRouter {
     findRouteDijkstra(myNodeId, targetNodeId, channels)
   }
 
-  def buildRoute(finalAmountMsat: Int, nodeIds: Seq[BinaryData]) : lightning.route = {
+  def buildRoute(finalAmountMsat: Int, nodeIds: Seq[BinaryData]): lightning.route = {
 
     // FIXME: use actual fee parameters that are specific to each node
     def fee(amountMsat: Int) = nodeFee(Globals.base_fee, Globals.proportional_fee, amountMsat).toInt
