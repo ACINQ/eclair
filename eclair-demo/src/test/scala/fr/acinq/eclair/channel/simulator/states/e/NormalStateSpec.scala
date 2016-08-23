@@ -589,6 +589,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice ! (BITCOIN_ANCHOR_SPENT, bobCommitTx)
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+
       val amountClaimed = (for (i <- 0 until 3) yield { // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)

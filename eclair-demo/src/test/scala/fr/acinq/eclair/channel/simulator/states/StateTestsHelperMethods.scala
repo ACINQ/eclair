@@ -23,7 +23,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[update_add_htlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(htlc))
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.theirChanges.proposed.contains(htlc))
     (R, htlc)
   }
 
@@ -33,7 +33,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     sender.expectMsg("ok")
     val fulfill = s2r.expectMsgType[update_fulfill_htlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(fulfill))
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.theirChanges.proposed.contains(fulfill))
   }
 
   def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
