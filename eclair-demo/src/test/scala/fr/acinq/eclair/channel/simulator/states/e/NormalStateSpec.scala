@@ -15,8 +15,8 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, fixture}
 
+import scala.util.Random
 import scala.concurrent.duration._
-import scala.util.{Random, Try}
 
 /**
   * Created by PM on 05/07/2016.
@@ -105,12 +105,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
   }
 
-  /*test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
+  test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
       val h = sha256_hash(1, 2, 3, 4)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(144))))
       sender.expectMsg("ok")
       val htlc = alice2bob.expectMsgType[update_add_htlc]
       assert(htlc.id == 1 && htlc.rHash == h)
@@ -123,7 +123,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("insufficient funds (available=1000000000 msat)")
     }
   }
@@ -131,11 +131,11 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 1/2)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144))))
       sender.expectMsg("insufficient funds (available=0 msat)")
     }
   }
@@ -143,11 +143,11 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144))))
       sender.expectMsg("insufficient funds (available=400000000 msat)")
     }
   }
@@ -160,7 +160,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
 
       // actual test starts here
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("cannot send new htlcs, closing in progress")
     }
   }
@@ -168,7 +168,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc") { case (_, bob, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-      val htlc = update_add_htlc(42, 150, sha256_hash(1, 2, 3, 4), locktime(Blocks(3)), routing(ByteString.EMPTY))
+      val htlc = update_add_htlc(42, 150, sha256_hash(1, 2, 3, 4), locktime(Blocks(144)), routing(ByteString.EMPTY))
       bob ! htlc
       awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(theirChanges = initialData.commitments.theirChanges.copy(proposed = initialData.commitments.theirChanges.proposed :+ htlc))))
     }
@@ -177,7 +177,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      val htlc = update_add_htlc(42, Int.MaxValue, sha256_hash(1, 2, 3, 4), locktime(Blocks(3)), routing(ByteString.EMPTY))
+      val htlc = update_add_htlc(42, Int.MaxValue, sha256_hash(1, 2, 3, 4), locktime(Blocks(144)), routing(ByteString.EMPTY))
       alice2bob.forward(bob, htlc)
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
@@ -189,9 +189,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice2bob.forward(bob, update_add_htlc(42, 500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(43, 500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(42, 500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(43, 500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144)), routing(ByteString.EMPTY)))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -202,9 +202,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice2bob.forward(bob, update_add_htlc(42, 300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(43, 300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(42, 300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(43, 300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144)), routing(ByteString.EMPTY)))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -272,12 +272,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       val r = sha256_hash(1, 2, 3, 4)
       val h: sha256_hash = Crypto.sha256(r)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(144))))
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[update_add_htlc]
       alice2bob.forward(bob)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(144))))
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[update_add_htlc]
       alice2bob.forward(bob)
@@ -587,13 +587,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       alice2bob.expectMsgType[close_clearing]
       awaitCond(alice.stateName == CLEARING)
     }
-  }*/
+  }
 
   test("recv BITCOIN_ANCHOR_SPENT (their commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
 
-      // alice sends 300 000 sat and bob fulfills
       val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
       val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
       val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
@@ -692,7 +691,6 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
 
   test("recv error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      // alice sends 300 000 sat and bob fulfills
       val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
       val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
       val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
