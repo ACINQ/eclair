@@ -3,10 +3,11 @@ package fr.acinq.eclair.channel.simulator.states.f
 import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.simulator.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -20,7 +21,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -64,14 +65,22 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     // note : alice is funder and bob is fundee, so alice has all the money
     val sender = TestProbe()
     // alice sends an HTLC to bob
-    val r: rval = rval(1, 2, 3, 4)
-    val h: sha256_hash = Crypto.sha256(r)
-    val amount = 500000
-    sender.send(alice, CMD_ADD_HTLC(amount, h, locktime(Blocks(3))))
+    val r1: rval = rval(1, 1, 1, 1)
+    val h1: sha256_hash = Crypto.sha256(r1)
+    val amount1 = 300000000
+    sender.send(alice, CMD_ADD_HTLC(amount1, h1, locktime(Blocks(1440))))
     sender.expectMsg("ok")
-    val htlc = alice2bob.expectMsgType[update_add_htlc]
+    val htlc1 = alice2bob.expectMsgType[update_add_htlc]
     alice2bob.forward(bob)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: Nil)
+    val r2: rval = rval(2, 2, 2, 2)
+    val h2: sha256_hash = Crypto.sha256(r2)
+    val amount2 = 200000000
+    sender.send(alice, CMD_ADD_HTLC(amount2, h2, locktime(Blocks(1440))))
+    sender.expectMsg("ok")
+    val htlc2 = alice2bob.expectMsgType[update_add_htlc]
+    alice2bob.forward(bob)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: htlc2 :: Nil)
     // alice signs
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -79,7 +88,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     alice2bob.forward(bob)
     bob2alice.expectMsgType[update_revocation]
     bob2alice.forward(alice)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc1 :: htlc2 :: Nil)
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
     alice2bob.expectMsgType[close_clearing]
@@ -99,7 +108,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_CLEARING]
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fulfill))))
@@ -130,11 +139,9 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_CLEARING]
-      val fulfill = update_fulfill_htlc(1, rval(1, 2, 3, 4))
+      val fulfill = update_fulfill_htlc(1, rval(1, 1, 1, 1))
       sender.send(alice, fulfill)
-      awaitCond(alice.stateData == initialState.copy(
-        commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)),
-        downstreams = Map()))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLEARING].commitments == initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)))
     }
   }
 
@@ -190,9 +197,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
       val initialState = alice.stateData.asInstanceOf[DATA_CLEARING]
       val fail = update_fail_htlc(1, fail_reason(ByteString.copyFromUtf8("some reason")))
       sender.send(alice, fail)
-      awaitCond(alice.stateData == initialState.copy(
-        commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fail)),
-        downstreams = Map()))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLEARING].commitments == initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fail)))
     }
   }
 
@@ -212,7 +217,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     within(30 seconds) {
       val sender = TestProbe()
       // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       bob2alice.expectMsgType[update_fulfill_htlc]
       bob2alice.forward(alice)
       sender.send(bob, CMD_SIGN)
@@ -253,7 +258,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
   test("recv update_commit") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
       bob2alice.expectMsgType[update_fulfill_htlc]
       bob2alice.forward(alice)
@@ -293,7 +298,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
   ignore("recv update_revocation (no more htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
       bob2alice.expectMsgType[update_fulfill_htlc]
       bob2alice.forward(alice)
@@ -311,7 +316,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
   test("recv update_revocation (with remaining htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
       bob2alice.expectMsgType[update_fulfill_htlc]
       bob2alice.forward(alice)
@@ -330,7 +335,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 2, 3, 4)))
+      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
       bob2alice.expectMsgType[update_fulfill_htlc]
       bob2alice.forward(alice)
@@ -361,22 +366,68 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     }
   }
 
-  ignore("recv BITCOIN_ANCHOR_SPENT") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_ANCHOR_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
-      alice ! (BITCOIN_ANCHOR_SPENT, null)
-      alice2bob.expectMsgType[error]
-      // TODO
+      // bob publishes his current commit tx, which contains two pending htlcs alice->bob
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
+      assert(bobCommitTx.txOut.size == 3) // one main outputs (bob has zero) and 2 pending htlcs
+      alice ! (BITCOIN_ANCHOR_SPENT, bobCommitTx)
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+
+      val amountClaimed = (for (i <- 0 until 2) yield {
+      val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
+        Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assert(claimHtlcTx.txOut.size == 1)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      assert(amountClaimed == Satoshi(500000))
+
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
     }
   }
 
-  test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_ANCHOR_SPENT (revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
-      alice ! error(Some("oops"))
-      awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      val revokedTx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
+
+      // bob fulfills one of the pending htlc (just so that he can have a new sig)
+      fulfillHtlc(1, rval(1, 1, 1, 1), bob, alice, bob2alice, alice2bob)
+      // alice signs
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      // bob now has a new commitment tx
+
+      // bob published the revoked tx
+      alice ! (BITCOIN_ANCHOR_SPENT, revokedTx)
+      alice2bob.expectMsgType[error]
+      val punishTx = alice2blockchain.expectMsgType[Publish].tx
       alice2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(alice.stateName == CLOSING)
+      Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      // one main output + 2 htlc
+      assert(revokedTx.txOut.size == 3)
+      // the punishment tx consumes all output but ours (which already goes to our final key)
+      assert(punishTx.txIn.size == 2)
+      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(Scripts.pay2wpkh(Alice.finalPubKey)))))
+    }
+  }
+
+  test("recv error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
+      alice ! error(Some("oops"))
+      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      assert(aliceCommitTx.txOut.size == 1) // only one main output
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
+      alice2blockchain.expectNoMsg()
+
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
     }
   }
 
