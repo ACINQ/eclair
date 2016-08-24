@@ -520,6 +520,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  /**
+    * see https://github.com/ElementsProject/lightning/issues/29
+    */
   ignore("recv close_clearing (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -531,6 +534,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  /**
+    * see https://github.com/ElementsProject/lightning/issues/29
+    */
   ignore("recv close_clearing (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -590,7 +596,8 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
-      val amountClaimed = (for (i <- 0 until 3) yield { // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+      val amountClaimed = (for (i <- 0 until 3) yield {
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
         val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
@@ -689,8 +696,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
-      val amountClaimed = (for (i <- 0 until 3) yield { // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
-      val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val amountClaimed = (for (i <- 0 until 3) yield {
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
         val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> aliceCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
         Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

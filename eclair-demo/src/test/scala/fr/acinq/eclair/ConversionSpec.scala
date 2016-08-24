@@ -39,7 +39,7 @@ class ConversionSpec extends FunSuite {
     }
   }
 
-  ignore("signature compatibility tests") {
+  test("signature compatibility tests") {
     val priv: BinaryData = "a9fa8bb22b3ad32682beac860037ea1c1ea86c4598fdffbeb780e70fc19498bd"
 
     val datas: Seq[BinaryData] = Seq(

@@ -295,39 +295,57 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     }
   }
 
-  ignore("recv update_revocation (no more htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv update_revocation (with remaining htlcs on both sides)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
+      fulfillHtlc(2, rval(2, 2, 2, 2), bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
+      sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
-      bob2alice.expectMsgType[update_fulfill_htlc]
-      bob2alice.forward(alice)
-      sender.send(bob, CMD_SIGN)
-      sender.expectMsg("ok")
-      bob2alice.expectMsgType[update_commit]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[update_revocation]
-      awaitCond(bob.stateData.asInstanceOf[DATA_CLEARING].commitments.theirNextCommitInfo.isLeft)
+      alice2bob.expectMsgType[update_commit]
       alice2bob.forward(bob)
-      awaitCond(bob.stateName == DATA_NEGOTIATING)
+      bob2alice.expectMsgType[update_revocation]
+      // actual test starts here
+      bob2alice.forward(bob)
+      assert(alice.stateName == CLEARING)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.spec.htlcs.size == 1)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLEARING].commitments.theirCommit.spec.htlcs.size == 2)
     }
   }
 
-  test("recv update_revocation (with remaining htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv update_revocation (with remaining htlcs on one side)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
+      fulfillHtlc(1, rval(1, 1, 1, 1), bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(2, rval(2, 2, 2, 2), bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
+      sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
-      bob2alice.expectMsgType[update_fulfill_htlc]
-      bob2alice.forward(alice)
-      sender.send(bob, CMD_SIGN)
-      sender.expectMsg("ok")
-      bob2alice.expectMsgType[update_commit]
-      bob2alice.forward(alice)
-      alice2bob.expectMsgType[update_revocation]
-      awaitCond(bob.stateData.asInstanceOf[DATA_CLEARING].commitments.theirNextCommitInfo.isLeft)
+      alice2bob.expectMsgType[update_commit]
       alice2bob.forward(bob)
-      awaitCond(bob.stateData.asInstanceOf[DATA_CLEARING].commitments.theirNextCommitInfo.isRight)
+      bob2alice.expectMsgType[update_revocation]
+      // actual test starts here
+      bob2alice.forward(bob)
+      assert(alice.stateName == CLEARING)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.spec.htlcs.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLEARING].commitments.theirCommit.spec.htlcs.size == 2)
+    }
+  }
+
+  test("recv update_revocation (no more htlcs on either side)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+    within(30 seconds) {
+      fulfillHtlc(1, rval(1, 1, 1, 1), bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(2, rval(2, 2, 2, 2), bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
+      val sender = TestProbe()
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[update_commit]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[update_revocation]
+      // actual test starts here
+      bob2alice.forward(alice)
+      awaitCond(alice.stateName == NEGOTIATING)
     }
   }
 
