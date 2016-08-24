@@ -585,15 +585,15 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       // counterparty may attempt to spend a revoked commit tx at any time
       handleTheirSpentOther(tx, d)
 
-    case Event(BITCOIN_CLOSE_DONE, _) => goto(CLOSED)
+    case Event(BITCOIN_CLOSE_DONE, d: DATA_CLOSING) if d.mutualClosePublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_SPEND_OURS_DONE, _) => goto(CLOSED)
+    case Event(BITCOIN_SPEND_OURS_DONE, d: DATA_CLOSING) if d.ourCommitPublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_SPEND_THEIRS_DONE, _) => goto(CLOSED)
+    case Event(BITCOIN_SPEND_THEIRS_DONE, d: DATA_CLOSING) if d.theirCommitPublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_STEAL_DONE, _) => goto(CLOSED)
+    case Event(BITCOIN_STEAL_DONE, d: DATA_CLOSING) if d.revokedPublished.size > 0 => goto(CLOSED)
 
-    case Event(e@error(problem), d: DATA_CLOSING) => handleTheirError(e, d)
+    case Event(e@error(problem), d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
   }
 
   when(CLOSED, stateTimeout = 30 seconds) {
@@ -770,7 +770,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         blockchain ! Publish(spendingTx)
         blockchain ! WatchConfirmed(self, spendingTx.txid, d.commitments.ourParams.minDepth, BITCOIN_STEAL_DONE)
         val nextData = d match {
-          case closing: DATA_CLOSING => closing.copy(revokedPublished = tx +: closing.revokedPublished)
+          case closing: DATA_CLOSING => closing.copy(revokedPublished = closing.revokedPublished :+ tx)
           case _ => DATA_CLOSING(d.commitments, revokedPublished = Seq(tx))
         }
         goto(CLOSING) using nextData
