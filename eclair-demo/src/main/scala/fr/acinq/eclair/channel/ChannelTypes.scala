@@ -76,6 +76,8 @@ case object INPUT_NO_MORE_HTLCS
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 
+
+
 sealed trait BlockchainEvent
 
 case object BITCOIN_ANCHOR_DEPTHOK extends BlockchainEvent
@@ -95,6 +97,8 @@ case object BITCOIN_SPEND_OURS_DONE extends BlockchainEvent
 case object BITCOIN_STEAL_DONE extends BlockchainEvent
 
 case object BITCOIN_CLOSE_DONE extends BlockchainEvent
+
+case class TransactionConfirmed(tx: Transaction) extends BlockchainEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
@@ -170,7 +174,7 @@ final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_
 
 final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
 
-trait HasCommitments {
+trait HasCommitments extends Data {
   def commitments: Commitments
 }
 

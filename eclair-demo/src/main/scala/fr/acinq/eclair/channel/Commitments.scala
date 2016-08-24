@@ -30,7 +30,9 @@ class BasicTxDb extends TxDb {
 object TypeDefs {
   type Change = GeneratedMessage
 }
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change])
+case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change]) {
+  def all: List[Change] = proposed ++ signed ++ acked
+}
 case class TheirChanges(proposed: List[Change], acked: List[Change])
 case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
@@ -41,7 +43,7 @@ case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, thei
 /**
   * about theirNextCommitInfo:
   * we either:
-  * - have built and sign their next commit tx with their next revocation hash which can now be discarded
+  * - have built and signed their next commit tx with their next revocation hash which can now be discarded
   * - have their next revocation hash
   * So, when we've signed and sent a commit message and are waiting for their revocation message,
   * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next revocation hash
@@ -81,8 +83,8 @@ object Commitments {
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, update_add_htlc) = {
     // our available funds as seen by them, including all pending changes
     val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.proposed)
-    // the pending htlcs that we sent to them (seen as IN from their pov) have already been deduced from our balance
-    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.add.amountMsat).sum
+    // a node cannot spend pending incoming htlcs
+    val available = reduced.amount_them_msat
     if (cmd.amountMsat > available) {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
@@ -96,8 +98,8 @@ object Commitments {
   def receiveAdd(commitments: Commitments, add: update_add_htlc): Commitments = {
     // their available funds as seen by us, including all pending changes
     val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.proposed)
-    // the pending htlcs that they sent to us (seen as IN from our pov) have already been deduced from their balance
-    val available = reduced.amount_them_msat + reduced.htlcs.filter(_.direction == OUT).map(-_.add.amountMsat).sum
+    // a node cannot spend pending incoming htlcs
+    val available = reduced.amount_them_msat
     if (add.amountMsat > available) {
       throw new RuntimeException("Insufficient funds")
     } else {
@@ -228,6 +230,11 @@ object Commitments {
       case Right(_) =>
         throw new RuntimeException("received unexpected update_revocation message")
     }
+  }
+
+  def makeOurTxTemplate(commitments: Commitments): TxTemplate = {
+        Helpers.makeOurTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+          Helpers.revocationHash(commitments.ourParams.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
   }
 
   def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {

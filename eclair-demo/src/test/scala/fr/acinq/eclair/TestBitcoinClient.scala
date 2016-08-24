@@ -1,5 +1,6 @@
 package fr.acinq.eclair
 
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Scripts
@@ -9,7 +10,7 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 26/04/2016.
   */
-class TestBitcoinClient extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("", "", "", 0)) {
+class TestBitcoinClient(probe: Option[ActorRef]= None) extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("", "", "", 0)) {
 
   client.client.close()
 
@@ -22,7 +23,10 @@ class TestBitcoinClient extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("
     Future.successful((anchorTx, 0))
   }
 
-  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = Future.successful(tx.txid.toString())
+  override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = {
+    probe.map(_ ! tx)
+    Future.successful(tx.txid.toString())
+  }
 
   override def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
 

@@ -8,6 +8,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.simulator.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -16,13 +17,12 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
-import scala.util.Random
 
 /**
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -71,37 +71,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     TestKit.shutdownActorSystem(system)
   }
 
-  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (rval, update_add_htlc) = {
-    val rand = new Random()
-    val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
-    val H: sha256_hash = Crypto.sha256(R)
-    val sender = TestProbe()
-    sender.send(s, CMD_ADD_HTLC(amountMsat, H, locktime(Blocks(3))))
-    sender.expectMsg("ok")
-    val htlc = s2r.expectMsgType[update_add_htlc]
-    s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.contains(htlc))
-    (R, htlc)
-  }
-
-  def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
-    val sender = TestProbe()
-    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index
-    sender.send(s, CMD_SIGN)
-    sender.expectMsg("ok")
-    s2r.expectMsgType[update_commit]
-    s2r.forward(r)
-    r2s.expectMsgType[update_revocation]
-    r2s.forward(s)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
-  }
-
   test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
       val h = sha256_hash(1, 2, 3, 4)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(144))))
       sender.expectMsg("ok")
       val htlc = alice2bob.expectMsgType[update_add_htlc]
       assert(htlc.id == 1 && htlc.rHash == h)
@@ -114,7 +89,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("insufficient funds (available=1000000000 msat)")
     }
   }
@@ -122,11 +97,11 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 1/2)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144))))
       sender.expectMsg("insufficient funds (available=0 msat)")
     }
   }
@@ -134,19 +109,32 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144))))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144))))
       sender.expectMsg("insufficient funds (available=400000000 msat)")
+    }
+  }
+
+  test("recv CMD_ADD_HTLC (while waiting for close_clearing)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      alice2bob.expectMsgType[close_clearing]
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+
+      // actual test starts here
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
+      sender.expectMsg("cannot send new htlcs, closing in progress")
     }
   }
 
   test("recv update_add_htlc") { case (_, bob, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-      val htlc = update_add_htlc(42, 150, sha256_hash(1, 2, 3, 4), locktime(Blocks(3)), routing(ByteString.EMPTY))
+      val htlc = update_add_htlc(42, 150, sha256_hash(1, 2, 3, 4), locktime(Blocks(144)), routing(ByteString.EMPTY))
       bob ! htlc
       awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(theirChanges = initialData.commitments.theirChanges.copy(proposed = initialData.commitments.theirChanges.proposed :+ htlc))))
     }
@@ -155,7 +143,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      val htlc = update_add_htlc(42, Int.MaxValue, sha256_hash(1, 2, 3, 4), locktime(Blocks(3)), routing(ByteString.EMPTY))
+      val htlc = update_add_htlc(42, Int.MaxValue, sha256_hash(1, 2, 3, 4), locktime(Blocks(144)), routing(ByteString.EMPTY))
       alice2bob.forward(bob, htlc)
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
@@ -167,9 +155,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice2bob.forward(bob, update_add_htlc(42, 500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(43, 500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(42, 500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(43, 500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144)), routing(ByteString.EMPTY)))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -180,9 +168,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv update_add_htlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice2bob.forward(bob, update_add_htlc(42, 300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(43, 300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(3)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(3)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(42, 300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(43, 300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144)), routing(ByteString.EMPTY)))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -250,12 +238,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       val r = sha256_hash(1, 2, 3, 4)
       val h: sha256_hash = Crypto.sha256(r)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(144))))
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[update_add_htlc]
       alice2bob.forward(bob)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(3))))
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(144))))
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[update_add_htlc]
       alice2bob.forward(bob)
@@ -532,6 +520,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  /**
+    * see https://github.com/ElementsProject/lightning/issues/29
+    */
   ignore("recv close_clearing (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -543,6 +534,9 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
+  /**
+    * see https://github.com/ElementsProject/lightning/issues/29
+    */
   ignore("recv close_clearing (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -564,6 +558,57 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       sender.send(alice, close_clearing(ByteString.EMPTY))
       alice2bob.expectMsgType[close_clearing]
       awaitCond(alice.stateName == CLEARING)
+    }
+  }
+
+  test("recv BITCOIN_ANCHOR_SPENT (their commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
+      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
+      val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob) // id 1
+      val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(2, r2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, r4, alice, bob, alice2bob, bob2alice)
+
+      // at this point here is the situation from alice pov and what she should do :
+      // balances :
+      //    alice's balance : 400 000 000                             => nothing to do
+      //    bob's balance   :  30 000 000                             => nothing to do
+      // htlcs :
+      //    alice -> bob    : 200 000 000 (bob has the r)             => if bob does not use the r, wait for the timeout and spend
+      //    alice -> bob    : 100 000 000 (bob does not have the r)   => wait for the timeout and spend
+      //    bob -> alice    : 150 000 000 (alice has the r)           => spend immediately using the r
+      //    bob -> alice    : 120 000 000 (alice does not have the r) => nothing to do, bob will get his money back after the timeout
+
+      // bob publishes his current commit tx
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
+      alice ! (BITCOIN_ANCHOR_SPENT, bobCommitTx)
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+
+      val amountClaimed = (for (i <- 0 until 3) yield {
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
+        Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assert(claimHtlcTx.txOut.size == 1)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      assert(amountClaimed == Satoshi(450000))
+
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
     }
   }
 
@@ -618,13 +663,52 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
+      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
+      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
+      val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob) // id 1
+      val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
+      sign(bob, alice, bob2alice, alice2bob)
+      sign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(2, r2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, r4, alice, bob, alice2bob, bob2alice)
+
+      // at this point here is the situation from alice pov and what she should do :
+      // balances :
+      //    alice's balance : 400 000 000                             => nothing to do
+      //    bob's balance   :  30 000 000                             => nothing to do
+      // htlcs :
+      //    alice -> bob    : 200 000 000 (bob has the r)             => if bob does not use the r, wait for the timeout and spend
+      //    alice -> bob    : 100 000 000 (bob does not have the r)   => wait for the timeout and spend
+      //    bob -> alice    : 150 000 000 (alice has the r)           => spend immediately using the r
+      //    bob -> alice    : 120 000 000 (alice does not have the r) => nothing to do, bob will get his money back after the timeout
+
+      // an error occurs and alice publishes her commit tx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       alice ! error(Some("oops"))
+      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
+
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
+      val amountClaimed = (for (i <- 0 until 3) yield {
+        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> aliceCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
+        Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        assert(claimHtlcTx.txOut.size == 1)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      assert(amountClaimed == Satoshi(450000))
+
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
     }
   }
 

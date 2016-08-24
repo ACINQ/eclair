@@ -54,10 +54,8 @@ class StealRevokedCommitmentSpec extends FunSuite {
 
 
     // now what if Alice published a revoked commit tx ?
-    Seq(alice1, alice2, alice3, alice4).map(alice => {
-      val stealTx = bob5.txDb.get(alice.ourCommit.publishableTx.txid)
-      Transaction.correctlySpends(stealTx.get, Seq(alice.ourCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    })
+    val stealTx = bob5.txDb.get(alice4.ourCommit.publishableTx.txid)
+    Transaction.correctlySpends(stealTx.get, Seq(alice4.ourCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // but we cannot steal Alice's current commit tx
     assert(bob5.txDb.get(alice5.ourCommit.publishableTx.txid) == None)
