@@ -26,21 +26,20 @@ import scala.annotation.tailrec
 
 sealed trait Data
 case object Nothing extends Data
+case class WaitingForKeyLength(buffer: ByteString) extends Data
+case class WaitingForKey(keyLength: Int, buffer: ByteString) extends Data
 case class SessionData(their_session_key: BinaryData, decryptor: Decryptor, encryptor: Encryptor) extends Data
 case class Normal(channel: ActorRef, sessionData: SessionData) extends Data
 
 sealed trait State
+case object IO_WAITING_FOR_SESSION_KEY_LENGTH extends State
 case object IO_WAITING_FOR_SESSION_KEY extends State
 case object IO_WAITING_FOR_AUTH extends State
 case object IO_NORMAL extends State
 
-//case class Received(msg: GeneratedMessage, acknowledged: Long)
-
 // @formatter:on
 
-class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
-
-  import AuthHandler._
+class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
 
   val session_key = randomKeyPair()
 
@@ -50,46 +49,64 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 
   them ! Write(ByteString.fromArray(firstMessage))
 
-  def send(encryptor: Encryptor, message: BinaryData) : Encryptor = {
+  def send(encryptor: Encryptor, message: BinaryData): Encryptor = {
     val (encryptor1, ciphertext) = Encryptor.encrypt(encryptor, message)
     them ! Write(ByteString.fromArray(ciphertext))
     encryptor1
   }
 
-  def send(encryptor: Encryptor, message: pkt) : Encryptor = send(encryptor, message.toByteArray)
+  def send(encryptor: Encryptor, message: pkt): Encryptor = send(encryptor, message.toByteArray)
 
-  startWith(IO_WAITING_FOR_SESSION_KEY, Nothing)
+  startWith(IO_WAITING_FOR_SESSION_KEY_LENGTH, WaitingForKeyLength(ByteString.empty))
+
+  when(IO_WAITING_FOR_SESSION_KEY_LENGTH) {
+    case Event(Received(data), WaitingForKeyLength(buffer)) =>
+      val buffer1 = buffer ++ data
+      if (buffer1.length < 4)
+        stay using WaitingForKeyLength(buffer1)
+      else {
+        val their_session_key_length = Protocol.uint32(buffer1.take(4)).toInt
+        log.info(s"session key length: $their_session_key_length")
+        self ! Received(ByteString.empty)
+        goto(IO_WAITING_FOR_SESSION_KEY) using WaitingForKey(their_session_key_length, buffer1.drop(4))
+      }
+  }
 
   when(IO_WAITING_FOR_SESSION_KEY) {
-    case Event(Received(data), _) =>
-      val their_session_key_length = Protocol.uint32(data.take(4))
-      log.info(s"session key length: $their_session_key_length")
-      val their_session_key: BinaryData = data.drop(4).take(33)
-      log.info(s"their_session_key=$their_session_key")
-      /**
-        * BOLT #1:
-        * sending-key: SHA256(shared-secret || sending-node-id)
-        * receiving-key: SHA256(shared-secret || receiving-node-id)
-        */
-      val shared_secret = ecdh(their_session_key, session_key.priv)
-      val sending_key: BinaryData = Crypto.sha256(shared_secret ++ session_key.pub)
-      val receiving_key: BinaryData = Crypto.sha256(shared_secret ++ their_session_key)
-      log.debug(s"shared_secret: $shared_secret")
-      log.debug(s"sending key: $sending_key")
-      log.debug(s"receiving key: $receiving_key")
-      /**
-        * node_id is the expected value for the sending node.
-        * session_sig is a valid secp256k1 ECDSA signature encoded as a 32-byte big endian R value, followed by a 32-byte big endian S value.
-        * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
-        */
-      val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
-      val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
+    case Event(Received(data), WaitingForKey(their_session_key_length, buffer)) =>
+      val buffer1 = buffer ++ data
+      if (buffer1.length < their_session_key_length) {
+        stay using WaitingForKey(their_session_key_length, buffer1)
+      }
+      else {
+        val their_session_key: BinaryData = buffer1.take(their_session_key_length)
+        log.info(s"their_session_key=$their_session_key")
+        /**
+          * BOLT #1:
+          * sending-key: SHA256(shared-secret || sending-node-id)
+          * receiving-key: SHA256(shared-secret || receiving-node-id)
+          */
+        val shared_secret = ecdh(their_session_key, session_key.priv)
+        val sending_key: BinaryData = Crypto.sha256(shared_secret ++ session_key.pub)
+        val receiving_key: BinaryData = Crypto.sha256(shared_secret ++ their_session_key)
+        log.debug(s"shared_secret: $shared_secret")
+        log.debug(s"sending key: $sending_key")
+        log.debug(s"receiving key: $receiving_key")
+        /**
+          * node_id is the expected value for the sending node.
+          * session_sig is a valid secp256k1 ECDSA signature encoded as a 32-byte big endian R value, followed by a 32-byte big endian S value.
+          * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
+          */
+        val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
+        val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
 
-      val encryptor = Encryptor(sending_key, 0)
-      val encryptor1 = send(encryptor, our_auth)
-      val decryptor = Decryptor(receiving_key, 0)
+        val encryptor = Encryptor(sending_key, 0)
+        val decryptor = Decryptor(receiving_key, 0)
+        self ! Received(buffer1.drop(their_session_key_length))
+        val encryptor1 = send(encryptor, our_auth)
 
-      goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor, encryptor1)
+        goto(IO_WAITING_FOR_AUTH) using SessionData(their_session_key, decryptor, encryptor1)
+      }
   }
 
   when(IO_WAITING_FOR_AUTH) {
@@ -106,9 +123,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
             log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
             context.stop(self)
           }
-          val channel = context.actorOf(Channel.props(self, blockchain, our_params, their_nodeid.toString()), name = "channel")
+          val channel = context.actorOf(Channel.props(self, blockchain, paymentHandler, our_params, their_nodeid.toString()), name = "channel")
+          context.watch(channel)
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
-     }
+      }
   }
 
   when(IO_NORMAL) {
@@ -123,7 +141,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
 
     case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"receiving $packet")
-      packet.pkt match {
+      (packet.pkt: @unchecked) match {
         case Open(o) => channel ! o
         case OpenAnchor(o) => channel ! o
         case OpenCommitSig(o) => channel ! o
@@ -140,7 +158,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
       stay
 
     case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
-      val packet = msg match {
+      val packet = (msg: @unchecked) match {
         case o: open_channel => pkt(Open(o))
         case o: open_anchor => pkt(OpenAnchor(o))
         case o: open_commit_sig => pkt(OpenCommitSig(o))
@@ -161,12 +179,18 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, our_params: OurChannelPa
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
       stay
+
+    case Event(Terminated(subject), n@Normal(channel, _)) if subject == channel =>
+      context stop self
+      stay
   }
 
   initialize()
 }
 
 object AuthHandler {
+
+  def props(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, our_params: OurChannelParams) = Props(new AuthHandler(them, blockchain, paymentHandler, our_params))
 
   case class Secrets(aes_key: BinaryData, hmac_key: BinaryData, aes_iv: BinaryData)
 

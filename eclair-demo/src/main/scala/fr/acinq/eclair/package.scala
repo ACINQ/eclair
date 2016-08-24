@@ -4,11 +4,8 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.math.BigInteger
 
 import _root_.lightning._
-import _root_.lightning.locktime.Locktime.{Blocks, Seconds}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.channel.{ChannelState, ChannelOneSide}
 
 import scala.annotation.tailrec
 
@@ -37,6 +34,29 @@ package object eclair {
     bos.toByteArray
   }
 
+  implicit def seq2rval(in: Seq[Byte]): rval = {
+    require(in.data.size == 32)
+    val bis = new ByteArrayInputStream(in.toArray)
+    rval(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
+  }
+
+  implicit def bin2rval(in: BinaryData): rval = {
+    require(in.data.size == 32)
+    val bis = new ByteArrayInputStream(in)
+    rval(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
+  }
+
+  implicit def rval2bin(in: rval): BinaryData = {
+    val bos = new ByteArrayOutputStream()
+    Protocol.writeUInt64(in.a, bos)
+    Protocol.writeUInt64(in.b, bos)
+    Protocol.writeUInt64(in.c, bos)
+    Protocol.writeUInt64(in.d, bos)
+    bos.toByteArray
+  }
+
+  implicit def rval2seq(in: rval): Seq[Byte] = rval2bin(in)
+
   // TODO : redundant with above, needed for seamless Crypto.sha256(sha256_hash)
   implicit def sha2562seq(in: sha256_hash): Seq[Byte] = sha2562bin(in)
 
@@ -55,7 +75,7 @@ package object eclair {
   implicit def bin2signature(in: BinaryData): signature = {
     val (r, s) = Crypto.decodeSignature(in)
     val (ar, as) = (r.toByteArray, s.toByteArray)
-    val (ar1, as1) = (fixSize(ar).reverse, fixSize(as).reverse)
+    val (ar1, as1) = (fixSize(ar), fixSize(as))
     val (rbis, sbis) = (new ByteArrayInputStream(ar1), new ByteArrayInputStream(as1))
     signature(Protocol.uint64(rbis), Protocol.uint64(rbis), Protocol.uint64(rbis), Protocol.uint64(rbis), Protocol.uint64(sbis), Protocol.uint64(sbis), Protocol.uint64(sbis), Protocol.uint64(sbis))
   }
@@ -68,13 +88,13 @@ package object eclair {
     Protocol.writeUInt64(in.r2, rbos)
     Protocol.writeUInt64(in.r3, rbos)
     Protocol.writeUInt64(in.r4, rbos)
-    val r = new BigInteger(1, rbos.toByteArray.reverse)
+    val r = new BigInteger(1, rbos.toByteArray)
     val sbos = new ByteArrayOutputStream()
     Protocol.writeUInt64(in.s1, sbos)
     Protocol.writeUInt64(in.s2, sbos)
     Protocol.writeUInt64(in.s3, sbos)
     Protocol.writeUInt64(in.s4, sbos)
-    val s = new BigInteger(1, sbos.toByteArray.reverse)
+    val s = new BigInteger(1, sbos.toByteArray)
     Crypto.encodeSignature(r, s) :+ SIGHASH_ALL.toByte
   }
 
@@ -90,4 +110,28 @@ package object eclair {
     case (ha :: ta, hb :: tb) => (ha & 0xff) - (hb & 0xff)
   }
 
+  /**
+    *
+    * A node MUST use the formula 338 + 32 bytes for every non-dust HTLC as the bytecount for calculating commitment
+    * transaction fees. Note that the fee requirement is unchanged, even if the elimination of dust HTLC outputs
+    * has caused a non-zero fee already.
+    * The fee for a transaction MUST be calculated by multiplying this bytecount by the fee rate, dividing by 1000
+    * and truncating (rounding down) the result to an even number of satoshis.
+    *
+    * @param feeRate       fee rate in Satoshi/Kb
+    * @param numberOfHtlcs number of (non-dust) HTLCs to be included in the commit tx
+    * @return the fee in Satoshis for a commit tx with 'numberOfHtlcs' HTLCs
+    */
+  def computeFee(feeRate: Long, numberOfHtlcs: Int): Long = {
+    Math.floorDiv((338 + 32 * numberOfHtlcs) * feeRate, 2000) * 2
+  }
+
+  /**
+    *
+    * @param base fixed fee
+    * @param proportional proportional fee
+    * @param msat amount in millisatoshi
+    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
+    */
+  def nodeFee(base: Long, proportional: Long, msat: Long): Long = base + (proportional * msat) / 1000000
 }

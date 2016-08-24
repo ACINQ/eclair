@@ -4,9 +4,11 @@
 
 package lightning
 
-import java.io.{OutputStream, ByteArrayOutputStream}
+import java.io.{ByteArrayOutputStream, OutputStream}
 import java.math.BigInteger
 import javax.xml.bind.DatatypeConverter
+
+import com.google.protobuf.ByteString
 
 
 object ToStrings {
@@ -45,6 +47,27 @@ trait Sha256ToString {
 
 }
 
+trait RvalToString {
+
+  // @formatter:off
+  def a: Long
+  def b: Long
+  def c: Long
+  def d: Long
+  // @formatter:on
+
+  override def toString = {
+    import ToStrings._
+    val bos = new ByteArrayOutputStream()
+    writeUInt64(a, bos)
+    writeUInt64(b, bos)
+    writeUInt64(c, bos)
+    writeUInt64(d, bos)
+    s"rval(${DatatypeConverter.printHexBinary(bos.toByteArray)})"
+  }
+
+}
+
 trait SignatureToString {
 
   // @formatter:off
@@ -74,4 +97,11 @@ trait SignatureToString {
     val s = new BigInteger(1, sbos.toByteArray.reverse)
     s"signature(r=${DatatypeConverter.printHexBinary(r.toByteArray)},s=${DatatypeConverter.printHexBinary(s.toByteArray)})"
   }
+}
+
+trait PubkeyToString {
+
+  def key: ByteString
+
+  override def toString = s"bitcoin_pubkey(${DatatypeConverter.printHexBinary(key.toByteArray)})"
 }

@@ -8,7 +8,9 @@
         </encoder>
     </appender>
 
-    <root level="DEBUG">
+    <logger name="com.ning.http" level="INFO"/>
+
+    <root level="INFO">
         <appender-ref ref="CONSOLE"/>
     </root>
 

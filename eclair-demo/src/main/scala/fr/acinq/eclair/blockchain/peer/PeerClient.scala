@@ -6,12 +6,12 @@ import fr.acinq.bitcoin._
 import akka.actor._
 import akka.io.Tcp.Connected
 import akka.pattern.{Backoff, BackoffSupervisor}
-import com.typesafe.config.{Config, ConfigFactory}
+import com.typesafe.config.ConfigFactory
+
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
 
-class PeerClient(listener: ActorRef) extends Actor with ActorLogging {
+class PeerClient extends Actor with ActorLogging {
 
   val config = ConfigFactory.load().getConfig("eclair.bitcoind")
   val magic = config.getString("network") match {
@@ -29,7 +29,8 @@ class PeerClient(listener: ActorRef) extends Actor with ActorLogging {
       randomFactor = 0.2 // adds 20% "noise" to vary the intervals slightly
     ))
   context.actorOf(supervisor, name = "peer-supervisor")
-  context.become(running)
+
+  override def receive: Actor.Receive = running
 
   def running: Receive = {
     case Connected(remote, local) =>
@@ -59,13 +60,24 @@ class PeerClient(listener: ActorRef) extends Actor with ActorLogging {
       sender ! Message(magic, "pong", payload)
     case Message(magic, "tx", payload) =>
       log.debug(s"received tx ${toHexString(payload)}")
-      listener ! Transaction.read(payload)
+      context.system.eventStream.publish(NewTransaction(Transaction.read(payload)))
     case Message(magic, "block", payload) =>
       log.debug(s"received block ${toHexString(payload)}")
-      listener ! Block.read(payload)
+      context.system.eventStream.publish(NewBlock(Block.read(payload)))
     case Message(magic, command, payload) =>
       log.debug(s"received unknown $command ${toHexString(payload)}")
   }
-
-  override def receive: Actor.Receive = ???
 }
+
+object PeerClientTest extends App {
+
+  val system = ActorSystem()
+  val peer = system.actorOf(Props[PeerClient], name = "peer")
+  val listener = system.actorOf(Props(new Actor {
+    override def receive: Receive = {
+      case msg => println(msg)
+    }
+  }), name = "listener")
+  system.eventStream.subscribe(listener, classOf[BlockchainEvent])
+}
+

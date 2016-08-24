@@ -4,7 +4,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.1-rfc2a-SNAPSHOT</version>
+    <version>0.2-gossip-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -41,11 +41,14 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.source>1.7</maven.compiler.source>
+        <maven.compiler.target>1.7</maven.compiler.target>
         <scala.version>2.11.8</scala.version>
         <scala.version.short>2.11</scala.version.short>
-        <akka.version>2.4.6</akka.version>
-        <bitcoinlib.version>0.9.6-RC1</bitcoinlib.version>
+        <akka.version>2.4.8</akka.version>
+        <bitcoinlib.version>0.9.6-RC2</bitcoinlib.version>
         <acinqtools.version>1.2</acinqtools.version>
+        <scalapb.version>0.4.21</scalapb.version>
     </properties>
 
     <build>
@@ -164,7 +167,7 @@
             <dependency>
                 <groupId>com.trueaccord.scalapb</groupId>
                 <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
-                <version>0.4.21</version>
+                <version>${scalapb.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.google.protobuf</groupId>
