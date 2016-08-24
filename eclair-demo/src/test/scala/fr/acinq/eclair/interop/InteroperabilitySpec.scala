@@ -114,11 +114,8 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     super.afterAll()
   }
 
-  def actorPathToChannelId(channelId: BinaryData): ActorPath =
-    system / "register" / "handler-*" / "channel" / s"*-${channelId}"
-
-  def sendCommand(channel_id: String, cmd: Command): Future[String] = {
-    system.actorSelection(actorPathToChannelId(channel_id)).resolveOne().map(actor => {
+  def sendCommand(channelId: String, cmd: Command): Future[String] = {
+    system.actorSelection(Register.actorPathToChannelId(system, channelId)).resolveOne().map(actor => {
       actor ! cmd
       "ok"
     })

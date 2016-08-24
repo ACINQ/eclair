@@ -73,11 +73,15 @@ object Register {
   def create_alias(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
   context.actorOf(Props(new AliasActor(context.self)), name = s"$node_id-$anchor_id")
 
-  def actorPathToNodeId(nodeId: BinaryData)(implicit context: ActorContext): ActorPath =
-    context.system / "register" / "auth-handler-*" / "channel" / s"${nodeId}-*"
+  def actorPathToNodeId(system: ActorSystem, nodeId: BinaryData): ActorPath =
+    system / "register" / "auth-handler-*" / "channel" / s"${nodeId}-*"
 
-  def actorPathToChannelId(channelId: BinaryData)(implicit context: ActorContext): ActorPath =
-    context.system / "register" / "auth-handler-*" / "channel" / s"*-${channelId}"
+  def actorPathToNodeId(nodeId: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToNodeId(context.system, nodeId)
+
+  def actorPathToChannelId(system: ActorSystem, channelId: BinaryData): ActorPath =
+    system / "register" / "auth-handler-*" / "channel" / s"*-${channelId}"
+
+  def actorPathToChannelId(channelId: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToChannelId(context.system, channelId)
 
   def actorPathToChannels()(implicit context: ActorContext): ActorPath =
     context.system / "register" / "auth-handler-*" / "channel"
