@@ -237,7 +237,9 @@ object Helpers {
     */
   def claimReceivedHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = {
     val preImages = commitments.ourChanges.all.collect { case update_fulfill_htlc(id, r) => rval2bin(r) }
-    val htlcTemplates = txTemplate.htlcSent
+    // TODO: FIXME !!!
+    //val htlcTemplates = txTemplate.htlcSent
+    val htlcTemplates = txTemplate.htlcReceived ++ txTemplate.htlcSent
 
     @tailrec
     def loop(htlcs: Seq[HtlcTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = {
@@ -267,6 +269,10 @@ object Helpers {
   }
 
   def claimSentHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = {
-    txTemplate.htlcReceived.map(htlcTemplate => claimSentHtlc(tx, htlcTemplate, commitments.ourParams.finalPrivKey))
+    // txTemplate could be our template (we published our commit tx) or their template (they published their commit tx)
+    val htlcs1 = txTemplate.htlcSent.filter(_.ourKey == commitments.ourParams.finalPubKey)
+    val htlcs2 = txTemplate.htlcReceived.filter(_.theirKey == commitments.ourParams.finalPubKey)
+    val htlcs = htlcs1 ++ htlcs2
+    htlcs.map(htlcTemplate => claimSentHtlc(tx, htlcTemplate, commitments.ourParams.finalPrivKey))
   }
 }

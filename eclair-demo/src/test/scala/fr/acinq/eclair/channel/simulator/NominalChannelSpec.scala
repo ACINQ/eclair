@@ -27,7 +27,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
     bob ! SubscribeTransitionCallBack(monitorB.ref)
     val CurrentState(_, OPEN_WAIT_FOR_OPEN_NOANCHOR) = monitorB.expectMsgClass(classOf[CurrentState[_]])
 
-    pipe !(alice, bob) // this starts the communication between alice and bob
+    pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
@@ -46,7 +46,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
   }
 
   test("create and fulfill HTLCs") { case (alice, bob, pipe) =>
-    pipe !(alice, bob) // this starts the communication between alice and bob
+    pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
@@ -56,7 +56,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
       val H = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
+      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
       Thread.sleep(100)
 
       (alice.stateData: @unchecked) match {
@@ -108,7 +108,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       val R1 = Crypto.sha256(H)
       val H1 = Crypto.sha256(R1)
 
-      alice ! CMD_ADD_HTLC(60000000, H1, locktime(Blocks(4)))
+      alice ! CMD_ADD_HTLC(60000000, H1, locktime(Blocks(400)))
       Thread.sleep(500)
 
       (alice.stateData: @unchecked) match {
@@ -160,7 +160,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
   }
 
   test("close channel starting with no HTLC") { case (alice, bob, pipe) =>
-    pipe !(alice, bob) // this starts the communication between alice and bob
+    pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
@@ -177,7 +177,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
   test("close channel with pending htlcs") { case (alice, bob, pipe) =>
     within(30 seconds) {
 
-      pipe !(alice, bob) // this starts the communication between alice and bob
+      pipe ! (alice, bob) // this starts the communication between alice and bob
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
 
@@ -196,7 +196,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
       val H = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
+      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
       alice ! CMD_SIGN
       bob ! CMD_SIGN
       alice ! CMD_CLOSE(None)
@@ -219,7 +219,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
   }
 
   test("steal revoked commit tx") { case (alice, bob, pipe) =>
-    pipe !(alice, bob) // this starts the communication between alice and bob
+    pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
@@ -229,7 +229,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
       val H = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
+      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
       alice ! CMD_SIGN
       Thread.sleep(500)
       bob ! CMD_SIGN
@@ -246,7 +246,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      bob !(BITCOIN_ANCHOR_SPENT, commitTx)
+      bob ! (BITCOIN_ANCHOR_SPENT, commitTx)
       awaitCond(bob.stateName == CLOSING)
     }
   }
