@@ -136,7 +136,3 @@ class MainWindow extends Application {
   }
 
 }
-
-object MainWindow extends App with Logging {
-  Application.launch(classOf[MainWindow])
-}
