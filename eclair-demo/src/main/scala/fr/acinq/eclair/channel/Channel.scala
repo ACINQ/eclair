@@ -729,8 +729,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     blockchain ! Publish(tx)
     blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, BITCOIN_SPEND_OURS_DONE)
 
-    (Helpers.claimReceivedHtlcs(tx, Commitments.makeOurTxTemplate(d.commitments), d.commitments) ++ Helpers.claimSentHtlcs(tx, Commitments.makeOurTxTemplate(d.commitments), d.commitments))
-      .map(tx => blockchain ! PublishAsap(tx))
+    val txs1 = Helpers.claimReceivedHtlcs(tx, Commitments.makeOurTxTemplate(d.commitments), d.commitments)
+    val txs2 = Helpers.claimSentHtlcs(tx, Commitments.makeOurTxTemplate(d.commitments), d.commitments)
+    val txs = txs1 ++ txs2
+    txs.map(tx => blockchain ! PublishAsap(tx))
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(ourCommitPublished = Some(tx))
@@ -746,8 +748,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     blockchain ! WatchConfirmed(self, tx.txid, d.commitments.ourParams.minDepth, BITCOIN_SPEND_THEIRS_DONE)
 
-    (Helpers.claimReceivedHtlcs(tx, Commitments.makeTheirTxTemplate(d.commitments), d.commitments) ++ Helpers.claimSentHtlcs(tx, Commitments.makeTheirTxTemplate(d.commitments),d.commitments))
-      .map(tx => blockchain ! PublishAsap(tx))
+    val txs1 = Helpers.claimReceivedHtlcs(tx, Commitments.makeTheirTxTemplate(d.commitments), d.commitments)
+    val txs2 = Helpers.claimSentHtlcs(tx, Commitments.makeTheirTxTemplate(d.commitments), d.commitments)
+    val txs = txs1 ++ txs2
+    txs.map(tx => blockchain ! PublishAsap(tx))
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(theirCommitPublished = Some(tx))
