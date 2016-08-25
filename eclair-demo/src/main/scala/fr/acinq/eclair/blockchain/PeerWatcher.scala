@@ -1,6 +1,6 @@
 package fr.acinq.eclair.blockchain
 
-import akka.actor.{Actor, ActorLogging, Terminated}
+import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
@@ -83,4 +83,10 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       watches.filter(_.channel == channel).foreach(w => self ! ('remove, w))
 
   }
+}
+
+object PeerWatcher {
+
+  def props(client: ExtendedBitcoinClient, initialBlockCount: Long)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(classOf[PeerWatcher], client, initialBlockCount, ec)
+
 }

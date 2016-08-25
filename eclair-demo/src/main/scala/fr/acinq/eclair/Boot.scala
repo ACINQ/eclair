@@ -53,7 +53,7 @@ class Setup extends Logging {
   implicit val timeout = Timeout(30 seconds)
 
   val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
-  val watcher = system.actorOf(Props(new PeerWatcher(bitcoin_client, blockCount)), name = "watcher")
+  val watcher = system.actorOf(PeerWatcher.props(bitcoin_client, blockCount), name = "watcher")
   val paymentHandler = config.getString("eclair.payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
