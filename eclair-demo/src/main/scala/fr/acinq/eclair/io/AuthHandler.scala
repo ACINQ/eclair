@@ -3,7 +3,7 @@ package fr.acinq.eclair.io
 import javax.crypto.Cipher
 
 import akka.actor._
-import akka.io.Tcp.{Received, Register, Write}
+import akka.io.Tcp.{ErrorClosed, Received, Register, Write}
 import akka.util.ByteString
 import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin._
@@ -11,7 +11,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Decryptor, Encryptor}
 import fr.acinq.eclair.crypto.LightningCrypto._
-import fr.acinq.eclair.io.AuthHandler.Secrets
 import lightning._
 import lightning.pkt.Pkt._
 
@@ -178,6 +177,11 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
     case Event(cmd: Command, n@Normal(channel, _)) =>
       channel forward cmd
+      stay
+
+    case Event(ErrorClosed(cause), n@Normal(channel, _)) =>
+      // we transform connection closed events into application error so that it triggers a uniclose
+      channel ! error(Some(cause))
       stay
 
     case Event(Terminated(subject), n@Normal(channel, _)) if subject == channel =>
