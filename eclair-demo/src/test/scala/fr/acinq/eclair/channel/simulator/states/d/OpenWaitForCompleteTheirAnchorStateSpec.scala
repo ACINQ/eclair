@@ -63,7 +63,7 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends TestKit(ActorSystem("test"
   test("recv BITCOIN_ANCHOR_SPENT") { case (alice, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
       // this is the fully signed tx that alice could decide to publish
-      val tx = alice.stateData.asInstanceOf[DATA_NORMALgit ].commitments.ourCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       // we have nothing at stake so we don't do anything with the tx
       bob ! (BITCOIN_ANCHOR_SPENT, tx)
       bob2alice.expectMsgType[error]
