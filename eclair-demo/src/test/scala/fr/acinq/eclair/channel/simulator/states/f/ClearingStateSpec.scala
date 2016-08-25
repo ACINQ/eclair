@@ -275,7 +275,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
       val tx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
       val sender = TestProbe()
       // signature is invalid but it doesn't matter
-      sender.send(bob, update_commit(signature(0, 0, 0, 0, 0, 0, 0, 0)))
+      sender.send(bob, update_commit(Some(signature(0, 0, 0, 0, 0, 0, 0, 0))))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -287,7 +287,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_CLEARING].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(bob, update_commit(signature(0, 0, 0, 0, 0, 0, 0, 0)))
+      sender.send(bob, update_commit(Some(signature(0, 0, 0, 0, 0, 0, 0, 0))))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -394,7 +394,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
       val amountClaimed = (for (i <- 0 until 2) yield {
-      val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
         val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
         Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

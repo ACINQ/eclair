@@ -24,16 +24,25 @@ import scala.annotation.tailrec
 // @formatter:off
 
 sealed trait Data
+
 case object Nothing extends Data
+
 case class WaitingForKeyLength(buffer: ByteString) extends Data
+
 case class WaitingForKey(keyLength: Int, buffer: ByteString) extends Data
+
 case class SessionData(their_session_key: BinaryData, decryptor: Decryptor, encryptor: Encryptor) extends Data
+
 case class Normal(channel: ActorRef, sessionData: SessionData) extends Data
 
 sealed trait State
+
 case object IO_WAITING_FOR_SESSION_KEY_LENGTH extends State
+
 case object IO_WAITING_FOR_SESSION_KEY extends State
+
 case object IO_WAITING_FOR_AUTH extends State
+
 case object IO_NORMAL extends State
 
 // @formatter:on
@@ -150,7 +159,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
         case UpdateFailHtlc(o) => channel ! o
         case UpdateCommit(o) => channel ! o
         case UpdateRevocation(o) => channel ! o
-        case CloseClearing(o) => channel ! o
+        case CloseShutdown(o) => channel ! o
         case CloseSignature(o) => channel ! o
         case Error(o) => channel ! o
       }
@@ -167,7 +176,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
         case o: update_fail_htlc => pkt(UpdateFailHtlc(o))
         case o: update_commit => pkt(UpdateCommit(o))
         case o: update_revocation => pkt(UpdateRevocation(o))
-        case o: close_clearing => pkt(CloseClearing(o))
+        case o: close_shutdown => pkt(CloseShutdown(o))
         case o: close_signature => pkt(CloseSignature(o))
         case o: error => pkt(Error(o))
       }

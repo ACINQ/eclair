@@ -264,7 +264,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
       // signature is invalid but it doesn't matter
-      sender.send(bob, update_commit(signature(0, 0, 0, 0, 0, 0, 0, 0)))
+      sender.send(bob, update_commit(Some(signature(0, 0, 0, 0, 0, 0, 0, 0))))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -279,7 +279,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
 
       // actual test begins
-      sender.send(bob, update_commit(signature(0, 0, 0, 0, 0, 0, 0, 0)))
+      sender.send(bob, update_commit(Some(signature(0, 0, 0, 0, 0, 0, 0, 0))))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
