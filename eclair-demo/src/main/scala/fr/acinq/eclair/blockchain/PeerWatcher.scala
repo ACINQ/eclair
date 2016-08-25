@@ -26,7 +26,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
     case NewTransaction(tx) =>
       watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, minDepth, event)
-          if tx.txIn.exists(i => i.outPoint.hash == BinaryData(txid.reverse) && i.outPoint.index == outputIndex) =>
+          if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           channel ! (BITCOIN_ANCHOR_SPENT, tx)
           self ! ('remove, w)
         case _ => {}
