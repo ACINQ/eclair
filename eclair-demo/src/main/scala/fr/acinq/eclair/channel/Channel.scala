@@ -298,7 +298,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   when(NORMAL) {
 
-    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.ourClearing.isDefined =>
+    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.ourShutdown.isDefined =>
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
       stay
 
@@ -393,7 +393,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       }
 
     case Event(CMD_CLOSE(scriptPubKeyOpt), d: DATA_NORMAL) =>
-      if (d.ourClearing.isDefined) {
+      if (d.ourShutdown.isDefined) {
         sender ! "closing already in progress"
         stay
       } else {
@@ -401,25 +401,25 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
           Script.write(Scripts.pay2pkh(d.commitments.ourParams.finalPubKey))
         }
-        val ourCloseClearing = close_clearing(ourScriptPubKey)
-        them ! ourCloseClearing
-        stay using d.copy(ourClearing = Some(ourCloseClearing))
+        val ourCloseShutdown = close_shutdown(ourScriptPubKey)
+        them ! ourCloseShutdown
+        stay using d.copy(ourShutdown = Some(ourCloseShutdown))
       }
 
-    case Event(theirClearing@close_clearing(theirScriptPubKey), d@DATA_NORMAL(commitments, ourClearingOpt, downstreams)) =>
-      val ourClearing: close_clearing = ourClearingOpt.getOrElse {
+    case Event(theirShutdown@close_shutdown(theirScriptPubKey), d@DATA_NORMAL(commitments, ourShutdownOpt, downstreams)) =>
+      val ourShutdown: close_shutdown = ourShutdownOpt.getOrElse {
         val ourScriptPubKey: BinaryData = Script.write(Scripts.pay2pkh(commitments.ourParams.finalPubKey))
         log.info(s"our final tx can be redeemed with ${Base58Check.encode(Base58.Prefix.SecretKeyTestnet, d.commitments.ourParams.finalPrivKey)}")
-        val c = close_clearing(ourScriptPubKey)
+        val c = close_shutdown(ourScriptPubKey)
         them ! c
         c
       }
       if (commitments.hasNoPendingHtlcs) {
-        val (_, ourCloseSig) = makeFinalTx(commitments, ourClearing.scriptPubkey, theirScriptPubKey)
+        val (_, ourCloseSig) = makeFinalTx(commitments, ourShutdown.scriptPubkey, theirScriptPubKey)
         them ! ourCloseSig
-        goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, ourClearing, theirClearing, ourCloseSig)
+        goto(NEGOTIATING) using DATA_NEGOTIATING(commitments, ourShutdown, theirShutdown, ourCloseSig)
       } else {
-        goto(CLEARING) using DATA_CLEARING(commitments, ourClearing, theirClearing, downstreams)
+        goto(SHUTDOWN) using DATA_SHUTDOWN(commitments, ourShutdown, theirShutdown, downstreams)
       }
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
@@ -441,14 +441,14 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
            "Y8888P"  88888888 "Y88888P"   "Y8888P" 8888888 888    Y888  "Y8888P88
    */
 
-  when(CLEARING) {
-    case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_CLEARING) =>
+  when(SHUTDOWN) {
+    case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_CLEARING) =>
+    case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(commitments1) =>
           propagateDownstream(Right(fulfill), d.downstreams)
@@ -456,13 +456,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_CLEARING) =>
+    case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
         case Success((commitments1, fail)) => handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fail@update_fail_htlc(id, reason), d: DATA_CLEARING) =>
+    case Event(fail@update_fail_htlc(id, reason), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(commitments1) =>
           propagateDownstream(Left(fail), d.downstreams)
@@ -470,56 +470,56 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(CMD_SIGN, d: DATA_CLEARING) if d.commitments.theirNextCommitInfo.isLeft =>
+    case Event(CMD_SIGN, d: DATA_SHUTDOWN) if d.commitments.theirNextCommitInfo.isLeft =>
       //TODO : this is a temporary fix
       log.info(s"already in the process of signing, delaying CMD_SIGN")
       import scala.concurrent.ExecutionContext.Implicits.global
       context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
       stay
 
-    case Event(CMD_SIGN, d: DATA_CLEARING) if !Commitments.weHaveChanges(d.commitments) =>
+    case Event(CMD_SIGN, d: DATA_SHUTDOWN) if !Commitments.weHaveChanges(d.commitments) =>
       // nothing to sign, just ignoring
       log.info("ignoring CMD_SIGN (nothing to sign)")
       stay()
 
-    case Event(CMD_SIGN, d: DATA_CLEARING) =>
+    case Event(CMD_SIGN, d: DATA_SHUTDOWN) =>
       Try(Commitments.sendCommit(d.commitments)) match {
         case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(msg@update_commit(theirSig), d@DATA_CLEARING(commitments, ourClearing, theirClearing, _)) =>
+    case Event(msg@update_commit(theirSig), d@DATA_SHUTDOWN(commitments, ourShutdown, theirShutdown, _)) =>
       // TODO : we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
           them ! revocation
-          val (_, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
+          val (_, ourCloseSig) = makeFinalTx(commitments1, ourShutdown.scriptPubkey, theirShutdown.scriptPubkey)
           them ! ourCloseSig
-          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourClearing, theirClearing, ourCloseSig)
+          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourShutdown, theirShutdown, ourCloseSig)
         case Success((commitments1, revocation)) =>
           them ! revocation
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_CLEARING(commitments, ourClearing, theirClearing, _)) =>
+    case Event(msg@update_revocation(revocationPreimage, nextRevocationHash), d@DATA_SHUTDOWN(commitments, ourShutdown, theirShutdown, _)) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
         case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
-          val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourClearing.scriptPubkey, theirClearing.scriptPubkey)
+          val (finalTx, ourCloseSig) = makeFinalTx(commitments1, ourShutdown.scriptPubkey, theirShutdown.scriptPubkey)
           them ! ourCloseSig
-          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourClearing, theirClearing, ourCloseSig)
+          goto(NEGOTIATING) using DATA_NEGOTIATING(commitments1, ourShutdown, theirShutdown, ourCloseSig)
         case Success(commitments1) =>
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleOurError(cause, d)
       }
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLEARING) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_SHUTDOWN) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
 
-    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLEARING) => handleTheirSpentOther(tx, d)
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_SHUTDOWN) => handleTheirSpentOther(tx, d)
 
-    case Event(e@error(problem), d: DATA_CLEARING) => handleTheirError(e, d)
+    case Event(e@error(problem), d: DATA_SHUTDOWN) => handleTheirError(e, d)
   }
 
   when(NEGOTIATING) {
@@ -541,7 +541,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             case value if value == d.ourSignature.closeFee => value + 2
             case value => value
           }
-          val (finalTx, ourCloseSig) = makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, Satoshi(closeFee))
+          val (finalTx, ourCloseSig) = makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, Satoshi(closeFee))
           them ! ourCloseSig
           if (closeFee == theirCloseFee) {
             val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, theirSig)
@@ -624,7 +624,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       sender ! RES_GETINFO(theirNodeId, stateData match {
         case c: DATA_NORMAL => c.commitments.anchorId
         case c: DATA_OPEN_WAITING => c.commitments.anchorId
-        case c: DATA_CLEARING => c.commitments.anchorId
+        case c: DATA_SHUTDOWN => c.commitments.anchorId
         case c: DATA_NEGOTIATING => c.commitments.anchorId
         case c: DATA_CLOSING => c.commitments.anchorId
         case _ => Hash.Zeroes

@@ -76,9 +76,9 @@ class ClosingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuit
     val sender = TestProbe()
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
-    alice2bob.expectMsgType[close_clearing]
+    alice2bob.expectMsgType[close_shutdown]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[close_clearing]
+    bob2alice.expectMsgType[close_shutdown]
     bob2alice.forward(alice)
     // agreeing on a closing fee
     var aliceCloseFee, bobCloseFee = 0L

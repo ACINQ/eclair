@@ -118,12 +118,12 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv CMD_ADD_HTLC (while waiting for close_clearing)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  test("recv CMD_ADD_HTLC (while waiting for close_shutdown)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
-      alice2bob.expectMsgType[close_clearing]
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+      alice2bob.expectMsgType[close_shutdown]
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourShutdown.isDefined)
 
       // actual test starts here
       sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
@@ -489,32 +489,32 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
-      alice2bob.expectMsgType[close_clearing]
+      alice2bob.expectMsgType[close_shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourShutdown.isDefined)
     }
   }
 
   test("recv CMD_CLOSE (two in a row)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
-      alice2bob.expectMsgType[close_clearing]
+      alice2bob.expectMsgType[close_shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourClearing.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourShutdown.isDefined)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("closing already in progress")
     }
   }
 
-  test("recv close_clearing (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  test("recv close_shutdown (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, close_clearing(ByteString.EMPTY))
-      alice2bob.expectMsgType[close_clearing]
+      sender.send(alice, close_shutdown(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_shutdown]
       alice2bob.expectMsgType[close_signature]
       awaitCond(alice.stateName == NEGOTIATING)
     }
@@ -523,41 +523,41 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
   /**
     * see https://github.com/ElementsProject/lightning/issues/29
     */
-  ignore("recv close_clearing (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  ignore("recv close_shutdown (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       // actual test begins
-      sender.send(alice, close_clearing(ByteString.EMPTY))
-      alice2bob.expectMsgType[close_clearing]
-      awaitCond(alice.stateName == CLEARING)
+      sender.send(alice, close_shutdown(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_shutdown]
+      awaitCond(alice.stateName == SHUTDOWN)
     }
   }
 
   /**
     * see https://github.com/ElementsProject/lightning/issues/29
     */
-  ignore("recv close_clearing (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  ignore("recv close_shutdown (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       // actual test begins
-      sender.send(alice, close_clearing(ByteString.EMPTY))
-      alice2bob.expectMsgType[close_clearing]
-      awaitCond(alice.stateName == CLEARING)
+      sender.send(alice, close_shutdown(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_shutdown]
+      awaitCond(alice.stateName == SHUTDOWN)
     }
   }
 
-  test("recv close_clearing (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv close_shutdown (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
-      sender.send(alice, close_clearing(ByteString.EMPTY))
-      alice2bob.expectMsgType[close_clearing]
-      awaitCond(alice.stateName == CLEARING)
+      sender.send(alice, close_shutdown(ByteString.EMPTY))
+      alice2bob.expectMsgType[close_shutdown]
+      awaitCond(alice.stateName == SHUTDOWN)
     }
   }
 
