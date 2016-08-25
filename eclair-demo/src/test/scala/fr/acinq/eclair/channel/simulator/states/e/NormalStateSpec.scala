@@ -381,12 +381,31 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_fulfill_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv update_fulfill_htlc (sender has signed, receiver has not)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
 
+      sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
+      sender.expectMsg("ok")
+      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)),
+        downstreams = Map()))
+    }
+  }
+
+  test("recv update_fulfill_htlc (sender and receiver have signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+      sign(bob, alice, bob2alice, alice2bob)
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
@@ -455,11 +474,31 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_fail_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv update_fail_htlc (sender has signed, receiver has not)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
+
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
+      sender.expectMsg("ok")
+      val fulfill = bob2alice.expectMsgType[update_fail_htlc]
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)),
+        downstreams = Map()))
+    }
+  }
+
+  test("recv update_fail_htlc (sender and receiver have signed") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+      sign(bob, alice, bob2alice, alice2bob)
 
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
       sender.expectMsg("ok")
