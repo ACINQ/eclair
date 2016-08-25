@@ -165,12 +165,12 @@ object Commitments {
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.proposed)
         val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
         val theirTx = theirTxTemplate.makeTx
-        // don't sign if their output is empty
-        val commit = if (theirTxTemplate.ourOutput.isEmpty) {
-          update_commit(None)
-        } else {
+        // don't sign if they don't get paid
+        val commit = if (theirTxTemplate.weHaveAnOutput) {
           val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
           update_commit(Some(ourSig))
+        } else {
+          update_commit(None)
         }
         val commitments1 = commitments.copy(
           theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
@@ -206,9 +206,9 @@ object Commitments {
 
     // this tx will NOT be signed if our output is empty
     val ourCommitTx = commit.sig match {
-      case None if ourTxTemplate.ourOutput.isDefined => throw new RuntimeException("expected signature")
+      case None if ourTxTemplate.weHaveAnOutput => throw new RuntimeException("expected signature")
       case None => ourTxTemplate.makeTx
-      case Some(_) if ourTxTemplate.ourOutput.isEmpty => throw new RuntimeException("unexpected signature")
+      case Some(_) if !ourTxTemplate.weHaveAnOutput => throw new RuntimeException("unexpected signature")
       case Some(theirSig) =>
         val ourTx = ourTxTemplate.makeTx
         val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
