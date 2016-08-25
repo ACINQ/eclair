@@ -139,8 +139,7 @@ object Commitments {
 
   def receiveFail(commitments: Commitments, fail: update_fail_htlc): Commitments = {
     commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u } match {
-      case Some(htlc) =>
-        addTheirProposal(commitments, fail)
+      case Some(htlc) => addTheirProposal(commitments, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO : we should fail the channel
     }
   }
