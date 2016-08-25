@@ -4,7 +4,7 @@ import akka.actor.ActorSystem
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.{PollingWatcher, WatchConfirmed, WatchSpent}
+import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.{OPEN_WAITING_THEIRANCHOR, _}
 import lightning.{error, open_anchor, open_channel, open_commit_sig}
 import org.junit.runner.RunWith
@@ -24,7 +24,7 @@ class OpenWaitForAnchorStateSpec extends TestKit(ActorSystem("test")) with fixtu
   override def withFixture(test: OneArgTest) = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
-    val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
+    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "B"))

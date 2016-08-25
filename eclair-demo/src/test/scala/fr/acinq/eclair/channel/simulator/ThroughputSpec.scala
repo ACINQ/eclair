@@ -4,14 +4,12 @@ import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 
-import akka.actor.Actor.Receive
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.protos.bilateralcommit.{CMD_SendChange, CMD_SendSig}
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, update_add_htlc}
 import org.junit.runner.RunWith
@@ -24,9 +22,9 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class ThroughputSpec extends FunSuite {
   ignore("throughput") {
-    val system = ActorSystem()
+    implicit val system = ActorSystem()
     val pipe = system.actorOf(Props[Pipe], "pipe")
-    val blockchain = system.actorOf(Props(new PollingWatcher(new TestBitcoinClient())), "blockchain")
+    val blockchain = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = SecureRandom.getInstanceStrong
 
