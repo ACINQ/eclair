@@ -128,7 +128,7 @@ object Commitments {
   }
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, update_fail_htlc) = {
-    commitments.theirChanges.acked.collectFirst { case u: update_add_htlc if u.id == cmd.id => u } match {
+    commitments.ourCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u } match {
       case Some(htlc) =>
         val fail = update_fail_htlc(cmd.id, fail_reason(ByteString.copyFromUtf8(cmd.reason)))
         val commitments1 = addOurProposal(commitments, fail)
@@ -138,9 +138,8 @@ object Commitments {
   }
 
   def receiveFail(commitments: Commitments, fail: update_fail_htlc): Commitments = {
-    commitments.ourChanges.acked.collectFirst { case u: update_add_htlc if u.id == fail.id => u } match {
-      case Some(htlc) =>
-        addTheirProposal(commitments, fail)
+    commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u } match {
+      case Some(htlc) => addTheirProposal(commitments, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO : we should fail the channel
     }
   }
@@ -233,8 +232,8 @@ object Commitments {
   }
 
   def makeOurTxTemplate(commitments: Commitments): TxTemplate = {
-        Helpers.makeOurTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
-          Helpers.revocationHash(commitments.ourParams.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
+    Helpers.makeOurTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
+      Helpers.revocationHash(commitments.ourParams.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
   }
 
   def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {
