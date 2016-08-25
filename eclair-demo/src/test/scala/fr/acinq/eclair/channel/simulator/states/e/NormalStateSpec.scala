@@ -381,7 +381,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_fulfill_htlc (sender has signed, receiver has not)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv update_fulfill_htlc (sender has not signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -400,7 +400,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_fulfill_htlc (sender and receiver have signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv update_fulfill_htlc (sender has signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -474,7 +474,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_fail_htlc (sender has signed, receiver has not)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv update_fail_htlc (sender has not signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -493,7 +493,7 @@ class NormalStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuite
     }
   }
 
-  test("recv update_fail_htlc (sender and receiver have signed") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv update_fail_htlc (sender has signed") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
