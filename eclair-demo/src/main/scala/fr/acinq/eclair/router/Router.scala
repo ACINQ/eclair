@@ -1,7 +1,7 @@
 package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorContext, ActorLogging, Props}
+import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
@@ -11,10 +11,6 @@ import lightning.route_step.Next
 import lightning.{route_step, _}
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
-import org.kitteh.irc.client.library.Client
-import org.kitteh.irc.client.library.event.channel.ChannelMessageEvent
-import org.kitteh.irc.client.library.event.client.ClientConnectedEvent
-import org.kitteh.irc.lib.net.engio.mbassy.listener.Handler
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -23,56 +19,27 @@ import scala.collection.JavaConversions._
 /**
   * Created by PM on 24/05/2016.
   */
-class IRCRouter(initialBlockCount: Long) extends Actor with ActorLogging {
+
+class Router(initialBlockCount: Long) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+  context.system.eventStream.subscribe(self, classOf[NetworkEvent])
 
-  import IRCRouter._
+  import Router._
 
   import ExecutionContext.Implicits.global
 
   def receive: Receive = main(Map(), initialBlockCount)
 
-  context.system.scheduler.schedule(5 seconds, 10 seconds, self, 'tick)
-
-  class IRCListener {
-    @Handler
-    def onClientConnected(event: ClientConnectedEvent) {
-      log.info(s"connected to IRC: ${event.getServerInfo}")
-    }
-
-    val r = """([0-9a-f]{64}): ([0-9a-f]{66})-([0-9a-f]{66})""".r
-
-    @Handler
-    def onChannelMessage(event: ChannelMessageEvent): Unit = {
-      event.getMessage match {
-        case r(id, a, b) =>
-          log.info(s"discovered new channel $id between $a and $b")
-          self ! ChannelRegister(ChannelDesc(id, a, b))
-        case msg => log.warning(s"ignored message $msg")
-      }
-    }
-  }
-
-  val channel = "#eclair-gossip"
-  val ircClient = {
-    val client = Client.builder().nick("node-" + Globals.Node.id.take(16)).serverHost("irc.freenode.net").build()
-    client.getEventManager().registerEventListener(new IRCListener())
-    client.addChannel(channel)
-    client
-  }
-
   def main(channels: Map[BinaryData, ChannelDesc], currentBlockCount: Long): Receive = {
-    case c@ChannelDesc(id, a, b) =>
-      self ! ChannelRegister(c)
-      ircClient.sendMessage(channel, s"$id: $a-$b")
-    case ChannelRegister(c) =>
-      context.system.eventStream.publish(ChannelDiscovered(c.id, c.a, c.b))
+    case ChannelDiscovered(c) =>
+      log.info(s"added channel ${c.id} to available routes")
       context become main(channels + (c.id -> c), currentBlockCount)
-    case ChannelUnregister(c) => context become main(channels - c.id, currentBlockCount)
-    case 'network => sender ! channels.values
-    case 'tick => channels.values.map(c => ircClient.sendMessage(channel, s"${c.id}: ${c.a}-${c.b}"))
+    case ChannelLost(c) =>
+      log.info(s"removed channel ${c.id} from available routes")
+      context become main(channels - c.id, currentBlockCount)
     case CurrentBlockCount(count) => context become main(channels, count)
+    case 'network => sender ! channels.values
     case c: CreatePayment =>
       val s = sender
       findRoute(Globals.Node.publicKey, c.targetNodeId, channels).map(_ match {
@@ -92,17 +59,12 @@ class IRCRouter(initialBlockCount: Long) extends Actor with ActorLogging {
         case t: Throwable => s ! Failure(t)
       }
   }
-
-  @scala.throws[Exception](classOf[Exception])
-  override def postStop(): Unit = ircClient.shutdown()
 }
 
-object IRCRouter {
+object Router {
 
-  def props(initialBlockCount: Long) = Props(classOf[IRCRouter], initialBlockCount)
+  def props(initialBlockCount: Long) = Props(classOf[Router], initialBlockCount)
 
-  def register(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
-    context.actorSelection(context.system / "router") ! ChannelDesc(anchor_id, Globals.Node.publicKey, node_id)
 
   def findRouteDijkstra(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc]): Seq[BinaryData] = {
     class NamedEdge(val id: BinaryData) extends DefaultEdge
