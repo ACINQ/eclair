@@ -46,7 +46,7 @@ case object OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR extends State
 
 case object NORMAL extends State
 
-case object CLEARING extends State
+case object SHUTDOWN extends State
 
 case object NEGOTIATING extends State
 
@@ -75,8 +75,6 @@ case object INPUT_NO_MORE_HTLCS
 
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
-
-
 
 sealed trait BitcoinEvent
 
@@ -189,15 +187,15 @@ final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: OurChannelParams, thei
 final case class DATA_OPEN_WAITING(commitments: Commitments, deferred: Option[open_complete]) extends Data with HasCommitments
 
 final case class DATA_NORMAL(commitments: Commitments,
-                             ourClearing: Option[close_clearing],
+                             ourShutdown: Option[close_shutdown],
                              downstreams: Map[Long, Option[BinaryData]]) extends Data with HasCommitments
 
-final case class DATA_CLEARING(commitments: Commitments,
-                               ourClearing: close_clearing, theirClearing: close_clearing,
+final case class DATA_SHUTDOWN(commitments: Commitments,
+                               ourShutdown: close_shutdown, theirShutdown: close_shutdown,
                                downstreams: Map[Long, Option[BinaryData]]) extends Data with HasCommitments
 
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  ourClearing: close_clearing, theirClearing: close_clearing, ourSignature: close_signature) extends Data with HasCommitments
+                                  ourShutdown: close_shutdown, theirShutdown: close_shutdown, ourSignature: close_signature) extends Data with HasCommitments
 
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[close_signature] = None,

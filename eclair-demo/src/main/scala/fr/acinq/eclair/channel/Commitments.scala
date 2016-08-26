@@ -30,12 +30,17 @@ class BasicTxDb extends TxDb {
 object TypeDefs {
   type Change = GeneratedMessage
 }
+
 case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change]) {
   def all: List[Change] = proposed ++ signed ++ acked
 }
+
 case class TheirChanges(proposed: List[Change], acked: List[Change])
+
 case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
+
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
+
 case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: sha256_hash)
 
 // @formatter:on
@@ -159,8 +164,13 @@ object Commitments {
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.proposed)
         val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
         val theirTx = theirTxTemplate.makeTx
-        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
-        val commit = update_commit(ourSig)
+        // don't sign if they don't get paid
+        val commit = if (theirTxTemplate.weHaveAnOutput) {
+          val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
+          update_commit(Some(ourSig))
+        } else {
+          update_commit(None)
+        }
         val commitments1 = commitments.copy(
           theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
           ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.proposed),
@@ -186,12 +196,25 @@ object Commitments {
       throw new RuntimeException("cannot sign when there are no changes")
 
     // check that their signature is valid
+    // signatures are now optional in the commit message, and will be sent only if the other party is actually
+    // receiving money i.e its commit tx has one output for them
+
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.proposed)
     val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
-    val ourTx = Helpers.makeOurTx(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
-    val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
-    val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount, ourTx, ourSig, commit.sig)
-    Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
+    val ourTxTemplate = Helpers.makeOurTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
+
+    // this tx will NOT be signed if our output is empty
+    val ourCommitTx = commit.sig match {
+      case None if ourTxTemplate.weHaveAnOutput => throw new RuntimeException("expected signature")
+      case None => ourTxTemplate.makeTx
+      case Some(_) if !ourTxTemplate.weHaveAnOutput => throw new RuntimeException("unexpected signature")
+      case Some(theirSig) =>
+        val ourTx = ourTxTemplate.makeTx
+        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
+        val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount, ourTx, ourSig, theirSig)
+        Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
+        signedTx
+    }
 
     // we will send our revocation preimage + our next revocation hash
     val ourRevocationPreimage = Helpers.revocationPreimage(ourParams.shaSeed, ourCommit.index)
@@ -199,7 +222,7 @@ object Commitments {
     val revocation = update_revocation(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data
-    val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = signedTx)
+    val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = ourCommitTx)
     val ourChanges1 = ourChanges.copy(acked = Nil)
     val theirChanges1 = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed)
     val commitments1 = commitments.copy(ourCommit = ourCommit1, ourChanges = ourChanges1, theirChanges = theirChanges1)
