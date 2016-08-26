@@ -83,9 +83,9 @@ class GUIUpdater(primaryStage: Stage, helloWorld: MainWindow, setup: Setup) exte
       graph.addVertex(BinaryData(a))
       graph.addVertex(BinaryData(b))
       graph.addEdge(a, b, new NamedEdge(id))
+      val jgxAdapter = new JGraphXAdapter(graph)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
-          val jgxAdapter = new JGraphXAdapter(graph)
           val component = new mxGraphComponent(jgxAdapter)
           component.setDragEnabled(false)
           val lay = new mxCircleLayout(jgxAdapter)

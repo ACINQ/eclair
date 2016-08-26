@@ -1,10 +1,10 @@
 package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorContext, ActorLogging, Props}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
-import fr.acinq.eclair.channel.{AliasActor, CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.{Globals, _}
 import lightning.locktime.Locktime.Blocks
 import lightning.route_step.Next
@@ -23,13 +23,15 @@ import scala.collection.JavaConversions._
 /**
   * Created by PM on 24/05/2016.
   */
-class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLogging {
+class IRCRouter(initialBlockCount: Long) extends Actor with ActorLogging {
+
+  context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
 
   import IRCRouter._
 
   import ExecutionContext.Implicits.global
 
-  def receive: Receive = main(Map())
+  def receive: Receive = main(Map(), initialBlockCount)
 
   context.system.scheduler.schedule(5 seconds, 10 seconds, self, 'tick)
 
@@ -60,22 +62,20 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
     client
   }
 
-  def main(channels: Map[BinaryData, ChannelDesc]): Receive = {
+  def main(channels: Map[BinaryData, ChannelDesc], currentBlockCount: Long): Receive = {
     case c@ChannelDesc(id, a, b) =>
       self ! ChannelRegister(c)
       ircClient.sendMessage(channel, s"$id: $a-$b")
     case ChannelRegister(c) =>
       context.system.eventStream.publish(ChannelDiscovered(c.id, c.a, c.b))
-      context become main(channels + (c.id -> c))
-    case ChannelUnregister(c) => context become main(channels - c.id)
+      context become main(channels + (c.id -> c), currentBlockCount)
+    case ChannelUnregister(c) => context become main(channels - c.id, currentBlockCount)
     case 'network => sender ! channels.values
     case 'tick => channels.values.map(c => ircClient.sendMessage(channel, s"${c.id}: ${c.a}-${c.b}"))
+    case CurrentBlockCount(count) => context become main(channels, count)
     case c: CreatePayment =>
       val s = sender
-      (for {
-        route <- findRoute(Globals.Node.publicKey, c.targetNodeId, channels)
-        blockCount <- bitcoinClient.getBlockCount
-      } yield route match {
+      findRoute(Globals.Node.publicKey, c.targetNodeId, channels).map(_ match {
         case us :: next :: others =>
           context.system.actorSelection(Register.actorPathToNodeId(next))
             .resolveOne(2 seconds)
@@ -85,7 +85,7 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
 
               // apply fee
               val amountMsat = r.steps(0).amount
-              channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
+              channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(currentBlockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
               s ! channel
             }
       }) onFailure {
@@ -99,7 +99,7 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
 
 object IRCRouter {
 
-  def props(bitcoinClient: ExtendedBitcoinClient) = Props(classOf[IRCRouter], bitcoinClient)
+  def props(initialBlockCount: Long) = Props(classOf[IRCRouter], initialBlockCount)
 
   def register(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
     context.actorSelection(context.system / "router") ! ChannelDesc(anchor_id, Globals.Node.publicKey, node_id)
