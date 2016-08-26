@@ -18,7 +18,7 @@ import scala.concurrent.duration._
 import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.gui.MainWindow
-import fr.acinq.eclair.router.IRCRouter
+import fr.acinq.eclair.router.{IRCWatcher, Router}
 
 /**
   * Created by PM on 25/01/2016.
@@ -59,9 +59,9 @@ class Setup extends Logging {
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
   val register = system.actorOf(Register.props(watcher, paymentHandler), name = "register")
-  val router = system.actorOf(IRCRouter.props(blockCount), name = "router")
+  val router = system.actorOf(Router.props(blockCount), name = "router")
+  val ircWatcher = system.actorOf(Props[IRCWatcher], "irc")
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
-
 
   val _setup = this
   val api = new Service {

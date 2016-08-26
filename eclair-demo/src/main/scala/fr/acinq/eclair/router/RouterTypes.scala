@@ -9,9 +9,5 @@ import lightning.sha256_hash
 
 case class ChannelDesc(id: BinaryData, a: BinaryData, b: BinaryData)
 
-case class ChannelRegister(c: ChannelDesc)
-
-case class ChannelUnregister(c: ChannelDesc)
-
 case class CreatePayment(amountMsat: Int, h: sha256_hash, targetNodeId: BinaryData)
 
