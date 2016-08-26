@@ -62,7 +62,7 @@ class ThroughputSpec extends FunSuite {
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {
       override def receive: Receive = {
-        case ChannelChangedState(channel, previousState, NORMAL, currentData) => latch.countDown()
+        case ChannelChangedState(_, _, _, NORMAL, _) => latch.countDown()
       }
     }), "listener")
     system.eventStream.subscribe(listener, classOf[ChannelEvent])

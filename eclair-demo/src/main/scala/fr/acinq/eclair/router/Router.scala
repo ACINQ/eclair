@@ -1,20 +1,16 @@
 package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorContext, ActorLogging, Props}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
-import fr.acinq.eclair.channel.{AliasActor, CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.{Globals, _}
 import lightning.locktime.Locktime.Blocks
 import lightning.route_step.Next
 import lightning.{route_step, _}
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
-import org.kitteh.irc.client.library.Client
-import org.kitteh.irc.client.library.event.channel.ChannelMessageEvent
-import org.kitteh.irc.client.library.event.client.ClientConnectedEvent
-import org.kitteh.irc.lib.net.engio.mbassy.listener.Handler
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -23,53 +19,18 @@ import scala.collection.JavaConversions._
 /**
   * Created by PM on 24/05/2016.
   */
-class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLogging {
+class Router(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLogging {
 
-  import IRCRouter._
+  import Router._
 
   import ExecutionContext.Implicits.global
 
   def receive: Receive = main(Map())
 
-  context.system.scheduler.schedule(5 seconds, 10 seconds, self, 'tick)
-
-  class IRCListener {
-    @Handler
-    def onClientConnected(event: ClientConnectedEvent) {
-      log.info(s"connected to IRC: ${event.getServerInfo}")
-    }
-
-    val r = """([0-9a-f]{64}): ([0-9a-f]{66})-([0-9a-f]{66})""".r
-
-    @Handler
-    def onChannelMessage(event: ChannelMessageEvent): Unit = {
-      event.getMessage match {
-        case r(id, a, b) =>
-          log.info(s"discovered new channel $id between $a and $b")
-          self ! ChannelRegister(ChannelDesc(id, a, b))
-        case msg => log.warning(s"ignored message $msg")
-      }
-    }
-  }
-
-  val channel = "#eclair-gossip"
-  val ircClient = {
-    val client = Client.builder().nick("node-" + Globals.Node.id.take(16)).serverHost("irc.freenode.net").build()
-    client.getEventManager().registerEventListener(new IRCListener())
-    client.addChannel(channel)
-    client
-  }
-
   def main(channels: Map[BinaryData, ChannelDesc]): Receive = {
-    case c@ChannelDesc(id, a, b) =>
-      self ! ChannelRegister(c)
-      ircClient.sendMessage(channel, s"$id: $a-$b")
-    case ChannelRegister(c) =>
-      context.system.eventStream.publish(ChannelDiscovered(c.id, c.a, c.b))
-      context become main(channels + (c.id -> c))
-    case ChannelUnregister(c) => context become main(channels - c.id)
+    case ChannelDiscovered(c) => context become main(channels + (c.id -> c))
+    case ChannelLost(c) => context become main(channels - c.id)
     case 'network => sender ! channels.values
-    case 'tick => channels.values.map(c => ircClient.sendMessage(channel, s"${c.id}: ${c.a}-${c.b}"))
     case c: CreatePayment =>
       val s = sender
       (for {
@@ -92,17 +53,11 @@ class IRCRouter(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLo
         case t: Throwable => s ! Failure(t)
       }
   }
-
-  @scala.throws[Exception](classOf[Exception])
-  override def postStop(): Unit = ircClient.shutdown()
 }
 
-object IRCRouter {
+object Router {
 
-  def props(bitcoinClient: ExtendedBitcoinClient) = Props(classOf[IRCRouter], bitcoinClient)
-
-  def register(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
-    context.actorSelection(context.system / "router") ! ChannelDesc(anchor_id, Globals.Node.publicKey, node_id)
+  def props(bitcoinClient: ExtendedBitcoinClient) = Props(classOf[Router], bitcoinClient)
 
   def findRouteDijkstra(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc]): Seq[BinaryData] = {
     class NamedEdge(val id: BinaryData) extends DefaultEdge

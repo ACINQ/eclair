@@ -15,8 +15,7 @@ import akka.actor.Props
 import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.channel.ChannelEvent
-import fr.acinq.eclair.router.RouteEvent
-import grizzled.slf4j.Logging
+import fr.acinq.eclair.router.NetworkEvent
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
@@ -67,7 +66,7 @@ class MainWindow extends Application {
         val setup = new Setup
         val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, _this, setup), "gui-updater")
         setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
-        setup.system.eventStream.subscribe(guiUpdater, classOf[RouteEvent])
+        setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
         val handlers = new Handlers(setup)
         Platform.runLater(new Runnable {
           override def run(): Unit = {
@@ -120,9 +119,7 @@ class MainWindow extends Application {
             })
             primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
               override def handle(event: WindowEvent): Unit = {
-                setup.bitcoin_client.client.close()
-                setup.system.terminate()
-                Await.result(setup.system.whenTerminated, Duration.Inf)
+                System.exit(0)
               }
             })
 

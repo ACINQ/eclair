@@ -13,7 +13,7 @@ import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.router.ChannelDiscovered
+import fr.acinq.eclair.router.{ChannelDesc, ChannelDiscovered}
 import org.jgrapht.ext.JGraphXAdapter
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
@@ -61,7 +61,7 @@ class GUIUpdater(primaryStage: Stage, helloWorld: MainWindow, setup: Setup) exte
         }
       })
 
-    case ChannelChangedState(channel, previousState, currentState, currentData) =>
+    case ChannelChangedState(channel, _, previousState, currentState, currentData) =>
       val pane = m(channel)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
@@ -79,7 +79,7 @@ class GUIUpdater(primaryStage: Stage, helloWorld: MainWindow, setup: Setup) exte
         }
       })
 
-    case ChannelDiscovered(id, a, b) =>
+    case ChannelDiscovered(ChannelDesc(id, a, b)) =>
       graph.addVertex(BinaryData(a))
       graph.addVertex(BinaryData(b))
       graph.addEdge(a, b, new NamedEdge(id))
