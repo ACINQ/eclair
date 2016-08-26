@@ -49,7 +49,6 @@ class Router(initialBlockCount: Long) extends Actor with ActorLogging {
             .map { channel =>
               // build a route
               val r = buildRoute(c.amountMsat, next +: others)
-
               // apply fee
               val amountMsat = r.steps(0).amount
               channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(currentBlockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)

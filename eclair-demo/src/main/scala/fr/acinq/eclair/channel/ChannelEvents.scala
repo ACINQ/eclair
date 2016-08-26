@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.BinaryData
+import lightning.sha256_hash
 
 /**
   * Created by PM on 17/08/2016.
@@ -16,3 +17,9 @@ case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: L
 case class ChannelChangedState(channel: ActorRef, theirNodeId: String, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 
 case class ChannelSignatureReceived(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
+
+case class PaymentSent(channel: ActorRef, h: sha256_hash) extends ChannelEvent
+
+case class PaymentFailed(channel: ActorRef, h: sha256_hash) extends ChannelEvent
+
+case class PaymentReceived(channel: ActorRef, h: sha256_hash) extends ChannelEvent

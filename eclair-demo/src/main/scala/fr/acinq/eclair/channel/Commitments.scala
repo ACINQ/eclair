@@ -119,9 +119,9 @@ object Commitments {
     }
   }
 
-  def receiveFulfill(commitments: Commitments, fulfill: update_fulfill_htlc): Commitments = {
+  def receiveFulfill(commitments: Commitments, fulfill: update_fulfill_htlc): (Commitments, update_add_htlc) = {
     commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
-      case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(fulfill.r)) => addTheirProposal(commitments, fulfill)
+      case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(fulfill.r)) => (addTheirProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO : we should fail the channel
     }
@@ -137,9 +137,9 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: update_fail_htlc): Commitments = {
-    commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u } match {
-      case Some(htlc) => addTheirProposal(commitments, fail)
+  def receiveFail(commitments: Commitments, fail: update_fail_htlc): (Commitments, update_add_htlc) = {
+    commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u.add } match {
+      case Some(htlc) => (addTheirProposal(commitments, fail), htlc)
       case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO : we should fail the channel
     }
   }
