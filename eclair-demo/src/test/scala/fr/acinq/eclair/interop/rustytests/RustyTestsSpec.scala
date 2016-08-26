@@ -6,7 +6,7 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit}
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
-import fr.acinq.eclair.blockchain.PollingWatcher
+import fr.acinq.eclair.blockchain.PeerWatcher
 import TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import org.junit.runner.RunWith
@@ -27,8 +27,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
   override def withFixture(test: OneArgTest) = {
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
-    val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
-    val blockchainB = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
+    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
+    val blockchainB = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
     val paymentHandler = TestActorRef(new NoopPaymentHandler())
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "A"))

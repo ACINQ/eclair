@@ -29,7 +29,7 @@ class ClearingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
+    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))

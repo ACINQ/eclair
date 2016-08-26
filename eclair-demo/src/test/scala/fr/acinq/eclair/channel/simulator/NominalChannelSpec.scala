@@ -4,6 +4,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, update_add_htlc}
@@ -169,8 +170,8 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       alice ! CMD_CLOSE(None)
 
-      awaitCond(alice.stateName == CLOSING)
-      awaitCond(bob.stateName == CLOSING)
+      awaitCond(alice.stateName == CLOSED)
+      awaitCond(bob.stateName == CLOSED)
     }
   }
 
@@ -246,8 +247,9 @@ class NominalChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
+      // alice publishes a revoked tx
       bob ! (BITCOIN_ANCHOR_SPENT, commitTx)
-      awaitCond(bob.stateName == CLOSING)
+      awaitCond(bob.stateName == CLOSED)
     }
   }
 }

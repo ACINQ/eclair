@@ -8,7 +8,7 @@ import akka.util.Timeout
 import akka.stream.ActorMaterializer
 import com.typesafe.config.ConfigFactory
 import fr.acinq.eclair.api.Service
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PollingWatcher}
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.{Client, Server}
 import grizzled.slf4j.Logging
@@ -16,6 +16,7 @@ import grizzled.slf4j.Logging
 import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
 import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
+import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.gui.MainWindow
 import fr.acinq.eclair.router.{IRCWatcher, Router}
 
@@ -35,32 +36,33 @@ class Setup extends Logging {
   logger.info(s"nodeid=${Globals.Node.publicKey}")
   val config = ConfigFactory.load()
 
-  val bitcoin_client = new BitcoinJsonRPCClient(
+  val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
     user = config.getString("eclair.bitcoind.rpcuser"),
     password = config.getString("eclair.bitcoind.rpcpassword"),
     host = config.getString("eclair.bitcoind.host"),
-    port = config.getInt("eclair.bitcoind.port"))
+    port = config.getInt("eclair.bitcoind.rpcport")))
 
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
-  val chain = Await.result(bitcoin_client.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
+  val (chain, blockCount) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
-  val bitcoinVersion = Await.result(bitcoin_client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
+  val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
 
   implicit lazy val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
 
-  val blockchain = system.actorOf(Props(new PollingWatcher(new ExtendedBitcoinClient(bitcoin_client))), name = "blockchain")
+  val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
+  val watcher = system.actorOf(PeerWatcher.props(bitcoin_client, blockCount), name = "watcher")
   val paymentHandler = config.getString("eclair.payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
-  val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
-  val router = system.actorOf(Router.props(new ExtendedBitcoinClient(bitcoin_client)), name = "router")
+  val register = system.actorOf(Register.props(watcher, paymentHandler), name = "register")
+  val router = system.actorOf(Router.props(blockCount), name = "router")
   val ircWatcher = system.actorOf(Props[IRCWatcher], "irc")
-
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
+
   val _setup = this
   val api = new Service {
     override val register: ActorRef = _setup.register

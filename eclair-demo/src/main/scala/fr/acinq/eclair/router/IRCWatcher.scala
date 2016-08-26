@@ -5,6 +5,7 @@ import fr.acinq.eclair.Globals
 import fr.acinq.eclair.channel.{ChannelChangedState, DATA_NORMAL, NORMAL}
 import grizzled.slf4j.Logging
 import org.kitteh.irc.client.library.Client
+import org.kitteh.irc.client.library.element.ISupportParameter.Network
 import org.kitteh.irc.client.library.event.channel.ChannelUsersUpdatedEvent
 import org.kitteh.irc.client.library.event.client.ClientConnectedEvent
 import org.kitteh.irc.client.library.event.helper.ChannelUserListChangeEvent
@@ -23,7 +24,6 @@ class IRCWatcher extends Actor with ActorLogging {
   val ircChannel = "#eclair-gossip"
 
   context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
-  context.system.eventStream.subscribe(self, classOf[NetworkEvent])
 
   val client = Client.builder().nick(s"node-${Globals.Node.id.take(8)}").serverHost("irc.freenode.net").build()
   client.getEventManager().registerEventListener(new NodeIRCListener())
@@ -46,13 +46,14 @@ class IRCWatcher extends Actor with ActorLogging {
       localChannels(channel).shutdown()
       context become main(channels, localChannels - channel)
 
-    case ('add, nick: String, desc: ChannelDesc) if !channels.contains(nick) && !channels.values.map(_.id).contains(desc.id)=>
+    case ('add, nick: String, desc: ChannelDesc) if !channels.contains(nick) && !channels.values.map(_.id).contains(desc.id) =>
       context.system.eventStream.publish(ChannelDiscovered(desc))
       context become main(channels + (nick -> desc), localChannels)
 
     case ('remove, nick: String) if channels.contains(nick) =>
       context.system.eventStream.publish(ChannelLost(channels(nick)))
       context become main(channels - nick, localChannels)
+
   }
 
 }

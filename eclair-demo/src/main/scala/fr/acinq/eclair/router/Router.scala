@@ -1,9 +1,9 @@
 package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorContext, ActorLogging, Props}
+import akka.actor.{Actor, ActorLogging, Props}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.{Globals, _}
 import lightning.locktime.Locktime.Blocks
@@ -19,24 +19,30 @@ import scala.collection.JavaConversions._
 /**
   * Created by PM on 24/05/2016.
   */
-class Router(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLogging {
+
+class Router(initialBlockCount: Long) extends Actor with ActorLogging {
+
+  context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+  context.system.eventStream.subscribe(self, classOf[NetworkEvent])
 
   import Router._
 
   import ExecutionContext.Implicits.global
 
-  def receive: Receive = main(Map())
+  def receive: Receive = main(Map(), initialBlockCount)
 
-  def main(channels: Map[BinaryData, ChannelDesc]): Receive = {
-    case ChannelDiscovered(c) => context become main(channels + (c.id -> c))
-    case ChannelLost(c) => context become main(channels - c.id)
+  def main(channels: Map[BinaryData, ChannelDesc], currentBlockCount: Long): Receive = {
+    case ChannelDiscovered(c) =>
+      log.info(s"added channel ${c.id} to available routes")
+      context become main(channels + (c.id -> c), currentBlockCount)
+    case ChannelLost(c) =>
+      log.info(s"removed channel ${c.id} from available routes")
+      context become main(channels - c.id, currentBlockCount)
+    case CurrentBlockCount(count) => context become main(channels, count)
     case 'network => sender ! channels.values
     case c: CreatePayment =>
       val s = sender
-      (for {
-        route <- findRoute(Globals.Node.publicKey, c.targetNodeId, channels)
-        blockCount <- bitcoinClient.getBlockCount
-      } yield route match {
+      findRoute(Globals.Node.publicKey, c.targetNodeId, channels).map(_ match {
         case us :: next :: others =>
           context.system.actorSelection(Register.actorPathToNodeId(next))
             .resolveOne(2 seconds)
@@ -46,7 +52,7 @@ class Router(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLoggi
 
               // apply fee
               val amountMsat = r.steps(0).amount
-              channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(blockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
+              channel ! CMD_ADD_HTLC(amountMsat, c.h, locktime(Blocks(currentBlockCount.toInt + 100 + r.steps.size - 2)), r.copy(steps = r.steps.tail), commit = true)
               s ! channel
             }
       }) onFailure {
@@ -57,7 +63,8 @@ class Router(bitcoinClient: ExtendedBitcoinClient) extends Actor with ActorLoggi
 
 object Router {
 
-  def props(bitcoinClient: ExtendedBitcoinClient) = Props(classOf[Router], bitcoinClient)
+  def props(initialBlockCount: Long) = Props(classOf[Router], initialBlockCount)
+
 
   def findRouteDijkstra(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc]): Seq[BinaryData] = {
     class NamedEdge(val id: BinaryData) extends DefaultEdge

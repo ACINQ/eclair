@@ -10,7 +10,7 @@ import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PollingWatcher}
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
 import fr.acinq.eclair.io.Server
@@ -99,7 +99,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   val chain = Await.result(bitcoinClient.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
-  val blockchain = system.actorOf(Props(new PollingWatcher(btccli)), name = "blockchain")
+  val blockchain = system.actorOf(Props(new PeerWatcher(btccli, 300)), name = "blockchain")
   val paymentHandler = system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
