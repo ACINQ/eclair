@@ -120,7 +120,7 @@ class MainWindow extends Application {
             })
             primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
               override def handle(event: WindowEvent): Unit = {
-                setup.bitcoin_client.client.close()
+                setup.bitcoin_client.client.client.close()
                 setup.system.terminate()
                 Await.result(setup.system.whenTerminated, Duration.Inf)
               }

@@ -28,7 +28,7 @@ class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = TestActorRef(new PollingWatcher(new TestBitcoinClient()))
+    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
     // note that alice.initialFeeRate != bob.initialFeeRate
@@ -142,6 +142,29 @@ class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.Fun
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
       awaitCond(bob.stateName == CLOSING)
+    }
+  }
+
+  test("recv BITCOIN_ANCHOR_SPENT (counterparty's mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      var aliceCloseFee, bobCloseFee = 0L
+      do {
+        aliceCloseFee = alice2bob.expectMsgType[close_signature].closeFee
+        alice2bob.forward(bob)
+        bobCloseFee = bob2alice.expectMsgType[close_signature].closeFee
+        if (aliceCloseFee != bobCloseFee) {
+          bob2alice.forward(alice)
+        }
+      } while (aliceCloseFee != bobCloseFee)
+      // at this point alice and bob have converged on closing fees, but alice has not yet received the final signature whereas bob has
+      // bob publishes the mutual close and alice is notified that the anchor has been spent
+      // actual test starts here
+      assert(alice.stateName == NEGOTIATING)
+      val mutualCloseTx = bob2blockchain.expectMsgType[Publish].tx
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      alice ! (BITCOIN_ANCHOR_SPENT, mutualCloseTx)
+      alice2blockchain.expectNoMsg()
+      assert(alice.stateName == NEGOTIATING)
     }
   }
 

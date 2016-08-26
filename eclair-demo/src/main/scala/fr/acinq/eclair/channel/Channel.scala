@@ -526,6 +526,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(close_signature(theirCloseFee, theirSig), d: DATA_NEGOTIATING) if theirCloseFee == d.ourSignature.closeFee =>
       checkCloseSignature(theirSig, Satoshi(theirCloseFee), d) match {
         case Success(signedTx) =>
+          log.info(s"finalTxId=${signedTx.txid}")
           blockchain ! Publish(signedTx)
           blockchain ! WatchConfirmed(self, signedTx.txid, d.commitments.ourParams.minDepth, BITCOIN_CLOSE_DONE)
           goto(CLOSING) using DATA_CLOSING(d.commitments, ourSignature = Some(d.ourSignature), mutualClosePublished = Some(signedTx))
@@ -542,6 +543,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             case value => value
           }
           val (finalTx, ourCloseSig) = makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, Satoshi(closeFee))
+          log.info(s"finalTxId=${finalTx.txid}")
           them ! ourCloseSig
           if (closeFee == theirCloseFee) {
             val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, theirSig)
@@ -556,6 +558,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           throw new RuntimeException("cannot verify their close signature", cause)
       }
 
+    case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, Satoshi(d.ourSignature.closeFee))._1.txid =>
+      // happens when we agreed on a closeSig, but we don't know it yet: we receive the watcher notification before their close_signature (which will match ours)
+      stay()
+
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_NEGOTIATING) => handleTheirSpentOther(tx, d)
@@ -565,9 +571,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   }
 
   when(CLOSING) {
-    case Event(close_signature(theirCloseFee, theirSig), d: DATA_CLOSING) if d.ourSignature.map(_.closeFee) == Some(theirCloseFee) =>
-      // expected in case of a mutual close
-      stay()
 
     case Event((BITCOIN_ANCHOR_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.ourCommit.publishableTx.txid =>
       // we just initiated a uniclose moments ago and are now receiving the blockchain notification, there is nothing to do
