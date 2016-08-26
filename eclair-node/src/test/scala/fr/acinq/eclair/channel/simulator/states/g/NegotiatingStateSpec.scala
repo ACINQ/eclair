@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel.simulator.states.g
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.Crypto
@@ -28,7 +28,7 @@ class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
     // note that alice.initialFeeRate != bob.initialFeeRate

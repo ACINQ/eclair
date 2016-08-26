@@ -27,9 +27,9 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
   override def withFixture(test: OneArgTest) = {
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
-    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
-    val blockchainB = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
-    val paymentHandler = TestActorRef(new NoopPaymentHandler())
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val blockchainB = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "A"))
     pipe !(alice, bob)

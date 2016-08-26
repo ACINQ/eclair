@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel.simulator.states.c
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -24,7 +24,7 @@ class OpenWaitingTheirAnchorStateSpec extends TestKit(ActorSystem("test")) with 
   override def withFixture(test: OneArgTest) = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
-    val blockchainA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "B"))

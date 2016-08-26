@@ -20,9 +20,9 @@ abstract class BaseChannelTestClass extends TestKit(ActorSystem("test")) with Ma
 
   override def withFixture(test: OneArgTest) = {
     val pipe: ActorRef = system.actorOf(Props[Pipe])
-    val watcherA = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
-    val watcherB = TestActorRef(new PeerWatcher(new TestBitcoinClient(), 300))
-    val paymentHandler = TestActorRef(new NoopPaymentHandler())
+    val watcherA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val watcherB = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, watcherA, paymentHandler, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, watcherB, paymentHandler, Bob.channelParams, "A"))
     val outcome = test((alice, bob, pipe))
