@@ -202,16 +202,16 @@ class NominalChannelSpec extends BaseChannelTestClass {
       bob ! CMD_SIGN
       alice ! CMD_CLOSE(None)
 
-      expectTransition(monitorA, NORMAL, CLEARING)
-      expectTransition(monitorB, NORMAL, CLEARING)
+      expectTransition(monitorA, NORMAL, SHUTDOWN)
+      expectTransition(monitorB, NORMAL, SHUTDOWN)
 
       bob ! CMD_FULFILL_HTLC(1, R)
       bob ! CMD_SIGN
       Thread.sleep(100)
       alice ! CMD_SIGN
 
-      expectTransition(monitorA, CLEARING, NEGOTIATING)
-      expectTransition(monitorB, CLEARING, NEGOTIATING)
+      expectTransition(monitorA, SHUTDOWN, NEGOTIATING)
+      expectTransition(monitorB, SHUTDOWN, NEGOTIATING)
       expectTransition(monitorA, NEGOTIATING, CLOSING)
       expectTransition(monitorB, NEGOTIATING, CLOSING)
       expectTransition(monitorA, CLOSING, CLOSED)

@@ -94,7 +94,7 @@ object Helpers {
     Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
   def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOTIATING): Try[Transaction] = {
-    val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourClearing.scriptPubkey, d.theirClearing.scriptPubkey, closeFee)
+    val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, closeFee)
     val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, closeSig)
     checksig(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput, signedTx).map(_ => signedTx)
   }

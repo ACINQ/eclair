@@ -17,7 +17,7 @@ import scala.concurrent.duration._
 class OurCommitChannelSpec extends BaseChannelTestClass {
 
   test("steal revoked commit tx") { case (alice, bob, pipe) =>
-    pipe !(alice, bob) // this starts the communication between alice and bob
+    pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
@@ -27,7 +27,7 @@ class OurCommitChannelSpec extends BaseChannelTestClass {
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
       val H = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(4)))
+      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
       alice ! CMD_SIGN
       Thread.sleep(500)
       bob ! CMD_SIGN
@@ -44,8 +44,8 @@ class OurCommitChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      bob !(BITCOIN_ANCHOR_SPENT, commitTx)
-      awaitCond(bob.stateName == CLOSING)
+      bob ! (BITCOIN_ANCHOR_SPENT, commitTx)
+      awaitCond(bob.stateName == CLOSED)
     }
   }
 

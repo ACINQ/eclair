@@ -105,9 +105,9 @@ class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.isEmpty)
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
-    alice2bob.expectMsgType[close_clearing]
+    alice2bob.expectMsgType[close_shutdown]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[close_clearing]
+    bob2alice.expectMsgType[close_shutdown]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NEGOTIATING)
     awaitCond(bob.stateName == NEGOTIATING)
