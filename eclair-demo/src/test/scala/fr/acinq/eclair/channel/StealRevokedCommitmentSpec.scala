@@ -25,7 +25,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
 
   def fulfillHtlc(sender: Commitments, receiver: Commitments, id: Long, paymentPreimage: BinaryData): (Commitments, Commitments) = {
     val (sender1, fulfill) = Commitments.sendFulfill(sender, CMD_FULFILL_HTLC(id, paymentPreimage))
-    val (receiver1, _) = Commitments.receiveFulfill(receiver, fulfill)
+    val (receiver1, _)git sta = Commitments.receiveFulfill(receiver, fulfill)
     (sender1, receiver1)
   }
 
