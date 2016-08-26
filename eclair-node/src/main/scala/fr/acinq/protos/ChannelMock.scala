@@ -95,7 +95,7 @@ object NewChannel extends App {
   val pipe = system.actorOf(Props(new TestPipe()))
   val a = system.actorOf(Props(new ChannelMock(pipe)), name = "a")
   val b = system.actorOf(Props(new ChannelMock(pipe)), name = "b")
-  pipe !(a, b, new File("eclair-demo/rusty-scripts/15-fee-twice-back-to-back.script"))
+  pipe !(a, b, new File("eclair-node/rusty-scripts/15-fee-twice-back-to-back.script"))
 
 }
 

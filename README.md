@@ -13,7 +13,7 @@ A "blockchain watcher" is responsible for monitoring the blockchain, and sending
 
 ## Modules
 * lightning-types: scala code generation using protobuf's compiler (wire protocol)
-* eclair-demo: actual implementation
+* eclair-node: actual implementation
 
 ## Usage
 
@@ -29,7 +29,7 @@ mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
 ```
 Or grab the latest released jar and run:
 ```
-java -jar eclair-demo_2.11-*-capsule-fat.jar
+java -jar eclair-core_2.11-*-capsule-fat.jar
 ```
 
 *See [TESTING.md](TESTING.md) for more details on how to use this software.*

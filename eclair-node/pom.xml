@@ -8,7 +8,7 @@
         <version>0.2-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-demo_2.11</artifactId>
+    <artifactId>eclair-node_2.11</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
