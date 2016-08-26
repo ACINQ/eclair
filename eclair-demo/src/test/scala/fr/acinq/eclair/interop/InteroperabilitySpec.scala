@@ -10,6 +10,7 @@ import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
@@ -76,6 +77,7 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
 
   Thread.sleep(3000)
   assert(!bitcoindf.isCompleted)
+
   val bitcoinClient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332)
   val btccli = new ExtendedBitcoinClient(bitcoinClient)
 
@@ -94,10 +96,12 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   Thread.sleep(5000) // lightning now takes more time to start b/c of sqlite
   assert(!lightningdf.isCompleted)
 
-  val chain = Await.result(bitcoinClient.invoke("getblockchaininfo").map(json => (json \ "chain").extract[String]), 10 seconds)
+
+  val (chain, blockCount) = Await.result(bitcoinClient.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
 
-  val blockchain = system.actorOf(Props(new PeerWatcher(btccli, 300)), name = "blockchain")
+  val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
+  val blockchain = system.actorOf(PeerWatcher.props(btccli, blockCount), name = "blockchain")
   val paymentHandler = system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
