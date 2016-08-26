@@ -14,7 +14,7 @@ case class ChannelCreated(channel: ActorRef, params: OurChannelParams, theirNode
 
 case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: Long) extends ChannelEvent
 
-case class ChannelChangedState(channel: ActorRef, theirNodeId: String, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
+case class ChannelChangedState(channel: ActorRef, theirNodeId: BinaryData, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 
 case class ChannelSignatureReceived(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
 
