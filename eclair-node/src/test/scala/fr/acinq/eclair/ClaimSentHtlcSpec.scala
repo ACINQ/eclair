@@ -63,7 +63,7 @@ class ClaimSentHtlcSpec extends FunSuite {
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
     val witness = ScriptWitness(sig :: Hash.Zeroes :: redeemScript :: Nil)
-    val tx3 = tx2.copy(witness = Seq(witness))
+    val tx3 = tx2.updateWitness(0, witness)
 
     Transaction.correctlySpends(tx3, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
@@ -77,7 +77,7 @@ class ClaimSentHtlcSpec extends FunSuite {
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
     val witness = ScriptWitness(sig :: Hash.Zeroes :: redeemScript :: Nil)
-    val tx3 = tx2.copy(witness = Seq(witness))
+    val tx3 = tx2.updateWitness(0, witness)
 
     val e = intercept[RuntimeException] {
       Transaction.correctlySpends(tx3, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -94,7 +94,7 @@ class ClaimSentHtlcSpec extends FunSuite {
 
     val sig = Transaction.signInput(tx2, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
     val witness = ScriptWitness(sig :: Hash.Zeroes :: redeemScript :: Nil)
-    val tx3 = tx2.copy(witness = Seq(witness))
+    val tx3 = tx2.updateWitness(0, witness)
 
     val e = intercept[RuntimeException] {
       Transaction.correctlySpends(tx3, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -105,14 +105,14 @@ class ClaimSentHtlcSpec extends FunSuite {
   test("Blob can spend this HTLC if he knows the payment hash") {
     val sig = Transaction.signInput(tx1, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Bob.finalKey)
     val witness = ScriptWitness(sig :: Alice.R :: redeemScript :: Nil)
-    val tx2 = tx1.copy(witness = Seq(witness))
+    val tx2 = tx1.updateWitness(0, witness)
     Transaction.correctlySpends(tx2, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
   test("Blob can spend this HTLC if he knows the revocation hash") {
     val sig = Transaction.signInput(tx1, 0, redeemScript, SIGHASH_ALL, tx.txOut(0).amount, 1, Bob.finalKey)
     val witness = ScriptWitness(sig :: Alice.revokeCommit :: redeemScript :: Nil)
-    val tx2 = tx1.copy(witness = Seq(witness))
+    val tx2 = tx1.updateWitness(0, witness)
     Transaction.correctlySpends(tx2, Seq(tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 }

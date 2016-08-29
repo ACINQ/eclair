@@ -47,7 +47,8 @@ class StealRevokedCommitmentSpec extends FunSuite {
 
     val theirTxTemplate = Commitments.makeTheirTxTemplate(bob3)
     val theirTx = theirTxTemplate.makeTx
-    assert(theirTx.txIn == alice3.ourCommit.publishableTx.txIn && theirTx.txOut == alice3.ourCommit.publishableTx.txOut)
+    assert(theirTx.txIn.map(_.outPoint) == alice3.ourCommit.publishableTx.txIn.map(_.outPoint))
+    assert(theirTx.txOut == alice3.ourCommit.publishableTx.txOut)
     val preimage = bob5.theirPreimages.getHash(0xFFFFFFFFFFFFFFFFL - bob3.theirCommit.index).get
     val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, preimage, bob3.ourParams.finalPrivKey)
     Transaction.correctlySpends(punishTx, Seq(alice3.ourCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

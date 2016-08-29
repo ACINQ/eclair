@@ -87,7 +87,7 @@ object Helpers {
     // TODO : Transaction.sign(...) should handle multisig
     val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
     val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
-    tx.copy(witness = Seq(witness))
+    tx.updateWitness(0, witness)
   }
 
   def checksig(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorOutput: TxOut, tx: Transaction): Try[Unit] =
@@ -179,7 +179,6 @@ object Helpers {
     val tx = Transaction(version = 2,
       txIn = Seq.empty[TxIn],
       txOut = TxOut(totalAmount, pay2wpkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
-      witness = Seq.empty[ScriptWitness],
       lockTime = 0)
 
     // create tx inputs that spend each output that we can spend
@@ -197,7 +196,7 @@ object Helpers {
       witness
     }
 
-    tx1.copy(witness = witnesses)
+    tx1.updateWitnesses(witnesses)
   }
 
   /**
@@ -224,7 +223,7 @@ object Helpers {
 
     val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
     val witness = ScriptWitness(sig :: paymentPreimage :: htlcTemplate.redeemScript :: Nil)
-    val tx2 = tx1.copy(witness = Seq(witness))
+    val tx2 = tx1.updateWitness(0, witness)
     tx2
   }
 
@@ -265,7 +264,7 @@ object Helpers {
 
     val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
     val witness = ScriptWitness(sig :: Hash.Zeroes :: htlcTemplate.redeemScript :: Nil)
-    tx1.copy(witness = Seq(witness))
+    tx1.updateWitness(0, witness)
   }
 
   def claimSentHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = {

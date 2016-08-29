@@ -93,10 +93,10 @@ object Scripts {
 
     val pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
     val hash = Transaction.hashForSigning(tx, 0, pubKeyScript, SIGHASH_ALL, tx.txOut(0).amount, signatureVersion = 1)
-    val sig = Crypto.encodeSignature(Crypto.sign(hash, key.take(32), randomize = false)) :+ SIGHASH_ALL.toByte
+    val sig = Crypto.encodeSignature(Crypto.sign(hash, key.take(32))) :+ SIGHASH_ALL.toByte
     val witness = ScriptWitness(Seq(sig, pub))
     val script = Script.write(OP_0 :: OP_PUSHDATA(Crypto.hash160(pub)) :: Nil)
-    val signedTx = tx.updateSigScript(0, OP_PUSHDATA(script) :: Nil).copy(witness = Seq(witness))
+    val signedTx = tx.updateSigScript(0, OP_PUSHDATA(script) :: Nil).updateWitness(0, witness)
 
     // we don't permute outputs because by convention the multisig output has index = 0
     (signedTx, 0)
