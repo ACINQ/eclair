@@ -1,6 +1,14 @@
 language: scala
 scala:
  - 2.11.8
+before_install:
+ - sudo apt-get install build-essential autoconf libtool pkg-config
+ - git clone https://github.com/luke-jr/libbase58.git ~/libbase58
+ - pushd . && cd ~/libbase58/ && ./autogen.sh && ./configure && make && sudo make install && popd
+env:
+- export LD_LIBRARY_PATH=/usr/local/lib
+script:
+ - mvn install && cd eclair-node && mvn exec:java -Dexec.mainClass="org.scalatest.tools.Runner" -Dexec.classpathScope="test" -Dexec.args="-o -s fr.acinq.eclair.interop.InteroperabilitySpec"
 jdk:
  - oraclejdk8
 notifications:
