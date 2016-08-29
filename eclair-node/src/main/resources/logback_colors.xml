@@ -47,6 +47,7 @@
     </appender>
 
     <logger name="fr.acinq.eclair.channel" level="DEBUG" />
+    <logger name="fr.acinq.eclair.router" level="DEBUG" />
     <logger name="fr.acinq.eclair.blockchain.peer.PeerClient" level="INFO" />
 
     <root level="INFO">

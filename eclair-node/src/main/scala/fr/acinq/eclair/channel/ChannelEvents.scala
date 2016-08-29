@@ -20,6 +20,6 @@ case class ChannelSignatureReceived(channel: ActorRef, Commitments: Commitments)
 
 case class PaymentSent(channel: ActorRef, h: sha256_hash) extends ChannelEvent
 
-case class PaymentFailed(channel: ActorRef, h: sha256_hash) extends ChannelEvent
+case class PaymentFailed(channel: ActorRef, h: sha256_hash, reason: String) extends ChannelEvent
 
 case class PaymentReceived(channel: ActorRef, h: sha256_hash) extends ChannelEvent
