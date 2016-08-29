@@ -58,7 +58,7 @@ class ProtocolSpec extends FunSuite {
     else
       ScriptWitness(Seq(BinaryData.empty, sig2, sig1, redeemScript))
 
-    val signedTx = spending.copy(witness = Seq(witness))
+    val signedTx = spending.updateWitness(0, witness)
     Transaction.correctlySpends(signedTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
   }
 
@@ -92,7 +92,7 @@ class ProtocolSpec extends FunSuite {
     // this first commit tx sends all the funds to Alice and nothing to Bob
     val sigB: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, anchor.txOut(anchorOutputIndex).amount, 1, Bob.commitKey)
     val witness = witness2of2(sigA, sigB, Alice.commitPubKey, Bob.commitPubKey)
-    val commitTx = tx.copy(witness = Seq(witness))
+    val commitTx = tx.updateWitness(0, witness)
     Transaction.correctlySpends(commitTx, Seq(anchor), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // how do we spend our commit tx ?
@@ -108,7 +108,7 @@ class ProtocolSpec extends FunSuite {
       val witness = ScriptWitness(sig :: Bob.R :: BinaryData(Script.write(redeemScript)) :: Nil)
       val sigScript = OP_PUSHDATA(sig) :: OP_PUSHDATA(Bob.R) :: OP_PUSHDATA(Script.write(redeemScript)) :: Nil
       //tx.updateSigScript(0, Script.write(sigScript))
-      tx.copy(witness = Seq(witness))
+      tx.updateWitness(0, witness)
     }
 
     // or

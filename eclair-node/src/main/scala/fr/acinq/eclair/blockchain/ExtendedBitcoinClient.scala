@@ -136,7 +136,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount, 1, fundingPriv)
       witness = ScriptWitness(Seq(sig, pub))
-      tx2 = tx1.copy(witness = Seq(witness))
+      tx2 = tx1.updateWitness(0, witness)
       Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
     } yield (tx2, pos1)
 
