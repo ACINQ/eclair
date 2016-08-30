@@ -12,9 +12,9 @@ git clone https://github.com/protobuf-c/protobuf-c.git
 cd protobuf-c
 ./autogen.sh && ./configure && make && sudo make install
 # lightning deps
-#sudo add-apt-repository -y ppa:chris-lea/libsodium
-#sudo apt-get update
-#sudo apt-get install -y libsodium-dev libgmp-dev libsqlite3-dev
+sudo add-apt-repository -y ppa:chris-lea/libsodium
+sudo apt-get update
+sudo apt-get install -y libsodium-dev libgmp-dev libsqlite3-dev
 cd
 git clone https://github.com/luke-jr/libbase58.git
 cd libbase58
