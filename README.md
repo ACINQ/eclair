@@ -55,11 +55,11 @@ eclair.bitcoind.rpcpassword (default: bar)
 
 ## Status
 - [X] Network
-- [ ] Routing
+- [X] Routing (simple IRC prototype)
 - [X] Channel protocol
 - [X] HTLC Scripts
-- [ ] Unilateral close handling
-- [ ] Relaying Payment
+- [X] Unilateral close handling
+- [X] Relaying Payment
 - [ ] Fee management
 - [X] Blockchain watcher
 - [ ] Storing states in a database
