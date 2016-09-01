@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel
 
+import akka.actor.ActorRef
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import lightning._
 
@@ -23,41 +24,23 @@ import scala.concurrent.duration.FiniteDuration
        "Y8888P"     888  d88P     888     888     8888888888 "Y8888P"
  */
 sealed trait State
-
 case object INIT_NOANCHOR extends State
-
 case object INIT_WITHANCHOR extends State
-
 case object OPEN_WAIT_FOR_OPEN_NOANCHOR extends State
-
 case object OPEN_WAIT_FOR_OPEN_WITHANCHOR extends State
-
 case object OPEN_WAIT_FOR_ANCHOR extends State
-
 case object OPEN_WAIT_FOR_COMMIT_SIG extends State
-
 case object OPEN_WAITING_THEIRANCHOR extends State
-
 case object OPEN_WAITING_OURANCHOR extends State
-
 case object OPEN_WAIT_FOR_COMPLETE_OURANCHOR extends State
-
 case object OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR extends State
-
 case object NORMAL extends State
-
 case object SHUTDOWN extends State
-
 case object NEGOTIATING extends State
-
 case object CLOSING extends State
-
 case object CLOSED extends State
-
 case object ERR_ANCHOR_LOST extends State
-
 case object ERR_ANCHOR_TIMEOUT extends State
-
 case object ERR_INFORMATION_LEAK extends State
 
 /*
@@ -77,26 +60,15 @@ case object INPUT_NO_MORE_HTLCS
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 
 sealed trait BitcoinEvent
-
 case object BITCOIN_ANCHOR_DEPTHOK extends BitcoinEvent
-
 case object BITCOIN_ANCHOR_LOST extends BitcoinEvent
-
 case object BITCOIN_ANCHOR_TIMEOUT extends BitcoinEvent
-
 case object BITCOIN_ANCHOR_SPENT extends BitcoinEvent
-
 case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED extends BitcoinEvent
-
 case object BITCOIN_SPEND_THEIRS_DONE extends BitcoinEvent
-
 case object BITCOIN_SPEND_OURS_DONE extends BitcoinEvent
-
 case object BITCOIN_STEAL_DONE extends BitcoinEvent
-
 case object BITCOIN_CLOSE_DONE extends BitcoinEvent
-
-case class TransactionConfirmed(tx: Transaction) extends BitcoinEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
@@ -111,25 +83,21 @@ case class TransactionConfirmed(tx: Transaction) extends BitcoinEvent
 
 sealed trait Command
 
+/*
+  Used when relaying payments
+ */
+final case class Origin(channelId: BinaryData, htlc_id: Long)
 /**
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amountMsat: Int, rHash: sha256_hash, expiry: locktime, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), originChannelId: Option[BinaryData] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
-
+final case class CMD_ADD_HTLC(amountMsat: Int, rHash: sha256_hash, expiry: locktime, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: rval, commit: Boolean = false) extends Command
-
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
-
 case object CMD_SIGN extends Command
-
 final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
-
 case object CMD_GETSTATE extends Command
-
 case object CMD_GETSTATEDATA extends Command
-
 case object CMD_GETINFO extends Command
-
 final case class RES_GETINFO(nodeid: BinaryData, channelid: BinaryData, state: State, data: Data)
 
 /*
@@ -159,9 +127,7 @@ object TheirChannelParams {
 }
 
 sealed trait Direction
-
 case object IN extends Direction
-
 case object OUT extends Direction
 
 case class Htlc(direction: Direction, add: update_add_htlc, val previousChannelId: Option[BinaryData])
@@ -177,26 +143,18 @@ trait HasCommitments extends Data {
 }
 
 final case class DATA_OPEN_WAIT_FOR_OPEN(ourParams: OurChannelParams) extends Data
-
 final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
-
 final case class DATA_OPEN_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
-
 final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-
 final case class DATA_OPEN_WAITING(commitments: Commitments, deferred: Option[open_complete]) extends Data with HasCommitments
-
 final case class DATA_NORMAL(commitments: Commitments,
                              ourShutdown: Option[close_shutdown],
-                             downstreams: Map[Long, Option[BinaryData]]) extends Data with HasCommitments
-
+                             downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                ourShutdown: close_shutdown, theirShutdown: close_shutdown,
-                               downstreams: Map[Long, Option[BinaryData]]) extends Data with HasCommitments
-
+                               downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   ourShutdown: close_shutdown, theirShutdown: close_shutdown, ourSignature: close_signature) extends Data with HasCommitments
-
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[close_signature] = None,
                               mutualClosePublished: Option[Transaction] = None,

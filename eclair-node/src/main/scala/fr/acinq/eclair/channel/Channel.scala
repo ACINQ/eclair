@@ -326,7 +326,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(fulfill@update_fulfill_htlc(id, r), d@DATA_NORMAL(commitments, _, downstreams)) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Right(fulfill), downstreams)
+          propagateDownstream(htlc, Right(fulfill), downstreams(id))
           commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
@@ -343,7 +343,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(fail@update_fail_htlc(id, reason), d@DATA_NORMAL(commitments, _, downstreams)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Left(fail), downstreams)
+          propagateDownstream(htlc, Left(fail), downstreams(id))
           commitments1.ourParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
@@ -448,7 +448,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(fulfill@update_fulfill_htlc(id, r), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Right(fulfill), d.downstreams)
+          propagateDownstream(htlc, Right(fulfill), d.downstreams(id))
           stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
       }
@@ -462,7 +462,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(fail@update_fail_htlc(id, reason), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Left(fail), d.downstreams)
+          propagateDownstream(htlc, Left(fail), d.downstreams(id))
           stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
         case Failure(cause) => handleOurError(cause, d)
       }
@@ -663,7 +663,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
               log.info(s"forwarding htlc #${add.id} to upstream=$upstream")
               val upstream_route = route(rest)
               // TODO : we should decrement expiry !!
-              upstream ! CMD_ADD_HTLC(amountMsat, add.rHash, add.expiry, upstream_route, Some(anchorId))
+              upstream ! CMD_ADD_HTLC(amountMsat, add.rHash, add.expiry, upstream_route, Some(Origin(anchorId, add.id)))
               upstream ! CMD_SIGN
             case Failure(t: Throwable) =>
               // TODO : send "fail route error"
@@ -676,31 +676,23 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     }
   }
 
-  def propagateDownstream(htlc: update_add_htlc, fail_or_fulfill: Either[update_fail_htlc, update_fulfill_htlc], downstreams: Map[Long, Option[BinaryData]]) = {
-    val (id, short, cmd: Command) = fail_or_fulfill match {
-      case Left(fail) => (fail.id, "fail", CMD_FAIL_HTLC(fail.id, fail.reason.info.toStringUtf8))
-      case Right(fulfill) => (fulfill.id, "fulfill", CMD_FULFILL_HTLC(fulfill.id, fulfill.r))
-    }
-    (downstreams(id), fail_or_fulfill) match {
-      case (Some(previousChannelId), _) =>
-        log.debug(s"propagating $short for htlc #$id to $previousChannelId")
-        import ExecutionContext.Implicits.global
-        context.system.actorSelection(Register.actorPathToChannelId(previousChannelId))
-          .resolveOne(3 seconds)
-          .onComplete {
-            case Success(downstream) =>
-              log.info(s"forwarding $short to downstream=$downstream")
-              downstream ! CMD_SIGN
-              downstream ! cmd
-              downstream ! CMD_SIGN
-            case Failure(t: Throwable) =>
-              log.warning(s"couldn't resolve downstream node, htlc #$id will timeout", t)
-          }
+  def propagateDownstream(htlc: update_add_htlc, fail_or_fulfill: Either[update_fail_htlc, update_fulfill_htlc], origin_opt: Option[Origin]) = {
+    (origin_opt, fail_or_fulfill) match {
+      case (Some(origin), Left(fail)) =>
+        val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))
+        downstream ! CMD_SIGN
+        downstream ! CMD_FAIL_HTLC(origin.htlc_id, fail.reason.info.toStringUtf8)
+        downstream ! CMD_SIGN
+      case (Some(origin), Right(fulfill)) =>
+        val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))
+        downstream ! CMD_SIGN
+        downstream ! CMD_FULFILL_HTLC(origin.htlc_id, fulfill.r)
+        downstream ! CMD_SIGN
       case (None, Left(fail)) =>
-        log.info(s"we were the origin payer for htlc #$id")
+        log.info(s"we were the origin payer for htlc #${htlc.id}")
         context.system.eventStream.publish(PaymentFailed(self, htlc.rHash))
       case (None, Right(fulfill)) =>
-        log.info(s"we were the origin payer for htlc #$id")
+        log.info(s"we were the origin payer for htlc #${htlc.id}")
         context.system.eventStream.publish(PaymentSent(self, htlc.rHash))
     }
   }
