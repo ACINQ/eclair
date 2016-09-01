@@ -6,7 +6,7 @@ scala:
 before_install:
  - source travis/builddeps.sh
 env:
-- export LD_LIBRARY_PATH=/usr/local/lib
+ - export LD_LIBRARY_PATH=/usr/local/lib
 script:
  - mvn install && cd eclair-node
  - mvn exec:java -Dexec.mainClass="org.scalatest.tools.Runner" -Dexec.classpathScope="test" -Dexec.args="-o -s fr.acinq.eclair.interop.InteroperabilitySpec" -Dinterop-test.bitcoin-path=$HOME/bitcoin-0.13.0/bin -Dinterop-test.lightning-path=$HOME/lightning/daemon
