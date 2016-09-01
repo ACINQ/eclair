@@ -26,51 +26,36 @@ import scala.concurrent._
 import scala.concurrent.duration._
 import scala.sys.process._
 
-object InteropTest extends Tag("fr.acinq.eclair.tags.InteropTest")
+/*
+  This test is ignored by default. To run it:
+  mvn exec:java -Dexec.mainClass="org.scalatest.tools.Runner" -Dexec.classpathScope="test" \
+   -Dexec.args="-o -s fr.acinq.eclair.interop.InteroperabilitySpec" \
+   -Dinterop-test.bitcoin-path=$PATH_TO_BITCOIN \
+   -Dinterop-test.lightning-path=$PATH_TO_LIGHNING
+  where PATH_TO_BITCOIN is a directory that contains bitcoind and bitcoin-cli
+  and PATH_TO_LIGHNING is a directory that contains lightningd and lightning-cli
 
-object LinuxOnlyTest extends Tag("fr.acinq.eclair.tags.LinuxOnlyTest")
-
-/**
-  * this test is ignored by default
-  * to run it:
-  * mvn exec:java -Dexec.mainClass="org.scalatest.tools.Runner" -Dexec.classpathScope="test" -Dexec.args="-o -s fr.acinq.eclair.interop.InteroperabilitySpec"
-  */
+ For example:
+  mvn exec:java -Dexec.mainClass="org.scalatest.tools.Runner" -Dexec.classpathScope="test" \
+   -Dexec.args="-o -s fr.acinq.eclair.interop.InteroperabilitySpec" \
+   -Dinterop-test.bitcoin-path=/home/fabrice/bitcoin-0.13.0/bin \
+   -Dinterop-test.lightning-path=/home/fabrice/code/lightning/daemon
+*/
 class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll {
 
   import InteroperabilitySpec._
 
   val config = ConfigFactory.load()
   implicit val formats = org.json4s.DefaultFormats
-
-  def osName: String = {
-    val name = System.getProperty("os.name")
-    if (name.contains("Windows")) {
-      "windows"
-    } else if (name.contains("Linux")) {
-      "linux"
-    } else if (name.contains("Mac OS X")) {
-      "osx"
-    } else {
-      name.replaceAll("\\W", "")
-    }
-  }
-
-  def arch: String = {
-    System.getProperty("sun.arch.data.model").toInt match {
-      case 32 => "32"
-      case 64 => "64"
-    }
-  }
-
-  val currentdir = new File(".").getCanonicalPath
-  val prefix = s"src/test/resources/binaries/${osName}${arch}"
-
+  
   // start bitcoind
   val bitcoinddir = Files.createTempDirectory("bitcoind")
   Files.createDirectory(Paths.get(bitcoinddir.toString, "regtest"))
   Files.write(Paths.get(bitcoinddir.toString, "bitcoin.conf"), "regtest=1\nrpcuser=foo\nrpcpassword=bar".getBytes())
   Files.write(Paths.get(bitcoinddir.toString, "regtest", "bitcoin.conf"), "regtest=1\nrpcuser=foo\nrpcpassword=bar".getBytes())
-  val bitcoind = Process(s"$prefix/bitcoind -datadir=${bitcoinddir.toString} -regtest").run
+
+  val bitcoinPath = config.getString("interop-test.bitcoin-path")
+  val bitcoind = Process(s"$bitcoinPath/bitcoind -datadir=${bitcoinddir.toString} -regtest").run
   val bitcoindf = Future(blocking(bitcoind.exitValue()))
   sys.addShutdownHook(bitcoind.destroy())
 
@@ -87,10 +72,11 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
 
   // start lightningd
   val lightningddir = Files.createTempDirectory("lightningd")
+  val lightningPath = config.getString("interop-test.lightning-path")
   val lightningd = Process(
-    s"$prefix/lightningd --bitcoin-datadir=${bitcoinddir.toString + "/regtest"} --lightning-dir=${lightningddir.toString}",
+    s"$lightningPath/lightningd --bitcoin-datadir=${bitcoinddir.toString + "/regtest"} --lightning-dir=${lightningddir.toString}",
     None,
-    "PATH" -> s"$currentdir/$prefix").run
+    "PATH" -> bitcoinPath).run
   val lightningdf = Future(blocking(lightningd.exitValue()))
   sys.addShutdownHook(lightningd.destroy())
   Thread.sleep(5000) // lightning now takes more time to start b/c of sqlite
@@ -106,9 +92,8 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
 
-  val lncli = new LightingCli(s"$prefix/lightning-cli --lightning-dir=${lightningddir.toString}")
+  val lncli = new LightingCli(s"$lightningPath/lightning-cli --lightning-dir=${lightningddir.toString}")
   implicit val timeout = Timeout(30 seconds)
-
 
   override protected def afterAll(): Unit = {
     bitcoind.destroy()
