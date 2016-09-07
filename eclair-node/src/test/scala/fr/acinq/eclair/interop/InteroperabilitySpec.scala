@@ -1,25 +1,22 @@
 package fr.acinq.eclair.interop
 
-import java.io.File
 import java.nio.file.{Files, Paths}
 
-import akka.actor.{ActorPath, ActorRef, ActorSystem, Props}
+import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
 import akka.testkit.TestKit
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.peer.PeerClient
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
+import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
-import fr.acinq.eclair.io.Server
 import lightning.locktime
 import lightning.locktime.Locktime.Blocks
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike, Tag}
+import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
@@ -41,13 +38,13 @@ import scala.sys.process._
    -Dinterop-test.bitcoin-path=/home/fabrice/bitcoin-0.13.0/bin \
    -Dinterop-test.lightning-path=/home/fabrice/code/lightning/daemon
 */
-class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll {
+class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
 
   import InteroperabilitySpec._
 
   val config = ConfigFactory.load()
   implicit val formats = org.json4s.DefaultFormats
-  
+
   // start bitcoind
   val bitcoinddir = Files.createTempDirectory("bitcoind")
   Files.createDirectory(Paths.get(bitcoinddir.toString, "regtest"))
@@ -60,14 +57,13 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   sys.addShutdownHook(bitcoind.destroy())
 
 
-  Thread.sleep(3000)
+  Thread.sleep(5000)
   assert(!bitcoindf.isCompleted)
 
   val bitcoinClient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332)
   val btccli = new ExtendedBitcoinClient(bitcoinClient)
 
-  awaitAssert(Await.result(btccli.client.invoke("getblockchaininfo"), 3 seconds), 10 seconds)
-
+  Await.result(btccli.client.invoke("getblockchaininfo"), 3 seconds)
   Await.result(btccli.client.invoke("generate", 500), 10 seconds)
 
   // start lightningd
@@ -81,23 +77,18 @@ class InteroperabilitySpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   sys.addShutdownHook(lightningd.destroy())
   Thread.sleep(5000) // lightning now takes more time to start b/c of sqlite
   assert(!lightningdf.isCompleted)
-
-
-  val (chain, blockCount) = Await.result(bitcoinClient.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
-  assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
-
-  val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
-  val blockchain = system.actorOf(PeerWatcher.props(btccli, blockCount), name = "blockchain")
-  val paymentHandler = system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
-  val register = system.actorOf(Register.props(blockchain, paymentHandler), name = "register")
-  val server = system.actorOf(Server.props(config.getString("eclair.server.address"), config.getInt("eclair.server.port"), register), "server")
-
   val lncli = new LightingCli(s"$lightningPath/lightning-cli --lightning-dir=${lightningddir.toString}")
+
+  val setup = new Setup()
+  implicit val system = setup.system
+  val register = setup.register
+
   implicit val timeout = Timeout(30 seconds)
 
   override protected def afterAll(): Unit = {
     bitcoind.destroy()
     lightningd.destroy()
+    system.terminate()
     super.afterAll()
   }
 
