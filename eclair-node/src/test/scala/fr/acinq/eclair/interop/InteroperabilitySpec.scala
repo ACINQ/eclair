@@ -251,15 +251,15 @@ object InteroperabilitySpec {
     }
 
     def newhtlc(peerid: String, amount: Long, expiry: Long, rhash: BinaryData): Unit = {
-      assert(s"$path newhtlc $peerid $amount $expiry $rhash".! == 0)
+      assert(s"$path dev-newhtlc $peerid $amount $expiry $rhash".! == 0)
     }
 
     def fulfillhtlc(peerid: String, htlcId: Long, rhash: BinaryData): Unit = {
-      assert(s"$path fulfillhtlc $peerid $htlcId $rhash".! == 0)
+      assert(s"$path dev-fulfillhtlc $peerid $htlcId $rhash".! == 0)
     }
 
     def commit(peerid: String): Unit = {
-      assert(s"$path commit $peerid".! == 0)
+      assert(s"$path dev-commit $peerid".! == 0)
     }
 
     def devroutefail(enable: Boolean): Unit = {
