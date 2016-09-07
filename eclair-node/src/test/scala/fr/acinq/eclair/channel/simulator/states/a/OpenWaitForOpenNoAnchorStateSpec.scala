@@ -1,13 +1,12 @@
 package fr.acinq.eclair.channel.simulator.states.a
 
-import akka.actor.ActorSystem
-import akka.testkit.{TestFSMRef, TestKit, TestProbe}
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import lightning.{error, open_channel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
 
@@ -15,7 +14,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class OpenWaitForOpenNoAnchorStateSpec extends TestKit(ActorSystem("test"))  with fixture.FunSuiteLike with BeforeAndAfterAll {
+class OpenWaitForOpenNoAnchorStateSpec extends StateSpecBaseClass {
 
   type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
@@ -32,10 +31,6 @@ class OpenWaitForOpenNoAnchorStateSpec extends TestKit(ActorSystem("test"))  wit
       awaitCond(bob.stateName == OPEN_WAIT_FOR_OPEN_NOANCHOR)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))
-  }
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
   }
 
   test("recv open_channel") { case (bob, alice2bob, bob2alice, bob2blockchain) =>

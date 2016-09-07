@@ -1,19 +1,18 @@
 package fr.acinq.eclair.channel.simulator.states.f
 
-import akka.actor.{ActorSystem, Props}
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
+import akka.actor.Props
+import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.{TestBitcoinClient, _}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.simulator.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.{TestBitcoinClient, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
 
@@ -21,7 +20,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class ShutdownStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll with StateTestsHelperMethods {
+class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -98,10 +97,6 @@ class ShutdownStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSui
     awaitCond(alice.stateName == SHUTDOWN)
     awaitCond(bob.stateName == SHUTDOWN)
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
-  }
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
   }
 
   test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>

@@ -1,15 +1,15 @@
 package fr.acinq.eclair.channel.simulator.states.b
 
-import akka.actor.{ActorSystem, Props}
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
+import akka.actor.Props
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
+import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{OPEN_WAITING_THEIRANCHOR, _}
 import lightning.{error, open_anchor, open_channel, open_commit_sig}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
 
@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class OpenWaitForAnchorStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class OpenWaitForAnchorStateSpec extends StateSpecBaseClass {
 
   type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
@@ -35,10 +35,6 @@ class OpenWaitForAnchorStateSpec extends TestKit(ActorSystem("test")) with fixtu
     bob2alice.forward(alice)
     awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
     test((bob, alice2bob, bob2alice, bob2blockchain))
-  }
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
   }
 
   test("recv open_anchor") { case (bob, alice2bob, bob2alice, bob2blockchain) =>

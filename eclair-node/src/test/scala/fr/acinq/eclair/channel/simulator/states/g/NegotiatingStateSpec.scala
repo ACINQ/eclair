@@ -1,18 +1,17 @@
 package fr.acinq.eclair.channel.simulator.states.g
 
-import akka.actor.{ActorSystem, Props}
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
-import com.google.protobuf.ByteString
+import akka.actor.Props
+import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
 
@@ -20,7 +19,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll {
+class NegotiatingStateSpec extends StateSpecBaseClass {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -112,10 +111,6 @@ class NegotiatingStateSpec extends TestKit(ActorSystem("test")) with fixture.Fun
     awaitCond(alice.stateName == NEGOTIATING)
     awaitCond(bob.stateName == NEGOTIATING)
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
-  }
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
   }
 
   test("recv close_signature (theirCloseFee != ourCloseFee") { case (alice, bob, alice2bob, bob2alice, _, _) =>
