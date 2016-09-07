@@ -94,7 +94,5 @@ class GUIUpdater(primaryStage: Stage, helloWorld: MainWindow, setup: Setup) exte
         }
       })
 
-    case e: ChannelEvent => log.warning(s"channel event: $e")
-
   }
 }

@@ -24,25 +24,16 @@ import scala.annotation.tailrec
 // @formatter:off
 
 sealed trait Data
-
 case object Nothing extends Data
-
 case class WaitingForKeyLength(buffer: ByteString) extends Data
-
 case class WaitingForKey(keyLength: Int, buffer: ByteString) extends Data
-
 case class SessionData(their_session_key: BinaryData, decryptor: Decryptor, encryptor: Encryptor) extends Data
-
 case class Normal(channel: ActorRef, sessionData: SessionData) extends Data
 
 sealed trait State
-
 case object IO_WAITING_FOR_SESSION_KEY_LENGTH extends State
-
 case object IO_WAITING_FOR_SESSION_KEY extends State
-
 case object IO_WAITING_FOR_AUTH extends State
-
 case object IO_NORMAL extends State
 
 // @formatter:on

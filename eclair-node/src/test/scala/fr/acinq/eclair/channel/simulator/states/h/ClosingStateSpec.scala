@@ -1,17 +1,16 @@
 package fr.acinq.eclair.channel.simulator.states.h
 
-import akka.actor.{ActorSystem, Props}
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{Satoshi, ScriptFlags, Transaction}
+import akka.actor.Props
+import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Transaction
+import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.simulator.states.StateTestsHelperMethods
+import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
-import fr.acinq.eclair.{TestBitcoinClient, _}
 import lightning._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, fixture}
 
 import scala.concurrent.duration._
 
@@ -19,7 +18,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class ClosingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterAll with StateTestsHelperMethods {
+class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe, List[Transaction]]
 
@@ -96,10 +95,6 @@ class ClosingStateSpec extends TestKit(ActorSystem("test")) with fixture.FunSuit
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes))
-  }
-
-  override def afterAll {
-    TestKit.shutdownActorSystem(system)
   }
 
   test("recv BITCOIN_CLOSE_DONE") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
