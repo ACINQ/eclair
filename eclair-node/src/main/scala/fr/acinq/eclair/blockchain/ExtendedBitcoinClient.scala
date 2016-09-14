@@ -30,11 +30,8 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
         case t: JsonRPCError if t.code == -5 => None
       }
 
-  def isUnspent(txId: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] =
-    client.invoke("gettxout", txId, outputIndex, true) // mempool=true so that we are warned as soon as possible
-      .map(json => json != JNull)
-
   /**
+    * *used in interop test*
     * tell bitcoind to sent bitcoins from a specific local account
     *
     * @param account     name of the local account to send bitcoins from
@@ -48,6 +45,11 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     case JString(txid) => txid
   }
 
+  /**
+    * @param txId
+    * @param ec
+    * @return
+    */
   def getRawTransaction(txId: String)(implicit ec: ExecutionContext): Future[String] =
     client.invoke("getrawtransaction", txId) collect {
       case JString(raw) => raw
@@ -89,26 +91,6 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(tx2Hex(tx))
-
-  // TODO : this is very dirty
-  // we only check the memory pool and the last block, and throw an error if tx was not found
-  def findSpendingTransaction(txid: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] = {
-    for {
-      mempool <- client.invoke("getrawmempool").map(_.extract[List[String]])
-      bestblockhash <- client.invoke("getbestblockhash").map(_.extract[String])
-      bestblock <- client.invoke("getblock", bestblockhash).map(b => (b \ "tx").extract[List[String]])
-      txs <- Future {
-        for (txid <- mempool ++ bestblock) yield {
-          Await.result(client.invoke("getrawtransaction", txid).map(json => {
-            Transaction.read(json.extract[String])
-          }).recover {
-            case t: Throwable => Transaction(0, Seq(), Seq(), 0)
-          }, 20 seconds)
-        }
-      }
-      tx = txs.find(tx => tx.txIn.exists(input => input.outPoint.txid == txid && input.outPoint.index == outputIndex)).getOrElse(throw new RuntimeException("tx not found!"))
-    } yield tx
-  }
 
   def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)

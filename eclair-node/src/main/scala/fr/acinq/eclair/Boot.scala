@@ -18,7 +18,7 @@ import scala.concurrent.duration._
 import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.gui.FxApp
-import fr.acinq.eclair.router.{ChannelSelector, IRCWatcher, PaymentSpawner, Router}
+import fr.acinq.eclair.router._
 
 /**
   * Created by PM on 25/01/2016.

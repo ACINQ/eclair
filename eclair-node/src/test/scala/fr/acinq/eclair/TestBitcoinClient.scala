@@ -37,8 +37,6 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 
   override def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
 
-  override def isUnspent(txId: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = ???
-
   override def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] = ???
 
   override def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = ???
