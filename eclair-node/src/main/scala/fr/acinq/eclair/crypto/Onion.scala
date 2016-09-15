@@ -5,6 +5,8 @@ import java.security.SecureRandom
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.LightningCrypto._
 
+import scala.util.Random
+
 
 /**
  * Created by PM on 14/10/2015.
@@ -86,12 +88,15 @@ object Onion extends App {
     Secrets(enckey, hmac, iv, pad_iv)
   }
 
-  lazy val rand = new SecureRandom()
+  // see http://bugs.java.com/view_bug.do?bug_id=6521844
+  //lazy val random = SecureRandom.getInstanceStrong
+  lazy val random = new Random()
+
 
   def generatePrivateKey(): BinaryData = {
     val key = new Array[Byte](32)
     do {
-      rand.nextBytes(key)
+      random.nextBytes(key)
     } while (Crypto.publicKeyFromPrivateKey(key :+ 0x01.toByte)(0) != 0x02)
     key
   }

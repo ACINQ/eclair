@@ -1,28 +1,27 @@
 package fr.acinq.eclair.channel
 
-import java.security.SecureRandom
-
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
 import lightning.update_add_htlc
+
+import scala.util.Random
 
 /**
   * Created by PM on 17/06/2016.
   */
 class LocalPaymentHandler extends Actor with ActorLogging {
 
-  val random = SecureRandom.getInstanceStrong
+  // see http://bugs.java.com/view_bug.do?bug_id=6521844
+  //val random = SecureRandom.getInstanceStrong
+  val random = new Random()
 
   def generateR(): BinaryData = {
     val r = Array.fill[Byte](32)(0)
     random.nextBytes(r)
     r
   }
-
-  context.become(run(Map()))
-
-  override def receive: Receive = ???
+  override def receive: Receive = run(Map())
 
   //TODO: store this map on file ?
   def run(h2r: Map[BinaryData, BinaryData]): Receive = {
