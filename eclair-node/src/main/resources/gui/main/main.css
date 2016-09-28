@@ -1,0 +1,89 @@
+.status-bar {
+	-fx-padding: .5em 1em;
+	-fx-background-color: rgb(240,245,246);
+}
+.status-bar .separator:vertical {
+	-fx-padding: -.5em 1em;
+}
+.status-bar .separator:vertical .line {
+	-fx-background-color: rgb(226,227,229);
+	-fx-border-width: 0 1px 0 0;
+	-fx-border-insets: 0;
+}
+
+.status-bar .label {
+	-fx-padding: 2px 0px 2px .5em;
+	-fx-font-size: 12px;
+}
+
+.status-bar .label.chain {
+	-fx-text-fill: rgb(255,148,40);
+}
+.status-bar .label.chain.regtest {
+	-fx-text-fill: rgb(20,208,255);
+}
+.status-bar .label.chain.testnet {
+	-fx-text-fill: rgb(54,207,26);
+}
+.status-bar .label.chain.segnet4 {
+	-fx-text-fill: rgb(87,67,246);
+}
+
+
+.label.badge {
+	-fx-font-size: 11px;
+	-fx-text-fill: white;
+	-fx-background-radius: 3px;
+	-fx-padding: 2px 4px;
+	
+}
+
+.badge-http {
+	-fx-background-color: rgb(255,145,90);
+}
+
+.badge-tcp {
+	-fx-background-color: rgb(245,183,0);
+}
+
+.channels-info {
+	-fx-padding: 4em 0 0 0;
+}
+.channel-container {
+	-fx-padding: 0 -1em;
+}
+
+.menu-bar .menu-button:hover,
+.menu-bar .menu-button:focused,
+.menu-bar .menu-button:showing,
+.menu-bar .menu-item:hover,
+.menu-bar .menu-item:focused {
+	-fx-background-color: rgb(109,197,239);
+}
+
+.tab-pane > *.tab-header-area {
+	-fx-padding: .7em 1em 0;
+}
+
+.tab-pane > *.tab-header-area > *.tab-header-background {
+	-fx-base: rgb(25,170,240);
+	-fx-background-color: rgb(228,235,238);
+}
+
+.tab:top {
+	-fx-padding: 0.25em 1em;
+	-fx-background-color: rgba(255,255,255, .5);
+	-fx-background-radius: 0;
+	-fx-focus-color: transparent;
+	-fx-faint-focus-color: transparent;
+	-fx-background-insets: 0 0 0 0;
+}
+
+.tab:top:selected {
+	-fx-background-color: white;
+	-fx-base: rgb(25,170,240);
+}
+.tab-content-area {
+	-fx-background-color: white;
+	-fx-padding: .5em 1em;
+}

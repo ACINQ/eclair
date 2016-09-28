@@ -1,0 +1,9 @@
+.transparent {
+	-fx-background-color: transparent;
+}
+
+.label.splash-error-label {
+	-fx-background-color: rgb(75,75,75);
+	-fx-text-fill: white;
+	-fx-padding: .5em 1em;
+}

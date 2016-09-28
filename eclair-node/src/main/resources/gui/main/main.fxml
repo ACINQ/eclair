@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.String?>
+<?import java.net.URL?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.control.Menu?>
+<?import javafx.scene.control.MenuBar?>
+<?import javafx.scene.control.MenuItem?>
+<?import javafx.scene.control.ScrollPane?>
+<?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.SeparatorMenuItem?>
+<?import javafx.scene.control.Tab?>
+<?import javafx.scene.control.TabPane?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.BorderPane?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.HBox?>
+<?import javafx.scene.layout.RowConstraints?>
+<?import javafx.scene.layout.StackPane?>
+<?import javafx.scene.layout.VBox?>
+
+<BorderPane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="346.0" prefWidth="650.0" xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1">
+   <center>
+      <TabPane prefHeight="250.0" tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
+        <tabs>
+          <Tab closable="false" text="Channels">
+               <content>
+                  <StackPane>
+                     <children>
+                        <ScrollPane fitToWidth="true" styleClass="channel-container">
+                           <content>
+                              <VBox fx:id="channelBox" />
+                           </content>
+                        </ScrollPane>
+                        <VBox fx:id="channelInfo" alignment="TOP_CENTER" styleClass="channels-info">
+                           <children>
+                              <Label styleClass="text-strong" text="No channels opened yet..." />
+                              <Label styleClass="text-muted" text="You can open a new channel by clicking on &quot;Channels&quot; &gt; &quot;Open Channel...&quot;" wrapText="true" />
+                           </children>
+                        </VBox>
+                     </children>
+                  </StackPane>
+               </content>
+          </Tab>
+          <Tab fx:id="graphTab" closable="false" text="Graph">
+               <content>
+                  <Label text="Label" />
+               </content></Tab>
+        </tabs>
+      </TabPane>
+   </center>
+   <bottom>
+      <GridPane styleClass="status-bar" BorderPane.alignment="CENTER_LEFT">
+         <columnConstraints>
+            <ColumnConstraints fillWidth="false" hgrow="SOMETIMES" minWidth="10.0" />
+            <ColumnConstraints hgrow="ALWAYS" minWidth="520.0" />
+         </columnConstraints>
+         <rowConstraints>
+            <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
+         </rowConstraints>
+         <children>
+            <HBox alignment="CENTER_LEFT">
+               <children>
+                  <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true" preserveRatio="true">
+                     <image>
+                        <Image url="@../commons/images/eclair-shape.png" />
+                     </image>
+                  </ImageView>
+                  <Label fx:id="labelNodeId" onContextMenuRequested="#handleNodeIdContext" text="N/A" />
+               </children>
+            </HBox>
+            <HBox alignment="CENTER_RIGHT" GridPane.columnIndex="1">
+               <children>
+                  <HBox alignment="CENTER_RIGHT" minWidth="80.0">
+                     <children>
+                        <Separator orientation="VERTICAL" />
+                        <Label text="HTTP">
+                           <styleClass>
+                              <String fx:value="badge" />
+                              <String fx:value="badge-http" />
+                           </styleClass>
+                        </Label>
+                        <Label fx:id="labelApi" styleClass="value" text="00000" textAlignment="RIGHT" />
+                     </children>
+                  </HBox>
+                  <HBox alignment="CENTER_RIGHT" minWidth="80.0">
+                     <children>
+                        <Separator orientation="VERTICAL" />
+                        <Label text="TCP">
+                           <styleClass>
+                              <String fx:value="badge" />
+                              <String fx:value="badge-tcp" />
+                           </styleClass>
+                        </Label>
+                        <Label fx:id="labelServer" text="000000" textAlignment="RIGHT" />
+                     </children>
+                  </HBox>
+                  <HBox alignment="CENTER_RIGHT">
+                     <children>
+                        <Separator orientation="VERTICAL" />
+                        <Label text="Connected to bitcoin-core" textAlignment="RIGHT" />
+                        <Label fx:id="bitcoinVersion" text="N/A" />
+                        <Label fx:id="bitcoinChain" styleClass="chain" text="(N/A)" />
+                     </children>
+                  </HBox>
+               </children>
+            </HBox>
+         </children>
+      </GridPane>
+   </bottom>
+   <stylesheets>
+      <URL value="@main.css" />
+      <URL value="@../commons/globals.css" />
+   </stylesheets>
+   <top>
+      <MenuBar BorderPane.alignment="CENTER">
+        <menus>
+          <Menu mnemonicParsing="false" text="Channels">
+            <items>
+                  <MenuItem fx:id="menuOpen" mnemonicParsing="false" onAction="#handleOpenChannel" text="Open channel..." />
+                  <SeparatorMenuItem mnemonicParsing="false" />
+                  <MenuItem fx:id="menuSend" mnemonicParsing="false" onAction="#handleSendPayment" text="Send Payment..." />
+                  <MenuItem fx:id="menuReceive" mnemonicParsing="false" onAction="#handleReceivePayment" text="Receive Payment..." />
+                  <SeparatorMenuItem mnemonicParsing="false" />
+              <MenuItem mnemonicParsing="false" onAction="#handleCloseRequest" text="Close" />
+            </items>
+          </Menu>
+          <Menu mnemonicParsing="false" text="Help">
+            <items>
+              <MenuItem mnemonicParsing="false" onAction="#handleOpenAbout" text="About Eclair..." />
+            </items>
+          </Menu>
+        </menus>
+      </MenuBar>
+   </top>
+</BorderPane>

@@ -17,7 +17,7 @@ import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
 import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
 import fr.acinq.eclair.blockchain.peer.PeerClient
-import fr.acinq.eclair.gui.MainWindow
+import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.router.{ChannelSelector, IRCWatcher, PaymentSpawner, Router}
 
 /**
@@ -26,7 +26,7 @@ import fr.acinq.eclair.router.{ChannelSelector, IRCWatcher, PaymentSpawner, Rout
 object Boot extends App with Logging {
   args.toList match {
     case "headless" :: rest => new Setup()
-    case _ => Application.launch(classOf[MainWindow])
+    case _ => Application.launch(classOf[FxApp])
   }
 }
 
