@@ -19,6 +19,7 @@ class SplashStage() extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.TRANSPARENT)
   setResizable(false)
+
   val icon = new Image("/gui/commons/images/eclair02.png", false)
   this.getIcons().add(icon)
 

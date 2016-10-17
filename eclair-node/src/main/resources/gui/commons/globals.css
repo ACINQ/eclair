@@ -55,11 +55,16 @@
 .button.cancel:pressed .text {
 	-fx-fill: rgb(191,68,92);
 }
-
-.pretty-line-bottom {
-	
+.button.grey {
+    -fx-background-color: rgb(230,230,230);
 }
-
+.button.grey:hover,
+.button.grey:pressed {
+    -fx-background-color: rgb(220,220,220);
+}
+.button.grey .text {
+    -fx-fill: rgb(95,95,95);
+}
 .text-strong {
 	-fx-font-weight: bold;
 }

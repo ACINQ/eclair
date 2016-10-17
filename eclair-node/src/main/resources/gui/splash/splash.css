@@ -3,7 +3,13 @@
 }
 
 .label.splash-error-label {
-	-fx-background-color: rgb(75,75,75);
+    -fx-padding: .25em;
+}
+
+.error-box {
+    -fx-background-color: rgb(255,255,255);
 	-fx-text-fill: white;
-	-fx-padding: .5em 1em;
+	-fx-padding: 2em;
+    -fx-border-color: rgb(180,180,180);
+    -fx-border-width: 1px;
 }

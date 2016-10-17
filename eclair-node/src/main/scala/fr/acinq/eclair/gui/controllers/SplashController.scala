@@ -14,9 +14,9 @@ import grizzled.slf4j.Logging
   */
 class SplashController extends Logging {
 
+  @FXML var splash: Pane = _
   @FXML var img: ImageView = _
   @FXML var imgBlurred: ImageView = _
-  @FXML var splash: Pane = _
   @FXML var errorLabel: Label = _
   @FXML var closeButton: Button = _
   @FXML var errorBox: VBox = _
@@ -43,6 +43,8 @@ class SplashController extends Logging {
   }
 
   def showError(message: String): Unit = {
+    img.setOpacity(0)
+    imgBlurred.setOpacity(0)
     errorLabel.setText(message)
     errorBox.setOpacity(1)
   }
