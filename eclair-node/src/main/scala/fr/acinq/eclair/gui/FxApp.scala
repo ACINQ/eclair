@@ -26,30 +26,23 @@ class FxApp extends Application with Logging {
 
     val icon = new Image("/gui/commons/images/eclair02.png", true)
     primaryStage.getIcons().add(icon)
-
     val splashStage = new SplashStage()
     splashStage.initOwner(primaryStage)
     splashStage.show
 
-    val _this = this
-
     new Thread(new Runnable {
       override def run(): Unit = {
+
         try {
-
-
-
+          val setup = new Setup
+          val handlers = new Handlers(setup)
+          val controller = new MainController(handlers, primaryStage, setup)
+          val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
+          setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
 
           Platform.runLater(new Runnable {
             override def run(): Unit = {
-
-              val setup = new Setup
-              val handlers = new Handlers(setup)
-              val controller = new MainController(handlers, primaryStage, setup)
-              val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
-              setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
-              setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
-
               // get fxml/controller
               val mainFXML = new FXMLLoader(getClass.getResource("/gui/main/main.fxml"))
               mainFXML.setController(controller)
@@ -68,7 +61,6 @@ class FxApp extends Application with Logging {
                   System.exit(0)
                 }
               })
-
               splashStage.close()
               primaryStage.setScene(scene)
               primaryStage.show()
@@ -77,7 +69,7 @@ class FxApp extends Application with Logging {
 
         } catch {
           case con: ConnectException => {
-            logger.error(s"Error when connecting to bitcoin-core ${con}")
+            logger.error(s"Error when connecting to bitcoin-core", con)
             Platform.runLater(new Runnable {
               override def run(): Unit = {
                 splashStage.controller.showError("Could not connect to Bitcoin-core.")
@@ -85,7 +77,7 @@ class FxApp extends Application with Logging {
             })
           }
           case e: Exception => {
-            logger.error(s"Something wrong happened ${e}")
+            logger.error(s"Something wrong happened", e)
             Platform.runLater(new Runnable {
               override def run(): Unit = {
                 splashStage.controller.showError("An error has occured.")
