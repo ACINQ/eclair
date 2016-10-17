@@ -24,9 +24,9 @@ object TestConstants {
 
     def revocationHash(index: Long) = Helpers.revocationHash(channelParams.shaSeed, index)
 
-    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = Alice.channelParams.initialFeeRate, initial_amount_them_msat = 0, initial_amount_us_msat = anchorAmount * 1000, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
+    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = Alice.channelParams.initialFeeRate, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
 
-    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = Bob.channelParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
+    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = Bob.channelParams.initialFeeRate, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
 
     val ourTx = Helpers.makeOurTx(channelParams, TheirChannelParams(Bob.channelParams), TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 

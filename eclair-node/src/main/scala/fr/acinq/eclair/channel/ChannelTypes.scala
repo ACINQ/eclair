@@ -132,7 +132,7 @@ case object OUT extends Direction
 
 case class Htlc(direction: Direction, add: update_add_htlc, val previousChannelId: Option[BinaryData])
 
-final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, initial_amount_us_msat: Long, initial_amount_them_msat: Long, amount_us_msat: Long, amount_them_msat: Long) {
+final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, amount_us_msat: Long, amount_them_msat: Long) {
   val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 

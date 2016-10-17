@@ -72,7 +72,9 @@ class OpenWaitingTheirAnchorStateSpec extends StateSpecBaseClass {
   test("recv BITCOIN_ANCHOR_SPENT") { case (alice, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
       // this is the fully signed tx that alice could decide to publish
-      val tx = alice.stateData.asInstanceOf[DATA_OPEN_WAITING].commitments.ourCommit.publishableTx
+      alice2bob.expectMsgType[open_complete]
+      awaitCond(alice.stateName == OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       // we have nothing at stake so we don't do anything with the tx
       bob ! (BITCOIN_ANCHOR_SPENT, tx)
       bob2alice.expectMsgType[error]

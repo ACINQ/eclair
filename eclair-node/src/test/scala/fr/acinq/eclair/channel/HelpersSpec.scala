@@ -10,7 +10,7 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class HelpersSpec extends FunSuite {
     test("add, fulfill and fail htlcs") {
-        val spec = CommitmentSpec(Set(), 1000, 2000 * 1000, 0, 2000 * 1000, 0)
+        val spec = CommitmentSpec(Set(), 1000, 2000 * 1000, 0)
         val R1: rval = Crypto.sha256("foo".getBytes())
         val H1: sha256_hash = Crypto.sha256(R1)
         val R2: rval = Crypto.sha256("bar".getBytes())
