@@ -100,7 +100,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
       val amount = anchorTx.txOut(anchorOutputIndex).amount.toLong
-      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_us_msat = 0, initial_amount_them_msat = amount * 1000, amount_us_msat = 0, amount_them_msat = amount * 1000)
+      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, amount_us_msat = 0, amount_them_msat = amount * 1000)
       them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount)
       goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, BinaryData(""), theirRevocationHash), theirNextRevocationHash)
 
@@ -118,8 +118,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
 
       // they fund the channel with their anchor tx, so the money is theirs
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_them_msat = anchorAmount * 1000, initial_amount_us_msat = 0, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
-      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, initial_amount_them_msat = 0, initial_amount_us_msat = anchorAmount * 1000, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
+      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
 
       // build and sign their commit tx
       val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
@@ -155,7 +155,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val theirSpec = theirCommitment.spec
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Helpers.revocationHash(ourParams.shaSeed, 0L)
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, initial_amount_us_msat = anchorAmount.toLong * 1000, initial_amount_them_msat = 0, amount_us_msat = anchorAmount.toLong * 1000, amount_them_msat = 0)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, amount_us_msat = anchorAmount.toLong * 1000, amount_them_msat = 0)
       val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
       val ourSig = sign(ourParams, theirParams, anchorAmount, ourTx)

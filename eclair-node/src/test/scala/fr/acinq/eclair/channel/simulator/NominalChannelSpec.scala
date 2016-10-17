@@ -95,14 +95,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat - 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat + 60000000)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat - 60000000)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == TestConstants.anchorAmount  * 1000 - 60000000)
       }
 
       // send another HTLC
@@ -148,14 +148,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat - 2 * 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat + 2 * 60000000)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == 2 * 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == d.commitments.ourCommit.spec.initial_amount_us_msat + 2 * 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == d.commitments.ourCommit.spec.initial_amount_them_msat - 2 * 60000000)
+          assert(d.commitments.ourCommit.spec.amount_us_msat == 2 * 60000000)
+          assert(d.commitments.ourCommit.spec.amount_them_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
       }
     }
   }
