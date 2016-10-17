@@ -32,18 +32,7 @@
 
 .label.badge {
 	-fx-font-size: 11px;
-	-fx-text-fill: white;
-	-fx-background-radius: 3px;
-	-fx-padding: 2px 4px;
-	
-}
-
-.badge-http {
-	-fx-background-color: rgb(255,145,90);
-}
-
-.badge-tcp {
-	-fx-background-color: rgb(245,183,0);
+	-fx-text-fill: rgb(160,160,160);
 }
 
 .channels-info {

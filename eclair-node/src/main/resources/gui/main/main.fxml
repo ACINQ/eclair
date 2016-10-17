@@ -100,7 +100,7 @@
                   <HBox alignment="CENTER_RIGHT">
                      <children>
                         <Separator orientation="VERTICAL" />
-                        <Label text="Connected to bitcoin-core" textAlignment="RIGHT" />
+                        <Label text="Bitcoin-core" textAlignment="RIGHT" />
                         <Label fx:id="bitcoinVersion" text="N/A" />
                         <Label fx:id="bitcoinChain" styleClass="chain" text="(N/A)" />
                      </children>
