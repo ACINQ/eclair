@@ -1,4 +1,4 @@
-# ![Eclair Logo](.readme/logo.png)
+![Eclair Logo](.readme/logo.png)
 
 **Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
 
@@ -67,11 +67,22 @@ option                       | default value             | description
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
 
-&rarr; see [`application.conf`](blob/master/eclair-node/src/main/resources/application.conf) for full reference.
+&rarr; see [`application.conf`](eclair-node/src/main/resources/application.conf) for full reference.
 
 #### Testing with lightningd
 
-&rarr; Checkout [our guide](testing.md)
+&rarr; Checkout [our guide](TESTING.md)
+
+## JSON-RPC API
+
+ method       |  params                             | description
+ -------------|-------------------------------------|-----------------------------------------------------------
+  connect     | host, port, anchor_amount           | opens a channel with another eclair or lightningd instance
+  list        |                                     | lists existing channels
+  addhtlc     | channel_id, amount, rhash, locktime | sends an htlc
+  fulfillhtlc | channel_id, r                       | fulfills an htlc
+  close       | channel_id                          | closes a channel
+  help        |                                     | displays available methods
 
 ---
 
