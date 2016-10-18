@@ -55,7 +55,7 @@
       <GridPane styleClass="status-bar" BorderPane.alignment="CENTER_LEFT">
          <columnConstraints>
             <ColumnConstraints fillWidth="false" hgrow="SOMETIMES" minWidth="10.0" />
-            <ColumnConstraints hgrow="ALWAYS" minWidth="520.0" />
+            <ColumnConstraints hgrow="ALWAYS" minWidth="400.0" />
          </columnConstraints>
          <rowConstraints>
             <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
