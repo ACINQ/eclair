@@ -11,7 +11,7 @@ import javafx.stage.Stage
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import com.mxgraph.layout.mxCircleLayout
 import com.mxgraph.swing.mxGraphComponent
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
@@ -62,9 +62,9 @@ class GUIUpdater(primaryStage: Stage, mainController:MainController, setup: Setu
         override def run(): Unit = {
           channelPane.channelIdValue = s"$channelId"
           channelPane.channelId.setText(s"$channelId")
-          channelPane.capacity.setText(s"$capacity")
+          channelPane.capacity.setText(s"${satoshi2millibtc(capacity).amount}")
           channelPane.funder.getText match {
-            case "Yes" => channelPane.amountUs.setText(s"$capacity")
+            case "Yes" => channelPane.amountUs.setText(s"${satoshi2millibtc(capacity).amount}")
             case "No" => channelPane.amountUs.setText("0")
           }
         }
@@ -83,7 +83,7 @@ class GUIUpdater(primaryStage: Stage, mainController:MainController, setup: Setu
       val bal = commitments.ourCommit.spec.amount_us_msat.toDouble / (commitments.ourCommit.spec.amount_us_msat.toDouble + commitments.ourCommit.spec.amount_them_msat.toDouble)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
-          channelPane.amountUs.setText(commitments.ourCommit.spec.amount_us_msat.toString)
+          channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.ourCommit.spec.amount_us_msat / 1000L)).amount}")
           channelPane.balanceBar.setProgress(bal)
         }
       })

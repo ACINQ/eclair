@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import lightning.sha256_hash
 
 /**
@@ -12,7 +12,7 @@ trait ChannelEvent
 
 case class ChannelCreated(channel: ActorRef, params: OurChannelParams, theirNodeId: String) extends ChannelEvent
 
-case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: Long) extends ChannelEvent
+case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: Satoshi) extends ChannelEvent
 
 case class ChannelChangedState(channel: ActorRef, theirNodeId: BinaryData, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 
