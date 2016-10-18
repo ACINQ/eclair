@@ -1,59 +1,81 @@
-[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
+# ![Eclair Logo](.readme/logo.png)
 
-# eclair
-
-A scala implementation of the Lightning Network. Eclair is french for Lightning.
+**Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
 
 This software follows the [BOLT specifications](https://github.com/rustyrussell/lightning-rfc), therefore it is compatible with Blockstream's [lightning-c](https://github.com/ElementsProject/lightning).
 
+[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
+
+---
+
 ## Overview
-The general idea is to have an actor per channel, everything being non-blocking.
 
-A "blockchain watcher" is responsible for monitoring the blockchain, and sending events (eg. when the anchor is spent).
+This software creates a node compatible with a Lightning network and provides a GUI to manage the node. A JSON-RPC API is available if you prefer to run it headless.
 
-## Modules
-* lightning-types: scala code generation using protobuf's compiler (wire protocol)
-* eclair-node: actual implementation
+Available actions:
+- Open a channel with another eclair or lightningd instance
+- Display opened channels with the node (status, balance, capacity, ...)
+- Receive payments from another node
+- Send payments to another node
 
-## Usage
+![Eclair Demo](.readme/screen-1.png)
 
-Prerequisites:
-- A JRE or JDK depending on wether you want to compile yourself or not (preferably > 1.8)
-- A running bitcoin-demo (testnet or regtest)
+## Installation
 
-:warning: **eclair currently runs on segnet only. Do not try and modify it to run on bitcoin mainnet!**
+The project is under heavy development and no release is available yet. Still you can download the sources, compile the project with Maven (cf §Development) and run it on localhost.
 
-Either run from source:
+---
+
+## Development
+
+#### Set up the environment
+- JDK 1.8+
+- [Latest Scala installation](http://www.scala-lang.org/download/)
+- [Maven](https://maven.apache.org/download.cgi)
+- A segwit version of bitcoin core in testnet or regtest mode
+
+:warning: eclair currently runs on regtest/segnet only. **Do not try and modify it to run on bitcoin mainnet!**
+
+- Make sure that bitcoin-cli is on the path and edit ~/.bitcoin/bitcoin.conf and add:
+```shell
+server=1
+regtest=1
+rpcuser=***
+rpcpassword=***
 ```
-mvn exec:java -Dexec.mainClass=fr.acinq.eclair.Boot
-```
-Or grab the latest released jar and run:
-```
-java -jar eclair-core_2.11-*-capsule-fat.jar
-```
 
-*See [TESTING.md](TESTING.md) for more details on how to use this software.*
+#### Run
 
-Available jvm options (see `application.conf` for full reference):
+- Download the sources and build the executable JAR with the following command:
 ```
-eclair.server.port (default: 45000)
-eclair.http.port (default: 8080)
-eclair.bitcoind.rpcuser (default: foo)
-eclair.bitcoind.rpcpassword (default: bar)
+mvn package -DskipTests
 ```
+- Start bitcoind
+- Mine enough blocks to activate segwit blocks:
+```shell
+bitcoin-cli generate 500
+```
+- Navigate to `eclair-node/target` and execute the jar `eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar`
 
-## JSON-RPC API
+#### JVM Options
 
- method       |  params                             | description
- -------------|-------------------------------------|-----------------------------------------------------------
-  connect     | host, port, anchor_amount           | opens a channel with another eclair or lightningd instance
-  list        |                                     | lists existing channels
-  addhtlc     | channel_id, amount, rhash, locktime | sends an htlc
-  fulfillhtlc | channel_id, r                       | fulfills an htlc
-  close       | channel_id                          | closes a channel
-  help        |                                     | displays available methods
+option                       | default value             | description
+-----------------------------|---------------------------|---------
+ eclair.server.port          | TCP port                  | 9735
+ eclair.http.port            | HTTP port                 | 8080
+ eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
+ eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
-## Status
+
+&rarr; see [`application.conf`](blob/master/eclair-node/src/main/resources/application.conf) for full reference.
+
+#### Testing with lightningd
+
+&rarr; Checkout [our guide](testing.md)
+
+---
+
+## Project Status
 - [X] Network
 - [X] Routing (simple IRC prototype)
 - [X] Channel protocol
