@@ -23,7 +23,7 @@
    <children>
       <VBox fillWidth="false" styleClass="about-content" GridPane.columnIndex="1" GridPane.columnSpan="2">
          <children>
-            <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Eclair v0.0.1">
+            <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Eclair">
                <styleClass>
                   <String fx:value="about-text" />
                   <String fx:value="text-strong" />
@@ -38,6 +38,11 @@
             <TextFlow>
                <children>
                   <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="The source code is available on GitHub (https://github.com/ACINQ/eclair)" />
+               </children>
+            </TextFlow>
+            <TextFlow layoutX="10.0" layoutY="90.0">
+               <children>
+                  <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="This software is released under the Apache 2 License (http://www.apache.org/licenses/)" />
                </children>
             </TextFlow>
          </children>
