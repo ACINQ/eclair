@@ -14,7 +14,7 @@
    <children>
       <GridPane maxWidth="1.7976931348623157E308" styleClass="grid">
         <columnConstraints>
-            <ColumnConstraints hgrow="SOMETIMES" maxWidth="125.0" minWidth="10.0" prefWidth="116.0" />
+            <ColumnConstraints hgrow="SOMETIMES" maxWidth="125.0" minWidth="10.0" prefWidth="125.0" />
           <ColumnConstraints hgrow="SOMETIMES" maxWidth="114.0" minWidth="10.0" prefWidth="114.0" />
           <ColumnConstraints hgrow="SOMETIMES" maxWidth="95.0" minWidth="10.0" prefWidth="70.0" />
             <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="100.0" />
@@ -29,7 +29,7 @@
         </rowConstraints>
          <children>
             <Label styleClass="text-muted" text="Node id" GridPane.rowIndex="2" />
-            <Label styleClass="text-muted" text="Capacity (bits)" GridPane.rowIndex="4" />
+            <Label styleClass="text-muted" text="Capacity (millibits)" GridPane.rowIndex="4" />
             <Label styleClass="text-muted" text="Funder" GridPane.columnIndex="2" GridPane.rowIndex="3" />
             <Label styleClass="text-muted" text="State" GridPane.columnIndex="2" GridPane.rowIndex="4" />
             <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close" GridPane.columnIndex="4" GridPane.halignment="RIGHT" />
@@ -40,7 +40,7 @@
             <Label fx:id="channelId" onContextMenuRequested="#handleChannelIdContext" styleClass="text-strong" text="N/A" GridPane.columnSpan="4" />
             <Label fx:id="amountUs" prefWidth="100.0" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="3" />
             <ProgressBar fx:id="balanceBar" maxWidth="1.7976931348623157E308" minHeight="5.0" prefHeight="8.0" prefWidth="1045.0" progress="0.0" snapToPixel="false" GridPane.columnSpan="5" GridPane.hgrow="ALWAYS" GridPane.rowIndex="1" />
-            <Label styleClass="text-muted" text="Your balance (bits)" GridPane.rowIndex="3" />
+            <Label styleClass="text-muted" text="Your balance (millibits)" GridPane.rowIndex="3" />
          </children>
       </GridPane>
       <HBox styleClass="channel-separator" />
