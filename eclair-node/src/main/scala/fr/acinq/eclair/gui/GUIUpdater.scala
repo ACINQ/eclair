@@ -3,19 +3,17 @@ package fr.acinq.eclair.gui
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
-import javafx.geometry.Orientation
-import javafx.scene.control.Separator
-import javafx.scene.layout.{GridPane, VBox}
+import javafx.scene.layout.VBox
 import javafx.stage.Stage
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import com.mxgraph.layout.mxCircleLayout
 import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
 import fr.acinq.eclair.router.{ChannelDesc, ChannelDiscovered}
+import fr.acinq.eclair.{Globals, Setup}
 import org.jgrapht.ext.JGraphXAdapter
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
