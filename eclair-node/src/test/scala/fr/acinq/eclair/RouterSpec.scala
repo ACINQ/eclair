@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.router.{ChannelDesc, PaymentManager, Router}
+import fr.acinq.eclair.router.{ChannelDesc, PaymentLifecycle, Router}
 import lightning.route_step
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -81,7 +81,7 @@ class RouterSpec extends FunSuite {
   test("compute fees 2") {
     val nodeIds = Seq(BinaryData("00"), BinaryData("01"), BinaryData("02"))
     val amountMsat = 1000000
-    val route = PaymentManager.buildRoute(amountMsat, nodeIds)
+    val route = PaymentLifecycle.buildRoute(amountMsat, nodeIds)
     assert(route.steps.length == 4 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
     assert(route.steps(2).amount == amountMsat)
     assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
@@ -98,7 +98,7 @@ class RouterSpec extends FunSuite {
   test("compute fees") {
     val nodeIds = Seq(BinaryData("00"), BinaryData("01"))
     val amountMsat = 300000000
-    val route = PaymentManager.buildRoute(amountMsat, nodeIds)
+    val route = PaymentLifecycle.buildRoute(amountMsat, nodeIds)
     assert(route.steps.length == 3 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
     assert(route.steps(1).amount == amountMsat)
     assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)

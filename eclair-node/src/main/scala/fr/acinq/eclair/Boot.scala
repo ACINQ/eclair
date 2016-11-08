@@ -62,7 +62,7 @@ class Setup extends Logging {
   val selector = system.actorOf(Props[ChannelSelector], name = "selector")
   val router = system.actorOf(Props[Router], name = "router")
   val ircWatcher = system.actorOf(Props[IRCWatcher], "irc")
-  val paymentSpawner = system.actorOf(PaymentSpawner.props(router, selector, blockCount), "payment-spawner")
+  val paymentSpawner = system.actorOf(PaymentInitiator.props(router, selector, blockCount), "payment-spawner")
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
 
   val _setup = this

@@ -31,9 +31,9 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentManager(router: ActorRef, selector: ActorRef, initialBlockCount: Long) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(router: ActorRef, selector: ActorRef, initialBlockCount: Long) extends LoggingFSM[State, Data] {
 
-  import PaymentManager._
+  import PaymentLifecycle._
 
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
 
@@ -94,9 +94,9 @@ class PaymentManager(router: ActorRef, selector: ActorRef, initialBlockCount: Lo
 
 }
 
-object PaymentManager {
+object PaymentLifecycle {
 
-  def props(router: ActorRef, selector: ActorRef, initialBlockCount: Long) = Props(classOf[PaymentManager], router, selector, initialBlockCount)
+  def props(router: ActorRef, selector: ActorRef, initialBlockCount: Long) = Props(classOf[PaymentLifecycle], router, selector, initialBlockCount)
 
   def buildRoute(finalAmountMsat: Int, nodeIds: Seq[BinaryData]): lightning.route = {
 
