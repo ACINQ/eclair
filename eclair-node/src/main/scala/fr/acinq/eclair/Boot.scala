@@ -18,6 +18,7 @@ import scala.concurrent.duration._
 import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.gui.FxApp
+import fr.acinq.eclair.payment.{LocalPaymentHandler, NoopPaymentHandler, PaymentInitiator}
 import fr.acinq.eclair.router._
 
 /**

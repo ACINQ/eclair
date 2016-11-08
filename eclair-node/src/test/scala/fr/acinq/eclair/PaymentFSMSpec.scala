@@ -5,6 +5,7 @@ import akka.actor.{ActorSystem, Props, Status}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import lightning.sha256_hash
 import org.junit.runner.RunWith

@@ -1,8 +1,9 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CMD_SIGN}
 import lightning.update_add_htlc
 
 import scala.util.Random

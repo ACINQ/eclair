@@ -1,4 +1,4 @@
-package fr.acinq.eclair.router
+package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, PaymentFailed, PaymentSent}
+import fr.acinq.eclair.router._
 import lightning.locktime.Locktime.Blocks
 import lightning.route_step.Next
 import lightning.{locktime, route_step, sha256_hash}

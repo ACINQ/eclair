@@ -18,7 +18,8 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success}
 import akka.pattern.ask
 import fr.acinq.eclair.channel.Register.{ListChannels, SendCommand}
-import fr.acinq.eclair.router.{ChannelDesc, CreatePayment}
+import fr.acinq.eclair.payment.CreatePayment
+import fr.acinq.eclair.router.ChannelDesc
 
 import scala.concurrent.duration._
 

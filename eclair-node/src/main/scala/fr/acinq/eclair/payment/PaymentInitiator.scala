@@ -1,4 +1,4 @@
-package fr.acinq.eclair.router
+package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
