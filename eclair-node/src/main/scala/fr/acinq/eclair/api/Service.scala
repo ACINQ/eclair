@@ -49,7 +49,7 @@ trait Service extends Logging {
 
   def router: ActorRef
 
-  def paymentSpawner: ActorRef
+  def paymentInitiator: ActorRef
 
   def paymentHandler: ActorRef
 
@@ -77,7 +77,7 @@ trait Service extends Logging {
               case JsonRPCBody(_, _, "network", _) =>
                 (router ? 'network).mapTo[Iterable[ChannelDesc]]
               case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
-                (paymentSpawner ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
+                (paymentInitiator ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
               case JsonRPCBody(_, _, "genh", _) =>
                 (paymentHandler ? 'genh).mapTo[BinaryData]
               case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
