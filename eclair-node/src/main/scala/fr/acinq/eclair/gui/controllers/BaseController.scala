@@ -11,7 +11,7 @@ import fr.acinq.eclair.gui.Handlers
   * Controller interacting with Eclair services should implement this.
   */
 trait BaseController {
-  val handlers: Handlers;
-  val stage: Stage;
+  val handlers: Handlers
+  val stage: Stage
   val setup: Setup
 }
