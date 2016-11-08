@@ -4,19 +4,19 @@ import java.nio.file.{Files, Paths}
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import akka.testkit.TestKit
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
 import lightning.locktime
 import lightning.locktime.Locktime.Blocks
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
-import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuite}
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent._
@@ -60,7 +60,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
   Thread.sleep(5000)
   assert(!bitcoindf.isCompleted)
 
-  val bitcoinClient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332)
+  val bitcoinClient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332)(ActorSystem())
   val btccli = new ExtendedBitcoinClient(bitcoinClient)
 
   Await.result(btccli.client.invoke("getblockchaininfo"), 3 seconds)

@@ -1,13 +1,13 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.channel
 import fr.acinq.eclair.channel.Scripts
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
 
-import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 26/04/2016.
@@ -27,7 +27,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
       .map(json => Some((json \ "confirmations").extract[Int]))
       .recover {
-        case t: JsonRPCError if t.code == -5 => None
+        case t: JsonRPCError if t.error.code == -5 => None
       }
 
   /**

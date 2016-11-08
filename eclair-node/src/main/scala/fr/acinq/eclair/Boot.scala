@@ -2,16 +2,15 @@ package fr.acinq.eclair
 
 import javafx.application.{Application, Platform}
 
-import akka.actor.Actor.Receive
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import akka.event.Logging
 import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BitcoinJsonRPCClient, Satoshi}
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
+import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.FxApp
@@ -45,6 +44,10 @@ class Setup() extends Logging {
   logger.info(s"nodeid=${Globals.Node.publicKey}")
   val config = ConfigFactory.load()
 
+  implicit lazy val system = ActorSystem()
+  implicit val materializer = ActorMaterializer()
+  implicit val timeout = Timeout(30 seconds)
+
   val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
     user = config.getString("eclair.bitcoind.rpcuser"),
     password = config.getString("eclair.bitcoind.rpcpassword"),
@@ -56,10 +59,6 @@ class Setup() extends Logging {
   val (chain, blockCount) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
-
-  implicit lazy val system = ActorSystem()
-  implicit val materializer = ActorMaterializer()
-  implicit val timeout = Timeout(30 seconds)
 
   val fatalEventPromise = Promise[FatalEvent]()
   system.actorOf(Props(new Actor {

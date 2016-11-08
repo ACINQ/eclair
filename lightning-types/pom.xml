@@ -95,6 +95,7 @@
         <dependency>
             <groupId>com.trueaccord.scalapb</groupId>
             <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
+            <version>${scalapb.version}</version>
         </dependency>
     </dependencies>
 
