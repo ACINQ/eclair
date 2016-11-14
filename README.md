@@ -37,7 +37,7 @@ The project is under heavy development and no release is available yet. Still yo
 :warning: eclair currently runs on regtest/segnet only. **Do not try and modify it to run on bitcoin mainnet!**
 
 - Make sure that bitcoin-cli is on the path and edit ~/.bitcoin/bitcoin.conf and add:
-```shell
+```
 server=1
 regtest=1
 rpcuser=***
@@ -47,15 +47,21 @@ rpcpassword=***
 #### Run
 
 - Download the sources and build the executable JAR with the following command:
-```
-mvn package -DskipTests
+```shell
+$ mvn package -DskipTests
 ```
 - Start bitcoind
 - Mine enough blocks to activate segwit blocks:
 ```shell
-bitcoin-cli generate 500
+$ bitcoin-cli generate 500
 ```
 - Navigate to `eclair-node/target` and execute the jar `eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar`
+````shell
+$ java 
+     -Declair.bitcoind.rpcuser=foo
+     -Declair.bitcoind.rpcpassword=bar
+     -jar eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar
+```
 
 #### JVM Options
 
