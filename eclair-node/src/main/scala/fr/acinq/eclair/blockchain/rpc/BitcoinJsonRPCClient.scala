@@ -6,7 +6,7 @@ import akka.actor.ActorSystem
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshalling.Marshal
 import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
-import akka.http.scaladsl.model.{HttpMethods, HttpRequest, RequestEntity, Uri}
+import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
@@ -39,6 +39,8 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
       jsonRpcRes <- Unmarshal(httpRes).to[JsonRPCResponse].map {
         case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
         case o => o
+      } recover {
+        case t: Throwable if httpRes.status == StatusCodes.Unauthorized => throw new RuntimeException("bitcoind replied with 401/Unauthorized (bad user/password?)", t)
       }
     } yield jsonRpcRes.result
 
