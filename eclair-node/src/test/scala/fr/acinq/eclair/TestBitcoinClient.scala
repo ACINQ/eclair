@@ -1,9 +1,10 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{BinaryData, BitcoinJsonRPCClient, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.peer.{NewBlock, NewTransaction}
+import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Scripts
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -13,8 +14,6 @@ import scala.concurrent.duration._
   * Created by PM on 26/04/2016.
   */
 class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("", "", "", 0)) {
-
-  client.client.close()
 
   import scala.concurrent.ExecutionContext.Implicits.global
   system.scheduler.schedule(100 milliseconds, 100 milliseconds, new Runnable {
@@ -36,8 +35,6 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
   }
 
   override def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] = Future.successful(Some(10))
-
-  override def isUnspent(txId: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Boolean] = ???
 
   override def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] = ???
 

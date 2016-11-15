@@ -6,8 +6,8 @@ import javafx.scene.control.{TextArea, TextField}
 
 import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.eclair.io.Client
-import fr.acinq.eclair.router.CreatePayment
 import fr.acinq.eclair._
+import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
 
 /**
@@ -29,7 +29,7 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: String, rhash: String, amountMsat: String) = {
     logger.info(s"sending $amountMsat to $rhash @ $nodeId")
-    paymentSpawner ! CreatePayment(amountMsat.toInt, BinaryData(rhash), BinaryData(nodeId))
+    paymentInitiator ! CreatePayment(amountMsat.toInt, BinaryData(rhash), BinaryData(nodeId))
   }
 
   def getH(textField: TextField): Unit = {

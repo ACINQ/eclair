@@ -30,9 +30,7 @@ class PeerClient extends Actor with ActorLogging {
     ))
   context.actorOf(supervisor, name = "peer-supervisor")
 
-  override def receive: Actor.Receive = running
-
-  def running: Receive = {
+  override def receive: Actor.Receive = {
     case Connected(remote, local) =>
       val version = Version(
         70002L,

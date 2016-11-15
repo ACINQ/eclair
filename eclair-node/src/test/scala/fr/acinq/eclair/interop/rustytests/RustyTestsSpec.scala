@@ -9,6 +9,7 @@ import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.blockchain.PeerWatcher
 import TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.NoopPaymentHandler
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}

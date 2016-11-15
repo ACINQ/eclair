@@ -1,0 +1,15 @@
+.about-text {
+	-fx-padding: .5em 0;
+	-fx-line-spacing: .35em;
+	-fx-fill: rgb(80,80,80);
+}
+
+.grid.about.modal {
+	-fx-hgap: 3em;
+	-fx-vgap: 1em;
+	-fx-padding: 3em;	
+}
+
+.about-content {
+	-fx-spacing: 1em;
+}

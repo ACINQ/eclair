@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel.simulator
 
-import java.security.SecureRandom
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 
@@ -16,8 +15,8 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
-import scala.util.Random
 import scala.concurrent.duration._
+import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
 class ThroughputSpec extends FunSuite {
@@ -26,7 +25,7 @@ class ThroughputSpec extends FunSuite {
     val pipe = system.actorOf(Props[Pipe], "pipe")
     val blockchain = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
-      val random = SecureRandom.getInstanceStrong
+      val random = new Random()
 
       def generateR(): BinaryData = {
         val r = Array.fill[Byte](32)(0)

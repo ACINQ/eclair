@@ -139,7 +139,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, theirRevocationHash),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
         Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
-      context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, anchorAmount))
+      context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(anchorAmount)))
       goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -175,7 +175,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             OurCommit(0, ourSpec, signedTx), theirCommitment,
             OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
             Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
-          context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, anchorAmount.amount))
+          context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, anchorAmount))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(OPEN_WAITING_OURANCHOR) using DATA_OPEN_WAITING(commitments, None)
       }

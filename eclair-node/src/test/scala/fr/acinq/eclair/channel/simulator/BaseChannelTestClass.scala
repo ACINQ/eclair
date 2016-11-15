@@ -7,6 +7,7 @@ import fr.acinq.eclair.blockchain.PeerWatcher
 import TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.NoopPaymentHandler
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
 
 import scala.concurrent.duration._

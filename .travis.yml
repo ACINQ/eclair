@@ -3,8 +3,10 @@ dist: trusty
 language: scala
 scala:
  - 2.11.8
+env:
+ - export LD_LIBRARY_PATH=/usr/local/lib
 script:
- - mvn install 
+ - mvn install
 jdk:
  - oraclejdk8
 notifications:

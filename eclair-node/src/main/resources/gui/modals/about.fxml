@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.String?>
+<?import java.net.URL?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.RowConstraints?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Text?>
+<?import javafx.scene.text.TextFlow?>
+
+<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1">
+  <columnConstraints>
+      <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" />
+    <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" />
+      <ColumnConstraints />
+  </columnConstraints>
+  <rowConstraints>
+      <RowConstraints minHeight="10.0" vgrow="SOMETIMES" />
+  </rowConstraints>
+   <children>
+      <VBox fillWidth="false" styleClass="about-content" GridPane.columnIndex="1" GridPane.columnSpan="2">
+         <children>
+            <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Eclair">
+               <styleClass>
+                  <String fx:value="about-text" />
+                  <String fx:value="text-strong" />
+               </styleClass>
+            </Text>
+            <TextFlow />
+            <TextFlow>
+               <children>
+                  <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="This software is brought to you by ACINQ :-)" />
+               </children>
+            </TextFlow>
+            <TextFlow>
+               <children>
+                  <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="The source code is available on GitHub (https://github.com/ACINQ/eclair)" />
+               </children>
+            </TextFlow>
+            <TextFlow layoutX="10.0" layoutY="90.0">
+               <children>
+                  <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="This software is released under the Apache 2 License (http://www.apache.org/licenses/)" />
+               </children>
+            </TextFlow>
+         </children>
+      </VBox>
+      <ImageView fitHeight="120.0" fitWidth="120.0" pickOnBounds="true" preserveRatio="true" GridPane.halignment="CENTER">
+         <image>
+            <Image url="@../commons/images/eclair02.png" />
+         </image>
+      </ImageView>
+   </children>
+   <styleClass>
+      <String fx:value="grid" />
+      <String fx:value="modal" />
+      <String fx:value="about" />
+   </styleClass>
+   <stylesheets>
+	    <URL value="@../commons/form.css" />
+	    <URL value="@../commons/globals.css" />
+	    <URL value="@modals.css" />
+   </stylesheets>
+</GridPane>

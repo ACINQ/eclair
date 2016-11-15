@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 

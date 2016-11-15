@@ -1,0 +1,27 @@
+.grid {
+	-fx-vgap: 1em;
+	-fx-hgap: 1em;
+	-fx-padding: 1em;
+}
+
+.text-field, .text-area	{
+	-fx-padding: .6em;
+	-fx-background-insets: 0;
+	-fx-border-color: rgb(220,220,220);
+	-fx-border-width: 1px;
+	-fx-background-radius: 0;
+	-fx-background-color: rgb(249,249,249);
+}
+.ta.text-area {
+	-fx-border-width: 1px;
+	-fx-padding: .4em .2em;
+	-fx-font-family: "Consolas", "Lucida Console", Monaco, monospace;
+}
+.ta.text-area *.scroll-pane > *.viewport,
+.ta.text-area *.scroll-pane > *.viewport *.content {
+	-fx-background-color: transparent;
+}
+
+.text-field:focused {
+	-fx-border-color: rgb(63,179,234);
+}

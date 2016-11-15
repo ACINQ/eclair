@@ -1,0 +1,32 @@
+.channel {
+	-fx-padding: 0em 0 0em 0;
+}
+.channel .grid {
+	-fx-padding: .5em;
+    -fx-vgap: .5em;
+    -fx-hgap: .25em;
+    -fx-font-size: 12px;
+}
+
+.channel-separator {
+	-fx-background-color: rgb(234,234,234);
+	-fx-pref-height: 1px;
+	-fx-padding: 0 -.25em;
+}
+
+.button.close-channel {
+	-fx-background-color: white;
+	-fx-background-image: url("../commons/images/close.png");
+	-fx-background-repeat: no-repeat;
+	-fx-background-size: .7em .7em;
+    -fx-background-position: 1em center;
+	-fx-padding: .5em 1em .5em 2.2em;
+}
+.button.close-channel:hover {
+	-fx-background-color: rgb(249,243,243);
+}
+
+.button.close-channel .text {
+	-fx-fill: rgb(232,65,90);
+	-fx-font-size: 12px;
+}

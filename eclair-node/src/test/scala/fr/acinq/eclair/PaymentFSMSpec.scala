@@ -5,6 +5,7 @@ import akka.actor.{ActorSystem, Props, Status}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import lightning.sha256_hash
 import org.junit.runner.RunWith
@@ -37,7 +38,7 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     router ! ChannelDiscovered(ChannelDesc("01", node_a, node_b))
     router ! ChannelDiscovered(ChannelDesc("02", node_c, node_d))
 
-    val paymentFsm = system.actorOf(PaymentManager.props(router, selector, 1440))
+    val paymentFsm = system.actorOf(PaymentLifecycle.props(router, selector, 1440))
 
     val monitor = TestProbe()
     paymentFsm ! SubscribeTransitionCallBack(monitor.ref)
@@ -66,7 +67,7 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     selector ! ChannelChangedState(channel00.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000), null, null), null, null, 0L, null, null, null, null), null, null))
     selector ! ChannelChangedState(channel01.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000000), null, null), null, null, 0L, null, null, null, null), null, null))
 
-    val paymentFsm = system.actorOf(PaymentManager.props(router, selector, 1440))
+    val paymentFsm = system.actorOf(PaymentLifecycle.props(router, selector, 1440))
 
     val monitor = TestProbe()
     paymentFsm ! SubscribeTransitionCallBack(monitor.ref)
@@ -101,7 +102,7 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     selector ! ChannelChangedState(channel00.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000), null, null), null, null, 0L, null, null, null, null), null, null))
     selector ! ChannelChangedState(channel01.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000000), null, null), null, null, 0L, null, null, null, null), null, null))
 
-    val paymentFsm = system.actorOf(PaymentManager.props(router, selector, 1440))
+    val paymentFsm = system.actorOf(PaymentLifecycle.props(router, selector, 1440))
 
     val monitor = TestProbe()
     paymentFsm ! SubscribeTransitionCallBack(monitor.ref)

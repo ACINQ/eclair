@@ -13,6 +13,8 @@ import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
 import org.bouncycastle.jce.ECNamedCurveTable
 import org.bouncycastle.jce.provider.BouncyCastleProvider
 
+import scala.util.Random
+
 /**
  * Created by PM on 27/10/2015.
  */
@@ -148,11 +150,13 @@ object LightningCrypto {
 
   case class KeyPair(pub: BinaryData, priv: BinaryData)
 
-  lazy val rand = new SecureRandom()
+  // see http://bugs.java.com/view_bug.do?bug_id=6521844
+  //lazy val random = SecureRandom.getInstanceStrong
+  lazy val random = new Random()
 
   def randomKeyPair(): KeyPair = {
     val key = new Array[Byte](32)
-    rand.nextBytes(key)
+    random.nextBytes(key)
     KeyPair(pub = Crypto.publicKeyFromPrivateKey(key :+ 0x01.toByte), priv = key)
   }
 

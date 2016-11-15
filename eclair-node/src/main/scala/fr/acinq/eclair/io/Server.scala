@@ -2,8 +2,9 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.io.{IO, Tcp}
+import fr.acinq.eclair.TCPBindError
 import fr.acinq.eclair.channel.Register.CreateChannel
 
 /**
@@ -20,7 +21,9 @@ class Server(address: InetSocketAddress, register: ActorRef) extends Actor with 
     case b@Bound(localAddress) =>
       log.info(s"bound on $b")
 
-    case CommandFailed(_: Bind) => context stop self
+    case CommandFailed(_: Bind) =>
+      system.eventStream.publish(TCPBindError)
+      context stop self
 
     case c@Connected(remote, local) =>
       log.info(s"connected to $remote")

@@ -1,0 +1,15 @@
+.transparent {
+	-fx-background-color: transparent;
+}
+
+.label.splash-error-label {
+    -fx-padding: .25em;
+}
+
+.error-box {
+    -fx-background-color: rgb(255,255,255);
+	-fx-text-fill: white;
+	-fx-padding: 2em;
+    -fx-border-color: rgb(180,180,180);
+    -fx-border-width: 1px;
+}
