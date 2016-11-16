@@ -11,7 +11,6 @@ import fr.acinq.bitcoin.Protocol._
 
 object OpenChannel extends BtcMessage[OpenChannel] {
   override def read(input: InputStream, protocolVersion: Long): OpenChannel = {
-    val `type` = uint32(input)
     val temporaryChannelId = uint64(input)
     val fundingSatoshis = uint64(input)
     val pushMsat = uint64(input)
@@ -25,12 +24,11 @@ object OpenChannel extends BtcMessage[OpenChannel] {
     val fundingPubkey = bytes(input, 33)
     val hakdBasePoint = bytes(input, 33)
     val refundBasePoint = bytes(input, 33)
-    OpenChannel(`type`, temporaryChannelId, fundingSatoshis, pushMsat, dustLimitSatoshis, maxHtlcValueInFlightMsat, channelReserveSatoshis,
+    OpenChannel(temporaryChannelId, fundingSatoshis, pushMsat, dustLimitSatoshis, maxHtlcValueInFlightMsat, channelReserveSatoshis,
       htlcMinimumMsat, maxNumHtlcs, feeratePerKb, toSelfDelay.toInt, fundingPubkey, hakdBasePoint, refundBasePoint)
   }
 
   override def write(input: OpenChannel, out: OutputStream, protocolVersion: Long) = {
-    writeUInt32(input.`type`, out)
     writeUInt64(input.temporaryChannelId, out)
     writeUInt64(input.fundingSatoshis, out)
     writeUInt64(input.pushMsat, out)
@@ -47,8 +45,15 @@ object OpenChannel extends BtcMessage[OpenChannel] {
   }
 }
 
-case class OpenChannel(`type`: Long,
-                       temporaryChannelId: Long,
+// @formatter:off
+sealed trait LightningMessage
+sealed trait SetupMessage extends LightningMessage
+sealed trait ChannelMessage extends LightningMessage
+sealed trait HtlcMessage extends LightningMessage
+sealed trait RoutingMessage extends LightningMessage
+// @formatter:on
+
+case class OpenChannel(temporaryChannelId: Long,
                        fundingSatoshis: Long,
                        pushMsat: Long,
                        dustLimitSatoshis: Long,
@@ -60,4 +65,30 @@ case class OpenChannel(`type`: Long,
                        toSelfDelay: Int,
                        fundingPubkey: BinaryData,
                        hakdBasePoint: BinaryData,
-                       refundBasePoint: BinaryData)
+                       refundBasePoint: BinaryData) extends ChannelMessage
+
+case class AcceptChannel(temporaryChannelId: Long,
+                         dustLimitSatoshis: Long,
+                         maxHtlcValueInFlightMsat: Long,
+                         channelReserveSatoshis: Long,
+                         minimumDepth: Long,
+                         htlcMinimumMsat: Long,
+                         maxNumHtlcs: Long,
+                         firstCommitmentKeyOffset: BinaryData,
+                         toSelfDelay: Int,
+                         fundingPubkey: BinaryData,
+                         hakdBasePoint: BinaryData,
+                         refundBasePoint: BinaryData) extends ChannelMessage
+
+case class FundingCreated(temporaryChannelId: Long,
+                          txid: BinaryData,
+                          outputIndex: Int,
+                          signature: BinaryData) extends ChannelMessage
+
+case class FundingSigned(temporaryChannelId: Long,
+                         signature: BinaryData) extends ChannelMessage
+
+case class FundingLocked(temporaryChannelId: Long,
+                         channelId: Long,
+                         nextKeyOffset: BinaryData,
+                         nextRevocationHalfKey: BinaryData) extends ChannelMessage
