@@ -2,9 +2,9 @@
 
 **Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
 
-This software follows the [BOLT specifications](https://github.com/rustyrussell/lightning-rfc), therefore it is compatible with Blockstream's [lightning-c](https://github.com/ElementsProject/lightning).
+:construction: This branch implements the [Lightning Network Specifications](https://github.com/lightningnetwork/lightning-rfc), it is a work in progress.
 
-[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
+[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=wip-bolts)](https://travis-ci.org/ACINQ/eclair)
 
 ---
 
