@@ -1,7 +1,7 @@
-package fr.acinq.eclair.wire.bolt2.sdc
+package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.wire.bolt2.custom._
+import fr.acinq.eclair.wire
 import scodec.bits.ByteVector
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
@@ -59,9 +59,23 @@ object Codecs {
 
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("temporaryChannelId" | uint64) ::
-    ("channelId" | uint64) ::
+      ("channelId" | uint64) ::
       ("nextKeyOffset" | binarydata(32)) ::
       ("nextRevocationHalfKey" | binarydata(33))).as[FundingLocked]
+
+  val updateFeeCodec: Codec[UpdateFee] = (
+    ("channelId" | uint64) ::
+      ("feeratePerKb" | uint32)).as[UpdateFee]
+
+  val shutdownCodec: Codec[wire.Shutdown] = (
+    ("channelId" | uint64) ::
+      ("len" | uint32) ::
+      ("scriptPubKey" | binarydata(32))).as[Shutdown]
+
+  val closeSignatureCodec: Codec[CloseSignature] = (
+    ("channelId" | uint64) ::
+      ("feeSatoshis" | uint64) ::
+      ("signature" | binarydata(64))).as[CloseSignature]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint32)
     .typecase(32L, openChannelCodec)
@@ -69,5 +83,8 @@ object Codecs {
     .typecase(34L, fundingCreatedCodec)
     .typecase(35L, fundingSignedCodec)
     .typecase(36L, fundingLockedCodec)
+    .typecase(37L, updateFeeCodec)
+    .typecase(38L, shutdownCodec)
+    .typecase(39L, closeSignatureCodec)
 
 }

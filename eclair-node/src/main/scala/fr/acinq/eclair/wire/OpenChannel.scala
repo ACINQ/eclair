@@ -1,9 +1,9 @@
-package fr.acinq.eclair.wire.bolt2.custom
+package fr.acinq.eclair.wire
 
 import java.io.{InputStream, OutputStream}
 
-import fr.acinq.bitcoin.{BinaryData, BtcMessage}
 import fr.acinq.bitcoin.Protocol._
+import fr.acinq.bitcoin.{BinaryData, BtcMessage}
 
 /**
   * Created by PM on 15/11/2016.
@@ -92,3 +92,14 @@ case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
                          nextKeyOffset: BinaryData,
                          nextRevocationHalfKey: BinaryData) extends ChannelMessage
+
+case class UpdateFee(channelId: Long,
+                     feeratePerKb: Long) extends ChannelMessage
+
+case class Shutdown(channelId: Long,
+                    len: Long,
+                    scriptPubKey: BinaryData) extends ChannelMessage
+
+case class CloseSignature(channelId: Long,
+                          feeSatoshis: Long,
+                          signature: BinaryData) extends ChannelMessage

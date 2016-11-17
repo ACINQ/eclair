@@ -102,6 +102,11 @@
             <artifactId>lenses_${scala.version.short}</artifactId>
             <version>0.4</version>
         </dependency>
+        <dependency>
+            <groupId>org.scodec</groupId>
+            <artifactId>scodec-core_${scala.version.short}</artifactId>
+            <version>1.10.3</version>
+        </dependency>
         <!-- LOGGING -->
         <dependency>
             <groupId>org.clapper</groupId>

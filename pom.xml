@@ -8,7 +8,6 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>eclair-wire</module>
         <module>lightning-types</module>
         <module>eclair-node</module>
     </modules>
