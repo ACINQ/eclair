@@ -1,49 +1,10 @@
 package fr.acinq.eclair.wire
 
-import java.io.{InputStream, OutputStream}
-
-import fr.acinq.bitcoin.Protocol._
-import fr.acinq.bitcoin.{BinaryData, BtcMessage}
+import fr.acinq.bitcoin.BinaryData
 
 /**
   * Created by PM on 15/11/2016.
   */
-
-object OpenChannel extends BtcMessage[OpenChannel] {
-  override def read(input: InputStream, protocolVersion: Long): OpenChannel = {
-    val temporaryChannelId = uint64(input)
-    val fundingSatoshis = uint64(input)
-    val pushMsat = uint64(input)
-    val dustLimitSatoshis = uint64(input)
-    val maxHtlcValueInFlightMsat = uint64(input)
-    val channelReserveSatoshis = uint64(input)
-    val htlcMinimumMsat = uint32(input)
-    val maxNumHtlcs = uint32(input)
-    val feeratePerKb = uint32(input)
-    val toSelfDelay = uint16(input)
-    val fundingPubkey = bytes(input, 33)
-    val hakdBasePoint = bytes(input, 33)
-    val refundBasePoint = bytes(input, 33)
-    OpenChannel(temporaryChannelId, fundingSatoshis, pushMsat, dustLimitSatoshis, maxHtlcValueInFlightMsat, channelReserveSatoshis,
-      htlcMinimumMsat, maxNumHtlcs, feeratePerKb, toSelfDelay.toInt, fundingPubkey, hakdBasePoint, refundBasePoint)
-  }
-
-  override def write(input: OpenChannel, out: OutputStream, protocolVersion: Long) = {
-    writeUInt64(input.temporaryChannelId, out)
-    writeUInt64(input.fundingSatoshis, out)
-    writeUInt64(input.pushMsat, out)
-    writeUInt64(input.dustLimitSatoshis, out)
-    writeUInt64(input.maxHtlcValueInFlightMsat, out)
-    writeUInt64(input.channelReserveSatoshis, out)
-    writeUInt32(input.htlcMinimumMsat, out)
-    writeUInt32(input.maxNumHtlcs, out)
-    writeUInt32(input.feeratePerKb, out)
-    writeUInt16(input.toSelfDelay, out)
-    out.write(input.fundingPubkey)
-    out.write(input.hakdBasePoint)
-    out.write(input.refundBasePoint)
-  }
-}
 
 // @formatter:off
 sealed trait LightningMessage
