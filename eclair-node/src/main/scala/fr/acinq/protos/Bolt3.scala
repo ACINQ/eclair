@@ -1,11 +1,12 @@
 package fr.acinq.protos
 
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.channel.Scripts
 
 object Bolt3 {
   // TODO: sort tx according to BIP69 (lexicographical ordering)
 
-  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Script.createMultiSigMofN(2, pubKey1.toArray :: pubKey2.toArray :: Nil)
+  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Scripts.multiSig2of2(pubKey1, pubKey2)
 
   def toLocal(delay: Long, localDelayedKey: BinaryData) = OP_PUSHDATA(Script.encodeNumber(delay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(localDelayedKey) :: OP_CHECKSIG :: Nil
 
