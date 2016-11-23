@@ -27,10 +27,10 @@ object Bolt3 {
     OP_PUSHDATA(remoteKey) :: OP_SWAP ::
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
     OP_NOTIF ::
-      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIGVERIFY ::
+      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
     OP_ELSE ::
       OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-      OP_CHECKSIGVERIFY ::
+      OP_CHECKSIG ::
     OP_ENDIF :: Nil
     // @formatter:on
   }
@@ -41,9 +41,9 @@ object Bolt3 {
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
     OP_IF ::
       OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-      OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIGVERIFY ::
+      OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
     OP_ELSE ::
-      OP_DROP :: OP_PUSHDATA(Script.encodeNumber(lockTime)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP :: OP_CHECKSIGVERIFY ::
+      OP_DROP :: OP_PUSHDATA(Script.encodeNumber(lockTime)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP :: OP_CHECKSIG ::
     OP_ENDIF :: Nil
     // @formatter:on
   }
