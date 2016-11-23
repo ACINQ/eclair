@@ -8,7 +8,17 @@ object Bolt3 {
 
   def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Scripts.multiSig2of2(pubKey1, pubKey2)
 
-  def toLocal(delay: Long, localDelayedKey: BinaryData) = OP_PUSHDATA(Script.encodeNumber(delay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(localDelayedKey) :: OP_CHECKSIG :: Nil
+  def toLocal(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
+    // @formatter:off
+    OP_IF ::
+      OP_PUSHDATA(revocationPubKey) ::
+    OP_ELSE ::
+      OP_PUSHDATA(Script.encodeNumber(toSelfDelay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
+      OP_PUSHDATA(localDelayedKey) ::
+    OP_ENDIF ::
+    OP_CHECKSIG :: Nil
+    // @formatter:on
+  }
 
   def toRemote(remoteKey: BinaryData) = remoteKey
 
