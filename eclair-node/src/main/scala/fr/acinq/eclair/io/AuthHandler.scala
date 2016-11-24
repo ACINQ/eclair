@@ -11,10 +11,14 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Decryptor, Encryptor}
 import fr.acinq.eclair.crypto.LightningCrypto._
+import fr.acinq.eclair.wire.Codecs._
+import fr.acinq.eclair.wire.{ChannelMessage, LightningMessage}
 import lightning._
 import lightning.pkt.Pkt._
+import scodec.bits.BitVector
 
 import scala.annotation.tailrec
+import scala.util.Try
 
 
 /**
@@ -55,6 +59,8 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
   }
 
   def send(encryptor: Encryptor, message: pkt): Encryptor = send(encryptor, message.toByteArray)
+
+  def send(encryptor: Encryptor, message: LightningMessage): Encryptor = send(encryptor, lightningMessageCodec.encode(message).toOption.get.toByteArray)
 
   startWith(IO_WAITING_FOR_SESSION_KEY_LENGTH, WaitingForKeyLength(ByteString.empty))
 
@@ -133,8 +139,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       log.debug(s"received chunk=${BinaryData(chunk)}")
       val decryptor1 = Decryptor.add(decryptor, chunk)
       decryptor1.bodies.map(plaintext => {
-        val packet = pkt.parseFrom(plaintext)
-        self ! packet
+        Try(lightningMessageCodec.decode(BitVector(plaintext.data)).toOption.get.value).recover {
+          case t: Throwable => pkt.parseFrom(plaintext)
+        }.map(self ! _)
+
       })
       stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = Vector.empty[BinaryData])))
 
@@ -156,6 +164,13 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       }
       stay
 
+    case Event(msg: LightningMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) if sender == self =>
+      log.debug(s"receiving $msg")
+      (msg: @unchecked) match {
+        case o: ChannelMessage => channel ! o
+      }
+      stay
+
     case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       val packet = (msg: @unchecked) match {
         case o: open_channel => pkt(Open(o))
@@ -173,6 +188,11 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       }
       log.debug(s"sending $packet")
       val encryptor1 = send(encryptor, packet)
+      stay using n.copy(sessionData = s.copy(encryptor = encryptor1))
+
+    case Event(msg: LightningMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
+      log.debug(s"sending $msg")
+      val encryptor1 = send(encryptor, msg)
       stay using n.copy(sessionData = s.copy(encryptor = encryptor1))
 
     case Event(cmd: Command, n@Normal(channel, _)) =>

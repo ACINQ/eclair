@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import lightning._
 
@@ -163,5 +162,44 @@ final case class DATA_CLOSING(commitments: Commitments,
                               revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }
+
+
+
+
+
+
+case object WAIT_FOR_OPEN_CHANNEL extends State
+case object WAIT_FOR_ACCEPT_CHANNEL extends State
+case object WAIT_FOR_ANCHOR_INTERNAL extends State
+case object WAIT_FOR_FUNDING_CREATED extends State
+case object WAIT_FOR_FUNDING_SIGNED extends State
+case object WAIT_FOR_FUNDING_LOCKED extends State
+
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: OnesideParams, shaSeed: BinaryData, autoSignInterval: Option[FiniteDuration]) extends Data
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(localParams: OnesideParams, temporaryChannelId: Long, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
+final case class DATA_WAIT_FOR_ANCHOR_INTERNAL(channelParams: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(channelParams: ChannelParams, pushMsat: Long) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelParams: ChannelParams, pushMsat: Long, remoteCommit: TheirCommit) extends Data
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(channelParams: ChannelParams) extends Data
+
+final case class ChannelParams(localParams: OnesideParams,
+                               remoteParams: OnesideParams,
+                               temporaryChannelId: Long,
+                               fundingSatoshis: Long,
+                               minimumDepth: Long,
+                               shaSeed: BinaryData,
+                               autoSignInterval: Option[FiniteDuration] = None)
+
+final case class OnesideParams(dustLimitSatoshis: Long,
+                               maxHtlcValueInFlightMsat: Long,
+                               channelReserveSatoshis: Long,
+                               htlcMinimumMsat: Long,
+                               maxNumHtlcs: Long,
+                               feeratePerKb: Long,
+                               toSelfDelay: Int,
+                               fundingPubkey: BinaryData,
+                               revocationBasepoint: BinaryData,
+                               paymentBasepoint: BinaryData,
+                               delayedPaymentBasepoint: BinaryData)
 
 // @formatter:on

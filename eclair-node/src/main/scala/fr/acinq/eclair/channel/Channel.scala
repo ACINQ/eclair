@@ -7,13 +7,14 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.wire.{AcceptChannel, FundingCreated, FundingSigned, OpenChannel}
 import lightning._
-import lightning.open_channel.anchor_offer.{WILL_CREATE_ANCHOR, WONT_CREATE_ANCHOR}
 import lightning.route_step.Next
 
+import scala.compat.Platform
 import scala.concurrent.ExecutionContext
-import scala.util.{Failure, Success, Try}
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 
 /**
@@ -33,13 +34,42 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   import ExecutionContext.Implicits.global
 
+  val localParams = OnesideParams(
+    dustLimitSatoshis = 542,
+    maxHtlcValueInFlightMsat = Long.MaxValue,
+    channelReserveSatoshis = 0,
+    htlcMinimumMsat = 0,
+    maxNumHtlcs = 100,
+    feeratePerKb = 10000,
+    toSelfDelay = 144,
+    fundingPubkey = params.commitPubKey,
+    revocationBasepoint = Array.fill[Byte](33)(0),
+    paymentBasepoint = Array.fill[Byte](33)(0),
+    delayedPaymentBasepoint = Array.fill[Byte](33)(0)
+  )
+
   params.anchorAmount match {
     case None =>
-      them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WONT_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
-      startWith(OPEN_WAIT_FOR_OPEN_NOANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
-    case _ =>
-      them ! open_channel(params.delay, Helpers.revocationHash(params.shaSeed, 0), Helpers.revocationHash(params.shaSeed, 1), params.commitPubKey, params.finalPubKey, WILL_CREATE_ANCHOR, Some(params.minDepth), params.initialFeeRate)
-      startWith(OPEN_WAIT_FOR_OPEN_WITHANCHOR, DATA_OPEN_WAIT_FOR_OPEN(params))
+      startWith(WAIT_FOR_OPEN_CHANNEL, DATA_WAIT_FOR_OPEN_CHANNEL(localParams, shaSeed = params.shaSeed, autoSignInterval = params.autoSignInterval))
+    case Some(amount) =>
+      val temporaryChannelId = Platform.currentTime
+      val fundingSatoshis = amount.amount
+      val pushMsat = 0
+      them ! OpenChannel(temporaryChannelId = temporaryChannelId,
+        fundingSatoshis = fundingSatoshis,
+        pushMsat = pushMsat,
+        dustLimitSatoshis = localParams.dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = localParams.channelReserveSatoshis,
+        htlcMinimumMsat = localParams.htlcMinimumMsat,
+        maxNumHtlcs = localParams.maxNumHtlcs,
+        feeratePerKb = localParams.feeratePerKb,
+        toSelfDelay = localParams.toSelfDelay,
+        fundingPubkey = localParams.fundingPubkey,
+        revocationBasepoint = localParams.revocationBasepoint,
+        paymentBasepoint = localParams.paymentBasepoint,
+        delayedPaymentBasepoint = localParams.delayedPaymentBasepoint)
+      startWith(WAIT_FOR_ACCEPT_CHANNEL, DATA_WAIT_FOR_ACCEPT_CHANNEL(localParams, temporaryChannelId = temporaryChannelId, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = params.autoSignInterval))
   }
 
   /*
@@ -54,6 +84,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
    */
 
   /*
+                                                OLD
                               FUNDER                            FUNDEE
                                  | open_channel      open_channel |
                                  |---------------  ---------------|
@@ -71,17 +102,75 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
                                  |<--------------                 |
            OPEN_WAITING_OURANCHOR|                                |
                                  |                                |
-                                 | open_complete   openu_complete |
+                                 | open_complete    open_complete |
                                  |---------------  ---------------|
  OPEN_WAIT_FOR_COMPLETE_OURANCHOR|               \/               |OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR
                                  |               /\               |
                                  |<--------------  -------------->|
                            NORMAL|                                |NORMAL
+
+                                                NEW
+                              FUNDER                            FUNDEE
+                                 |                                |
+                                 |          open_channel          |WAIT_FOR_OPEN_CHANNEL
+                                 |------------------------------->|
+          WAIT_FOR_ACCEPT_CHANNEL|                                |
+                                 |         accept_channel         |
+                                 |<-------------------------------|
+                                 |                                |WAIT_FOR_FUNDING_CREATED
+                                 |        funding_created         |
+                                 |------------------------------->|
+          WAIT_FOR_FUNDING_SIGNED|                                |
+                                 |         funding_signed         |
+                                 |<-------------------------------|
+          WAIT_FOR_FUNDING_LOCKED|                                |WAIT_FOR_FUNDING_LOCKED
+                                 | funding_locked  funding_locked |
+                                 |---------------  ---------------|
+                                 |               \/               |
+                                 |               /\               |
+                                 |<--------------  -------------->|
+                           NORMAL|                                |NORMAL
    */
-  when(OPEN_WAIT_FOR_OPEN_NOANCHOR)(handleExceptions {
-    case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WILL_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
-      val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
-      goto(OPEN_WAIT_FOR_ANCHOR) using DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)
+  when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
+    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(localParams, shaSeed, autoSignInterval)) =>
+      // TODO : here we should check if remote parameters suit us
+      // TODO : maybe also check uniqueness of temporary channel id
+      val minimumDepth = 6
+      them ! AcceptChannel(temporaryChannelId = Platform.currentTime,
+        dustLimitSatoshis = localParams.dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = localParams.channelReserveSatoshis,
+        minimumDepth = minimumDepth,
+        htlcMinimumMsat = localParams.htlcMinimumMsat,
+        maxNumHtlcs = localParams.maxNumHtlcs,
+        toSelfDelay = localParams.toSelfDelay,
+        fundingPubkey = localParams.fundingPubkey,
+        revocationBasepoint = Array.fill[Byte](33)(0),
+        paymentBasepoint = Array.fill[Byte](33)(0),
+        delayedPaymentBasepoint = Array.fill[Byte](33)(0),
+        firstPerCommitmentPoint = Array.fill[Byte](32)(0))
+      val remoteParams = OnesideParams(
+        dustLimitSatoshis = open.dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = open.channelReserveSatoshis,
+        htlcMinimumMsat = open.htlcMinimumMsat,
+        maxNumHtlcs = open.maxNumHtlcs,
+        feeratePerKb = open.feeratePerKb,
+        toSelfDelay = open.toSelfDelay,
+        fundingPubkey = open.fundingPubkey,
+        revocationBasepoint = open.fundingPubkey,
+        paymentBasepoint = open.paymentBasepoint,
+        delayedPaymentBasepoint = open.delayedPaymentBasepoint)
+      log.debug(s"remote params: $remoteParams")
+      val channelParams = ChannelParams(
+        localParams = localParams,
+        remoteParams = remoteParams,
+        temporaryChannelId = open.temporaryChannelId,
+        fundingSatoshis = open.fundingSatoshis,
+        minimumDepth = minimumDepth,
+        shaSeed = params.shaSeed,
+        autoSignInterval = autoSignInterval)
+      goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(channelParams, open.pushMsat)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -90,19 +179,55 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       goto(CLOSED)
   })
 
-  when(OPEN_WAIT_FOR_OPEN_WITHANCHOR)(handleExceptions {
-    case Event(open_channel(delay, theirRevocationHash, theirNextRevocationHash, commitKey, finalKey, WONT_CREATE_ANCHOR, minDepth, initialFeeRate), DATA_OPEN_WAIT_FOR_OPEN(ourParams)) =>
-      val theirParams = TheirChannelParams(delay, commitKey, finalKey, minDepth, initialFeeRate)
-      log.debug(s"their params: $theirParams")
-      blockchain ! MakeAnchor(params.commitPubKey, theirParams.commitPubKey, ourParams.anchorAmount.get)
-      stay using DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)
+  when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
+    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(localParams, temporaryChannelId, fundingSatoshis, pushMsat, autoSignInterval)) =>
+      // TODO : here we should check if remote parameters suit us
+      // TODO : check equality of temporaryChannelId? or should be done upstream
+      val remoteParams = OnesideParams(
+        dustLimitSatoshis = accept.dustLimitSatoshis,
+        maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
+        channelReserveSatoshis = accept.channelReserveSatoshis,
+        htlcMinimumMsat = accept.htlcMinimumMsat,
+        maxNumHtlcs = accept.maxNumHtlcs,
+        feeratePerKb = localParams.feeratePerKb, // TODO : this should probably be in AcceptChannel packet
+        toSelfDelay = accept.toSelfDelay,
+        fundingPubkey = accept.fundingPubkey,
+        revocationBasepoint = accept.fundingPubkey,
+        paymentBasepoint = accept.paymentBasepoint,
+        delayedPaymentBasepoint = accept.delayedPaymentBasepoint
+      )
+      log.debug(s"remote params: $remoteParams")
+      val channelParams = ChannelParams(
+        localParams = localParams,
+        remoteParams = remoteParams,
+        temporaryChannelId = temporaryChannelId,
+        fundingSatoshis = fundingSatoshis,
+        minimumDepth = accept.minimumDepth,
+        shaSeed = params.shaSeed,
+        autoSignInterval = autoSignInterval)
+      blockchain ! MakeAnchor(localParams.fundingPubkey, remoteParams.fundingPubkey, Satoshi(channelParams.fundingSatoshis))
+      goto(WAIT_FOR_ANCHOR_INTERNAL) using DATA_WAIT_FOR_ANCHOR_INTERNAL(channelParams, pushMsat, accept.firstPerCommitmentPoint)
 
-    case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+
+    case Event(e@error(problem), _) =>
+      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      goto(CLOSED)
+  })
+
+  when(WAIT_FOR_ANCHOR_INTERNAL)(handleExceptions {
+    case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_WAIT_FOR_ANCHOR_INTERNAL(params, pushMsat, remoteFirstPerCommitmentPoint)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
-      val amount = anchorTx.txOut(anchorOutputIndex).amount.toLong
-      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, amount_us_msat = 0, amount_them_msat = amount * 1000)
-      them ! open_anchor(anchorTx.hash, anchorOutputIndex, amount)
-      goto(OPEN_WAIT_FOR_COMMIT_SIG) using DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams, theirParams, anchorTx, anchorOutputIndex, TheirCommit(0, theirSpec, BinaryData(""), theirRevocationHash), theirNextRevocationHash)
+      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.remoteParams.feeratePerKb, amount_us_msat = pushMsat, amount_them_msat = params.fundingSatoshis * 1000 - pushMsat)
+      val theirRevocationPubkey: BinaryData = ??? // some combination of params.remoteParams.revocationBasepoint and remoteFirstPerCommitmentPoint
+      val ourSigForThem: BinaryData = ??? // signature of their initial commitment tx that pays them pushMsat
+      them ! FundingCreated(
+        temporaryChannelId = params.temporaryChannelId,
+        txid = anchorTx.hash,
+        outputIndex = anchorOutputIndex,
+        signature = ourSigForThem
+      )
+      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(params, pushMsat, TheirCommit(0, theirSpec, anchorTx.hash, theirRevocationPubkey))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -111,36 +236,38 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       goto(CLOSED)
   })
 
-  when(OPEN_WAIT_FOR_ANCHOR)(handleExceptions {
-    case Event(open_anchor(anchorTxHash, anchorOutputIndex, anchorAmount), DATA_OPEN_WAIT_FOR_ANCHOR(ourParams, theirParams, theirRevocationHash, theirNextRevocationHash)) =>
+  when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
+    case Event(FundingCreated(temporaryChannelId, anchorTxHash, anchorOutputIndex, remoteSignature), DATA_WAIT_FOR_FUNDING_CREATED(params, pushMsat)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
 
-      val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(ourParams.commitPubKey, theirParams.commitPubKey))
+      val anchorOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = Scripts.anchorPubkeyScript(params.localParams.fundingPubkey, params.remoteParams.fundingPubkey))
 
-      // they fund the channel with their anchor tx, so the money is theirs
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = ourParams.initialFeeRate, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
-      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = theirParams.initialFeeRate, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
+      // they fund the channel with their anchor tx, so the money is theirs (but we are paid pushMsat)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.localParams.feeratePerKb, amount_them_msat = params.fundingSatoshis * 1000 - pushMsat, amount_us_msat = pushMsat)
+      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.remoteParams.feeratePerKb, amount_them_msat = pushMsat, amount_us_msat = params.fundingSatoshis * 1000 - pushMsat)
 
       // build and sign their commit tx
-      val theirTx = makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
+      val theirTx: Transaction = ??? //makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
       log.info(s"signing their tx: $theirTx")
-      val ourSigForThem = sign(ourParams, theirParams, Satoshi(anchorAmount), theirTx)
-      them ! open_commit_sig(ourSigForThem)
+      val ourSigForThem: BinaryData = ??? // sign(ourParams, theirParams, Satoshi(anchorAmount), theirTx)
+      them ! FundingSigned(
+        temporaryChannelId = temporaryChannelId,
+        signature = ourSigForThem
+      )
 
       // watch the anchor
-      blockchain ! WatchConfirmed(self, anchorTxid, ourParams.minDepth, BITCOIN_ANCHOR_DEPTHOK)
-      blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT)
+      blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_ANCHOR_SPENT) // TODO : should we wait for an acknowledgment from watcher?
+      blockchain ! WatchConfirmed(self, anchorTxid, params.minimumDepth.toInt, BITCOIN_ANCHOR_DEPTHOK)
 
-      // FIXME: ourTx is not signed by them and cannot be published. We won't lose money since they are funding the chanel
-      val ourRevocationHash = Helpers.revocationHash(ourParams.shaSeed, 0)
-      val ourTx = makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
+      val ourRevocationPubkey: BinaryData = ??? // Helpers.revocationHash(ourParams.shaSeed, 0)
+      val ourTx: Transaction = ??? // makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
 
-      val commitments = Commitments(ourParams, theirParams,
-        OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, theirRevocationHash),
+      val commitments = Commitments(???, ???,
+        OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, theirTx.txid, ???),
         OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
-        Right(theirNextRevocationHash), anchorOutput, ShaChain.init, new BasicTxDb)
-      context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(anchorAmount)))
-      goto(OPEN_WAITING_THEIRANCHOR) using DATA_OPEN_WAITING(commitments, None)
+        Right(???), anchorOutput, ShaChain.init, new BasicTxDb)
+      context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
+      goto(WAIT_FOR_FUNDING_LOCKED) using DATA_OPEN_WAITING(commitments, None)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
