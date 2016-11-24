@@ -18,6 +18,10 @@ object Codecs {
 
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data))
 
+  def varsizebinarydata: Codec[BinaryData] = variableSizeBytesLong(uint32, bytes.xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data)))
+
+  def listofbinarydata(size: Int): Codec[List[BinaryData]] = listOfN(int32, binarydata(size))
+
   val openChannelCodec: Codec[OpenChannel] = (
     ("temporaryChannelId" | uint64) ::
       ("fundingSatoshis" | uint64) ::
@@ -30,8 +34,9 @@ object Codecs {
       ("feeratePerKb" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("fundingPubkey" | binarydata(33)) ::
-      ("hakdBasePoint" | binarydata(33)) ::
-      ("refundBasePoint" | binarydata(33))).as[OpenChannel]
+      ("revocationBasepoint" | binarydata(33)) ::
+      ("paymentBasepoint" | binarydata(33)) ::
+      ("delayedPaymentBasepoint" | binarydata(33))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | uint64) ::
@@ -41,11 +46,12 @@ object Codecs {
       ("minimumDepth" | uint32) ::
       ("htlcMinimumMsat" | uint32) ::
       ("maxNumHtlcs" | uint32) ::
-      ("firstCommitmentKeyOffset" | binarydata(32)) ::
       ("toSelfDelay" | uint16) ::
       ("fundingPubkey" | binarydata(33)) ::
-      ("hakdBasePoint" | binarydata(33)) ::
-      ("refundBasePoint" | binarydata(33))).as[AcceptChannel]
+      ("revocationBasepoint" | binarydata(33)) ::
+      ("paymentBasepoint" | binarydata(33)) ::
+      ("delayedPaymentBasepoint" | binarydata(33)) ::
+      ("firstPerCommitmentPoint" | binarydata(33))).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | uint64) ::
@@ -60,8 +66,7 @@ object Codecs {
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("temporaryChannelId" | uint64) ::
       ("channelId" | uint64) ::
-      ("nextKeyOffset" | binarydata(32)) ::
-      ("nextRevocationHalfKey" | binarydata(33))).as[FundingLocked]
+      ("nextPerCommitmentPoint" | binarydata(33))).as[FundingLocked]
 
   val updateFeeCodec: Codec[UpdateFee] = (
     ("channelId" | uint64) ::
@@ -69,13 +74,43 @@ object Codecs {
 
   val shutdownCodec: Codec[wire.Shutdown] = (
     ("channelId" | uint64) ::
-      ("len" | uint32) ::
-      ("scriptPubKey" | binarydata(32))).as[Shutdown]
+      ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
 
-  val closeSignatureCodec: Codec[CloseSignature] = (
+  val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | uint64) ::
       ("feeSatoshis" | uint64) ::
-      ("signature" | binarydata(64))).as[CloseSignature]
+      ("signature" | binarydata(64))).as[ClosingSigned]
+
+  val addHtlcCodec: Codec[AddHtlc] = (
+    ("channelId" | uint64) ::
+      ("id" | uint64) ::
+      ("amountMsat" | uint32) ::
+      ("expiry" | uint32) ::
+      ("paymentHash" | binarydata(32)) ::
+      ("onionRoutingPacket" | binarydata(1254))).as[AddHtlc]
+
+  val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
+    ("channelId" | uint64) ::
+      ("id" | uint64) ::
+      ("paymentPreimage" | binarydata(32))).as[UpdateFulfillHtlc]
+
+  val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
+    ("channelId" | uint64) ::
+      ("id" | uint64) ::
+      ("reason" | binarydata(154))).as[UpdateFailHtlc]
+
+  val commitSigCodec: Codec[CommitSig] = (
+    ("channelId" | uint64) ::
+      ("signature" | binarydata(64)) ::
+      ("htlcSignatures" | listofbinarydata(64))).as[CommitSig]
+
+  val revokeAndAckCodec: Codec[RevokeAndAck] = (
+    ("channelId" | uint64) ::
+      ("perCommitmentSecret" | binarydata(32)) ::
+      ("nextPerCommitmentPoint" | binarydata(33)) ::
+      ("padding" | binarydata(3)) ::
+      ("htlcTimeoutSignature" | listofbinarydata(64))
+    ).as[RevokeAndAck]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint32)
     .typecase(32L, openChannelCodec)
@@ -85,6 +120,11 @@ object Codecs {
     .typecase(36L, fundingLockedCodec)
     .typecase(37L, updateFeeCodec)
     .typecase(38L, shutdownCodec)
-    .typecase(39L, closeSignatureCodec)
+    .typecase(39L, closingSignedCodec)
+    .typecase(128L, addHtlcCodec)
+    .typecase(130L, updateFulfillHtlcCodec)
+    .typecase(131L, updateFailHtlcCodec)
+    .typecase(132L, commitSigCodec)
+    .typecase(133L, revokeAndAckCodec)
 
 }

@@ -25,8 +25,9 @@ case class OpenChannel(temporaryChannelId: Long,
                        feeratePerKb: Long,
                        toSelfDelay: Int,
                        fundingPubkey: BinaryData,
-                       hakdBasePoint: BinaryData,
-                       refundBasePoint: BinaryData) extends ChannelMessage
+                       revocationBasepoint: BinaryData,
+                       paymentBasepoint: BinaryData,
+                       delayedPaymentBasepoint: BinaryData) extends ChannelMessage
 
 case class AcceptChannel(temporaryChannelId: Long,
                          dustLimitSatoshis: Long,
@@ -35,11 +36,12 @@ case class AcceptChannel(temporaryChannelId: Long,
                          minimumDepth: Long,
                          htlcMinimumMsat: Long,
                          maxNumHtlcs: Long,
-                         firstCommitmentKeyOffset: BinaryData,
                          toSelfDelay: Int,
                          fundingPubkey: BinaryData,
-                         hakdBasePoint: BinaryData,
-                         refundBasePoint: BinaryData) extends ChannelMessage
+                         revocationBasepoint: BinaryData,
+                         paymentBasepoint: BinaryData,
+                         delayedPaymentBasepoint: BinaryData,
+                         firstPerCommitmentPoint: BinaryData) extends ChannelMessage
 
 case class FundingCreated(temporaryChannelId: Long,
                           txid: BinaryData,
@@ -51,16 +53,40 @@ case class FundingSigned(temporaryChannelId: Long,
 
 case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
-                         nextKeyOffset: BinaryData,
-                         nextRevocationHalfKey: BinaryData) extends ChannelMessage
+                         nextPerCommitmentPoint: BinaryData) extends ChannelMessage
 
 case class UpdateFee(channelId: Long,
                      feeratePerKb: Long) extends ChannelMessage
 
 case class Shutdown(channelId: Long,
-                    len: Long,
                     scriptPubKey: BinaryData) extends ChannelMessage
 
-case class CloseSignature(channelId: Long,
+case class ClosingSigned(channelId: Long,
                           feeSatoshis: Long,
                           signature: BinaryData) extends ChannelMessage
+
+case class AddHtlc(channelId: Long,
+                   id: Long,
+                   amountMsat: Long,
+                   expiry: Long,
+                   paymentHash: BinaryData,
+                   onionRoutingPacket: BinaryData) extends HtlcMessage
+
+case class UpdateFulfillHtlc(channelId: Long,
+                             id: Long,
+                             paymentPreimage: BinaryData) extends HtlcMessage
+
+case class UpdateFailHtlc(channelId: Long,
+                          id: Long,
+                          reason: BinaryData) extends HtlcMessage
+
+case class CommitSig(channelId: Long,
+                     signature: BinaryData,
+                     htlcSignatures: List[BinaryData]) extends HtlcMessage
+
+case class RevokeAndAck(channelId: Long,
+                        perCommitmentSecret: BinaryData,
+                        nextPerCommitmentPoint: BinaryData,
+                        padding: BinaryData,
+                        htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage
+
