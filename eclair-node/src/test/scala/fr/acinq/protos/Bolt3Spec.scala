@@ -25,7 +25,7 @@ class Bolt3Spec extends FunSuite {
   val (Base58.Prefix.SecretKeyTestnet, revocationPrivKey) = Base58Check.decode("cSupnaiBh6jgTcQf9QANCB5fZtXojxkJQczq5kwfSBeULjNd5Ypo")
   val revocationPubKey = Crypto.publicKeyFromPrivateKey(revocationPrivKey)
 
-  val amount = 420000 satoshi
+  val amount = 92000 satoshi
 
   val config = ConfigFactory.load()
 
@@ -62,7 +62,7 @@ class Bolt3Spec extends FunSuite {
   // this is a relative (to the parent tx) timeout, expressed in number of blocks or seconds
   val selfDelay = 20
 
-  val fee = 5000 satoshi
+  val fee = 10000 satoshi
 
   // create our local commit tx, with an HTLC that we've offered and a HTLC that we've received
   val commitTx = {
@@ -83,7 +83,10 @@ class Bolt3Spec extends FunSuite {
       ScriptWitness(BinaryData.empty :: localSig :: remoteSig :: redeemScript :: Nil)
     else
       ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: redeemScript :: Nil)
-    tx.updateWitness(0, witness)
+    println(s"size of unsigned commit tx: ${Transaction.write(tx).length}")
+    val tx1 = tx.updateWitness(0, witness)
+    println(s"size of signed commit tx: ${Transaction.write(tx1).length}")
+    tx1
   }
   println(s"commit tx: ${hex(commitTx)}")
 
@@ -100,7 +103,10 @@ class Bolt3Spec extends FunSuite {
     val localSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, commitTx.txOut(2).amount, SigVersion.SIGVERSION_WITNESS_V0, localPrivKey)
     val remoteSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, commitTx.txOut(2).amount, SigVersion.SIGVERSION_WITNESS_V0, remotePrivKey)
     val witness = ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: BinaryData.empty :: redeemScript :: Nil)
-    tx.updateWitness(0, witness)
+    println(s"size of unsigned htlcTimeoutTx tx: ${Transaction.write(tx).length}")
+    val tx1 = tx.updateWitness(0, witness)
+    println(s"size of signed htlcTimeoutTx tx: ${Transaction.write(tx1).length}")
+    tx1
   }
   println(s"htlc timeout tx: ${hex(htlcTimeoutTx)}")
 
@@ -117,7 +123,10 @@ class Bolt3Spec extends FunSuite {
     val localSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, commitTx.txOut(3).amount, SigVersion.SIGVERSION_WITNESS_V0, localPrivKey)
     val remoteSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, commitTx.txOut(3).amount, SigVersion.SIGVERSION_WITNESS_V0, remotePrivKey)
     val witness = ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage2 :: redeemScript :: Nil)
-    tx.updateWitness(0, witness)
+    println(s"size of unsigned htlcSuccessTx tx: ${Transaction.write(tx).length}")
+    val tx1 = tx.updateWitness(0, witness)
+    println(s"size of signed htlcSuccessTx tx: ${Transaction.write(tx1).length}")
+    tx1
   }
   println(s"htlc success tx: ${hex(htlcSuccessTx)}")
 
