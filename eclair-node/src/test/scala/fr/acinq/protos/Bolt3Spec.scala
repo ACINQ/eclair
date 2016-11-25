@@ -62,7 +62,7 @@ class Bolt3Spec extends FunSuite {
   // this is a relative (to the parent tx) timeout, expressed in number of blocks or seconds
   val selfDelay = 20
 
-  val fee = 10000 satoshi
+  val fee = 5000 satoshi
 
   // create our local commit tx, with an HTLC that we've offered and a HTLC that we've received
   val commitTx = {
@@ -70,10 +70,10 @@ class Bolt3Spec extends FunSuite {
       version = 2,
       txIn = TxIn(OutPoint(fundingTx, fundingPos), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = Seq(
-        TxOut(210000 satoshi, Script.pay2wsh(Bolt3.toLocal(revocationPubKey, selfDelay, localDelayedKey))),
-        TxOut(100000 satoshi, Script.pay2pkh(Bolt3.toRemote(remotePubKey))),
-        TxOut(60000 satoshi, Script.pay2wsh(Bolt3.htlcOffered(localPubKey, remotePubKey, Crypto.hash160(paymentPreimage1)))),
-        TxOut(40000 satoshi, Script.pay2wsh(Bolt3.htlcReceived(localPubKey, remotePubKey, Crypto.hash160(paymentPreimage2), htlcTimeout)))
+        TxOut((amount - fee) / 4, Script.pay2wsh(Bolt3.toLocal(revocationPubKey, selfDelay, localDelayedKey))),
+        TxOut((amount - fee) / 4, Script.pay2pkh(Bolt3.toRemote(remotePubKey))),
+        TxOut((amount - fee) / 4, Script.pay2wsh(Bolt3.htlcOffered(localPubKey, remotePubKey, Crypto.hash160(paymentPreimage1)))),
+        TxOut((amount - fee) / 4, Script.pay2wsh(Bolt3.htlcReceived(localPubKey, remotePubKey, Crypto.hash160(paymentPreimage2), htlcTimeout)))
       ),
       lockTime = 0)
     val redeemScript: BinaryData = Bolt3.fundingScript(localPubKey, remotePubKey)
