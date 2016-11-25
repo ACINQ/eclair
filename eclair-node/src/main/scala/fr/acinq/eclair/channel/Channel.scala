@@ -55,6 +55,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val temporaryChannelId = Platform.currentTime
       val fundingSatoshis = amount.amount
       val pushMsat = 0
+      val firstPerCommitmentPoint: BinaryData = ???
       them ! OpenChannel(temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
         pushMsat = pushMsat,
@@ -68,7 +69,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         fundingPubkey = localParams.fundingPubkey,
         revocationBasepoint = localParams.revocationBasepoint,
         paymentBasepoint = localParams.paymentBasepoint,
-        delayedPaymentBasepoint = localParams.delayedPaymentBasepoint)
+        delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
+        firstPerCommitmentPoint = firstPerCommitmentPoint)
       startWith(WAIT_FOR_ACCEPT_CHANNEL, DATA_WAIT_FOR_ACCEPT_CHANNEL(localParams, temporaryChannelId = temporaryChannelId, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = params.autoSignInterval))
   }
 

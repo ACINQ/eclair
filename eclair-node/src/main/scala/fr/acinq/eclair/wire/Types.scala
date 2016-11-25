@@ -27,7 +27,8 @@ case class OpenChannel(temporaryChannelId: Long,
                        fundingPubkey: BinaryData,
                        revocationBasepoint: BinaryData,
                        paymentBasepoint: BinaryData,
-                       delayedPaymentBasepoint: BinaryData) extends ChannelMessage
+                       delayedPaymentBasepoint: BinaryData,
+                       firstPerCommitmentPoint: BinaryData) extends ChannelMessage
 
 case class AcceptChannel(temporaryChannelId: Long,
                          dustLimitSatoshis: Long,

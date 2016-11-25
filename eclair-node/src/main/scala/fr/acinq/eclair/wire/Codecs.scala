@@ -36,7 +36,8 @@ object Codecs {
       ("fundingPubkey" | binarydata(33)) ::
       ("revocationBasepoint" | binarydata(33)) ::
       ("paymentBasepoint" | binarydata(33)) ::
-      ("delayedPaymentBasepoint" | binarydata(33))).as[OpenChannel]
+      ("delayedPaymentBasepoint" | binarydata(33)) ::
+      ("firstPerCommitmentPoint" | binarydata(33))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | uint64) ::
