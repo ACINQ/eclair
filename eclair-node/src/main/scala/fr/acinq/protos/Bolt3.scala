@@ -6,6 +6,12 @@ import fr.acinq.eclair.channel.Scripts
 object Bolt3 {
   // TODO: sort tx according to BIP69 (lexicographical ordering)
 
+  def baseSize(tx: Transaction) = Transaction.write(tx, Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_NO_WITNESS).length
+
+  def totalSize(tx: Transaction) = Transaction.write(tx, Protocol.PROTOCOL_VERSION).length
+
+  def weight(tx: Transaction) = 3 * baseSize(tx) + totalSize(tx)
+
   def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Scripts.multiSig2of2(pubKey1, pubKey2)
 
   def toLocal(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
