@@ -6,6 +6,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Scripts
+import fr.acinq.protos.Bolt3.Scalar
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -308,5 +309,26 @@ class Bolt3Spec extends FunSuite {
     }
     Transaction.correctlySpends(penaltyTx, htlcSuccessTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     println(s"penalty for out htlc success tx: ${hex(penaltyTx)}")
+  }
+
+  test("derive revocation key") {
+    object Local {
+      val revocationSecret = Scalar(Crypto.sha256("local foo".getBytes()))
+      val revocationBasePoint = revocationSecret.basePoint
+      val perCommitSecret = Scalar(Crypto.sha256("local bar".getBytes()))
+    }
+    object Remote {
+      val revocationSecret = Scalar(Crypto.sha256("remote foo".getBytes()))
+      val perCommitSecret = Scalar(Crypto.sha256("remote bar".getBytes()))
+      val perCommitBasePoint = perCommitSecret.basePoint
+    }
+
+    // I can compute their revocation pubkey
+    val theirRevocationPubKey = Bolt3.revocationPubKey(Local.revocationBasePoint, Remote.perCommitBasePoint)
+
+    // and if they give me their per-commit secret I can compute their revocation privkey
+    val theirRevocationPrivKey = Bolt3.revocationPrivKey(Local.revocationSecret, Remote.perCommitSecret)
+
+    assert(theirRevocationPrivKey.basePoint == theirRevocationPubKey)
   }
 }
