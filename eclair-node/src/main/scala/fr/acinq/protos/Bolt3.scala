@@ -68,7 +68,6 @@ object Bolt3 {
     // @formatter:on
   }
 
-
   def fixSize(data: BinaryData): BinaryData = data.length match {
     case 32 => data
     case length if length < 32 => Array.fill(32 - length)(0.toByte) ++ data

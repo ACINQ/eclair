@@ -167,7 +167,7 @@ class Bolt3Spec extends FunSuite {
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(spendOurOutput, commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    println(s"spend-our-output tx: ${hex(spendOurOutput)}")
+    println(s"we-spend-our-output tx: ${hex(spendOurOutput)}")
     println(s"you need to publish the commit tx and generate ${selfDelay} blocks before you can publish this tx")
   }
 
@@ -202,8 +202,7 @@ class Bolt3Spec extends FunSuite {
       tx.updateWitness(0, witness)
     }
     Transaction.correctlySpends(penaltyTx, commitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    println(s"spend-our-output tx: ${hex(penaltyTx)}")
-    println(s"you need to publish the commit tx and generate ${selfDelay} blocks before you can publish this tx")
+    println(s"they-spend-our-output tx: ${hex(penaltyTx)}")
   }
 
   test("we can claim the received HTLC timeout tx after a delay") {
