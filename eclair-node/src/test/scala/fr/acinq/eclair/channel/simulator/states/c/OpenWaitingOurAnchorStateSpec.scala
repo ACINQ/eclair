@@ -47,7 +47,7 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
       alice2blockchain.forward(blockchainA)
       alice2blockchain.expectMsgType[Publish]
       alice2blockchain.forward(blockchainA)
-      bob ! BITCOIN_ANCHOR_DEPTHOK
+      bob ! BITCOIN_FUNDING_DEPTHOK
       awaitCond(alice.stateName == OPEN_WAITING_OURANCHOR)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
@@ -64,7 +64,7 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv BITCOIN_ANCHOR_DEPTHOK") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      alice ! BITCOIN_ANCHOR_DEPTHOK
+      alice ! BITCOIN_FUNDING_DEPTHOK
       awaitCond(alice.stateName == OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
       alice2blockchain.expectMsgType[WatchLost]
       bob2alice.expectMsgType[open_complete]
@@ -73,7 +73,7 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv BITCOIN_ANCHOR_TIMEOUT") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      alice ! BITCOIN_ANCHOR_TIMEOUT
+      alice ! BITCOIN_FUNDING_TIMEOUT
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSED)
     }
@@ -82,7 +82,7 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
   test("recv BITCOIN_ANCHOR_SPENT") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_OPEN_WAITING].commitments.ourCommit.publishableTx
-      alice ! (BITCOIN_ANCHOR_SPENT, null)
+      alice ! (BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[error]
       alice2blockchain.expectMsg(Publish(tx))
       awaitCond(alice.stateName == ERR_INFORMATION_LEAK)

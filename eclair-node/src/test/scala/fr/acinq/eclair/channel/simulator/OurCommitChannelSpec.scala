@@ -44,7 +44,7 @@ class OurCommitChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      bob ! (BITCOIN_ANCHOR_SPENT, commitTx)
+      bob ! (BITCOIN_FUNDING_SPENT, commitTx)
       awaitCond(bob.stateName == CLOSED)
     }
   }

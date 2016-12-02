@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
+import fr.acinq.eclair.wire.AddHtlc
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, routing, update_add_htlc}
 import org.junit.runner.RunWith
@@ -19,8 +20,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     (sender2, receiver1)
   }
 
-  def addHtlc(sender: Commitments, receiver: Commitments, htlc: update_add_htlc): (Commitments, Commitments) = {
-    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.rHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
+  def addHtlc(sender: Commitments, receiver: Commitments, htlc: AddHtlc): (Commitments, Commitments) = {
+    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.paymentHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
   }
 
   test("claim received htlcs in their current commit tx") {
@@ -32,8 +33,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val R1: BinaryData = "0202030405060708010203040506070801020304050607080102030405060708"
     val H1 = Crypto.sha256(R1)
 
-    val (alice0, bob0) = addHtlc(alice, bob, update_add_htlc(1, 70000000, H, locktime(Blocks(400)), routing.defaultInstance))
-    val (alice1, bob1) = addHtlc(alice0, bob0, update_add_htlc(2, 80000000, H1, locktime(Blocks(350)), routing.defaultInstance))
+    val (alice0, bob0) = addHtlc(alice, bob, AddHtlc(0, 1, 70000000, 400, H, BinaryData("")))
+    val (alice1, bob1) = addHtlc(alice0, bob0, AddHtlc(0, 2, 80000000, 350, H1, BinaryData("")))
     val (alice2, bob2) = signAndReceiveRevocation(alice1, bob1)
     val (bob3, alice3) = signAndReceiveRevocation(bob2, alice2)
 
@@ -41,8 +42,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val tx = alice3.ourCommit.publishableTx
 
     // suppose we have the payment preimage, what do we do ?
-    val (bob4, _) = Commitments.sendFulfill(bob3, CMD_FULFILL_HTLC(1, R))
-    val (bob5, _) = Commitments.sendFulfill(bob4, CMD_FULFILL_HTLC(2, R1))
+    val (bob4, _) = Commitments.sendFulfill(bob3, CMD_FULFILL_HTLC(1, R), 0)
+    val (bob5, _) = Commitments.sendFulfill(bob4, CMD_FULFILL_HTLC(2, R1), 0)
 
     // we're Bob. Check that our view of Alice's commit tx is right
     val theirTxTemplate = Commitments.makeTheirTxTemplate(bob5)
@@ -65,8 +66,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val R1: BinaryData = "0202030405060708010203040506070801020304050607080102030405060708"
     val H1 = Crypto.sha256(R1)
 
-    val (alice0, bob0) = addHtlc(alice, bob, update_add_htlc(1, 70000000, H, locktime(Blocks(400)), routing.defaultInstance))
-    val (alice1, bob1) = addHtlc(alice0, bob0, update_add_htlc(1, 80000000, H1, locktime(Blocks(350)), routing.defaultInstance))
+    val (alice0, bob0) = addHtlc(alice, bob, AddHtlc(0, 1, 70000000, 400, H, BinaryData("")))
+    val (alice1, bob1) = addHtlc(alice0, bob0, AddHtlc(0, 1, 80000000, 350, H1, BinaryData("")))
     val (alice2, bob2) = signAndReceiveRevocation(alice1, bob1)
     val (bob3, alice3) = signAndReceiveRevocation(bob2, alice2)
 

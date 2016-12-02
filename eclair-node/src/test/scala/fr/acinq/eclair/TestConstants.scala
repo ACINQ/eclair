@@ -1,6 +1,6 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, Hash, OutPoint, Satoshi, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, Hash, OutPoint, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.channel.{TheirChanges, _}
 import fr.acinq.eclair.crypto.ShaChain
 import lightning.locktime
@@ -12,30 +12,61 @@ import lightning.locktime.Locktime.Blocks
 object TestConstants {
   val anchorAmount = 1000000L
 
-  lazy val anchorOutput = TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(Alice.channelParams.commitPubKey, Bob.channelParams.commitPubKey))
+  lazy val anchorOutput: TxOut = ??? //TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(Alice.channelParams.commitPubKey, Bob.channelParams.commitPubKey))
 
   // Alice is funder, Bob is not
 
   object Alice {
     val (Base58.Prefix.SecretKeyTestnet, commitPrivKey) = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")
     val (Base58.Prefix.SecretKeyTestnet, finalPrivKey) = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")
-    val channelParams = OurChannelParams(locktime(Blocks(300)), commitPrivKey, finalPrivKey, 1, 10000, Crypto.sha256("alice-seed".getBytes()), Some(Satoshi(anchorAmount)))
-    val finalPubKey = channelParams.finalPubKey
+    val localParams = LocalParams(
+      dustLimitSatoshis = 542,
+      maxHtlcValueInFlightMsat = Long.MaxValue,
+      channelReserveSatoshis = 0,
+      htlcMinimumMsat = 0,
+      maxNumHtlcs = 100,
+      feeratePerKb = 10000,
+      toSelfDelay = 144,
+      fundingPubkey = Array.fill[Byte](33)(0),
+      revocationBasepoint = Array.fill[Byte](33)(0),
+      paymentBasepoint = Array.fill[Byte](33)(0),
+      delayedPaymentBasepoint = Array.fill[Byte](33)(0),
+      finalScriptPubKey = Array.fill[Byte](47)(0)
+    )
+    //(locktime(Blocks(300)), commitPrivKey, finalPrivKey, 1, 10000, Crypto.sha256("alice-seed".getBytes()), Some(Satoshi(anchorAmount)))
 
-    def revocationHash(index: Long) = Helpers.revocationHash(channelParams.shaSeed, index)
+    val remoteParams = RemoteParams(
+      dustLimitSatoshis = 542,
+      maxHtlcValueInFlightMsat = Long.MaxValue,
+      channelReserveSatoshis = 0,
+      htlcMinimumMsat = 0,
+      maxNumHtlcs = 100,
+      feeratePerKb = 10000,
+      toSelfDelay = 144,
+      fundingPubkey = Array.fill[Byte](33)(0),
+      revocationBasepoint = Array.fill[Byte](33)(0),
+      paymentBasepoint = Array.fill[Byte](33)(0),
+      delayedPaymentBasepoint = Array.fill[Byte](33)(0))
+    //val remoteChannelParams = OurChannelParams(locktime(Blocks(300)), commitPrivKey, finalPrivKey, 1, 10000, Crypto.sha256("alice-seed".getBytes()), Some(Satoshi(anchorAmount)))
 
-    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = Alice.channelParams.initialFeeRate, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
+    val finalPubKey: BinaryData = Array.fill[Byte](33)(0)
 
-    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = Bob.channelParams.initialFeeRate, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
+    val shaSeed = Crypto.sha256("alice-seed".getBytes())
 
-    val ourTx = Helpers.makeOurTx(channelParams, TheirChannelParams(Bob.channelParams), TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
+    def revocationHash(index: Long) = Helpers.revocationHash(shaSeed, index)
+
+    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = localParams.feeratePerKb, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
+
+    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = remoteParams.feeratePerKb, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
+
+    val ourTx = Helpers.makeOurTx(localParams, remoteParams, TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 
     val commitments = Commitments(
-      Alice.channelParams,
-      TheirChannelParams(Bob.channelParams),
+      localParams,
+      remoteParams,
       OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Bob.revocationHash(0)),
       OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
-      Right(Bob.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)
+      Right(Bob.revocationHash(1)), anchorOutput, shaSeed, ShaChain.init, new BasicTxDb)
 
   }
 
@@ -51,14 +82,14 @@ object TestConstants {
 
     def theirSpec = Alice.ourSpec
 
-    val ourTx = Helpers.makeOurTx(channelParams, TheirChannelParams(Alice.channelParams), TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
+    val ourTx: Transaction = ??? // Helpers.makeOurTx(channelParams, TheirChannelParams(Alice.channelParams), TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 
-    val commitments = Commitments(
+    val commitments: Commitments = ???/*Commitments(
       Bob.channelParams,
       TheirChannelParams(Alice.channelParams),
       OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Alice.revocationHash(0)),
       OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
-      Right(Alice.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)
+      Right(Alice.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)*/
   }
 
 }

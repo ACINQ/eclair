@@ -67,7 +67,7 @@ class PaymentLifecycle(router: ActorRef, selector: ActorRef, initialBlockCount: 
       val next = r.drop(1).head
       val others = r.drop(2)
       val route = buildRoute(c.amountMsat, next +: others)
-      val cmd = CMD_ADD_HTLC(route.steps(0).amount, c.h, locktime(Blocks(currentBlockCount.toInt + 100 + route.steps.size - 2)), route.copy(steps = route.steps.tail), commit = true)
+      val cmd = CMD_ADD_HTLC(route.steps(0).amount, c.h, currentBlockCount.toInt + 100 + route.steps.size - 2, route.copy(steps = route.steps.tail), commit = true)
       context.system.eventStream.subscribe(self, classOf[PaymentSent])
       context.system.eventStream.subscribe(self, classOf[PaymentFailed])
       context.system.eventStream.unsubscribe(self, classOf[CurrentBlockCount])

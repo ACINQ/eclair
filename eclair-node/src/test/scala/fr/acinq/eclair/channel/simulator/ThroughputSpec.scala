@@ -42,7 +42,7 @@ class ThroughputSpec extends FunSuite {
         case ('add, tgt: ActorRef) =>
           val r = generateR()
           val h: BinaryData = Crypto.sha256(r)
-          tgt ! CMD_ADD_HTLC(1, h, locktime(Blocks(1)))
+          tgt ! CMD_ADD_HTLC(1, h, 1)
           context.become(run(h2r + (h -> r)))
 
         case ('sig, tgt: ActorRef) => tgt ! CMD_SIGN

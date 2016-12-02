@@ -2,7 +2,6 @@ package fr.acinq.eclair.crypto
 
 import com.google.common.io.ByteStreams
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.ProtocolSpec
 import org.junit.runner.RunWith
 import org.scalatest.{Ignore, FunSuite}
 import org.scalatest.junit.JUnitRunner
@@ -81,7 +80,7 @@ class OnionSpec extends FunSuite {
     ("7c658eaf5532f5b1227b492f79e32bde474e03454f596066ded64a9e7805d5a3", "028e3d32443d5a927226a3c1959abd21fd7425687a65d39da4d00d19d60bd3dac7")
   )
 
-  val firstMessage: BinaryData = ByteStreams.toByteArray(classOf[ProtocolSpec].getResourceAsStream("/msg20"))
+  val firstMessage: BinaryData = ByteStreams.toByteArray(classOf[OnionSpec].getResourceAsStream("/msg20"))
 
   test("generate first message") {
     val check = Onion.makeFirstMessage(privs, node_keys.map(_._2), payloads)

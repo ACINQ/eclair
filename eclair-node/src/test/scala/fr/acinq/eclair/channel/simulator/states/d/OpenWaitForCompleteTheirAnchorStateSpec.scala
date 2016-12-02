@@ -6,7 +6,7 @@ import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchLost, WatchSpent}
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, _}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, _}
 import lightning._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -39,7 +39,7 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends StateSpecBaseClass {
     bob2alice.forward(alice)
     bob2blockchain.expectMsgType[WatchConfirmed]
     bob2blockchain.expectMsgType[WatchSpent]
-    bob ! BITCOIN_ANCHOR_DEPTHOK
+    bob ! BITCOIN_FUNDING_DEPTHOK
     bob2blockchain.expectMsgType[WatchLost]
     bob2alice.expectMsgType[open_complete]
     bob2alice.forward(alice)
@@ -61,7 +61,7 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends StateSpecBaseClass {
       // this is the fully signed tx that alice could decide to publish
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       // we have nothing at stake so we don't do anything with the tx
-      bob ! (BITCOIN_ANCHOR_SPENT, tx)
+      bob ! (BITCOIN_FUNDING_SPENT, tx)
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSED)
     }

@@ -13,10 +13,10 @@ import fr.acinq.eclair.channel.BitcoinEvent
 trait Watch {
   def channel: ActorRef
 }
-final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Int, event: BitcoinEvent) extends Watch
+final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: Int, minDepth: Int, event: BitcoinEvent) extends Watch
 // notify me if confirmation number gets below minDepth
-final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Int, event: BitcoinEvent) extends Watch
+final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 
 final case class Publish(tx: Transaction)
 final case class PublishAsap(tx: Transaction)

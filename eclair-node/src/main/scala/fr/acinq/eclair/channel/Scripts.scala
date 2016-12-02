@@ -11,15 +11,15 @@ import lightning.{locktime, update_add_htlc, open_anchor, open_channel}
   */
 object Scripts {
 
-  def locktime2long_csv(in: locktime): Long = in match {
+  def toSelfDelay2csv(in: Int): Long = ??? /*in match {
     case locktime(Blocks(blocks)) => blocks
     case locktime(Seconds(seconds)) => TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG | (seconds >> TxIn.SEQUENCE_LOCKTIME_GRANULARITY)
-  }
+  }*/
 
-  def locktime2long_cltv(in: locktime): Long = in match {
+  def expiry2cltv(in: Long): Long = ???/*in match {
     case locktime(Blocks(blocks)) => blocks
     case locktime(Seconds(seconds)) => seconds
-  }
+  }*/
 
   def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0).toList, b.dropWhile(_ == 0).toList) < 0
 
@@ -158,7 +158,7 @@ object Scripts {
     // @formatter:on
   }
 
-  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, spec: CommitmentSpec): Transaction =
+  def makeCommitTx(ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, anchorTxId: BinaryData, anchorOutputIndex: Int, revocationHash: BinaryData, spec: CommitmentSpec): Transaction =
     makeCommitTx(inputs = TxIn(OutPoint(anchorTxId, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourFinalKey, theirFinalKey, theirDelay, revocationHash, spec)
 
   def applyFees(amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi) = {
@@ -179,12 +179,12 @@ object Scripts {
     def redeemScript: BinaryData
   }
 
-  case class HtlcTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, delay: locktime, revocationHash: BinaryData) extends OutputTemplate {
+  case class HtlcTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, delay: Int, revocationHash: BinaryData) extends OutputTemplate {
     override def amount = Satoshi(htlc.add.amountMsat / 1000)
 
     override def redeemScript = htlc.direction match {
-      case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, locktime2long_cltv(htlc.add.expiry), locktime2long_csv(delay), htlc.add.rHash, revocationHash))
-      case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, locktime2long_cltv(htlc.add.expiry), locktime2long_csv(delay), htlc.add.rHash, revocationHash))
+      case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
+      case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
     }
 
     override def txOut = TxOut(amount, pay2wsh(redeemScript))
@@ -226,8 +226,8 @@ object Scripts {
     def weHaveAnOutput: Boolean = ourOutput.isDefined || !htlcReceived.isEmpty || !htlcSent.isEmpty
   }
 
-  def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): TxTemplate = {
-    val redeemScript = redeemSecretOrDelay(ourFinalKey, locktime2long_csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
+  def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): TxTemplate = {
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, toSelfDelay2csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
     val htlcs = commitmentSpec.htlcs.filter(_.add.amountMsat >= 546000).toSeq
     val fee_msat = computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
     val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.amount_us_msat, commitmentSpec.amount_them_msat) match {
@@ -253,7 +253,7 @@ object Scripts {
     TxTemplate(inputs, ourOutput, theirOutput, sendOuts, receiveOuts)
   }
 
-  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: locktime, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): Transaction = {
+  def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): Transaction = {
     val txTemplate = makeCommitTxTemplate(inputs, ourFinalKey, theirFinalKey, theirDelay, revocationHash, commitmentSpec)
     val tx = txTemplate.makeTx
     tx

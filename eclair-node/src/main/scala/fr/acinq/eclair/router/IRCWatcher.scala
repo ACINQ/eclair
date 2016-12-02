@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorRef}
 import fr.acinq.eclair.Globals
-import fr.acinq.eclair.channel.{ChannelChangedState, DATA_NORMAL, NORMAL}
+import fr.acinq.eclair.channel.{ChannelChangedState, DATA_NORMAL_2, NORMAL}
 import grizzled.slf4j.Logging
 import org.kitteh.irc.client.library.Client
 import org.kitteh.irc.client.library.element.ISupportParameter.Network
@@ -35,7 +35,7 @@ class IRCWatcher extends Actor with ActorLogging {
   override def receive: Receive = main(Map(), Map())
 
   def main(channels: Map[String, ChannelDesc], localChannels: Map[ActorRef, Client]): Receive = {
-    case ChannelChangedState(channel, theirNodeId, _, NORMAL, d: DATA_NORMAL) =>
+    case ChannelChangedState(channel, theirNodeId, _, NORMAL, d: DATA_NORMAL_2) =>
       val channelDesc = ChannelDesc(d.commitments.anchorId, Globals.Node.publicKey, theirNodeId)
       val channelClient = Client.builder().nick(f"chan-${rand.nextInt(1000000)}%06d").realName(channelDesc.id.toString()).serverHost("irc.freenode.net").build()
       channelClient.getEventManager().registerEventListener(new ChannelIRCListener(channelDesc))

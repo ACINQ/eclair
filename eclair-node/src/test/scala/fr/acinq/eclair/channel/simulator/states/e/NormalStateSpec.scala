@@ -8,7 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
@@ -51,7 +51,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     alice2blockchain.forward(blockchainA)
     bob2blockchain.expectMsgType[WatchConfirmed]
     bob2blockchain.expectMsgType[WatchSpent]
-    bob ! BITCOIN_ANCHOR_DEPTHOK
+    bob ! BITCOIN_FUNDING_DEPTHOK
     bob2blockchain.expectMsgType[WatchLost]
     bob2alice.expectMsgType[open_complete]
     bob2alice.forward(alice)
@@ -625,7 +625,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // bob publishes his current commit tx
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
-      alice ! (BITCOIN_ANCHOR_SPENT, bobCommitTx)
+      alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
@@ -681,7 +681,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // alice = 696 000
       //   bob = 300 000
       //  a->b =   4 000
-      alice ! (BITCOIN_ANCHOR_SPENT, revokedTx)
+      alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[error]
       val punishTx = alice2blockchain.expectMsgType[Publish].tx
       alice2blockchain.expectMsgType[WatchConfirmed]

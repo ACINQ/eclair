@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair._
 import TestConstants.{Alice, Bob}
+import fr.acinq.eclair.wire.AddHtlc
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, routing, update_add_htlc}
 import org.junit.runner.RunWith
@@ -19,12 +20,12 @@ class StealRevokedCommitmentSpec extends FunSuite {
     (sender2, receiver1)
   }
 
-  def addHtlc(sender: Commitments, receiver: Commitments, htlc: update_add_htlc): (Commitments, Commitments) = {
-    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.rHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
+  def addHtlc(sender: Commitments, receiver: Commitments, htlc: AddHtlc): (Commitments, Commitments) = {
+    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.paymentHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
   }
 
   def fulfillHtlc(sender: Commitments, receiver: Commitments, id: Long, paymentPreimage: BinaryData): (Commitments, Commitments) = {
-    val (sender1, fulfill) = Commitments.sendFulfill(sender, CMD_FULFILL_HTLC(id, paymentPreimage))
+    val (sender1, fulfill) = Commitments.sendFulfill(sender, CMD_FULFILL_HTLC(id, paymentPreimage), 0)
     val (receiver1, _) = Commitments.receiveFulfill(receiver, fulfill)
     (sender1, receiver1)
   }
@@ -36,7 +37,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
     val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
     val H = Crypto.sha256(R)
 
-    val htlc = update_add_htlc(1, 70000000, H, locktime(Blocks(400)), routing.defaultInstance)
+    val htlc = AddHtlc(0, 1, 70000000, 400, H, BinaryData(""))
     val (alice1, bob1) = addHtlc(alice, bob, htlc)
     val (alice2, bob2) = signAndReceiveRevocation(alice1, bob1)
 
@@ -50,7 +51,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
     assert(theirTx.txIn.map(_.outPoint) == alice3.ourCommit.publishableTx.txIn.map(_.outPoint))
     assert(theirTx.txOut == alice3.ourCommit.publishableTx.txOut)
     val preimage = bob5.theirPreimages.getHash(0xFFFFFFFFFFFFFFFFL - bob3.theirCommit.index).get
-    val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, preimage, bob3.ourParams.finalPrivKey)
+    val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, preimage, ???) // TODO
     Transaction.correctlySpends(punishTx, Seq(alice3.ourCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
 

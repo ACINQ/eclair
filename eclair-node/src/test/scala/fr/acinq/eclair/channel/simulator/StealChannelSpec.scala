@@ -4,7 +4,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, update_add_htlc}
 import org.junit.runner.RunWith
@@ -46,7 +46,7 @@ class StealChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      bob !(BITCOIN_ANCHOR_SPENT, commitTx)
+      bob !(BITCOIN_FUNDING_SPENT, commitTx)
       awaitCond(bob.stateName == CLOSING)
     }
   }

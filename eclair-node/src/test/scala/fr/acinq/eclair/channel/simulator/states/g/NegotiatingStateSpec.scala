@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -51,7 +51,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     alice2blockchain.forward(blockchainA)
     bob2blockchain.expectMsgType[WatchConfirmed]
     bob2blockchain.expectMsgType[WatchSpent]
-    bob ! BITCOIN_ANCHOR_DEPTHOK
+    bob ! BITCOIN_FUNDING_DEPTHOK
     bob2blockchain.expectMsgType[WatchLost]
     bob2alice.expectMsgType[open_complete]
     bob2alice.forward(alice)
@@ -157,7 +157,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
       assert(alice.stateName == NEGOTIATING)
       val mutualCloseTx = bob2blockchain.expectMsgType[Publish].tx
       bob2blockchain.expectMsgType[WatchConfirmed]
-      alice ! (BITCOIN_ANCHOR_SPENT, mutualCloseTx)
+      alice ! (BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg()
       assert(alice.stateName == NEGOTIATING)
     }

@@ -4,7 +4,7 @@ import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, Scripts}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, Scripts}
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
@@ -27,7 +27,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, minDepth, event)
           if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          channel ! (BITCOIN_ANCHOR_SPENT, tx)
+          channel ! (BITCOIN_FUNDING_SPENT, tx)
           self ! ('remove, w)
         case _ => {}
       }

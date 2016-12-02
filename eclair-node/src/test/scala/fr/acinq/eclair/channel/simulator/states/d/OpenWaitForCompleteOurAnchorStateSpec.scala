@@ -49,7 +49,7 @@ class OpenWaitForCompleteOurAnchorStateSpec extends StateSpecBaseClass {
       alice2blockchain.forward(blockchainA)
       alice2bob.expectMsgType[open_complete]
       alice2bob.forward(bob)
-      bob ! BITCOIN_ANCHOR_DEPTHOK
+      bob ! BITCOIN_FUNDING_DEPTHOK
       alice2blockchain.expectMsgType[WatchLost]
       alice2blockchain.forward(blockchainA)
       awaitCond(alice.stateName == OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
@@ -78,7 +78,7 @@ class OpenWaitForCompleteOurAnchorStateSpec extends StateSpecBaseClass {
   test("recv BITCOIN_ANCHOR_SPENT") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice ! (BITCOIN_ANCHOR_SPENT, null)
+      alice ! (BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[error]
       alice2blockchain.expectMsg(Publish(tx))
       awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
