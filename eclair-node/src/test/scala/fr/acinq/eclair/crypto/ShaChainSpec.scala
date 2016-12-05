@@ -89,4 +89,120 @@ class ShaChainSpec extends FunSuite {
 
     assert(receiver.iterator.find(_ == expected(20)) == Some(expected(20)))
   }
+
+  test("Rusty's reference tests: generation") {
+    assert(ShaChain.shaChainFromSeed(BinaryData("0000000000000000000000000000000000000000000000000000000000000000"), 281474976710655L) == BinaryData("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148"))
+    assert(ShaChain.shaChainFromSeed(BinaryData("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"), 281474976710655L) == BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"))
+    assert(ShaChain.shaChainFromSeed(BinaryData("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"), 0xaaaaaaaaaaaL) == BinaryData("56f4008fb007ca9acf0e15b054d5c9fd12ee06cea347914ddbaed70d1c13a528"))
+    assert(ShaChain.shaChainFromSeed(BinaryData("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"), 0x555555555555L) == BinaryData("9015daaeb06dba4ccc05b91b2f73bd54405f2be9f217fbacd3c5ac2e62327d31"))
+    assert(ShaChain.shaChainFromSeed(BinaryData("0101010101010101010101010101010101010101010101010101010101010101"), 1) == BinaryData("915c75942a26bb3a433a8ce2cb0427c29ec6c1775cfc78328b57f6ba7bfeaa9c"))
+  }
+
+  test("Rusty's reference tests: insert_secret correct sequence") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd"), 281474976710651L)
+    val chain6 = chain5.addHash(BinaryData("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2"), 281474976710650L)
+    val chain7 = chain6.addHash(BinaryData("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32"), 281474976710649L)
+    val chain8 = chain7.addHash(BinaryData("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17"), 281474976710648L)
+  }
+
+  test("Rusty's reference tests: insert_secret #1 incorrect") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148"), 281474976710655L)
+    intercept[AssertionError] {
+      val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #2 incorrect (#1 derived from incorrect)") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    intercept[AssertionError] {
+      val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #3 incorrect") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("c51a18b13e8527e579ec56365482c62f180b7d5760b46e9477dae59e87ed423a"), 281474976710653L)
+    intercept[AssertionError] {
+      val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #4 incorrect (1,2,3 derived from incorrect)") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("02a40c85b6f28da08dfdbe0926c53fab2de6d28c10301f8f7c4073d5e42e3148"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("dddc3a8d14fddf2b68fa8c7fbad2748274937479dd0f8930d5ebb4ab6bd866a3"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("c51a18b13e8527e579ec56365482c62f180b7d5760b46e9477dae59e87ed423a"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("ba65d7b0ef55a3ba300d4e87af29868f394f8f138d78a7011669c79b37b936f4"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd"), 281474976710651L)
+    val chain6 = chain5.addHash(BinaryData("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2"), 281474976710650L)
+    val chain7 = chain6.addHash(BinaryData("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32"), 281474976710649L)
+    intercept[AssertionError] {
+      val chain8 = chain7.addHash(BinaryData("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17"), 281474976710648L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #5 incorrect") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("631373ad5f9ef654bb3dade742d09504c567edd24320d2fcd68e3cc47e2ff6a6"), 281474976710651L)
+    intercept[AssertionError] {
+      val chain6 = chain5.addHash(BinaryData("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2"), 281474976710650L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #6 incorrect (5 derived from incorrect)") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("631373ad5f9ef654bb3dade742d09504c567edd24320d2fcd68e3cc47e2ff6a6"), 281474976710651L)
+    val chain6 = chain5.addHash(BinaryData("b7e76a83668bde38b373970155c868a653304308f9896692f904a23731224bb1"), 281474976710650L)
+    val chain7 = chain6.addHash(BinaryData("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32"), 281474976710649L)
+    intercept[AssertionError] {
+      val chain8 = chain7.addHash(BinaryData("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17"), 281474976710648L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #7 incorrect") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd"), 281474976710651L)
+    val chain6 = chain5.addHash(BinaryData("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2"), 281474976710650L)
+    val chain7 = chain6.addHash(BinaryData("e7971de736e01da8ed58b94c2fc216cb1dca9e326f3a96e7194fe8ea8af6c0a3"), 281474976710649L)
+    intercept[AssertionError] {
+      val chain8 = chain7.addHash(BinaryData("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17"), 281474976710648L)
+    }
+  }
+
+  test("Rusty's reference tests: insert_secret #8 incorrect") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd"), 281474976710651L)
+    val chain6 = chain5.addHash(BinaryData("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2"), 281474976710650L)
+    val chain7 = chain6.addHash(BinaryData("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32"), 281474976710649L)
+    intercept[AssertionError] {
+      val chain8 = chain7.addHash(BinaryData("a7efbc61aac46d34f77778bac22c8a20c6a46ca460addc49009bda875ec88fa4"), 281474976710648L)
+    }
+  }
 }
