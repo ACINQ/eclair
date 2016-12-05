@@ -18,9 +18,17 @@ object Codecs {
 
   def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data))
 
-  def varsizebinarydata: Codec[BinaryData] = variableSizeBytesLong(uint32, bytes.xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data)))
+  def varsizebinarydata: Codec[BinaryData] = variableSizeBytes(uint16, bytes.xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data)))
 
   def listofbinarydata(size: Int): Codec[List[BinaryData]] = listOfN(int32, binarydata(size))
+
+  val initCodec: Codec[Init] = (
+    ("globalFeatures" | varsizebinarydata) ::
+      ("localFeatures" | varsizebinarydata)).as[Init]
+
+  val errorCodec: Codec[Error] = (
+    ("channelId" | uint64) ::
+      ("data" | varsizebinarydata)).as[Error]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("temporaryChannelId" | uint64) ::
@@ -114,6 +122,8 @@ object Codecs {
     ).as[RevokeAndAck]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
+    .typecase(16, initCodec)
+    .typecase(17, errorCodec)
     .typecase(32, openChannelCodec)
     .typecase(33, acceptChannelCodec)
     .typecase(34, fundingCreatedCodec)

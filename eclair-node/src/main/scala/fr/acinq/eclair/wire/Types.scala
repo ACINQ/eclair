@@ -14,6 +14,12 @@ sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
 // @formatter:on
 
+case class Init(globalFeatures: BinaryData,
+                localFeatures: BinaryData) extends SetupMessage
+
+case class Error(channelId: Long,
+                 data: BinaryData) extends SetupMessage
+
 case class OpenChannel(temporaryChannelId: Long,
                        fundingSatoshis: Long,
                        pushMsat: Long,
@@ -63,8 +69,8 @@ case class Shutdown(channelId: Long,
                     scriptPubKey: BinaryData) extends ChannelMessage
 
 case class ClosingSigned(channelId: Long,
-                          feeSatoshis: Long,
-                          signature: BinaryData) extends ChannelMessage
+                         feeSatoshis: Long,
+                         signature: BinaryData) extends ChannelMessage
 
 case class AddHtlc(channelId: Long,
                    id: Long,
