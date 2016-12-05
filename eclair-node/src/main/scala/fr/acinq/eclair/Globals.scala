@@ -24,7 +24,7 @@ object Globals {
     val id = publicKey.toString()
   }
 
-  val default_locktime = locktime(Blocks(144))
+  val default_locktime = 144
   val default_mindepth = 3
   val commit_fee = config.getInt("eclair.commit-fee")
   val closing_fee = config.getInt("eclair.closing-fee")

@@ -90,13 +90,13 @@ object Codecs {
       ("feeSatoshis" | uint64) ::
       ("signature" | binarydata(64))).as[ClosingSigned]
 
-  val addHtlcCodec: Codec[AddHtlc] = (
+  val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | uint64) ::
       ("id" | uint64) ::
       ("amountMsat" | uint32) ::
       ("expiry" | uint32) ::
       ("paymentHash" | binarydata(32)) ::
-      ("onionRoutingPacket" | binarydata(1254))).as[AddHtlc]
+      ("onionRoutingPacket" | binarydata(1254))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | uint64) ::
@@ -132,7 +132,7 @@ object Codecs {
     .typecase(37, updateFeeCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
-    .typecase(128, addHtlcCodec)
+    .typecase(128, updateAddHtlcCodec)
     .typecase(130, updateFulfillHtlcCodec)
     .typecase(131, updateFailHtlcCodec)
     .typecase(132, commitSigCodec)

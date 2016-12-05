@@ -27,7 +27,7 @@ class OurCommitChannelSpec extends BaseChannelTestClass {
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
       val H = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
+      alice ! CMD_ADD_HTLC(60000000, H, 400)
       alice ! CMD_SIGN
       Thread.sleep(500)
       bob ! CMD_SIGN

@@ -8,6 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -67,17 +68,17 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     val r1: rval = rval(1, 1, 1, 1)
     val h1: sha256_hash = Crypto.sha256(r1)
     val amount1 = 300000000
-    sender.send(alice, CMD_ADD_HTLC(amount1, h1, locktime(Blocks(1440))))
+    sender.send(alice, CMD_ADD_HTLC(amount1, h1, 1440))
     sender.expectMsg("ok")
-    val htlc1 = alice2bob.expectMsgType[update_add_htlc]
+    val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: Nil)
     val r2: rval = rval(2, 2, 2, 2)
     val h2: sha256_hash = Crypto.sha256(r2)
     val amount2 = 200000000
-    sender.send(alice, CMD_ADD_HTLC(amount2, h2, locktime(Blocks(1440))))
+    sender.send(alice, CMD_ADD_HTLC(amount2, h2, 1440))
     sender.expectMsg("ok")
-    val htlc2 = alice2bob.expectMsgType[update_add_htlc]
+    val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: htlc2 :: Nil)
     // alice signs
@@ -105,7 +106,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fulfill))))
     }
   }
@@ -130,21 +131,21 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     }
   }
 
-  test("recv update_fulfill_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFulfillHtlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-      val fulfill = update_fulfill_htlc(1, rval(1, 1, 1, 1))
+      val fulfill = UpdateFulfillHtlc(0, 1, "11" * 32)
       sender.send(alice, fulfill)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fulfill)))
     }
   }
 
-  test("recv update_fulfill_htlc (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      val fulfill = update_fulfill_htlc(42, rval(0, 0, 0, 0))
+      val fulfill = UpdateFulfillHtlc(0, 42, "00" * 32)
       sender.send(alice, fulfill)
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSING)
@@ -153,11 +154,11 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     }
   }
 
-  test("recv update_fulfill_htlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(alice, update_fulfill_htlc(42, rval(0, 0, 0, 0)))
+      sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -171,7 +172,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FAIL_HTLC(1, "some reason"))
       sender.expectMsg("ok")
-      val fail = bob2alice.expectMsgType[update_fail_htlc]
+      val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fail))))
     }
   }
@@ -186,21 +187,21 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     }
   }
 
-  test("recv update_fail_htlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFailHtlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-      val fail = update_fail_htlc(1, fail_reason(ByteString.copyFromUtf8("some reason")))
+      val fail = UpdateFailHtlc(0, 1, "some reason".getBytes())
       sender.send(alice, fail)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(theirChanges = initialState.commitments.theirChanges.copy(initialState.commitments.theirChanges.proposed :+ fail)))
     }
   }
 
-  test("recv update_fail_htlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  test("recv UpdateFailHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(alice, update_fail_htlc(42, fail_reason(ByteString.copyFromUtf8("some reason"))))
+      sender.send(alice, UpdateFailHtlc(0, 42, "some reason".getBytes()))
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -213,7 +214,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       val sender = TestProbe()
       // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
       sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
-      bob2alice.expectMsgType[update_fulfill_htlc]
+      bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
       sender.send(bob, CMD_SIGN)
       bob2alice.expectMsgType[update_commit]
@@ -240,7 +241,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(alice, update_fulfill_htlc(1, rval(1, 2, 3, 4)))
+      sender.send(alice, UpdateFulfillHtlc(0, 1, rval(1, 2, 3, 4)))
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
       alice2bob.expectMsgType[update_commit]
@@ -255,7 +256,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       val sender = TestProbe()
       sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
-      bob2alice.expectMsgType[update_fulfill_htlc]
+      bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
       sender.send(bob, CMD_SIGN)
       sender.expectMsg("ok")
@@ -350,7 +351,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       val sender = TestProbe()
       sender.send(bob, CMD_FULFILL_HTLC(1, rval(1, 1, 1, 1)))
       sender.expectMsg("ok")
-      bob2alice.expectMsgType[update_fulfill_htlc]
+      bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
       sender.send(bob, CMD_SIGN)
       sender.expectMsg("ok")

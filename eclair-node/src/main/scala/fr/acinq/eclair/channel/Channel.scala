@@ -393,7 +393,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(add: AddHtlc, d@DATA_NORMAL_2(_, channelParams, commitments, _, _)) =>
+    case Event(add: UpdateAddHtlc, d@DATA_NORMAL_2(_, channelParams, commitments, _, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
         case Success(commitments1) =>
           channelParams.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
@@ -738,7 +738,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
 
-  def propagateUpstream(add: AddHtlc, anchorId: BinaryData) = {
+  def propagateUpstream(add: UpdateAddHtlc, anchorId: BinaryData) = {
     /*val r = route.parseFrom(add.route.info.toByteArray)
     r.steps match {
       case route_step(amountMsat, Next.Bitcoin(nextNodeId)) +: rest =>
@@ -764,7 +764,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     }*/
   }
 
-  def propagateDownstream(htlc: AddHtlc, fail_or_fulfill: Either[UpdateFailHtlc, UpdateFulfillHtlc], origin_opt: Option[Origin]) = {
+  def propagateDownstream(htlc: UpdateAddHtlc, fail_or_fulfill: Either[UpdateFailHtlc, UpdateFulfillHtlc], origin_opt: Option[Origin]) = {
     (origin_opt, fail_or_fulfill) match {
       case (Some(origin), Left(fail)) =>
         val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))

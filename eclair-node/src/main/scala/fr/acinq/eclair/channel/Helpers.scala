@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.wire.{AddHtlc, ClosingSigned, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import lightning._
 
 import scala.annotation.tailrec
@@ -17,11 +17,11 @@ import scala.util.Try
 object Helpers {
 
   def removeHtlc(changes: List[Change], id: Long): List[Change] = changes.filterNot(_ match {
-    case u: AddHtlc if u.id == id => true
+    case u: UpdateAddHtlc if u.id == id => true
     case _ => false
   })
 
-  def addHtlc(spec: CommitmentSpec, direction: Direction, update: AddHtlc): CommitmentSpec = {
+  def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
     val htlc = Htlc(direction, update, previousChannelId = None)
     direction match {
       case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
@@ -29,7 +29,7 @@ object Helpers {
     }
   }
 
-  // OUT means we are sending an update_fulfill_htlc message which means that we are fulfilling an HTLC that they sent
+  // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFulfillHtlc): CommitmentSpec = {
     spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.paymentHash == bin2sha256(Crypto.sha256(update.paymentPreimage))) match {
       case Some(htlc) if direction == OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
@@ -38,7 +38,7 @@ object Helpers {
     }
   }
 
-  // OUT means we are sending an update_fail_htlc message which means that we are failing an HTLC that they sent
+  // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
   def failHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFailHtlc): CommitmentSpec = {
     spec.htlcs.find(_.add.id == update.id) match {
       case Some(htlc) if direction == OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
@@ -49,11 +49,11 @@ object Helpers {
 
   def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
     val spec1 = ourChanges.foldLeft(ourCommitSpec) {
-      case (spec, u: AddHtlc) => addHtlc(spec, OUT, u)
+      case (spec, u: UpdateAddHtlc) => addHtlc(spec, OUT, u)
       case (spec, _) => spec
     }
     val spec2 = theirChanges.foldLeft(spec1) {
-      case (spec, u: AddHtlc) => addHtlc(spec, IN, u)
+      case (spec, u: UpdateAddHtlc) => addHtlc(spec, IN, u)
       case (spec, _) => spec
     }
     val spec3 = ourChanges.foldLeft(spec2) {
@@ -213,7 +213,7 @@ object Helpers {
     *         before which it can be published
     */
   def claimReceivedHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = {
-    require(htlcTemplate.htlc.add.paymentHash == bin2sha256(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
+    require(htlcTemplate.htlc.add.paymentHash == BinaryData(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
     // find its index in their tx
     val index = tx.txOut.indexOf(htlcTemplate.txOut)
 

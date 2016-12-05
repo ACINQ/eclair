@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
-import fr.acinq.eclair.wire.AddHtlc
+import fr.acinq.eclair.wire.UpdateAddHtlc
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, routing, update_add_htlc}
 import org.junit.runner.RunWith
@@ -20,8 +20,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     (sender2, receiver1)
   }
 
-  def addHtlc(sender: Commitments, receiver: Commitments, htlc: AddHtlc): (Commitments, Commitments) = {
-    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.paymentHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
+  def addHtlc(sender: Commitments, receiver: Commitments, htlc: UpdateAddHtlc): (Commitments, Commitments) = {
+    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, paymentHash = htlc.paymentHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
   }
 
   test("claim received htlcs in their current commit tx") {
@@ -33,8 +33,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val R1: BinaryData = "0202030405060708010203040506070801020304050607080102030405060708"
     val H1 = Crypto.sha256(R1)
 
-    val (alice0, bob0) = addHtlc(alice, bob, AddHtlc(0, 1, 70000000, 400, H, BinaryData("")))
-    val (alice1, bob1) = addHtlc(alice0, bob0, AddHtlc(0, 2, 80000000, 350, H1, BinaryData("")))
+    val (alice0, bob0) = addHtlc(alice, bob, UpdateAddHtlc(0, 1, 70000000, 400, H, BinaryData("")))
+    val (alice1, bob1) = addHtlc(alice0, bob0, UpdateAddHtlc(0, 2, 80000000, 350, H1, BinaryData("")))
     val (alice2, bob2) = signAndReceiveRevocation(alice1, bob1)
     val (bob3, alice3) = signAndReceiveRevocation(bob2, alice2)
 
@@ -66,8 +66,8 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val R1: BinaryData = "0202030405060708010203040506070801020304050607080102030405060708"
     val H1 = Crypto.sha256(R1)
 
-    val (alice0, bob0) = addHtlc(alice, bob, AddHtlc(0, 1, 70000000, 400, H, BinaryData("")))
-    val (alice1, bob1) = addHtlc(alice0, bob0, AddHtlc(0, 1, 80000000, 350, H1, BinaryData("")))
+    val (alice0, bob0) = addHtlc(alice, bob, UpdateAddHtlc(0, 1, 70000000, 400, H, BinaryData("")))
+    val (alice1, bob1) = addHtlc(alice0, bob0, UpdateAddHtlc(0, 1, 80000000, 350, H1, BinaryData("")))
     val (alice2, bob2) = signAndReceiveRevocation(alice1, bob1)
     val (bob3, alice3) = signAndReceiveRevocation(bob2, alice2)
 

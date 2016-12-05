@@ -81,11 +81,11 @@ class PaymentLifecycle(router: ActorRef, selector: ActorRef, initialBlockCount: 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event("ok", _) => stay()
 
-    case Event(e@PaymentSent(_, h), WaitingForComplete(s, cmd, channel)) if h == cmd.rHash =>
+    case Event(e@PaymentSent(_, h), WaitingForComplete(s, cmd, channel)) if h == cmd.paymentHash =>
       s ! "sent"
       stop(FSM.Normal)
 
-    case Event(e@PaymentFailed(_, h, reason), WaitingForComplete(s, cmd, channel)) if h == cmd.rHash =>
+    case Event(e@PaymentFailed(_, h, reason), WaitingForComplete(s, cmd, channel)) if h == cmd.paymentHash =>
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 

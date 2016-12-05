@@ -5,6 +5,8 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.io.AuthHandler
 import fr.acinq.eclair.Globals
+import lightning.locktime
+import lightning.locktime.Locktime.Blocks
 
 import scala.concurrent.duration._
 
@@ -38,7 +40,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
     case CreateChannel(connection, amount) =>
       val commit_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 0L :: counter :: Nil)
       val final_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 1L :: counter :: Nil)
-      val params = OurChannelParams(Globals.default_locktime, commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, Globals.Node.seed, amount, Some(Globals.autosign_interval))
+      val params = OurChannelParams(locktime(Blocks(144)), commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, Globals.Node.seed, amount, Some(Globals.autosign_interval))
       val channel = context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, params), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children

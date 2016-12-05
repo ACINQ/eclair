@@ -1,11 +1,9 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction}
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
-import TestConstants.{Alice, Bob}
-import fr.acinq.eclair.wire.AddHtlc
-import lightning.locktime.Locktime.Blocks
-import lightning.{locktime, routing, update_add_htlc}
+import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -20,8 +18,8 @@ class StealRevokedCommitmentSpec extends FunSuite {
     (sender2, receiver1)
   }
 
-  def addHtlc(sender: Commitments, receiver: Commitments, htlc: AddHtlc): (Commitments, Commitments) = {
-    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, rHash = htlc.paymentHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
+  def addHtlc(sender: Commitments, receiver: Commitments, htlc: UpdateAddHtlc): (Commitments, Commitments) = {
+    (Commitments.sendAdd(sender, CMD_ADD_HTLC(id = Some(htlc.id), amountMsat = htlc.amountMsat, paymentHash = htlc.paymentHash, expiry = htlc.expiry))._1, Commitments.receiveAdd(receiver, htlc))
   }
 
   def fulfillHtlc(sender: Commitments, receiver: Commitments, id: Long, paymentPreimage: BinaryData): (Commitments, Commitments) = {
@@ -37,7 +35,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
     val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
     val H = Crypto.sha256(R)
 
-    val htlc = AddHtlc(0, 1, 70000000, 400, H, BinaryData(""))
+    val htlc = UpdateAddHtlc(0, 1, 70000000, 400, H, BinaryData(""))
     val (alice1, bob1) = addHtlc(alice, bob, htlc)
     val (alice2, bob2) = signAndReceiveRevocation(alice1, bob1)
 

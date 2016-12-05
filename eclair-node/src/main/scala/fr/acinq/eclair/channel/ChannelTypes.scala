@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
-import fr.acinq.eclair.wire.{AddHtlc, ClosingSigned, FundingLocked, Shutdown}
+import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown, UpdateAddHtlc}
 import lightning._
 
 import scala.concurrent.duration.FiniteDuration
@@ -90,7 +90,7 @@ final case class Origin(channelId: BinaryData, htlc_id: Long)
 /**
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amountMsat: Long, rHash: sha256_hash, expiry: Long, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
@@ -130,7 +130,7 @@ sealed trait Direction
 case object IN extends Direction
 case object OUT extends Direction
 
-case class Htlc(direction: Direction, add: AddHtlc, val previousChannelId: Option[BinaryData])
+case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])
 
 final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, amount_us_msat: Long, amount_them_msat: Long) {
   val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.add.amountMsat).sum

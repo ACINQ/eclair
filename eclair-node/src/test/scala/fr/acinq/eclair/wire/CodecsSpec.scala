@@ -24,7 +24,7 @@ class CodecsSpec extends FunSuite {
     val update_fee = UpdateFee(1, 2)
     val shutdown = Shutdown(1, bin(47, 0))
     val closing_signed = ClosingSigned(1, 2, bin(64, 0))
-    val add_htlc = AddHtlc(1, 2, 3, 4, bin(32, 0), bin(1254, 0))
+    val add_htlc = UpdateAddHtlc(1, 2, 3, 4, bin(32, 0), bin(1254, 0))
     val update_fulfill_htlc = UpdateFulfillHtlc(1, 2, bin(32, 0))
     val update_fail_htlc = UpdateFailHtlc(1, 2, bin(154, 0))
     val commit_sig = CommitSig(1, bin(64, 0), bin(64, 1) :: bin(64, 2) :: bin(64, 3) :: Nil)

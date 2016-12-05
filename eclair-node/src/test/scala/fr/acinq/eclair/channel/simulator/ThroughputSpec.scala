@@ -9,6 +9,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.wire.UpdateAddHtlc
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, update_add_htlc}
 import org.junit.runner.RunWith
@@ -47,10 +48,10 @@ class ThroughputSpec extends FunSuite {
 
         case ('sig, tgt: ActorRef) => tgt ! CMD_SIGN
 
-        case htlc: update_add_htlc if h2r.contains(htlc.rHash) =>
-          val r = h2r(htlc.rHash)
+        case htlc: UpdateAddHtlc if h2r.contains(htlc.paymentHash) =>
+          val r = h2r(htlc.paymentHash)
           sender ! CMD_FULFILL_HTLC(htlc.id, r)
-          context.become(run(h2r - htlc.rHash))
+          context.become(run(h2r - htlc.paymentHash))
       }
     }), "payment-handler")
     val alice = system.actorOf(Channel.props(pipe, blockchain, paymentHandler, Alice.channelParams, "B"), "a")

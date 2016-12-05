@@ -45,7 +45,7 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
     val sender = TestProbe()
-    sender.send(paymentFsm, CreatePayment(42000000, sha256_hash(1, 2, 3, 4), node_c))
+    sender.send(paymentFsm, CreatePayment(42000000, BinaryData("00112233445566778899aabbccddeeff"), node_c))
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     sender.expectMsgType[Status.Failure]
   }
@@ -74,7 +74,7 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
     val sender = TestProbe()
-    val req = CreatePayment(42000000, sha256_hash(1, 2, 3, 4), node_c)
+    val req = CreatePayment(42000000, BinaryData("00112233445566778899aabbccddeeff"), node_c)
     sender.send(paymentFsm, req)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CHANNEL) = monitor.expectMsgClass(classOf[Transition[_]])
@@ -109,7 +109,7 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
     val sender = TestProbe()
-    val req = CreatePayment(42000000, sha256_hash(1, 2, 3, 4), node_c)
+    val req = CreatePayment(42000000, BinaryData("00112233445566778899aabbccddeeff"), node_c)
     sender.send(paymentFsm, req)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_CHANNEL) = monitor.expectMsgClass(classOf[Transition[_]])

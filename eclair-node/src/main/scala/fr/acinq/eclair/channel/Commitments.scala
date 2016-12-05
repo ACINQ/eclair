@@ -85,7 +85,7 @@ object Commitments {
   private def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
     commitments.copy(theirChanges = commitments.theirChanges.copy(proposed = commitments.theirChanges.proposed :+ proposal))
 
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, AddHtlc) = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
     // our available funds as seen by them, including all pending changes
     val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.proposed)
     // a node cannot spend pending incoming htlcs
@@ -94,13 +94,13 @@ object Commitments {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
       val id = cmd.id.getOrElse(commitments.ourCurrentHtlcId + 1)
-      val add: AddHtlc = ??? //AddHtlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(cmd.payment_route.toByteArray)))
+      val add: UpdateAddHtlc = ??? //AddHtlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(cmd.payment_route.toByteArray)))
       val commitments1 = addOurProposal(commitments, add).copy(ourCurrentHtlcId = id)
       (commitments1, add)
     }
   }
 
-  def receiveAdd(commitments: Commitments, add: AddHtlc): Commitments = {
+  def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     // their available funds as seen by us, including all pending changes
     val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.proposed)
     // a node cannot spend pending incoming htlcs
@@ -124,7 +124,7 @@ object Commitments {
     }
   }
 
-  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): (Commitments, AddHtlc) = {
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): (Commitments, UpdateAddHtlc) = {
     commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == bin2sha256(Crypto.sha256(fulfill.paymentPreimage)) => (addTheirProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
@@ -142,7 +142,7 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): (Commitments, AddHtlc) = {
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): (Commitments, UpdateAddHtlc) = {
     commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u.add } match {
       case Some(htlc) => (addTheirProposal(commitments, fail), htlc)
       case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO : we should fail the channel

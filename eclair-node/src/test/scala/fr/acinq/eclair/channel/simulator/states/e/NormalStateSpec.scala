@@ -3,12 +3,13 @@ package fr.acinq.eclair.channel.simulator.states.e
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import com.google.protobuf.ByteString
-import fr.acinq.bitcoin.{Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import lightning._
 import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
@@ -69,11 +70,11 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
-      val h = sha256_hash(1, 2, 3, 4)
-      sender.send(alice, CMD_ADD_HTLC(500000, h, locktime(Blocks(144))))
+      val h = BinaryData("00112233445566778899aabbccddeeff")
+      sender.send(alice, CMD_ADD_HTLC(500000, h, 144))
       sender.expectMsg("ok")
-      val htlc = alice2bob.expectMsgType[update_add_htlc]
-      assert(htlc.id == 1 && htlc.rHash == h)
+      val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
+      assert(htlc.id == 1 && htlc.paymentHash == h)
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(ourCurrentHtlcId = 1, ourChanges = initialState.commitments.ourChanges.copy(proposed = htlc :: Nil)),
         downstreams = Map(htlc.id -> None)))
@@ -83,7 +84,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, sha256_hash(1, 1, 1, 1), 144))
       sender.expectMsg("insufficient funds (available=1000000000 msat)")
     }
   }
@@ -91,11 +92,11 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 1/2)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(1, 1, 1, 1), 144))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(2, 2, 2, 2), 144))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), 144))
       sender.expectMsg("insufficient funds (available=0 msat)")
     }
   }
@@ -103,11 +104,11 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), 144))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(2, 2, 2, 2), 144))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(500000000, sha256_hash(3, 3, 3, 3), 144))
       sender.expectMsg("insufficient funds (available=400000000 msat)")
     }
   }
@@ -120,24 +121,24 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].ourShutdown.isDefined)
 
       // actual test starts here
-      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(300000000, sha256_hash(1, 1, 1, 1), 144))
       sender.expectMsg("cannot send new htlcs, closing in progress")
     }
   }
 
-  test("recv update_add_htlc") { case (_, bob, alice2bob, _, _, _) =>
+  test("recv UpdateAddHtlc") { case (_, bob, alice2bob, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-      val htlc = update_add_htlc(42, 150, sha256_hash(1, 2, 3, 4), locktime(Blocks(144)), routing(ByteString.EMPTY))
+      val htlc = UpdateAddHtlc(0, 42, 150, 144, BinaryData("00112233445566778899aabbccddeeff"), "")
       bob ! htlc
       awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(theirChanges = initialData.commitments.theirChanges.copy(proposed = initialData.commitments.theirChanges.proposed :+ htlc))))
     }
   }
 
-  test("recv update_add_htlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv UpdateAddHtlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      val htlc = update_add_htlc(42, Int.MaxValue, sha256_hash(1, 2, 3, 4), locktime(Blocks(144)), routing(ByteString.EMPTY))
+      val htlc = UpdateAddHtlc(0, 42, Int.MaxValue, 144, BinaryData("00112233445566778899aabbccddeeff"), "")
       alice2bob.forward(bob, htlc)
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
@@ -146,12 +147,12 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_add_htlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice2bob.forward(bob, update_add_htlc(42, 500000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(43, 500000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 42, 500000000, 144, sha256_hash(1, 1, 1, 1), ""))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 43, 500000000, 144, sha256_hash(2, 2, 2, 2), ""))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 44, 500000000, 144, sha256_hash(3, 3, 3, 3), ""))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -159,12 +160,12 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_add_htlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+  test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice2bob.forward(bob, update_add_htlc(42, 300000000, sha256_hash(1, 1, 1, 1), locktime(Blocks(144)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(43, 300000000, sha256_hash(2, 2, 2, 2), locktime(Blocks(144)), routing(ByteString.EMPTY)))
-      alice2bob.forward(bob, update_add_htlc(44, 500000000, sha256_hash(3, 3, 3, 3), locktime(Blocks(144)), routing(ByteString.EMPTY)))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 42, 300000000, 144, sha256_hash(1, 1, 1, 1), ""))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 43, 300000000, 144, sha256_hash(2, 2, 2, 2), ""))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 44, 500000000, 144, sha256_hash(3, 3, 3, 3), ""))
       bob2alice.expectMsgType[error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -229,17 +230,17 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv update_commit (two htlcs with same r)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r = sha256_hash(1, 2, 3, 4)
+      val r = BinaryData("00112233445566778899aabbccddeeff")
       val h: sha256_hash = Crypto.sha256(r)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, 144))
       sender.expectMsg("ok")
-      val htlc1 = alice2bob.expectMsgType[update_add_htlc]
+      val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, locktime(Blocks(144))))
+      sender.send(alice, CMD_ADD_HTLC(5000000, h, 144))
       sender.expectMsg("ok")
-      val htlc2 = alice2bob.expectMsgType[update_add_htlc]
+      val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
 
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc1 :: htlc2 :: Nil)
@@ -344,7 +345,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fulfill))))
     }
   }
@@ -375,7 +376,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fulfill_htlc (sender has not signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFulfillHtlc (sender has not signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -383,7 +384,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
 
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -394,7 +395,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fulfill_htlc (sender has signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFulfillHtlc (sender has signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -402,7 +403,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sign(bob, alice, bob2alice, alice2bob)
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
 
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -413,11 +414,11 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fulfill_htlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(alice, update_fulfill_htlc(42, rval(0, 0, 0, 0)))
+      sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -425,7 +426,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fulfill_htlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
@@ -433,7 +434,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
-      sender.send(alice, update_fulfill_htlc(42, rval(0, 0, 0, 0)))
+      sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -451,7 +452,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
       sender.expectMsg("ok")
-      val fail = bob2alice.expectMsgType[update_fail_htlc]
+      val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(ourChanges = initialState.commitments.ourChanges.copy(initialState.commitments.ourChanges.proposed :+ fail))))
     }
   }
@@ -468,7 +469,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fail_htlc (sender has not signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFailHtlc (sender has not signed)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -476,7 +477,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fail_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFailHtlc]
 
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -487,7 +488,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fail_htlc (sender has signed") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFailHtlc (sender has signed") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
@@ -496,7 +497,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fail_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFailHtlc]
 
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
@@ -507,11 +508,11 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv update_fail_htlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+  test("recv UpdateFailHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       val sender = TestProbe()
-      sender.send(alice, update_fail_htlc(42, fail_reason(ByteString.copyFromUtf8("some reason"))))
+      sender.send(alice, UpdateFailHtlc(0, 42, "some reason".getBytes()))
       alice2bob.expectMsgType[error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -598,14 +599,17 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
 
-      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
-      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
+      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
+      // id 1
+      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice)
+      // id 2
       val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
       sign(alice, bob, alice2bob, bob2alice)
       fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob) // id 1
+      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob)
+      // id 1
       val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
@@ -656,7 +660,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       sender.send(bob, CMD_FULFILL_HTLC(1, r))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[update_fulfill_htlc]
+      val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
 
       sign(bob, alice, bob2alice, alice2bob)
@@ -672,6 +676,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
         bob.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       }
+
       val txs = for (i <- 0 until 10) yield send()
       // bob now has 10 spendable tx, 9 of them being revoked
 
@@ -698,14 +703,17 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
   test("recv error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice) // id 1
-      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice) // id 2
+      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
+      // id 1
+      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice)
+      // id 2
       val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
       sign(alice, bob, alice2bob, bob2alice)
       fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob) // id 1
+      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob)
+      // id 1
       val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)

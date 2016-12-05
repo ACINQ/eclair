@@ -17,6 +17,7 @@ object TestConstants {
   // Alice is funder, Bob is not
 
   object Alice {
+    val channelParams: OurChannelParams = ???
     val (Base58.Prefix.SecretKeyTestnet, commitPrivKey) = Base58Check.decode("cQPmcNr6pwBQPyGfab3SksE9nTCtx9ism9T4dkS9dETNU2KKtJHk")
     val (Base58.Prefix.SecretKeyTestnet, finalPrivKey) = Base58Check.decode("cUrAtLtV7GGddqdkhUxnbZVDWGJBTducpPoon3eKp9Vnr1zxs6BG")
     val localParams = LocalParams(

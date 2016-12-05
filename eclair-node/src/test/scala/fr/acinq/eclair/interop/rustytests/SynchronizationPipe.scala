@@ -41,7 +41,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
     def resolve(x: String) = if (x == "A") a else b
     script match {
       case offer(x, id, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), locktime(Blocks(144)), id = Some(id.toLong))
+        resolve(x) ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), 144, id = Some(id.toLong))
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, BinaryData(r))

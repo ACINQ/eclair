@@ -72,7 +72,7 @@ case class ClosingSigned(channelId: Long,
                          feeSatoshis: Long,
                          signature: BinaryData) extends ChannelMessage
 
-case class AddHtlc(channelId: Long,
+case class UpdateAddHtlc(channelId: Long,
                    id: Long,
                    amountMsat: Long,
                    expiry: Long,

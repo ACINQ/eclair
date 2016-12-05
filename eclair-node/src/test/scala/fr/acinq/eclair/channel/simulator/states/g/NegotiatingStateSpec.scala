@@ -7,6 +7,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{TestBitcoinClient, _}
 import lightning._
 import lightning.locktime.Locktime.Blocks
@@ -67,9 +68,9 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     val r: rval = rval(1, 2, 3, 4)
     val h: sha256_hash = Crypto.sha256(r)
     val amount = 500000
-    sender.send(alice, CMD_ADD_HTLC(amount, h, locktime(Blocks(3))))
+    sender.send(alice, CMD_ADD_HTLC(amount, h, 3))
     sender.expectMsg("ok")
-    val htlc = alice2bob.expectMsgType[update_add_htlc]
+    val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
     // alice signs
@@ -83,7 +84,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     // bob fulfills
     sender.send(bob, CMD_FULFILL_HTLC(1, r))
     sender.expectMsg("ok")
-    bob2alice.expectMsgType[update_fulfill_htlc]
+    bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.size == 1)
     // bob signs

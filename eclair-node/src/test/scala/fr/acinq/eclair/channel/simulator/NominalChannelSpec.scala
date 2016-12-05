@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
+import fr.acinq.eclair.wire.UpdateAddHtlc
 import lightning.locktime.Locktime.Blocks
 import lightning.{locktime, update_add_htlc}
 import org.junit.runner.RunWith
@@ -55,20 +56,20 @@ class NominalChannelSpec extends BaseChannelTestClass {
       awaitCond(bob.stateName == NORMAL)
 
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
-      val H = Crypto.sha256(R)
+      val H: BinaryData = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
+      alice ! CMD_ADD_HTLC(60000000, H, 400)
       Thread.sleep(100)
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.ourChanges.proposed
-          assert(h == bin2sha256(H))
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.ourChanges.proposed
+          assert(h == H)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.theirChanges.proposed
-          assert(h == bin2sha256(H))
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.theirChanges.proposed
+          assert(h == H)
       }
 
       alice ! CMD_SIGN
@@ -77,12 +78,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.theirCommit.spec.htlcs.head
-          assert(htlc.add.rHash == bin2sha256(H))
+          assert(htlc.add.paymentHash == H)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.ourCommit.spec.htlcs.head
-          assert(htlc.add.rHash == bin2sha256(H))
+          assert(htlc.add.paymentHash == H)
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)
@@ -106,21 +107,21 @@ class NominalChannelSpec extends BaseChannelTestClass {
       }
 
       // send another HTLC
-      val R1 = Crypto.sha256(H)
-      val H1 = Crypto.sha256(R1)
+      val R1: BinaryData = Crypto.sha256(H)
+      val H1: BinaryData = Crypto.sha256(R1)
 
-      alice ! CMD_ADD_HTLC(60000000, H1, locktime(Blocks(400)))
+      alice ! CMD_ADD_HTLC(60000000, H1, 400)
       Thread.sleep(500)
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.ourChanges.proposed
-          assert(h == bin2sha256(H1))
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.ourChanges.proposed
+          assert(h == H1)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(update_add_htlc(_, _, h, _, _)) = d.commitments.theirChanges.proposed
-          assert(h == bin2sha256(H1))
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.theirChanges.proposed
+          assert(h == H1)
       }
 
       alice ! CMD_SIGN
@@ -129,12 +130,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.theirCommit.spec.htlcs.head
-          assert(htlc.add.rHash == bin2sha256(H1))
+          assert(htlc.add.paymentHash == H1)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           val htlc = d.commitments.ourCommit.spec.htlcs.head
-          assert(htlc.add.rHash == bin2sha256(H1))
+          assert(htlc.add.paymentHash == H1)
       }
 
       bob ! CMD_FULFILL_HTLC(2, R1)
@@ -195,9 +196,9 @@ class NominalChannelSpec extends BaseChannelTestClass {
       }
 
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
-      val H = Crypto.sha256(R)
+      val H: BinaryData = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
+      alice ! CMD_ADD_HTLC(60000000, H, 400)
       alice ! CMD_SIGN
       bob ! CMD_SIGN
       alice ! CMD_CLOSE(None)
@@ -230,7 +231,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       val R: BinaryData = "0102030405060708010203040506070801020304050607080102030405060708"
       val H = Crypto.sha256(R)
 
-      alice ! CMD_ADD_HTLC(60000000, H, locktime(Blocks(400)))
+      alice ! CMD_ADD_HTLC(60000000, H, 400)
       alice ! CMD_SIGN
       Thread.sleep(500)
       bob ! CMD_SIGN
