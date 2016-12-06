@@ -2,12 +2,13 @@ package fr.acinq.eclair.channel.simulator.states.b
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{OPEN_WAITING_OURANCHOR, _}
-import lightning._
+import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -31,22 +32,22 @@ class OpenWaitForCommitSigStateSpec extends StateSpecBaseClass {
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
-      alice2bob.expectMsgType[open_channel]
+      alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeAnchor]
       alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[open_anchor]
+      alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == OPEN_WAIT_FOR_COMMIT_SIG)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv open_commit_sig with valid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingSigned with valid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      bob2alice.expectMsgType[open_commit_sig]
+      bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == OPEN_WAITING_OURANCHOR)
       alice2blockchain.expectMsgType[WatchConfirmed]
@@ -55,12 +56,12 @@ class OpenWaitForCommitSigStateSpec extends StateSpecBaseClass {
     }
   }
 
-  test("recv open_commit_sig with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingSigned with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       // sending an invalid sig
-      alice ! open_commit_sig(signature(0, 0, 0, 0, 0, 0, 0, 0))
+      alice ! FundingSigned(0, BinaryData("00" * 64))
       awaitCond(alice.stateName == CLOSED)
-      alice2bob.expectMsgType[error]
+      alice2bob.expectMsgType[Error]
     }
   }
 

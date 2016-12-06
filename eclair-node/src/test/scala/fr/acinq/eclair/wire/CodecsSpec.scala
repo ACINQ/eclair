@@ -28,7 +28,7 @@ class CodecsSpec extends FunSuite {
     val update_fulfill_htlc = UpdateFulfillHtlc(1, 2, bin(32, 0))
     val update_fail_htlc = UpdateFailHtlc(1, 2, bin(154, 0))
     val commit_sig = CommitSig(1, bin(64, 0), bin(64, 1) :: bin(64, 2) :: bin(64, 3) :: Nil)
-    val revoke_and_ack = RevokeAndAck(1, bin(32, 0), bin(33, 1), bin(3, 2), bin(64, 1) :: bin(64, 2) :: bin(64, 3) :: bin(64, 4) :: bin(64, 5) :: Nil)
+    val revoke_and_ack = RevokeAndAck(1, bin(32, 0), bin(33, 1), bin(64, 1) :: bin(64, 2) :: bin(64, 3) :: bin(64, 4) :: bin(64, 5) :: Nil)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::

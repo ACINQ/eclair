@@ -1,10 +1,8 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, Hash, OutPoint, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, Hash, OutPoint, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.channel.{TheirChanges, _}
 import fr.acinq.eclair.crypto.ShaChain
-import lightning.locktime
-import lightning.locktime.Locktime.Blocks
 
 /**
   * Created by PM on 26/04/2016.
@@ -74,7 +72,7 @@ object TestConstants {
   object Bob {
     val (Base58.Prefix.SecretKeyTestnet, commitPrivKey) = Base58Check.decode("cSUwLtdZ2tht9ZmHhdQue48pfe7tY2GT2TGWJDtjoZgo6FHrubGk")
     val (Base58.Prefix.SecretKeyTestnet, finalPrivKey) = Base58Check.decode("cPR7ZgXpUaDPA3GwGceMDS5pfnSm955yvks3yELf3wMJwegsdGTg")
-    val channelParams = OurChannelParams(locktime(Blocks(350)), commitPrivKey, finalPrivKey, 2, 10000, Crypto.sha256("bob-seed".getBytes()), None)
+    val channelParams = OurChannelParams(350, commitPrivKey, finalPrivKey, 2, 10000, Crypto.sha256("bob-seed".getBytes()), None)
     val finalPubKey = channelParams.finalPubKey
 
     def revocationHash(index: Long) = Helpers.revocationHash(channelParams.shaSeed, index)

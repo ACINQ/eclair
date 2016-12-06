@@ -5,7 +5,6 @@ import java.net.InetSocketAddress
 import akka.actor._
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
-
 import fr.acinq.bitcoin._
 
 import scala.util.{Failure, Success, Try}

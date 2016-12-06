@@ -117,7 +117,7 @@ object Codecs {
     ("channelId" | uint64) ::
       ("perCommitmentSecret" | binarydata(32)) ::
       ("nextPerCommitmentPoint" | binarydata(33)) ::
-      ("padding" | binarydata(3)) ::
+      ("padding" | ignore(3)) ::
       ("htlcTimeoutSignature" | listofbinarydata(64))
     ).as[RevokeAndAck]
 

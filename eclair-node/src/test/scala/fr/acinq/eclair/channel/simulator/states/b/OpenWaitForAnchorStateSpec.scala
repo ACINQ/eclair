@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{OPEN_WAITING_THEIRANCHOR, _}
-import lightning.{error, open_anchor, open_channel, open_commit_sig}
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -29,20 +29,20 @@ class OpenWaitForAnchorStateSpec extends StateSpecBaseClass {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice2bob.expectMsgType[open_channel]
+    alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_channel]
+    bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
     awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
 
-  test("recv open_anchor") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv FundingCreated") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      alice2bob.expectMsgType[open_anchor]
+      alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       awaitCond(bob.stateName == OPEN_WAITING_THEIRANCHOR)
-      bob2alice.expectMsgType[open_commit_sig]
+      bob2alice.expectMsgType[FundingSigned]
       bob2blockchain.expectMsgType[WatchConfirmed]
       bob2blockchain.expectMsgType[WatchSpent]
     }
@@ -50,7 +50,7 @@ class OpenWaitForAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! error(Some("oops"))
+      bob ! Error(0, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }

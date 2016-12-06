@@ -5,16 +5,15 @@ import javax.crypto.Cipher
 import akka.actor._
 import akka.io.Tcp.{ErrorClosed, Received, Register, Write}
 import akka.util.ByteString
-import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.{Decryptor, Encryptor}
 import fr.acinq.eclair.crypto.LightningCrypto._
+import fr.acinq.eclair.crypto.{Decryptor, Encryptor}
 import fr.acinq.eclair.wire.Codecs._
-import fr.acinq.eclair.wire.{ChannelMessage, LightningMessage}
-import lightning._
-import lightning.pkt.Pkt._
+import fr.acinq.eclair.wire.{ChannelMessage, Error, LightningMessage}
+import lightning.pkt
+import lightning.pkt.Pkt.Auth
 import scodec.bits.BitVector
 
 import scala.annotation.tailrec
@@ -139,30 +138,11 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       log.debug(s"received chunk=${BinaryData(chunk)}")
       val decryptor1 = Decryptor.add(decryptor, chunk)
       decryptor1.bodies.map(plaintext => {
-        Try(lightningMessageCodec.decode(BitVector(plaintext.data)).toOption.get.value).recover {
-          case t: Throwable => pkt.parseFrom(plaintext)
-        }.map(self ! _)
-
+        // TODO : redo this
+        val msg = lightningMessageCodec.decode(BitVector(plaintext.data)).toOption.get.value
+        self ! msg
       })
       stay using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = Vector.empty[BinaryData])))
-
-    case Event(packet: pkt, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
-      log.debug(s"receiving $packet")
-      (packet.pkt: @unchecked) match {
-        case Open(o) => channel ! o
-        case OpenAnchor(o) => channel ! o
-        case OpenCommitSig(o) => channel ! o
-        case OpenComplete(o) => channel ! o
-        case UpdateAddHtlc(o) => channel ! o
-        case UpdateFulfillHtlc(o) => channel ! o
-        case UpdateFailHtlc(o) => channel ! o
-        case UpdateCommit(o) => channel ! o
-        case UpdateRevocation(o) => channel ! o
-        case CloseShutdown(o) => channel ! o
-        case CloseSignature(o) => channel ! o
-        case Error(o) => channel ! o
-      }
-      stay
 
     case Event(msg: LightningMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) if sender == self =>
       log.debug(s"receiving $msg")
@@ -170,25 +150,6 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
         case o: ChannelMessage => channel ! o
       }
       stay
-
-    case Event(msg: GeneratedMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
-      val packet = (msg: @unchecked) match {
-        case o: open_channel => pkt(Open(o))
-        case o: open_anchor => pkt(OpenAnchor(o))
-        case o: open_commit_sig => pkt(OpenCommitSig(o))
-        case o: open_complete => pkt(OpenComplete(o))
-        case o: update_add_htlc => pkt(UpdateAddHtlc(o))
-        case o: update_fulfill_htlc => pkt(UpdateFulfillHtlc(o))
-        case o: update_fail_htlc => pkt(UpdateFailHtlc(o))
-        case o: update_commit => pkt(UpdateCommit(o))
-        case o: update_revocation => pkt(UpdateRevocation(o))
-        case o: close_shutdown => pkt(CloseShutdown(o))
-        case o: close_signature => pkt(CloseSignature(o))
-        case o: error => pkt(Error(o))
-      }
-      log.debug(s"sending $packet")
-      val encryptor1 = send(encryptor, packet)
-      stay using n.copy(sessionData = s.copy(encryptor = encryptor1))
 
     case Event(msg: LightningMessage, n@Normal(channel, s@SessionData(theirpub, decryptor, encryptor))) =>
       log.debug(s"sending $msg")
@@ -201,7 +162,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
     case Event(ErrorClosed(cause), n@Normal(channel, _)) =>
       // we transform connection closed events into application error so that it triggers a uniclose
-      channel ! error(Some(cause))
+      channel ! Error(0, cause.getBytes())
       stay
 
     case Event(Terminated(subject), n@Normal(channel, _)) if subject == channel =>

@@ -94,6 +94,5 @@ case class CommitSig(channelId: Long,
 case class RevokeAndAck(channelId: Long,
                         perCommitmentSecret: BinaryData,
                         nextPerCommitmentPoint: BinaryData,
-                        padding: BinaryData,
                         htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage
 

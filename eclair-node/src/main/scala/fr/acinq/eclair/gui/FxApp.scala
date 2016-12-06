@@ -5,9 +5,9 @@ import javafx.application.{Application, Platform}
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.event.EventHandler
 import javafx.fxml.FXMLLoader
-import javafx.scene.{Group, Parent, Scene}
 import javafx.scene.image.Image
 import javafx.scene.text.Text
+import javafx.scene.{Group, Parent, Scene}
 import javafx.stage.{Modality, Stage, StageStyle, WindowEvent}
 
 import akka.actor.Props

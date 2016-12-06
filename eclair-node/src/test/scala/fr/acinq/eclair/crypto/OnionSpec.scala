@@ -3,8 +3,8 @@ package fr.acinq.eclair.crypto
 import com.google.common.io.ByteStreams
 import fr.acinq.bitcoin._
 import org.junit.runner.RunWith
-import org.scalatest.{Ignore, FunSuite}
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{FunSuite, Ignore}
 
 @Ignore
 @RunWith(classOf[JUnitRunner])

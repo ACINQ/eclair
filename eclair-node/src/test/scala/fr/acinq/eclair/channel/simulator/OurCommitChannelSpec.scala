@@ -2,9 +2,6 @@ package fr.acinq.eclair.channel.simulator
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair._
-import lightning.locktime
-import lightning.locktime.Locktime.Blocks
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

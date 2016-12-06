@@ -1,16 +1,13 @@
 package fr.acinq.eclair.channel.simulator
 
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, Terminated}
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
-import TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
-
-import scala.concurrent.duration._
 
 /**
   * Created by PM on 28/04/2016.

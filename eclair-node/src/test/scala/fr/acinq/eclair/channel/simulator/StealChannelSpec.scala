@@ -1,12 +1,7 @@
 package fr.acinq.eclair.channel.simulator
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
-import lightning.locktime.Locktime.Blocks
-import lightning.{locktime, update_add_htlc}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, CLOSING, _}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

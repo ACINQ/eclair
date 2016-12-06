@@ -12,8 +12,6 @@ import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
-import lightning.locktime
-import lightning.locktime.Locktime.Blocks
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
 import org.scalatest.{BeforeAndAfterAll, FunSuite}

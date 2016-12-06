@@ -1,6 +1,5 @@
 package fr.acinq.eclair.gui.stages
 
-import javafx.application.HostServices
 import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}

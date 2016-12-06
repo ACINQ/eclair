@@ -4,8 +4,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash}
 
-import scala.util.Random
 import scala.concurrent.duration._
+import scala.util.Random
 
 /**
   * Created by PM on 18/08/2016.

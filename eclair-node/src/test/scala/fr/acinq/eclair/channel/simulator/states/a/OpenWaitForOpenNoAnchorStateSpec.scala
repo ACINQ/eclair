@@ -4,7 +4,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import lightning.{error, open_channel}
+import fr.acinq.eclair.wire.{Error, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -27,15 +27,15 @@ class OpenWaitForOpenNoAnchorStateSpec extends StateSpecBaseClass {
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[OpenChannel]
       awaitCond(bob.stateName == OPEN_WAIT_FOR_OPEN_NOANCHOR)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
 
-  test("recv open_channel") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv OpenChannel") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      alice2bob.expectMsgType[open_channel]
+      alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
     }
@@ -43,7 +43,7 @@ class OpenWaitForOpenNoAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! error(Some("oops"))
+      bob ! Error(0, "oops".getBytes())
       awaitCond(bob.stateName == CLOSED)
     }
   }

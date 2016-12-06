@@ -4,11 +4,8 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, CLOSED, CLOSING, NEGOTIATING, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
-import lightning.locktime.Locktime.Blocks
-import lightning.{locktime, update_add_htlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

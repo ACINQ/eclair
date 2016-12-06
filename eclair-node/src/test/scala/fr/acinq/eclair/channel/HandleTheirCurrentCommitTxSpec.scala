@@ -2,10 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair._
 import fr.acinq.eclair.wire.UpdateAddHtlc
-import lightning.locktime.Locktime.Blocks
-import lightning.{locktime, routing, update_add_htlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

@@ -1,9 +1,9 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import lightning.{sha256_hash, signature}
+import lightning.signature
 import org.junit.runner.RunWith
-import org.scalatest.{FunSuite, Ignore}
+import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
 import scala.util.Random
@@ -16,13 +16,6 @@ class ConversionSpec extends FunSuite {
     val data = new Array[Byte](size)
     random.nextBytes(data)
     data
-  }
-
-  test("sha256 conversion") {
-    val hash: BinaryData = randomData(32)
-    val sha256: sha256_hash = hash
-    val hash1: BinaryData = sha256
-    assert(hash === hash1)
   }
 
   test("signature conversion") {

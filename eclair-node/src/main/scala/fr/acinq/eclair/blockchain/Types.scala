@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import fr.acinq.eclair.channel.BitcoinEvent
 
 /**

@@ -3,62 +3,13 @@ package fr.acinq
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.math.BigInteger
 
-import _root_.lightning._
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
+import lightning.{bitcoin_pubkey, signature}
 
 import scala.annotation.tailrec
 
 package object eclair {
-
-  implicit def bin2sha256(in: BinaryData): sha256_hash = {
-    require(in.data.size == 32)
-    val bis = new ByteArrayInputStream(in)
-    sha256_hash(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
-  }
-
-  implicit def seq2sha256(in: Seq[Byte]): sha256_hash = {
-    require(in.data.size == 32)
-    val bis = new ByteArrayInputStream(in.toArray)
-    sha256_hash(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
-  }
-
-  implicit def array2sha256(in: Array[Byte]): sha256_hash = bin2sha256(in)
-
-  implicit def sha2562bin(in: sha256_hash): BinaryData = {
-    val bos = new ByteArrayOutputStream()
-    Protocol.writeUInt64(in.a, bos)
-    Protocol.writeUInt64(in.b, bos)
-    Protocol.writeUInt64(in.c, bos)
-    Protocol.writeUInt64(in.d, bos)
-    bos.toByteArray
-  }
-
-  implicit def seq2rval(in: Seq[Byte]): rval = {
-    require(in.data.size == 32)
-    val bis = new ByteArrayInputStream(in.toArray)
-    rval(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
-  }
-
-  implicit def bin2rval(in: BinaryData): rval = {
-    require(in.data.size == 32)
-    val bis = new ByteArrayInputStream(in)
-    rval(Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis), Protocol.uint64(bis))
-  }
-
-  implicit def rval2bin(in: rval): BinaryData = {
-    val bos = new ByteArrayOutputStream()
-    Protocol.writeUInt64(in.a, bos)
-    Protocol.writeUInt64(in.b, bos)
-    Protocol.writeUInt64(in.c, bos)
-    Protocol.writeUInt64(in.d, bos)
-    bos.toByteArray
-  }
-
-  implicit def rval2seq(in: rval): Seq[Byte] = rval2bin(in)
-
-  // TODO : redundant with above, needed for seamless Crypto.sha256(sha256_hash)
-  implicit def sha2562seq(in: sha256_hash): Seq[Byte] = sha2562bin(in)
 
   implicit def bin2pubkey(in: BinaryData) = bitcoin_pubkey(ByteString.copyFrom(in))
 
@@ -128,9 +79,9 @@ package object eclair {
 
   /**
     *
-    * @param base fixed fee
+    * @param base         fixed fee
     * @param proportional proportional fee
-    * @param msat amount in millisatoshi
+    * @param msat         amount in millisatoshi
     * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
     */
   def nodeFee(base: Long, proportional: Long, msat: Long): Long = base + (proportional * msat) / 1000000

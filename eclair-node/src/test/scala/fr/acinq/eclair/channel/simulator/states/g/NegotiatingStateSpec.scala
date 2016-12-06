@@ -2,15 +2,13 @@ package fr.acinq.eclair.channel.simulator.states.g
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{TestBitcoinClient, _}
-import lightning._
-import lightning.locktime.Locktime.Blocks
+import fr.acinq.eclair.wire.{AcceptChannel, ClosingSigned, CommitSig, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -34,15 +32,15 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     // note that alice.initialFeeRate != bob.initialFeeRate
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(initialFeeRate = 20000), "A"))
-    alice2bob.expectMsgType[open_channel]
+    alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_channel]
+    bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[MakeAnchor]
     alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[open_anchor]
+    alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_commit_sig]
+    bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchConfirmed]
     alice2blockchain.forward(blockchainA)
@@ -54,19 +52,19 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     bob2blockchain.expectMsgType[WatchSpent]
     bob ! BITCOIN_FUNDING_DEPTHOK
     bob2blockchain.expectMsgType[WatchLost]
-    bob2alice.expectMsgType[open_complete]
+    bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchLost]
     alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[open_complete]
+    alice2bob.expectMsgType[FundingLocked]
     alice2bob.forward(bob)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
     // note : alice is funder and bob is fundee, so alice has all the money
     val sender = TestProbe()
     // alice sends an HTLC to bob
-    val r: rval = rval(1, 2, 3, 4)
-    val h: sha256_hash = Crypto.sha256(r)
+    val r: BinaryData = "12" * 32
+    val h: BinaryData = Crypto.sha256(r)
     val amount = 500000
     sender.send(alice, CMD_ADD_HTLC(amount, h, 3))
     sender.expectMsg("ok")
@@ -76,9 +74,9 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     // alice signs
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
-    alice2bob.expectMsgType[update_commit]
+    alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[update_revocation]
+    bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
     // bob fulfills
@@ -90,46 +88,46 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     // bob signs
     sender.send(bob, CMD_SIGN)
     sender.expectMsg("ok")
-    bob2alice.expectMsgType[update_commit]
+    bob2alice.expectMsgType[CommitSig]
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[update_revocation]
+    alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
     awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.isEmpty)
     // alice signs
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
-    alice2bob.expectMsgType[update_commit]
+    alice2bob.expectMsgType[CommitSig]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[update_revocation]
+    bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
     awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.isEmpty)
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
-    alice2bob.expectMsgType[close_shutdown]
+    alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[close_shutdown]
+    bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NEGOTIATING)
     awaitCond(bob.stateName == NEGOTIATING)
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
   }
 
-  test("recv close_signature (theirCloseFee != ourCloseFee") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
-      val aliceCloseSig = alice2bob.expectMsgType[close_signature]
+      val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
       alice2bob.forward(bob)
-      val bob2aliceCloseSig = bob2alice.expectMsgType[close_signature]
-      assert(2 * aliceCloseSig.closeFee == bob2aliceCloseSig.closeFee)
+      val bob2aliceCloseSig = bob2alice.expectMsgType[ClosingSigned]
+      assert(2 * aliceCloseSig.feeSatoshis == bob2aliceCloseSig.feeSatoshis)
     }
   }
 
-  test("recv close_signature (theirCloseFee == ourCloseFee") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  test("recv ClosingSigned (theirCloseFee == ourCloseFee") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     within(30 seconds) {
       var aliceCloseFee, bobCloseFee = 0L
       do {
-        aliceCloseFee = alice2bob.expectMsgType[close_signature].closeFee
+        aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
         alice2bob.forward(bob)
-        bobCloseFee = bob2alice.expectMsgType[close_signature].closeFee
+        bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
         bob2alice.forward(alice)
       } while (aliceCloseFee != bobCloseFee)
       alice2blockchain.expectMsgType[Publish]
@@ -145,9 +143,9 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     within(30 seconds) {
       var aliceCloseFee, bobCloseFee = 0L
       do {
-        aliceCloseFee = alice2bob.expectMsgType[close_signature].closeFee
+        aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
         alice2bob.forward(bob)
-        bobCloseFee = bob2alice.expectMsgType[close_signature].closeFee
+        bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
         if (aliceCloseFee != bobCloseFee) {
           bob2alice.forward(alice)
         }
@@ -167,7 +165,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
   test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.ourCommit.publishableTx
-      alice ! error(Some("oops"))
+      alice ! Error(0, "oops".getBytes())
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]

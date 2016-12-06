@@ -8,7 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
-import lightning._
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -32,15 +32,15 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     // note that alice.initialFeeRate != bob.initialFeeRate
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(initialFeeRate = 20000), "A"))
-    alice2bob.expectMsgType[open_channel]
+    alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_channel]
+    bob2alice.expectMsgType[OpenChannel]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[MakeAnchor]
     alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[open_anchor]
+    alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_commit_sig]
+    bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchConfirmed]
     alice2blockchain.forward(blockchainA)
@@ -52,11 +52,11 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     bob2blockchain.expectMsgType[WatchSpent]
     bob ! BITCOIN_FUNDING_DEPTHOK
     bob2blockchain.expectMsgType[WatchLost]
-    bob2alice.expectMsgType[open_complete]
+    bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchLost]
     alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[open_complete]
+    alice2bob.expectMsgType[FundingLocked]
     alice2bob.forward(bob)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
@@ -75,16 +75,16 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val sender = TestProbe()
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
-    alice2bob.expectMsgType[close_shutdown]
+    alice2bob.expectMsgType[Shutdown]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[close_shutdown]
+    bob2alice.expectMsgType[Shutdown]
     bob2alice.forward(alice)
     // agreeing on a closing fee
     var aliceCloseFee, bobCloseFee = 0L
     do {
-      aliceCloseFee = alice2bob.expectMsgType[close_signature].closeFee
+      aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
       alice2bob.forward(bob)
-      bobCloseFee = bob2alice.expectMsgType[close_signature].closeFee
+      bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
       bob2alice.forward(alice)
     } while (aliceCloseFee != bobCloseFee)
     alice2blockchain.expectMsgType[Publish]
@@ -118,15 +118,15 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // note that alice.initialFeeRate != bob.initialFeeRate
       val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
       val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(initialFeeRate = 20000), "A"))
-      alice2bob.expectMsgType[open_channel]
+      alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[OpenChannel]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeAnchor]
       alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[open_anchor]
+      alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_commit_sig]
+      bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.forward(blockchainA)
@@ -138,18 +138,18 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       bob2blockchain.expectMsgType[WatchSpent]
       bob ! BITCOIN_FUNDING_DEPTHOK
       bob2blockchain.expectMsgType[WatchLost]
-      bob2alice.expectMsgType[open_complete]
+      bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchLost]
       alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[open_complete]
+      alice2bob.expectMsgType[FundingLocked]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
 
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice ! error(Some("oops"))
+      alice ! Error(0, "oops".getBytes)
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
@@ -176,15 +176,15 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // note that alice.initialFeeRate != bob.initialFeeRate
       val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
       val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(initialFeeRate = 20000), "A"))
-      alice2bob.expectMsgType[open_channel]
+      alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeAnchor]
       alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[open_anchor]
+      alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_commit_sig]
+      bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.forward(blockchainA)
@@ -196,18 +196,18 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       bob2blockchain.expectMsgType[WatchSpent]
       bob ! BITCOIN_FUNDING_DEPTHOK
       bob2blockchain.expectMsgType[WatchLost]
-      bob2alice.expectMsgType[open_complete]
+      bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchLost]
       alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[open_complete]
+      alice2bob.expectMsgType[FundingLocked]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
 
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
-      alice ! error(Some("oops"))
+      alice ! Error(0, "oops".getBytes())
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)

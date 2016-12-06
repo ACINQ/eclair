@@ -2,8 +2,6 @@ package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import lightning.locktime
-import lightning.locktime.Locktime.{Blocks}
 
 import scala.concurrent.duration._
 

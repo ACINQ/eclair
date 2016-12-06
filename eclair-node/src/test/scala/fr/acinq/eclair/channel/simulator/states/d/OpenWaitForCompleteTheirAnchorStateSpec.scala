@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchLost, WatchSpent}
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, _}
-import lightning._
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -29,28 +29,28 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends StateSpecBaseClass {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice2bob.expectMsgType[open_channel]
+    alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_channel]
+    bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
-    alice2bob.expectMsgType[open_anchor]
+    alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
-    bob2alice.expectMsgType[open_commit_sig]
+    bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     bob2blockchain.expectMsgType[WatchConfirmed]
     bob2blockchain.expectMsgType[WatchSpent]
     bob ! BITCOIN_FUNDING_DEPTHOK
     bob2blockchain.expectMsgType[WatchLost]
-    bob2alice.expectMsgType[open_complete]
+    bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR)
     test((alice, bob, alice2bob, bob2alice, bob2blockchain))
   }
 
-  test("recv open_complete") { case (_, bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv FundingLocked") { case (_, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      alice2bob.expectMsgType[open_complete]
+      alice2bob.expectMsgType[FundingLocked]
       alice2bob.forward(bob)
       awaitCond(bob.stateName == NORMAL)
     }
@@ -62,7 +62,7 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends StateSpecBaseClass {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.ourCommit.publishableTx
       // we have nothing at stake so we don't do anything with the tx
       bob ! (BITCOIN_FUNDING_SPENT, tx)
-      bob2alice.expectMsgType[error]
+      bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSED)
     }
   }
@@ -76,7 +76,7 @@ class OpenWaitForCompleteTheirAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv error") { case (_, bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! error(Some("oops"))
+      bob ! Error(0, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }

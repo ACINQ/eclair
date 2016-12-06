@@ -2,11 +2,11 @@ package fr.acinq.eclair.blockchain.peer
 
 import java.net.InetSocketAddress
 
-import fr.acinq.bitcoin._
 import akka.actor._
 import akka.io.Tcp.Connected
 import akka.pattern.{Backoff, BackoffSupervisor}
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin._
 
 import scala.compat.Platform
 import scala.concurrent.duration._

@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{ERR_INFORMATION_LEAK, OPEN_WAITING_OURANCHOR, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, _}
-import lightning._
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -31,15 +31,15 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
-      alice2bob.expectMsgType[open_channel]
+      alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeAnchor]
       alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[open_anchor]
+      alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[open_commit_sig]
+      bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.send(blockchainA, watch.copy(channel = system.deadLetters)) // so that we can control when BITCOIN_ANCHOR_DEPTHOK arrives
@@ -53,11 +53,11 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv open_complete") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingLocked") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val msg = bob2alice.expectMsgType[open_complete]
+      val msg = bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_OPEN_WAITING].deferred == Some(msg))
+      awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].deferred == Some(msg))
       awaitCond(alice.stateName == OPEN_WAITING_OURANCHOR)
     }
   }
@@ -67,23 +67,23 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
       alice ! BITCOIN_FUNDING_DEPTHOK
       awaitCond(alice.stateName == OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
       alice2blockchain.expectMsgType[WatchLost]
-      bob2alice.expectMsgType[open_complete]
+      bob2alice.expectMsgType[FundingLocked]
     }
   }
 
   test("recv BITCOIN_ANCHOR_TIMEOUT") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_TIMEOUT
-      alice2bob.expectMsgType[error]
+      alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSED)
     }
   }
 
   test("recv BITCOIN_ANCHOR_SPENT") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_OPEN_WAITING].commitments.ourCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.ourCommit.publishableTx
       alice ! (BITCOIN_FUNDING_SPENT, null)
-      alice2bob.expectMsgType[error]
+      alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(Publish(tx))
       awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
     }
@@ -91,8 +91,8 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv error") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_OPEN_WAITING].commitments.ourCommit.publishableTx
-      alice ! error(Some("oops"))
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.ourCommit.publishableTx
+      alice ! Error(0, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
@@ -101,7 +101,7 @@ class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_OPEN_WAITING].commitments.ourCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.ourCommit.publishableTx
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))

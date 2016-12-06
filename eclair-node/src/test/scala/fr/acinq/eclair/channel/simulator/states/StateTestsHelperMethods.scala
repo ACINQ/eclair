@@ -1,12 +1,9 @@
 package fr.acinq.eclair.channel.simulator.states
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair._
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFulfillHtlc}
-import lightning.locktime.Locktime.Blocks
-import lightning._
+import fr.acinq.eclair.wire.{CommitSig, RevokeAndAck, UpdateAddHtlc, UpdateFulfillHtlc}
 
 import scala.util.Random
 
@@ -15,10 +12,11 @@ import scala.util.Random
   */
 trait StateTestsHelperMethods extends TestKitBase {
 
-  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (rval, UpdateAddHtlc) = {
+  def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {
     val rand = new Random()
-    val R = rval(rand.nextInt(), rand.nextInt(), rand.nextInt(), rand.nextInt())
-    val H: sha256_hash = Crypto.sha256(R)
+    val R: BinaryData = Array.fill[Byte](32)(0)
+    rand.nextBytes(R)
+    val H: BinaryData = Crypto.sha256(R)
     val sender = TestProbe()
     sender.send(s, CMD_ADD_HTLC(amountMsat, H, 1440))
     sender.expectMsg("ok")
@@ -28,7 +26,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     (R, htlc)
   }
 
-  def fulfillHtlc(id: Long, R: rval, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
+  def fulfillHtlc(id: Long, R: BinaryData, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
     val sender = TestProbe()
     sender.send(s, CMD_FULFILL_HTLC(id, R))
     sender.expectMsg("ok")
@@ -42,9 +40,9 @@ trait StateTestsHelperMethods extends TestKitBase {
     val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index
     sender.send(s, CMD_SIGN)
     sender.expectMsg("ok")
-    s2r.expectMsgType[update_commit]
+    s2r.expectMsgType[CommitSig]
     s2r.forward(r)
-    r2s.expectMsgType[update_revocation]
+    r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
   }

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel.simulator.states
 
-import akka.actor.{ActorNotFound, ActorRef, ActorSystem, PoisonPill, Terminated}
-import akka.testkit.{TestKit, TestProbe}
+import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
+import akka.testkit.TestKit
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
 
 import scala.concurrent.Await

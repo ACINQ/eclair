@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.channel.{ChannelChangedState, ChannelSignatureReceived, DATA_NORMAL_2, NORMAL}
+import fr.acinq.eclair.channel.{ChannelChangedState, ChannelSignatureReceived, DATA_NORMAL, NORMAL}
 
 
 /**
@@ -17,7 +17,7 @@ class ChannelSelector extends Actor with ActorLogging {
 
   def main(node2channels: Map[BinaryData, Set[ActorRef]], channel2balance: Map[ActorRef, Long]): Receive = {
 
-    case ChannelChangedState(channel, theirNodeId, _, NORMAL, d: DATA_NORMAL_2) =>
+    case ChannelChangedState(channel, theirNodeId, _, NORMAL, d: DATA_NORMAL) =>
       val bal = d.commitments.theirCommit.spec.amount_them_msat
       log.info(s"new channel to $theirNodeId with availableMsat=$bal")
       val channels = node2channels.get(theirNodeId).getOrElse(Set()) + channel

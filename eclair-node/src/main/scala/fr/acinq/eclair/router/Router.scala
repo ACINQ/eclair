@@ -1,15 +1,13 @@
 package fr.acinq.eclair.router
 
-import akka.actor.{Actor, ActorLogging, Status}
+import akka.actor.{Actor, ActorLogging}
 import akka.pattern.pipe
-
 import fr.acinq.bitcoin.BinaryData
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.collection.JavaConversions._
-import scala.util.{Failure, Success}
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 24/05/2016.

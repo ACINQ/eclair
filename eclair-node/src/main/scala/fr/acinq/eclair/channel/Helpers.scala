@@ -1,14 +1,12 @@
 package fr.acinq.eclair.channel
 
-import Scripts._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair._
+import fr.acinq.eclair.channel.Scripts._
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import lightning._
+import fr.acinq.eclair.crypto.LightningCrypto.sha256
+import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 
-import scala.annotation.tailrec
 import scala.util.Try
 
 /**
@@ -31,7 +29,7 @@ object Helpers {
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFulfillHtlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.paymentHash == bin2sha256(Crypto.sha256(update.paymentPreimage))) match {
+    spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.paymentHash == sha256(update.paymentPreimage)) match {
       case Some(htlc) if direction == OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
@@ -69,22 +67,22 @@ object Helpers {
     spec4
   }
 
-  def makeOurTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): TxTemplate = ???
+  def makeOurTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
     //makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
-  def makeOurTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction = ???
+  def makeOurTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
     //makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
-  def makeTheirTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): TxTemplate = ???
+  def makeTheirTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
     //makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
-  def makeTheirTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: sha256_hash, spec: CommitmentSpec): Transaction = ???
+  def makeTheirTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
     //makeTheirTxTemplate(ourParams, theirParams, inputs, theirRevocationHash, spec).makeTx
 
   def sign(localParams: LocalParams, RemoteParams: RemoteParams, anchorAmount: Satoshi, tx: Transaction): BinaryData = ???
     //bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
 
-  def addSigs(localParams: LocalParams, RemoteParams: RemoteParams, anchorAmount: Satoshi, tx: Transaction, ourSig: signature, theirSig: signature): Transaction = ??? /*{
+  def addSigs(localParams: LocalParams, RemoteParams: RemoteParams, anchorAmount: Satoshi, tx: Transaction, ourSig: BinaryData, theirSig: BinaryData): Transaction = ??? /*{
     // TODO : Transaction.sign(...) should handle multisig
     val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
     val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
@@ -94,7 +92,7 @@ object Helpers {
   def checksig(localParams: LocalParams, RemoteParams: RemoteParams, anchorOutput: TxOut, tx: Transaction): Try[Unit] =
     Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
-  def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOTIATING_2): Try[Transaction] = ??? /*{
+  def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOTIATING): Try[Transaction] = ??? /*{
     val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, closeFee)
     val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, closeSig)
     checksig(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput, signedTx).map(_ => signedTx)
@@ -138,7 +136,7 @@ object Helpers {
     val amount_them = Satoshi(commitments.theirCommit.spec.amount_us_msat / 1000)
     val finalTx = Scripts.makeFinalTx(commitments.ourCommit.publishableTx.txIn, ourScriptPubKey, theirScriptPubKey, amount_us, amount_them, closeFee)
     val ourSig = Helpers.sign(commitments.ourParams, commitments.theirParams, commitments.anchorOutput.amount, finalTx)
-    (finalTx, close_signature(closeFee.toLong, ourSig))
+    (finalTx, ClosingSigned(closeFee.toLong, ourSig))
   }*/
 
   /**

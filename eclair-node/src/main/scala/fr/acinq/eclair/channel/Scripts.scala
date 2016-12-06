@@ -3,8 +3,6 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import lightning.locktime.Locktime.{Seconds, Blocks}
-import lightning.{locktime, update_add_htlc, open_anchor, open_channel}
 
 /**
   * Created by PM on 21/01/2016.
@@ -283,7 +281,7 @@ object Scripts {
       lockTime = 0))
   }
 
-  def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR
+  //def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR
 
   def findPublicKeyScriptIndex(tx: Transaction, publicKeyScript: BinaryData): Option[Int] =
     tx.txOut.zipWithIndex.find {

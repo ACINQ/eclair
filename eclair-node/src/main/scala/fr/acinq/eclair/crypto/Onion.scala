@@ -1,7 +1,5 @@
 package fr.acinq.eclair.crypto
 
-import java.security.SecureRandom
-
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.LightningCrypto._
 

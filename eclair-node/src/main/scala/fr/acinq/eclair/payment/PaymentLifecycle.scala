@@ -7,13 +7,12 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router._
-import lightning.locktime.Locktime.Blocks
+import lightning.route_step
 import lightning.route_step.Next
-import lightning.{locktime, route_step, sha256_hash}
 
 // @formatter:off
 
-case class CreatePayment(amountMsat: Int, h: sha256_hash, targetNodeId: BinaryData)
+case class CreatePayment(amountMsat: Int, h: BinaryData, targetNodeId: BinaryData)
 
 sealed trait Data
 case class WaitingForRequest(currentBlockCount: Long) extends Data

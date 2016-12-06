@@ -1,12 +1,11 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction, TxOut}
-import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Scripts.TxTemplate
 import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.wire._
-import lightning._
 
 trait TxDb {
   def add(parentId: BinaryData, spending: Transaction): Unit
@@ -40,7 +39,7 @@ case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
 
 case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
 
-case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: sha256_hash)
+case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: BinaryData)
 
 // @formatter:on
 
@@ -115,7 +114,7 @@ object Commitments {
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC, channelId: Long): (Commitments, UpdateFulfillHtlc) = {
     commitments.ourCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
-      case Some(htlc) if htlc.paymentHash == bin2sha256(Crypto.sha256(cmd.r)) =>
+      case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
         val commitments1 = addOurProposal(commitments, fulfill)
         (commitments1, fulfill)
@@ -126,7 +125,7 @@ object Commitments {
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): (Commitments, UpdateAddHtlc) = {
     commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
-      case Some(htlc) if htlc.paymentHash == bin2sha256(Crypto.sha256(fulfill.paymentPreimage)) => (addTheirProposal(commitments, fulfill), htlc)
+      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => (addTheirProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO : we should fail the channel
     }
@@ -167,9 +166,9 @@ object Commitments {
         // don't sign if they don't get paid
         val commit: CommitSig = ??? /*if (theirTxTemplate.weHaveAnOutput) {
           val ourSig = Helpers.sign(localParams, remoteParams, anchorOutput.amount, theirTx)
-          update_commit(Some(ourSig))
+          CommitSig(Some(ourSig))
         } else {
-          update_commit(None)
+          CommitSig(None)
         }*/
         val commitments1 = commitments.copy(
           theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
@@ -219,7 +218,7 @@ object Commitments {
     // we will send our revocation preimage + our next revocation hash
     val ourRevocationPreimage = Helpers.revocationPreimage(shaSeed, ourCommit.index)
     val ourNextRevocationHash1 = Helpers.revocationHash(shaSeed, ourCommit.index + 2)
-    val revocation: RevokeAndAck = ??? //update_revocation(ourRevocationPreimage, ourNextRevocationHash1)
+    val revocation: RevokeAndAck = ??? //RevokeAndAck(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data
     val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = ourCommitTx)
@@ -250,7 +249,7 @@ object Commitments {
           theirNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
           theirPreimages = commitments.theirPreimages.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFFFFFL - commitments.theirCommit.index))
       case Right(_) =>
-        throw new RuntimeException("received unexpected update_revocation message")
+        throw new RuntimeException("received unexpected RevokeAndAck message")
     }
   }
 

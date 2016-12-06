@@ -5,8 +5,8 @@ import javafx.application.Platform
 import javafx.scene.control.{TextArea, TextField}
 
 import fr.acinq.bitcoin.{BinaryData, Satoshi}
-import fr.acinq.eclair.io.Client
 import fr.acinq.eclair._
+import fr.acinq.eclair.io.Client
 import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
 

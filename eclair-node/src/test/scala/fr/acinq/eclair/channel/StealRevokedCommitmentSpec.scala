@@ -2,7 +2,6 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite

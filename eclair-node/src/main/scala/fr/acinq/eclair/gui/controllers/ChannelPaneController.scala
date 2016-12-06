@@ -1,6 +1,5 @@
 package fr.acinq.eclair.gui.controllers
 
-import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, ContextMenu, Label, ProgressBar}
 import javafx.scene.input.ContextMenuEvent

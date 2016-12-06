@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown, UpdateAddHtlc}
-import lightning._
+import lightning.{route, route_step}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -115,12 +115,12 @@ trait Data // TODO : add sealed keyword
 
 case object Nothing extends Data
 
-final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, initialFeeRate: Long, shaSeed: BinaryData, anchorAmount: Option[Satoshi], autoSignInterval: Option[FiniteDuration] = None) {
+final case class OurChannelParams(delay: Long, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, initialFeeRate: Long, shaSeed: BinaryData, anchorAmount: Option[Satoshi], autoSignInterval: Option[FiniteDuration] = None) {
   val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
   val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
 }
 
-final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
+final case class TheirChannelParams(delay: Long, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
 
 object TheirChannelParams {
   def apply(params: OurChannelParams) = new TheirChannelParams(params.delay, params.commitPubKey, params.finalPubKey, Some(params.minDepth), params.initialFeeRate)
@@ -159,13 +159,13 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, channe
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, channelParams: ChannelParams, pushMsat: Long) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, channelParams: ChannelParams, pushMsat: Long, anchorTx: Transaction, anchorOutputIndex: Int, remoteCommit: TheirCommit) extends Data
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(temporaryChannelId: Long, channelParams: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
-final case class DATA_NORMAL_2(channelId: Long, channelParams: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN_2(channelId: Long, channelParams: ChannelParams, commitments: Commitments,
-                                 ourShutdown: Shutdown, theirShutdown: Shutdown,
-                                 downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_NEGOTIATING_2(channelId: Long, channelParams: ChannelParams, commitments: Commitments,
-                                    ourShutdown: Shutdown, theirShutdown: Shutdown, ourClosingSigned: ClosingSigned) extends Data with HasCommitments
-final case class DATA_CLOSING_2(commitments: Commitments,
+final case class DATA_NORMAL(channelId: Long, channelParams: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(channelId: Long, channelParams: ChannelParams, commitments: Commitments,
+                               ourShutdown: Shutdown, theirShutdown: Shutdown,
+                               downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
+final case class DATA_NEGOTIATING(channelId: Long, channelParams: ChannelParams, commitments: Commitments,
+                                  ourShutdown: Shutdown, theirShutdown: Shutdown, ourClosingSigned: ClosingSigned) extends Data with HasCommitments
+final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,
                               mutualClosePublished: Option[Transaction] = None,
                               ourCommitPublished: Option[Transaction] = None,

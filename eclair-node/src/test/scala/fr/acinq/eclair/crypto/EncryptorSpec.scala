@@ -4,15 +4,14 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
 import akka.util.ByteString
-import fr.acinq.eclair._
 import fr.acinq.bitcoin.{BinaryData, Crypto, Hash}
 import fr.acinq.eclair.channel.simulator.Pipe
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
 object EncryptorSpec {
   val random = new scala.util.Random()

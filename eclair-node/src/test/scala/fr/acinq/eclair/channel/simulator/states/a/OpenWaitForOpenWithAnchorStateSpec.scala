@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeAnchor, PeerWatcher}
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
 import fr.acinq.eclair.channel.{OPEN_WAIT_FOR_OPEN_WITHANCHOR, _}
-import lightning.{error, open_anchor, open_channel}
+import fr.acinq.eclair.wire.{Error, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -31,15 +31,15 @@ class OpenWaitForOpenWithAnchorStateSpec extends StateSpecBaseClass {
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
-      alice2bob.expectMsgType[open_channel]
+      alice2bob.expectMsgType[OpenChannel]
       awaitCond(alice.stateName == OPEN_WAIT_FOR_OPEN_WITHANCHOR)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv open_channel") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv OpenChannel") { case (alice, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[OpenChannel]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == OPEN_WAIT_FOR_OPEN_WITHANCHOR)
     }
@@ -47,18 +47,18 @@ class OpenWaitForOpenWithAnchorStateSpec extends StateSpecBaseClass {
 
   test("recv anchor") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
     within(30 seconds) {
-      bob2alice.expectMsgType[open_channel]
+      bob2alice.expectMsgType[OpenChannel]
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeAnchor]
       alice2blockchain.forward(blockchain)
       awaitCond(alice.stateName == OPEN_WAIT_FOR_COMMIT_SIG)
-      alice2bob.expectMsgType[open_anchor]
+      alice2bob.expectMsgType[OpenChannel]
     }
   }
 
   test("recv error") { case (bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
-      bob ! error(Some("oops"))
+      bob ! Error(0, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }

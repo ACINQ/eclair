@@ -10,8 +10,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.UpdateAddHtlc
-import lightning.locktime.Locktime.Blocks
-import lightning.{locktime, update_add_htlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

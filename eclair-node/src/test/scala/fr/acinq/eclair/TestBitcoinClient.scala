@@ -7,8 +7,8 @@ import fr.acinq.eclair.blockchain.peer.{NewBlock, NewTransaction}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Scripts
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 26/04/2016.
