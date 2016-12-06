@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class OpenWaitingOurAnchorStateSpec extends StateSpecBaseClass {
+class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
 
   type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
 

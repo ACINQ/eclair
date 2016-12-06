@@ -1,13 +1,10 @@
-package fr.acinq.eclair.channel.simulator.states.b
+package fr.acinq.eclair.channel.simulator.states.a
 
-import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{OPEN_WAITING_THEIRANCHOR, _}
-import fr.acinq.eclair.wire._
+import fr.acinq.eclair.wire.{Error, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -17,40 +14,36 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class OpenWaitForAnchorStateSpec extends StateSpecBaseClass {
+class WaitForOpenChannelStateSpec extends StateSpecBaseClass {
 
   type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "B"))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice2bob.expectMsgType[OpenChannel]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[AcceptChannel]
-    bob2alice.forward(alice)
-    awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
+    within(30 seconds) {
+      bob2alice.expectMsgType[OpenChannel]
+      awaitCond(bob.stateName == OPEN_WAIT_FOR_OPEN_NOANCHOR)
+    }
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
 
-  test("recv FundingCreated") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv OpenChannel") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      awaitCond(bob.stateName == OPEN_WAITING_THEIRANCHOR)
-      bob2alice.expectMsgType[FundingSigned]
-      bob2blockchain.expectMsgType[WatchConfirmed]
-      bob2blockchain.expectMsgType[WatchSpent]
+      awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
     }
   }
 
   test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! Error(0, "oops".getBytes)
+      bob ! Error(0, "oops".getBytes())
       awaitCond(bob.stateName == CLOSED)
     }
   }

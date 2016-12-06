@@ -350,7 +350,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
     case Event(FundingLocked(temporaryChannelId, channelId, nextPerCommitmentPoint), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
-      goto(NORMAL_2)
+      goto(NORMAL)
 
     case Event((BITCOIN_FUNDING_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
@@ -494,9 +494,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         val (_, fee, ourCloseSig) = makeFinalTx(commitments, ourShutdown.scriptPubKey, theirScriptPubKey)
         val closingSigned = ClosingSigned(channelId, fee, ourCloseSig)
         them ! ourCloseSig
-        goto(NEGOTIATING_2) using DATA_NEGOTIATING(channelId, channelParams, commitments, ourShutdown, theirShutdown, closingSigned)
+        goto(NEGOTIATING) using DATA_NEGOTIATING(channelId, channelParams, commitments, ourShutdown, theirShutdown, closingSigned)
       } else {
-        goto(SHUTDOWN_2) using DATA_SHUTDOWN(channelId, channelParams, commitments, ourShutdown, theirShutdown, downstreams)
+        goto(SHUTDOWN) using DATA_SHUTDOWN(channelId, channelParams, commitments, ourShutdown, theirShutdown, downstreams)
       }
 
     case Event((BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.theirCommit.txid => handleTheirSpentCurrent(tx, d)
