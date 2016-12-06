@@ -279,7 +279,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Helpers.revocationHash(channelParams.shaSeed, 0L)
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKb, amount_us_msat = anchorAmount.toLong * 1000 - pushMsat, amount_them_msat = pushMsat)
-      val ourTx = makeOurTx(channelParams.localParams, channelParams.remoteParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
+      val ourTx = makeLocalTx(channelParams.localParams, channelParams.remoteParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
       val ourSig = sign(channelParams.localParams, channelParams.remoteParams, anchorAmount, ourTx)
       val signedTx: Transaction = ??? //addSigs(ourParams, theirParams, anchorAmount, ourTx, ourSig, theirSig)

@@ -58,7 +58,7 @@ object TestConstants {
 
     def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = remoteParams.feeratePerKb, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
 
-    val ourTx = Helpers.makeOurTx(localParams, remoteParams, TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
+    val ourTx = Helpers.makeLocalTx(localParams, remoteParams, TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 
     val commitments = Commitments(
       localParams,

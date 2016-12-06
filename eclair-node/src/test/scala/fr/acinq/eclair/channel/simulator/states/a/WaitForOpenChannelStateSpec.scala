@@ -28,7 +28,7 @@ class WaitForOpenChannelStateSpec extends StateSpecBaseClass {
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
       bob2alice.expectMsgType[OpenChannel]
-      awaitCond(bob.stateName == OPEN_WAIT_FOR_OPEN_NOANCHOR)
+      awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
@@ -37,7 +37,7 @@ class WaitForOpenChannelStateSpec extends StateSpecBaseClass {
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
+      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     }
   }
 

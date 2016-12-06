@@ -6,7 +6,7 @@ import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{ERR_INFORMATION_LEAK, OPEN_WAITING_OURANCHOR, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -48,7 +48,7 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
       alice2blockchain.expectMsgType[Publish]
       alice2blockchain.forward(blockchainA)
       bob ! BITCOIN_FUNDING_DEPTHOK
-      awaitCond(alice.stateName == OPEN_WAITING_OURANCHOR)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
@@ -58,14 +58,14 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
       val msg = bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].deferred == Some(msg))
-      awaitCond(alice.stateName == OPEN_WAITING_OURANCHOR)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     }
   }
 
   test("recv BITCOIN_ANCHOR_DEPTHOK") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_DEPTHOK
-      awaitCond(alice.stateName == OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
       alice2blockchain.expectMsgType[WatchLost]
       bob2alice.expectMsgType[FundingLocked]
     }

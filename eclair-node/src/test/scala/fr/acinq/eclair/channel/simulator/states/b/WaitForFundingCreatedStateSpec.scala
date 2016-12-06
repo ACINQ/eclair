@@ -6,7 +6,7 @@ import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{OPEN_WAITING_THEIRANCHOR, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -33,7 +33,7 @@ class WaitForFundingCreatedStateSpec extends StateSpecBaseClass {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
-    awaitCond(bob.stateName == OPEN_WAIT_FOR_ANCHOR)
+    awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
 
@@ -41,7 +41,7 @@ class WaitForFundingCreatedStateSpec extends StateSpecBaseClass {
     within(30 seconds) {
       alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
-      awaitCond(bob.stateName == OPEN_WAITING_THEIRANCHOR)
+      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
       bob2alice.expectMsgType[FundingSigned]
       bob2blockchain.expectMsgType[WatchConfirmed]
       bob2blockchain.expectMsgType[WatchSpent]

@@ -128,7 +128,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
   test("connect to lightningd") {
     val future = for {
       _ <- connect("localhost", 45000)
-      _ <- waitForState(OPEN_WAITING_THEIRANCHOR)
+      _ <- waitForState(WAIT_FOR_FUNDING_CREATED)
     } yield ()
     Await.result(future, 30 seconds)
   }

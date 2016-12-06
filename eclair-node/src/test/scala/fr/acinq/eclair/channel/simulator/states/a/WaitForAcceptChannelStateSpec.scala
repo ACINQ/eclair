@@ -6,7 +6,7 @@ import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeAnchor, PeerWatcher}
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{OPEN_WAIT_FOR_OPEN_WITHANCHOR, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.{Error, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -32,7 +32,7 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
-      awaitCond(alice.stateName == OPEN_WAIT_FOR_OPEN_WITHANCHOR)
+      awaitCond(alice.stateName == WAIT_FOR_OPEN_CHANNEL)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
@@ -41,7 +41,7 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
     within(30 seconds) {
       bob2alice.expectMsgType[OpenChannel]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == OPEN_WAIT_FOR_OPEN_WITHANCHOR)
+      awaitCond(alice.stateName == WAIT_FOR_OPEN_CHANNEL)
     }
   }
 
@@ -51,7 +51,7 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeAnchor]
       alice2blockchain.forward(blockchain)
-      awaitCond(alice.stateName == OPEN_WAIT_FOR_COMMIT_SIG)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
       alice2bob.expectMsgType[OpenChannel]
     }
   }

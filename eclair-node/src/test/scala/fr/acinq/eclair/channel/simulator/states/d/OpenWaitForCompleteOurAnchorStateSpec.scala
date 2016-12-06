@@ -6,7 +6,7 @@ import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.StateSpecBaseClass
-import fr.acinq.eclair.channel.{OPEN_WAIT_FOR_COMPLETE_OURANCHOR, _}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -52,7 +52,7 @@ class OpenWaitForCompleteOurAnchorStateSpec extends StateSpecBaseClass {
       bob ! BITCOIN_FUNDING_DEPTHOK
       alice2blockchain.expectMsgType[WatchLost]
       alice2blockchain.forward(blockchainA)
-      awaitCond(alice.stateName == OPEN_WAIT_FOR_COMPLETE_OURANCHOR)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }

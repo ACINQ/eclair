@@ -67,16 +67,16 @@ object Helpers {
     spec4
   }
 
-  def makeOurTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
+  def makeLocalTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
     //makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
-  def makeOurTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
+  def makeLocalTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
     //makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
-  def makeTheirTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
+  def makeRemoteTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
     //makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
-  def makeTheirTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
+  def makeRemoteTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
     //makeTheirTxTemplate(ourParams, theirParams, inputs, theirRevocationHash, spec).makeTx
 
   def sign(localParams: LocalParams, RemoteParams: RemoteParams, anchorAmount: Satoshi, tx: Transaction): BinaryData = ???

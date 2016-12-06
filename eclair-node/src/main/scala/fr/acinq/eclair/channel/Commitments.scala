@@ -161,7 +161,7 @@ object Commitments {
         // sign all our proposals + their acked proposals
         // their commitment now includes all our changes  + their acked changes
         val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.proposed)
-        val theirTxTemplate = Helpers.makeTheirTxTemplate(localParams, remoteParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val theirTxTemplate = Helpers.makeRemoteTxTemplate(localParams, remoteParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
         val theirTx = theirTxTemplate.makeTx
         // don't sign if they don't get paid
         val commit: CommitSig = ??? /*if (theirTxTemplate.weHaveAnOutput) {
@@ -200,7 +200,7 @@ object Commitments {
 
     val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.proposed)
     val ourNextRevocationHash = Helpers.revocationHash(shaSeed, ourCommit.index + 1)
-    val ourTxTemplate = Helpers.makeOurTxTemplate(localParams, remoteParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
+    val ourTxTemplate = Helpers.makeLocalTxTemplate(localParams, remoteParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
 
     // this tx will NOT be signed if our output is empty
     val ourCommitTx: Transaction = ???/*commit.sig match {
@@ -237,7 +237,7 @@ object Commitments {
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // this is their revoked commit tx
-        val theirTxTemplate = Helpers.makeTheirTxTemplate(localParams, remoteParams, ourCommit.publishableTx.txIn, theirCommit.theirRevocationHash, theirCommit.spec)
+        val theirTxTemplate = Helpers.makeRemoteTxTemplate(localParams, remoteParams, ourCommit.publishableTx.txIn, theirCommit.theirRevocationHash, theirCommit.spec)
         val theirTx = theirTxTemplate.makeTx
         val punishTx: Transaction = ??? //Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, localParams.finalPrivKey)
         Transaction.correctlySpends(punishTx, Seq(theirTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -254,17 +254,17 @@ object Commitments {
   }
 
   def makeOurTxTemplate(commitments: Commitments): TxTemplate = {
-    Helpers.makeOurTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
+    Helpers.makeLocalTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
       Helpers.revocationHash(commitments.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
   }
 
   def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {
     commitments.theirNextCommitInfo match {
       case Left(theirNextCommit) =>
-        Helpers.makeTheirTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
+        Helpers.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
           theirNextCommit.theirRevocationHash, theirNextCommit.spec)
       case Right(revocationHash) =>
-        Helpers.makeTheirTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
+        Helpers.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
           commitments.theirCommit.theirRevocationHash, commitments.theirCommit.spec)
     }
   }

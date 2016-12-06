@@ -20,27 +20,27 @@ class NominalChannelSpec extends BaseChannelTestClass {
   test("open channel and reach normal state") { case (alice, bob, pipe) =>
     val monitorA = TestProbe()
     alice ! SubscribeTransitionCallBack(monitorA.ref)
-    val CurrentState(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR) = monitorA.expectMsgClass(classOf[CurrentState[_]])
+    val CurrentState(_, WAIT_FOR_ACCEPT_CHANNEL) = monitorA.expectMsgClass(classOf[CurrentState[_]])
 
     val monitorB = TestProbe()
     bob ! SubscribeTransitionCallBack(monitorB.ref)
-    val CurrentState(_, OPEN_WAIT_FOR_OPEN_NOANCHOR) = monitorB.expectMsgClass(classOf[CurrentState[_]])
+    val CurrentState(_, WAIT_FOR_OPEN_CHANNEL) = monitorB.expectMsgClass(classOf[CurrentState[_]])
 
     pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
-      val Transition(_, OPEN_WAIT_FOR_OPEN_WITHANCHOR, OPEN_WAIT_FOR_COMMIT_SIG) = monitorA.expectMsgClass(classOf[Transition[_]])
-      val Transition(_, OPEN_WAIT_FOR_OPEN_NOANCHOR, OPEN_WAIT_FOR_ANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_ACCEPT_CHANNEL, WAIT_FOR_FUNDING_SIGNED) = monitorA.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_OPEN_CHANNEL, WAIT_FOR_FUNDING_CREATED) = monitorB.expectMsgClass(classOf[Transition[_]])
 
-      val Transition(_, OPEN_WAIT_FOR_COMMIT_SIG, OPEN_WAITING_OURANCHOR) = monitorA.expectMsgClass(classOf[Transition[_]])
-      val Transition(_, OPEN_WAIT_FOR_ANCHOR, OPEN_WAITING_THEIRANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_FUNDING_SIGNED, WAIT_FOR_FUNDING_LOCKED_INTERNAL) = monitorA.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_FUNDING_CREATED, WAIT_FOR_FUNDING_LOCKED_INTERNAL) = monitorB.expectMsgClass(classOf[Transition[_]])
 
-      val Transition(_, OPEN_WAITING_OURANCHOR, OPEN_WAIT_FOR_COMPLETE_OURANCHOR) = monitorA.expectMsgClass(5 seconds, classOf[Transition[_]])
-      val Transition(_, OPEN_WAITING_THEIRANCHOR, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR) = monitorB.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_FUNDING_LOCKED_INTERNAL, WAIT_FOR_FUNDING_LOCKED) = monitorA.expectMsgClass(5 seconds, classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_FUNDING_LOCKED_INTERNAL, WAIT_FOR_FUNDING_LOCKED) = monitorB.expectMsgClass(classOf[Transition[_]])
 
-      val Transition(_, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL) = monitorA.expectMsgClass(classOf[Transition[_]])
-      val Transition(_, OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR, NORMAL) = monitorB.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_FUNDING_LOCKED, NORMAL) = monitorA.expectMsgClass(classOf[Transition[_]])
+      val Transition(_, WAIT_FOR_FUNDING_LOCKED, NORMAL) = monitorB.expectMsgClass(classOf[Transition[_]])
     }
   }
 
