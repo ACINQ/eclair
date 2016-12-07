@@ -4,7 +4,7 @@ import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.Helpers._
+import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec._
 import fr.acinq.eclair.transactions.Signature._
@@ -280,7 +280,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val anchorAmount = anchorTx.txOut(anchorOutputIndex).amount
       val remoteSpec = remoteCommit.spec
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
-      val ourRevocationHash = Helpers.revocationHash(channelParams.shaSeed, 0L)
+      val ourRevocationHash = Commitments.revocationHash(channelParams.shaSeed, 0L)
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKb, to_local_msat = anchorAmount.toLong * 1000 - pushMsat, to_remote_msat = pushMsat)
       val ourTx = makeLocalTx(channelParams.localParams, channelParams.remoteParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
@@ -814,8 +814,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     blockchain ! Publish(tx)
     blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_OURS_DONE) // TODO hardcoded mindepth
 
-    val txs1 = Helpers.claimReceivedHtlcs(tx, Commitments.makeLocalTxTemplate(d.commitments), d.commitments)
-    val txs2 = Helpers.claimSentHtlcs(tx, Commitments.makeLocalTxTemplate(d.commitments), d.commitments)
+    val txs1 = claimReceivedHtlcs(tx, Commitments.makeLocalTxTemplate(d.commitments), d.commitments)
+    val txs2 = claimSentHtlcs(tx, Commitments.makeLocalTxTemplate(d.commitments), d.commitments)
     val txs = txs1 ++ txs2
     txs.map(tx => blockchain ! PublishAsap(tx))
 
@@ -833,8 +833,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_THEIRS_DONE) // TODO hardcoded mindepth
 
-    val txs1 = Helpers.claimReceivedHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
-    val txs2 = Helpers.claimSentHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
+    val txs1 = claimReceivedHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
+    val txs2 = claimSentHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
     val txs = txs1 ++ txs2
     txs.map(tx => blockchain ! PublishAsap(tx))
 

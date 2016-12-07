@@ -53,7 +53,7 @@ object TestConstants {
 
     val shaSeed = Crypto.sha256("alice-seed".getBytes())
 
-    def revocationHash(index: Long) = Helpers.revocationHash(shaSeed, index)
+    def revocationHash(index: Long) = Commitments.revocationHash(shaSeed, index)
 
     def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = localParams.feeratePerKb, to_remote_msat = 0, to_local_msat = anchorAmount * 1000)
 
@@ -76,7 +76,7 @@ object TestConstants {
     val channelParams = OurChannelParams(350, commitPrivKey, finalPrivKey, 2, 10000, Crypto.sha256("bob-seed".getBytes()), None)
     val finalPubKey = channelParams.finalPubKey
 
-    def revocationHash(index: Long) = Helpers.revocationHash(channelParams.shaSeed, index)
+    def revocationHash(index: Long) = Commitments.revocationHash(channelParams.shaSeed, index)
 
     def ourSpec = Alice.theirSpec
 

@@ -150,34 +150,34 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
       // lightningd sends us a htlc
       blockcount <- btccli.getBlockCount
       _ = lncli.devroutefail(false)
-      _ = lncli.newhtlc(peer.peerid, 70000000, blockcount + 288, Helpers.revocationHash(seed, 0))
+      _ = lncli.newhtlc(peer.peerid, 70000000, blockcount + 288, Commitments.revocationHash(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // we fulfill it
       htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.head.add.id)
-      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Helpers.revocationPreimage(seed, 0)))
+      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Commitments.revocationPreimage(seed, 0)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       peer1 = lncli.getPeers.head
       _ = assert(peer1.their_amount + peer1.their_fee == 70000000)
       // lightningd sends us another htlc
-      _ = lncli.newhtlc(peer.peerid, 80000000, blockcount + 288, Helpers.revocationHash(seed, 1))
+      _ = lncli.newhtlc(peer.peerid, 80000000, blockcount + 288, Commitments.revocationHash(seed, 1))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.head.add.id)
-      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Helpers.revocationPreimage(seed, 1)))
+      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Commitments.revocationPreimage(seed, 1)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       peer2 = lncli.getPeers.head
       _ = assert(peer2.their_amount + peer2.their_fee == 70000000 + 80000000)
       // we send lightningd a HTLC
-      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Helpers.revocationHash(seed, 0), blockcount.toInt + 576, id = Some(42)))
+      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Commitments.revocationHash(seed, 0), blockcount.toInt + 576, id = Some(42)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // and we ask lightingd to fulfill it
-      _ = lncli.fulfillhtlc(peer.peerid, 42, Helpers.revocationPreimage(seed, 0))
+      _ = lncli.fulfillhtlc(peer.peerid, 42, Commitments.revocationPreimage(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)

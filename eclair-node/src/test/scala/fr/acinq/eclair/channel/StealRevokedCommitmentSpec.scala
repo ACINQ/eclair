@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -48,7 +49,7 @@ class StealRevokedCommitmentSpec extends FunSuite {
     assert(theirTx.txIn.map(_.outPoint) == alice3.localCommit.publishableTx.txIn.map(_.outPoint))
     assert(theirTx.txOut == alice3.localCommit.publishableTx.txOut)
     val preimage = bob5.theirPreimages.getHash(0xFFFFFFFFFFFFFFFFL - bob3.remoteCommit.index).get
-    val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, preimage, ???) // TODO
+    val punishTx = Closing.claimRevokedCommitTx(theirTxTemplate, preimage, ???) // TODO
     Transaction.correctlySpends(punishTx, Seq(alice3.localCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
 

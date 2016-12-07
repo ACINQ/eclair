@@ -127,6 +127,10 @@ object Commitments {
 
   def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.size > 0 || commitments.remoteChanges.proposed.size > 0
 
+  def revocationPreimage(seed: BinaryData, index: Long): BinaryData = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
+
+  def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
+
   def sendCommit(commitments: Commitments): (Commitments, CommitSig) = {
     import commitments._
     commitments.remoteNextCommitInfo match {
@@ -175,7 +179,7 @@ object Commitments {
     // receiving money i.e its commit tx has one output for them
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val ourNextRevocationHash = Helpers.revocationHash(shaSeed, localCommit.index + 1)
+    val ourNextRevocationHash = revocationHash(shaSeed, localCommit.index + 1)
     val ourTxTemplate = CommitmentSpec.makeLocalTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, ourNextRevocationHash, spec)
 
     // this tx will NOT be signed if our output is empty
@@ -193,8 +197,8 @@ object Commitments {
         }*/
 
     // we will send our revocation preimage + our next revocation hash
-    val ourRevocationPreimage = Helpers.revocationPreimage(shaSeed, localCommit.index)
-    val ourNextRevocationHash1 = Helpers.revocationHash(shaSeed, localCommit.index + 2)
+    val ourRevocationPreimage = revocationPreimage(shaSeed, localCommit.index)
+    val ourNextRevocationHash1 = revocationHash(shaSeed, localCommit.index + 2)
     val revocation: RevokeAndAck = ??? //RevokeAndAck(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data
@@ -232,7 +236,7 @@ object Commitments {
 
   def makeLocalTxTemplate(commitments: Commitments): CommitTxTemplate = {
     CommitmentSpec.makeLocalTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
-      Helpers.revocationHash(commitments.shaSeed, commitments.localCommit.index), commitments.localCommit.spec)
+      revocationHash(commitments.shaSeed, commitments.localCommit.index), commitments.localCommit.spec)
   }
 
   def makeRemoteTxTemplate(commitments: Commitments): CommitTxTemplate = {
