@@ -8,6 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.simulator.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.transactions.OldScripts
 import fr.acinq.eclair.wire.{AcceptChannel, CommitSig, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -423,7 +424,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       assert(revokedTx.txOut.size == 3)
       // the punishment tx consumes all output but ours (which already goes to our final key)
       assert(punishTx.txIn.size == 2)
-      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(Scripts.pay2wpkh(Alice.finalPubKey)))))
+      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(OldScripts.pay2wpkh(Alice.finalPubKey)))))
     }
   }
 

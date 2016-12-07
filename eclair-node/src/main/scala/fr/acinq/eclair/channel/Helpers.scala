@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.channel.Scripts._
+import fr.acinq.eclair.transactions.OldScripts._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
 
@@ -112,14 +112,14 @@ object Helpers {
       *         This tx is not spendable right away: it has both an absolute CLTV time-out and a relative CSV time-out
       *         before which it can be published
       */
-    def claimReceivedHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = {
+    def claimReceivedHtlc(tx: Transaction, htlcTemplate: HTLCTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = {
       require(htlcTemplate.htlc.add.paymentHash == BinaryData(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
       // find its index in their tx
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
 
       val tx1 = Transaction(version = 2,
-        txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = Scripts.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
-        txOut = TxOut(htlcTemplate.amount, Scripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+        txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = OldScripts.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
+        txOut = TxOut(htlcTemplate.amount, OldScripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
         lockTime = ??? /*Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry)*/)
 
       val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
@@ -142,7 +142,7 @@ object Helpers {
       val htlcTemplates = txTemplate.htlcReceived ++ txTemplate.htlcSent
 
       //@tailrec
-      def loop(htlcs: Seq[HtlcTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = ???
+      def loop(htlcs: Seq[HTLCTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = ???
 
       /*{
       htlcs.headOption match {
@@ -157,12 +157,12 @@ object Helpers {
       loop(htlcTemplates)
     }
 
-    def claimSentHtlc(tx: Transaction, htlcTemplate: HtlcTemplate, privateKey: BinaryData): Transaction = {
+    def claimSentHtlc(tx: Transaction, htlcTemplate: HTLCTemplate, privateKey: BinaryData): Transaction = {
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
       val tx1 = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = Scripts.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
-        txOut = TxOut(htlcTemplate.amount, Scripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+        txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = OldScripts.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
+        txOut = TxOut(htlcTemplate.amount, OldScripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
         lockTime = ??? /*Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry)*/)
 
       val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)

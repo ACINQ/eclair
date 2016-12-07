@@ -4,7 +4,8 @@ import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_SPENT, Scripts}
+import fr.acinq.eclair.channel.BITCOIN_FUNDING_SPENT
+import fr.acinq.eclair.transactions.OldScripts
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
@@ -69,8 +70,8 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       }
 
     case PublishAsap(tx) =>
-      val cltvTimeout = Scripts.cltvTimeout(tx)
-      val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
+      val cltvTimeout = OldScripts.cltvTimeout(tx)
+      val csvTimeout = currentBlockCount + OldScripts.csvTimeout(tx)
       val timeout = Math.max(cltvTimeout, csvTimeout)
       val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
       context.become(watching(watches, block2tx1, currentBlockCount))

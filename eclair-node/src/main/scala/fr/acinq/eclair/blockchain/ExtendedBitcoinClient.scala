@@ -2,8 +2,8 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
-import fr.acinq.eclair.channel
-import fr.acinq.eclair.channel.Scripts
+import fr.acinq.eclair.{channel, transactions}
+import fr.acinq.eclair.transactions.OldScripts
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
 
@@ -93,12 +93,12 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     publishTransaction(tx2Hex(tx))
 
   def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
-    val anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+    val anchorOutputScript = transactions.OldScripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
     val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
     val future = for {
       FundTransactionResponse(tx1, changepos, fee) <- fundTransaction(tx)
       SignTransactionResponse(anchorTx, true) <- signTransaction(tx1)
-      Some(pos) = Scripts.findPublicKeyScriptIndex(anchorTx, anchorOutputScript)
+      Some(pos) = OldScripts.findPublicKeyScriptIndex(anchorTx, anchorOutputScript)
     } yield (anchorTx, pos)
 
     future
@@ -106,20 +106,20 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def makeAnchorTx(fundingPriv: BinaryData, ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val pub = Crypto.publicKeyFromPrivateKey(fundingPriv)
-    val script = Script.write(Scripts.pay2sh(Scripts.pay2wpkh(pub)))
+    val script = Script.write(OldScripts.pay2sh(OldScripts.pay2wpkh(pub)))
     val address = Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, script)
     val future = for {
       id <- sendFromAccount("", address, amount.amount.toDouble)
       tx <- getTransaction(id)
-      Some(pos) = Scripts.findPublicKeyScriptIndex(tx, script)
+      Some(pos) = OldScripts.findPublicKeyScriptIndex(tx, script)
       output = tx.txOut(pos)
-      anchorOutputScript = channel.Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+      anchorOutputScript = transactions.OldScripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)
       tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
       pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount, 1, fundingPriv)
       witness = ScriptWitness(Seq(sig, pub))
       tx2 = tx1.updateWitness(0, witness)
-      Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
+      Some(pos1) = OldScripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
     } yield (tx2, pos1)
 
     future

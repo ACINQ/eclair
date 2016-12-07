@@ -52,7 +52,6 @@ case object ERR_INFORMATION_LEAK extends State
  */
 
 case object INPUT_NO_MORE_HTLCS
-
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 
@@ -108,7 +107,7 @@ final case class RES_GETINFO(nodeid: BinaryData, channelId: Long, state: State, 
       8888888P" d88P     888     888  d88P     888
  */
 
-trait Data // TODO : add sealed keyword
+sealed trait Data
 
 case object Nothing extends Data
 

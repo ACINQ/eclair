@@ -8,7 +8,7 @@ import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.CommitmentSpec._
 import fr.acinq.eclair.transactions.Signature._
-import fr.acinq.eclair.transactions.{CommitmentSpec, Htlc, IN}
+import fr.acinq.eclair.transactions.{CommitmentSpec, Htlc, IN, OldScripts}
 import fr.acinq.eclair.wire._
 
 import scala.compat.Platform
@@ -240,7 +240,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(FundingCreated(_, anchorTxHash, anchorOutputIndex, remoteSignature), DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId, channelParams, pushMsat)) =>
       val anchorTxid = anchorTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
 
-      val anchorOutput = TxOut(Satoshi(channelParams.fundingSatoshis), publicKeyScript = Scripts.anchorPubkeyScript(channelParams.localParams.fundingPubkey, channelParams.remoteParams.fundingPubkey))
+      val anchorOutput = TxOut(Satoshi(channelParams.fundingSatoshis), publicKeyScript = OldScripts.anchorPubkeyScript(channelParams.localParams.fundingPubkey, channelParams.remoteParams.fundingPubkey))
 
       // they fund the channel with their anchor tx, so the money is theirs (but we are paid pushMsat)
       val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKb, to_remote_msat = channelParams.fundingSatoshis * 1000 - pushMsat, to_local_msat = pushMsat)

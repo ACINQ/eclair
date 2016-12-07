@@ -1,14 +1,13 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
-import fr.acinq.eclair.transactions._
 
 /**
   * Created by PM on 21/01/2016.
   */
-object Scripts {
+object OldScripts {
 
   def toSelfDelay2csv(in: Int): Long = ???
 
@@ -192,11 +191,11 @@ object Scripts {
     // when * they * publish a revoked commit tx we don't have anything special to do about it
     val theirOutput = if (amount_them_msat >= 546000) Some(P2WPKHTemplate(Satoshi(amount_them_msat / 1000), theirFinalKey)) else None
 
-    val sendOuts: Seq[HtlcTemplate] = htlcs.filter(_.direction == OUT).map(htlc => {
-      HtlcTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
+    val sendOuts: Seq[HTLCTemplate] = htlcs.filter(_.direction == OUT).map(htlc => {
+      HTLCTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
     })
-    val receiveOuts: Seq[HtlcTemplate] = htlcs.filter(_.direction == IN).map(htlc => {
-      HtlcTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
+    val receiveOuts: Seq[HTLCTemplate] = htlcs.filter(_.direction == IN).map(htlc => {
+      HTLCTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
     })
     CommitTxTemplate(inputs, ourOutput, theirOutput, sendOuts, receiveOuts)
   }
