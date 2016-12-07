@@ -20,7 +20,7 @@ object Codecs {
 
   def varsizebinarydata: Codec[BinaryData] = variableSizeBytes(uint16, bytes.xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data)))
 
-  def listofbinarydata(size: Int): Codec[List[BinaryData]] = listOfN(int32, binarydata(size))
+  def listofbinarydata(size: Int): Codec[List[BinaryData]] = listOfN(uint16, binarydata(size))
 
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
@@ -38,9 +38,9 @@ object Codecs {
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
       ("htlcMinimumMsat" | uint32) ::
-      ("maxNumHtlcs" | uint32) ::
-      ("feeratePerKb" | uint32) ::
+      ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
+      ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | binarydata(33)) ::
       ("revocationBasepoint" | binarydata(33)) ::
       ("paymentBasepoint" | binarydata(33)) ::
@@ -54,8 +54,8 @@ object Codecs {
       ("channelReserveSatoshis" | uint64) ::
       ("minimumDepth" | uint32) ::
       ("htlcMinimumMsat" | uint32) ::
-      ("maxNumHtlcs" | uint32) ::
       ("toSelfDelay" | uint16) ::
+      ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | binarydata(33)) ::
       ("revocationBasepoint" | binarydata(33)) ::
       ("paymentBasepoint" | binarydata(33)) ::
@@ -75,6 +75,8 @@ object Codecs {
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("temporaryChannelId" | uint64) ::
       ("channelId" | uint64) ::
+      ("announcementNodeSignature" | binarydata(64)) ::
+      ("announcementBitcoinSignature" | binarydata(64)) ::
       ("nextPerCommitmentPoint" | binarydata(33))).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
@@ -119,7 +121,7 @@ object Codecs {
 
   val updateFeeCodec: Codec[UpdateFee] = (
     ("channelId" | uint64) ::
-      ("feeratePerKb" | uint32)).as[UpdateFee]
+      ("feeratePerKw" | uint32)).as[UpdateFee]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)

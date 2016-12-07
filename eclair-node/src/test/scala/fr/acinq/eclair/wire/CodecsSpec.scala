@@ -20,7 +20,7 @@ class CodecsSpec extends FunSuite {
     val accept = AcceptChannel(2, 3, 4, 5, 6, 7, 8, 9, bin(33, 1), bin(33, 2), bin(33, 3), bin(33, 4), bin(33, 5))
     val funding_created = FundingCreated(2, bin(32, 0), 3, bin(64, 1))
     val funding_signed = FundingSigned(2, bin(64, 1))
-    val funding_locked = FundingLocked(1, 2, bin(33, 1))
+    val funding_locked = FundingLocked(1, 2, bin(64, 0), bin(64, 1), bin(33, 2))
     val update_fee = UpdateFee(1, 2)
     val shutdown = Shutdown(1, bin(47, 0))
     val closing_signed = ClosingSigned(1, 2, bin(64, 0))

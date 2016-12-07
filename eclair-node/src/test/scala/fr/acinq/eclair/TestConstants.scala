@@ -26,9 +26,9 @@ object TestConstants {
       maxHtlcValueInFlightMsat = Long.MaxValue,
       channelReserveSatoshis = 0,
       htlcMinimumMsat = 0,
-      maxNumHtlcs = 100,
-      feeratePerKb = 10000,
+      feeratePerKw = 10000,
       toSelfDelay = 144,
+      maxAcceptedHtlcs = 100,
       fundingPubkey = Array.fill[Byte](33)(0),
       revocationBasepoint = Array.fill[Byte](33)(0),
       paymentBasepoint = Array.fill[Byte](33)(0),
@@ -42,9 +42,9 @@ object TestConstants {
       maxHtlcValueInFlightMsat = Long.MaxValue,
       channelReserveSatoshis = 0,
       htlcMinimumMsat = 0,
-      maxNumHtlcs = 100,
-      feeratePerKb = 10000,
+      feeratePerKw = 10000,
       toSelfDelay = 144,
+      maxAcceptedHtlcs = 100,
       fundingPubkey = Array.fill[Byte](33)(0),
       revocationBasepoint = Array.fill[Byte](33)(0),
       paymentBasepoint = Array.fill[Byte](33)(0),
@@ -57,9 +57,9 @@ object TestConstants {
 
     def revocationHash(index: Long) = Commitments.revocationHash(shaSeed, index)
 
-    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = localParams.feeratePerKb, to_remote_msat = 0, to_local_msat = anchorAmount * 1000)
+    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = localParams.feeratePerKw, to_remote_msat = 0, to_local_msat = anchorAmount * 1000)
 
-    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = remoteParams.feeratePerKb, to_remote_msat = anchorAmount * 1000, to_local_msat = 0)
+    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = remoteParams.feeratePerKw, to_remote_msat = anchorAmount * 1000, to_local_msat = 0)
 
     val ourTx = CommitmentSpec.makeLocalTx(localParams, remoteParams, TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 

@@ -37,9 +37,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     maxHtlcValueInFlightMsat = Long.MaxValue,
     channelReserveSatoshis = 0,
     htlcMinimumMsat = 0,
-    maxNumHtlcs = 100,
-    feeratePerKb = 10000,
+    feeratePerKw = 10000,
     toSelfDelay = 144,
+    maxAcceptedHtlcs = 100,
     fundingPubkey = params.commitPubKey,
     revocationBasepoint = Array.fill[Byte](33)(0),
     paymentBasepoint = Array.fill[Byte](33)(0),
@@ -62,9 +62,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = localParams.channelReserveSatoshis,
         htlcMinimumMsat = localParams.htlcMinimumMsat,
-        maxNumHtlcs = localParams.maxNumHtlcs,
-        feeratePerKb = localParams.feeratePerKb,
+        feeratePerKw = localParams.feeratePerKw,
         toSelfDelay = localParams.toSelfDelay,
+        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPubkey,
         revocationBasepoint = localParams.revocationBasepoint,
         paymentBasepoint = localParams.paymentBasepoint,
@@ -143,8 +143,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         channelReserveSatoshis = localParams.channelReserveSatoshis,
         minimumDepth = minimumDepth,
         htlcMinimumMsat = localParams.htlcMinimumMsat,
-        maxNumHtlcs = localParams.maxNumHtlcs,
         toSelfDelay = localParams.toSelfDelay,
+        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPubkey,
         revocationBasepoint = Array.fill[Byte](33)(0),
         paymentBasepoint = Array.fill[Byte](33)(0),
@@ -155,9 +155,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = open.channelReserveSatoshis,
         htlcMinimumMsat = open.htlcMinimumMsat,
-        maxNumHtlcs = open.maxNumHtlcs,
-        feeratePerKb = open.feeratePerKb,
+        feeratePerKw = open.feeratePerKw,
         toSelfDelay = open.toSelfDelay,
+        maxAcceptedHtlcs = open.maxAcceptedHtlcs,
         fundingPubkey = open.fundingPubkey,
         revocationBasepoint = open.fundingPubkey,
         paymentBasepoint = open.paymentBasepoint,
@@ -188,9 +188,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = accept.channelReserveSatoshis,
         htlcMinimumMsat = accept.htlcMinimumMsat,
-        maxNumHtlcs = accept.maxNumHtlcs,
-        feeratePerKb = localParams.feeratePerKb, // TODO : this should probably be in AcceptChannel packet
+        feeratePerKw = localParams.feeratePerKw, // TODO : this should probably be in AcceptChannel packet
         toSelfDelay = accept.toSelfDelay,
+        maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
         fundingPubkey = accept.fundingPubkey,
         revocationBasepoint = accept.fundingPubkey,
         paymentBasepoint = accept.paymentBasepoint,
@@ -217,7 +217,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   when(WAIT_FOR_FUNDING_CREATED_INTERNAL)(handleExceptions {
     case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, channelParams, pushMsat, remoteFirstPerCommitmentPoint)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
-      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.remoteParams.feeratePerKb, to_local_msat = pushMsat, to_remote_msat = channelParams.fundingSatoshis * 1000 - pushMsat)
+      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.remoteParams.feeratePerKw, to_local_msat = pushMsat, to_remote_msat = channelParams.fundingSatoshis * 1000 - pushMsat)
       val theirRevocationPubkey: BinaryData = ???
       // some combination of params.remoteParams.revocationBasepoint and remoteFirstPerCommitmentPoint
       val ourSigForThem: BinaryData = ??? // signature of their initial commitment tx that pays them pushMsat
@@ -243,8 +243,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val anchorOutput = TxOut(Satoshi(channelParams.fundingSatoshis), publicKeyScript = OldScripts.anchorPubkeyScript(channelParams.localParams.fundingPubkey, channelParams.remoteParams.fundingPubkey))
 
       // they fund the channel with their anchor tx, so the money is theirs (but we are paid pushMsat)
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKb, to_remote_msat = channelParams.fundingSatoshis * 1000 - pushMsat, to_local_msat = pushMsat)
-      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.remoteParams.feeratePerKb, to_remote_msat = pushMsat, to_local_msat = channelParams.fundingSatoshis * 1000 - pushMsat)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKw, to_remote_msat = channelParams.fundingSatoshis * 1000 - pushMsat, to_local_msat = pushMsat)
+      val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.remoteParams.feeratePerKw, to_remote_msat = pushMsat, to_local_msat = channelParams.fundingSatoshis * 1000 - pushMsat)
 
       // build and sign their commit tx
       val theirTx: Transaction = ??? //makeTheirTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, theirRevocationHash, theirSpec)
@@ -283,7 +283,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val remoteSpec = remoteCommit.spec
       // we build our commitment tx, sign it and check that it is spendable using the counterparty's sig
       val ourRevocationHash = Commitments.revocationHash(channelParams.shaSeed, 0L)
-      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKb, to_local_msat = anchorAmount.toLong * 1000 - pushMsat, to_remote_msat = pushMsat)
+      val ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.localParams.feeratePerKw, to_local_msat = anchorAmount.toLong * 1000 - pushMsat, to_remote_msat = pushMsat)
       val ourTx = makeLocalTx(channelParams.localParams, channelParams.remoteParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
       val ourSig = sign(channelParams.localParams, channelParams.remoteParams, anchorAmount, ourTx)
@@ -324,7 +324,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(BITCOIN_FUNDING_DEPTHOK, d@DATA_WAIT_FOR_FUNDING_LOCKED(temporaryChannelId, channelParams, commitments, deferred)) =>
       val channelId = 0L
       blockchain ! WatchLost(self, commitments.anchorId, channelParams.minimumDepth, BITCOIN_FUNDING_LOST)
-      them ! FundingLocked(channelId, 0L, ???) // TODO
+      them ! FundingLocked(channelId, 0L, "00" * 64, "00" * 64, ???) // TODO
       deferred.map(self ! _)
       //TODO htlcIdx should not be 0 when resuming connection
       goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(channelId, channelParams, commitments, None, Map())
@@ -354,7 +354,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   })
 
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
-    case Event(FundingLocked(temporaryChannelId, channelId, nextPerCommitmentPoint), d: DATA_NORMAL) =>
+    case Event(FundingLocked(temporaryChannelId, channelId, _, _, nextPerCommitmentPoint), d: DATA_NORMAL) =>
       Register.create_alias(theirNodeId, d.commitments.anchorId)
       goto(NORMAL)
 

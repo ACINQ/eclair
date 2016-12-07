@@ -28,9 +28,9 @@ case class OpenChannel(temporaryChannelId: Long,
                        maxHtlcValueInFlightMsat: Long,
                        channelReserveSatoshis: Long,
                        htlcMinimumMsat: Long,
-                       maxNumHtlcs: Long,
-                       feeratePerKb: Long,
+                       feeratePerKw: Long,
                        toSelfDelay: Int,
+                       maxAcceptedHtlcs: Int,
                        fundingPubkey: BinaryData,
                        revocationBasepoint: BinaryData,
                        paymentBasepoint: BinaryData,
@@ -43,8 +43,8 @@ case class AcceptChannel(temporaryChannelId: Long,
                          channelReserveSatoshis: Long,
                          minimumDepth: Long,
                          htlcMinimumMsat: Long,
-                         maxNumHtlcs: Long,
                          toSelfDelay: Int,
+                         maxAcceptedHtlcs: Int,
                          fundingPubkey: BinaryData,
                          revocationBasepoint: BinaryData,
                          paymentBasepoint: BinaryData,
@@ -61,6 +61,8 @@ case class FundingSigned(temporaryChannelId: Long,
 
 case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
+                         announcementNodeSignature: BinaryData,
+                         announcementBitcoinSignature: BinaryData,
                          nextPerCommitmentPoint: BinaryData) extends ChannelMessage
 
 case class Shutdown(channelId: Long,
@@ -95,5 +97,5 @@ case class RevokeAndAck(channelId: Long,
                         htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage
 
 case class UpdateFee(channelId: Long,
-                     feeratePerKb: Long) extends ChannelMessage with UpdateMessage
+                     feeratePerKw: Long) extends ChannelMessage with UpdateMessage
 
