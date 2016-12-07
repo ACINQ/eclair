@@ -17,7 +17,6 @@ import lightning.pkt.Pkt.Auth
 import scodec.bits.BitVector
 
 import scala.annotation.tailrec
-import scala.util.Try
 
 
 /**

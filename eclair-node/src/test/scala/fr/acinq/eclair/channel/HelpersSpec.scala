@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -16,25 +17,25 @@ class HelpersSpec extends FunSuite {
         val H2 = Crypto.sha256(R2)
 
         val ours1 = UpdateAddHtlc(0, 1, 1000, 400, H1, "")
-        val spec1 = Helpers.reduce(spec, ours1 :: Nil, Nil)
+        val spec1 = CommitmentSpec.reduce(spec, ours1 :: Nil, Nil)
         assert(spec1.htlcs.size == 1 && spec1.htlcs.head.add.id == 1 && spec1.htlcs.head.add.paymentHash == H1)
-        assert(spec1.amount_us_msat == spec.amount_us_msat - ours1.amountMsat)
-        assert(spec1.amount_them_msat == spec.amount_them_msat)
+        assert(spec1.to_local_msat == spec.to_local_msat - ours1.amountMsat)
+        assert(spec1.to_remote_msat == spec.to_remote_msat)
         assert(spec1.totalFunds == spec.totalFunds)
 
         val theirs1 = UpdateFulfillHtlc(0, ours1.id, R1)
-        val spec2 = Helpers.reduce(spec1, Nil, theirs1 :: Nil)
-        assert(spec2.htlcs.isEmpty && spec2.amount_them_msat == 1000 && spec2.totalFunds == spec.totalFunds)
+        val spec2 = CommitmentSpec.reduce(spec1, Nil, theirs1 :: Nil)
+        assert(spec2.htlcs.isEmpty && spec2.to_remote_msat == 1000 && spec2.totalFunds == spec.totalFunds)
 
         val theirs2 = UpdateAddHtlc(0, 2, 1000, 400, H2, "")
-        val spec3 = Helpers.reduce(spec2, Nil, theirs2 :: Nil)
+        val spec3 = CommitmentSpec.reduce(spec2, Nil, theirs2 :: Nil)
         assert(spec3.htlcs.size == 1)
-        assert(spec3.amount_us_msat == spec2.amount_us_msat)
-        assert(spec3.amount_them_msat == spec2.amount_them_msat - theirs2.amountMsat)
+        assert(spec3.to_local_msat == spec2.to_local_msat)
+        assert(spec3.to_remote_msat == spec2.to_remote_msat - theirs2.amountMsat)
         assert(spec3.totalFunds == spec.totalFunds)
 
         val ours2 = UpdateFailHtlc(0, theirs2.id, "")
-        val spec4 = Helpers.reduce(spec3, ours2 :: Nil, Nil)
+        val spec4 = CommitmentSpec.reduce(spec3, ours2 :: Nil, Nil)
         assert(spec4 == spec2)
     }
 }

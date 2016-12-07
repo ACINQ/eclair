@@ -36,14 +36,14 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val (bob3, alice3) = signAndReceiveRevocation(bob2, alice2)
 
     // Alice publishes her current commit tx
-    val tx = alice3.ourCommit.publishableTx
+    val tx = alice3.localCommit.publishableTx
 
     // suppose we have the payment preimage, what do we do ?
     val (bob4, _) = Commitments.sendFulfill(bob3, CMD_FULFILL_HTLC(1, R), 0)
     val (bob5, _) = Commitments.sendFulfill(bob4, CMD_FULFILL_HTLC(2, R1), 0)
 
     // we're Bob. Check that our view of Alice's commit tx is right
-    val theirTxTemplate = Commitments.makeTheirTxTemplate(bob5)
+    val theirTxTemplate = Commitments.makeRemoteTxTemplate(bob5)
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txOut === tx.txOut)
 
@@ -69,10 +69,10 @@ class HandleTheirCurrentCommitTxSpec extends FunSuite {
     val (bob3, alice3) = signAndReceiveRevocation(bob2, alice2)
 
     // Bob publishes his current commit tx
-    val tx = bob3.ourCommit.publishableTx
+    val tx = bob3.localCommit.publishableTx
 
     // we're Alice. Check that our view of Bob's commit tx is right
-    val theirTxTemplate = Commitments.makeTheirTxTemplate(alice3)
+    val theirTxTemplate = Commitments.makeRemoteTxTemplate(alice3)
     val theirTx = theirTxTemplate.makeTx
     assert(theirTx.txOut === tx.txOut)
 

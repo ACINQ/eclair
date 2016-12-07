@@ -43,20 +43,20 @@ class StealRevokedCommitmentSpec extends FunSuite {
     val (bob5, alice5) = signAndReceiveRevocation(bob4, alice4)
 
 
-    val theirTxTemplate = Commitments.makeTheirTxTemplate(bob3)
+    val theirTxTemplate = Commitments.makeRemoteTxTemplate(bob3)
     val theirTx = theirTxTemplate.makeTx
-    assert(theirTx.txIn.map(_.outPoint) == alice3.ourCommit.publishableTx.txIn.map(_.outPoint))
-    assert(theirTx.txOut == alice3.ourCommit.publishableTx.txOut)
-    val preimage = bob5.theirPreimages.getHash(0xFFFFFFFFFFFFFFFFL - bob3.theirCommit.index).get
+    assert(theirTx.txIn.map(_.outPoint) == alice3.localCommit.publishableTx.txIn.map(_.outPoint))
+    assert(theirTx.txOut == alice3.localCommit.publishableTx.txOut)
+    val preimage = bob5.theirPreimages.getHash(0xFFFFFFFFFFFFFFFFL - bob3.remoteCommit.index).get
     val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, preimage, ???) // TODO
-    Transaction.correctlySpends(punishTx, Seq(alice3.ourCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    Transaction.correctlySpends(punishTx, Seq(alice3.localCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
 
     // now what if Alice published a revoked commit tx ?
-    val stealTx = bob5.txDb.get(alice4.ourCommit.publishableTx.txid)
-    Transaction.correctlySpends(stealTx.get, Seq(alice4.ourCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    val stealTx = bob5.txDb.get(alice4.localCommit.publishableTx.txid)
+    Transaction.correctlySpends(stealTx.get, Seq(alice4.localCommit.publishableTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
     // but we cannot steal Alice's current commit tx
-    assert(bob5.txDb.get(alice5.ourCommit.publishableTx.txid) == None)
+    assert(bob5.txDb.get(alice5.localCommit.publishableTx.txid) == None)
   }
 }

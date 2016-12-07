@@ -6,6 +6,7 @@ import java.util.concurrent.CountDownLatch
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.transactions.{IN, OUT}
 
 /**
   * Created by PM on 30/05/2016.
@@ -134,19 +135,19 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       import d.commitments._
       val l = List(
         "LOCAL COMMITS:",
-        s" Commit ${d.commitments.ourCommit.index}:",
-        s"  Offered htlcs: ${ourCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${ourCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${ourCommit.spec.amount_us_msat}",
-        s"  Balance them: ${ourCommit.spec.amount_them_msat}",
-        s"  Fee rate: ${ourCommit.spec.feeRate}",
+        s" Commit ${d.commitments.localCommit.index}:",
+        s"  Offered htlcs: ${localCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Received htlcs: ${localCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Balance us: ${localCommit.spec.to_local_msat}",
+        s"  Balance them: ${localCommit.spec.to_remote_msat}",
+        s"  Fee rate: ${localCommit.spec.feeRate}",
         "REMOTE COMMITS:",
-        s" Commit ${theirCommit.index}:",
-        s"  Offered htlcs: ${theirCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Received htlcs: ${theirCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${theirCommit.spec.amount_us_msat}",
-        s"  Balance them: ${theirCommit.spec.amount_them_msat}",
-        s"  Fee rate: ${theirCommit.spec.feeRate}")
+        s" Commit ${remoteCommit.index}:",
+        s"  Offered htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Received htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
+        s"  Balance us: ${remoteCommit.spec.to_local_msat}",
+        s"  Balance them: ${remoteCommit.spec.to_remote_msat}",
+        s"  Fee rate: ${remoteCommit.spec.feeRate}")
         .foreach(s => {
           fout.write(rtrim(s))
           fout.newLine()

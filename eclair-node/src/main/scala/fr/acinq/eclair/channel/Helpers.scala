@@ -3,9 +3,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.channel.Scripts._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.crypto.LightningCrypto.sha256
-import fr.acinq.eclair.transactions.{CommitTxTemplate, HtlcTemplate}
-import fr.acinq.eclair.wire.{UpdateMessage, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.wire.UpdateFulfillHtlc
 
 import scala.util.Try
 
@@ -14,91 +13,13 @@ import scala.util.Try
   */
 object Helpers {
 
-  def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot(_ match {
-    case u: UpdateAddHtlc if u.id == id => true
-    case _ => false
-  })
-
-  def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
-    val htlc = Htlc(direction, update, previousChannelId = None)
-    direction match {
-      case OUT => spec.copy(amount_us_msat = spec.amount_us_msat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
-      case IN => spec.copy(amount_them_msat = spec.amount_them_msat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
-    }
-  }
-
-  // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
-  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFulfillHtlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.paymentHash == sha256(update.paymentPreimage)) match {
-      case Some(htlc) if direction == OUT => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
-    }
-  }
-
-  // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
-  def failHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFailHtlc): CommitmentSpec = {
-    spec.htlcs.find(_.add.id == update.id) match {
-      case Some(htlc) if direction == OUT => spec.copy(amount_them_msat = spec.amount_them_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(amount_us_msat = spec.amount_us_msat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
-    }
-  }
-
-  def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[UpdateMessage], theirChanges: List[UpdateMessage]): CommitmentSpec = {
-    val spec1 = ourChanges.foldLeft(ourCommitSpec) {
-      case (spec, u: UpdateAddHtlc) => addHtlc(spec, OUT, u)
-      case (spec, _) => spec
-    }
-    val spec2 = theirChanges.foldLeft(spec1) {
-      case (spec, u: UpdateAddHtlc) => addHtlc(spec, IN, u)
-      case (spec, _) => spec
-    }
-    val spec3 = ourChanges.foldLeft(spec2) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillHtlc(spec, OUT, u)
-      case (spec, u: UpdateFailHtlc) => failHtlc(spec, OUT, u)
-      case (spec, _) => spec
-    }
-    val spec4 = theirChanges.foldLeft(spec3) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillHtlc(spec, IN, u)
-      case (spec, u: UpdateFailHtlc) => failHtlc(spec, IN, u)
-      case (spec, _) => spec
-    }
-    spec4
-  }
-
-  def makeLocalTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
-    //makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
-
-  def makeLocalTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
-    //makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
-
-  def makeRemoteTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
-    //makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
-
-  def makeRemoteTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
-    //makeTheirTxTemplate(ourParams, theirParams, inputs, theirRevocationHash, spec).makeTx
-
-  def sign(localParams: LocalParams, RemoteParams: RemoteParams, anchorAmount: Satoshi, tx: Transaction): BinaryData = ???
-    //bin2signature(Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey))
-
-  def addSigs(localParams: LocalParams, RemoteParams: RemoteParams, anchorAmount: Satoshi, tx: Transaction, ourSig: BinaryData, theirSig: BinaryData): Transaction = ??? /*{
-    // TODO : Transaction.sign(...) should handle multisig
-    val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
-    val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
-    tx.updateWitness(0, witness)
-  }*/
-
-  def checksig(localParams: LocalParams, RemoteParams: RemoteParams, anchorOutput: TxOut, tx: Transaction): Try[Unit] =
-    Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-
   def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOTIATING): Try[Transaction] = ??? /*{
     val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, closeFee)
     val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, closeSig)
     checksig(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput, signedTx).map(_ => signedTx)
   }*/
 
-  def isMutualClose(tx: Transaction, localParams: LocalParams, RemoteParams: RemoteParams, commitment: OurCommit): Boolean = {
+  def isMutualClose(tx: Transaction, localParams: LocalParams, RemoteParams: RemoteParams, commitment: LocalCommit): Boolean = {
     // we rebuild the closing tx as seen by both parties
     //TODO we should use the closing fee in pkts
     //val closingState = commitment.state.adjust_fees(Globals.closing_fee * 1000, ourParams.anchorAmount.isDefined)
@@ -108,9 +29,9 @@ object Helpers {
     tx.txOut == finalTx.txOut
   }
 
-  def isOurCommit(tx: Transaction, commitment: OurCommit): Boolean = tx == commitment.publishableTx
+  def isOurCommit(tx: Transaction, commitment: LocalCommit): Boolean = tx == commitment.publishableTx
 
-  def isTheirCommit(tx: Transaction, localParams: LocalParams, RemoteParams: RemoteParams, commitment: TheirCommit): Boolean = ???/*{
+  def isTheirCommit(tx: Transaction, localParams: LocalParams, RemoteParams: RemoteParams, commitment: RemoteCommit): Boolean = ???/*{
     // we rebuild their commitment tx
     val theirTx = makeTheirTx(ourParams, theirParams, tx.txIn, commitment.theirRevocationHash, commitment.spec)
     // and only compare the outputs
@@ -148,7 +69,7 @@ object Helpers {
     *         last commit tx
     */
   def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, Long, BinaryData) = {
-    val commitFee = commitments.anchorOutput.amount.toLong - commitments.ourCommit.publishableTx.txOut.map(_.amount.toLong).sum
+    val commitFee = commitments.anchorOutput.amount.toLong - commitments.localCommit.publishableTx.txOut.map(_.amount.toLong).sum
     val closeFee = Satoshi(2 * (commitFee / 4))
     makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
   }
@@ -234,7 +155,7 @@ object Helpers {
     * @return a list of transactions (one per HTLC that we can claim)
     */
   def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = {
-    val preImages = commitments.ourChanges.all.collect { case UpdateFulfillHtlc(_, id, paymentPreimage) => paymentPreimage }
+    val preImages = commitments.localChanges.all.collect { case UpdateFulfillHtlc(_, id, paymentPreimage) => paymentPreimage }
     // TODO: FIXME !!!
     //val htlcTemplates = txTemplate.htlcSent
     val htlcTemplates = txTemplate.htlcReceived ++ txTemplate.htlcSent

@@ -22,7 +22,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.theirChanges.proposed.contains(htlc))
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(htlc))
     (R, htlc)
   }
 
@@ -32,19 +32,19 @@ trait StateTestsHelperMethods extends TestKitBase {
     sender.expectMsg("ok")
     val fulfill = s2r.expectMsgType[UpdateFulfillHtlc]
     s2r.forward(r)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.theirChanges.proposed.contains(fulfill))
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
   }
 
   def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
     val sender = TestProbe()
-    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index
+    val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
     sender.send(s, CMD_SIGN)
     sender.expectMsg("ok")
     s2r.expectMsgType[CommitSig]
     s2r.forward(r)
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.ourCommit.index == rCommitIndex + 1)
+    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
   }
 
 }

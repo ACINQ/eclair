@@ -1,7 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.channel.{Htlc, IN, OUT, Scripts}
+import fr.acinq.eclair.channel.Scripts
 import fr.acinq.eclair.channel.Scripts._
 
 /**

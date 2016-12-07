@@ -1,8 +1,9 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, Hash, OutPoint, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.channel.{TheirChanges, _}
+import fr.acinq.eclair.channel.{RemoteChanges, _}
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.transactions.{CommitmentSpec, Htlc}
 
 /**
   * Created by PM on 26/04/2016.
@@ -54,17 +55,17 @@ object TestConstants {
 
     def revocationHash(index: Long) = Helpers.revocationHash(shaSeed, index)
 
-    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = localParams.feeratePerKb, amount_them_msat = 0, amount_us_msat = anchorAmount * 1000)
+    def ourSpec = CommitmentSpec(Set.empty[Htlc], feeRate = localParams.feeratePerKb, to_remote_msat = 0, to_local_msat = anchorAmount * 1000)
 
-    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = remoteParams.feeratePerKb, amount_them_msat = anchorAmount * 1000, amount_us_msat = 0)
+    def theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = remoteParams.feeratePerKb, to_remote_msat = anchorAmount * 1000, to_local_msat = 0)
 
-    val ourTx = Helpers.makeLocalTx(localParams, remoteParams, TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
+    val ourTx = CommitmentSpec.makeLocalTx(localParams, remoteParams, TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 
     val commitments = Commitments(
       localParams,
       remoteParams,
-      OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Bob.revocationHash(0)),
-      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
+      LocalCommit(0, ourSpec, ourTx), RemoteCommit(0, theirSpec, BinaryData(""), Bob.revocationHash(0)),
+      LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil), 0L,
       Right(Bob.revocationHash(1)), anchorOutput, shaSeed, ShaChain.init, new BasicTxDb)
 
   }

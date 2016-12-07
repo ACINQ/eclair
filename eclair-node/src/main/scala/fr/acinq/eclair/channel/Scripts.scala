@@ -174,7 +174,7 @@ object Scripts {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, toSelfDelay2csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
     val htlcs = commitmentSpec.htlcs.filter(_.add.amountMsat >= 546000).toSeq
     val fee_msat = computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
-    val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.amount_us_msat, commitmentSpec.amount_them_msat) match {
+    val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.to_local_msat, commitmentSpec.to_remote_msat) match {
       case (us, them) if us >= fee_msat / 2 && them >= fee_msat / 2 => (us - fee_msat / 2, them - fee_msat / 2)
       case (us, them) if us < fee_msat / 2 => (0L, Math.max(0L, them - fee_msat + us))
       case (us, them) if them < fee_msat / 2 => (Math.max(us - fee_msat + them, 0L), 0L)

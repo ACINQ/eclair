@@ -60,12 +60,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.ourChanges.proposed
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.localChanges.proposed
           assert(h == H)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.theirChanges.proposed
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.remoteChanges.proposed
           assert(h == H)
       }
 
@@ -74,12 +74,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val htlc = d.commitments.theirCommit.spec.htlcs.head
+          val htlc = d.commitments.remoteCommit.spec.htlcs.head
           assert(htlc.add.paymentHash == H)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val htlc = d.commitments.ourCommit.spec.htlcs.head
+          val htlc = d.commitments.localCommit.spec.htlcs.head
           assert(htlc.add.paymentHash == H)
       }
 
@@ -92,15 +92,15 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == TestConstants.anchorAmount * 1000 - 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == 60000000)
+          assert(d.commitments.localCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.localCommit.spec.to_local_msat == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.to_remote_msat == 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == TestConstants.anchorAmount  * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.localCommit.spec.to_local_msat == 60000000)
+          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount  * 1000 - 60000000)
       }
 
       // send another HTLC
@@ -112,12 +112,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.ourChanges.proposed
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.localChanges.proposed
           assert(h == H1)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.theirChanges.proposed
+          val List(UpdateAddHtlc(_, _, _, _, h, _)) = d.commitments.remoteChanges.proposed
           assert(h == H1)
       }
 
@@ -126,12 +126,12 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val htlc = d.commitments.theirCommit.spec.htlcs.head
+          val htlc = d.commitments.remoteCommit.spec.htlcs.head
           assert(htlc.add.paymentHash == H1)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          val htlc = d.commitments.ourCommit.spec.htlcs.head
+          val htlc = d.commitments.localCommit.spec.htlcs.head
           assert(htlc.add.paymentHash == H1)
       }
 
@@ -145,15 +145,15 @@ class NominalChannelSpec extends BaseChannelTestClass {
 
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == 2 * 60000000)
+          assert(d.commitments.localCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.localCommit.spec.to_local_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.to_remote_msat == 2 * 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
-          assert(d.commitments.ourCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.ourCommit.spec.amount_us_msat == 2 * 60000000)
-          assert(d.commitments.ourCommit.spec.amount_them_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.htlcs.isEmpty)
+          assert(d.commitments.localCommit.spec.to_local_msat == 2 * 60000000)
+          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
       }
     }
   }
@@ -235,7 +235,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       Thread.sleep(500)
 
       val commitTx = (alice.stateData: @unchecked) match {
-        case d: DATA_NORMAL => d.commitments.ourCommit.publishableTx
+        case d: DATA_NORMAL => d.commitments.localCommit.publishableTx
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)

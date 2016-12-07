@@ -4,7 +4,6 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorSystem, Props, Status}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import org.junit.runner.RunWith

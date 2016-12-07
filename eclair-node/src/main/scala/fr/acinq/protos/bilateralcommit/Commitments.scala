@@ -1,6 +1,6 @@
 package fr.acinq.protos.bilateralcommit
 
-import fr.acinq.eclair.channel.{Direction, IN, OUT}
+import fr.acinq.eclair.transactions.{Direction, IN, OUT}
 
 /**
   * Created by PM on 18/08/2016.

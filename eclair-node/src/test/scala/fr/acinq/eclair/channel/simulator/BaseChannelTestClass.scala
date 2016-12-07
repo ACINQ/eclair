@@ -2,11 +2,11 @@ package fr.acinq.eclair.channel.simulator
 
 import akka.actor.{ActorRef, ActorSystem, PoisonPill, Props, Terminated}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
+import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
 
 /**

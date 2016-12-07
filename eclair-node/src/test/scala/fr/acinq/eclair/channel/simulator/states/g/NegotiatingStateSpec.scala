@@ -70,7 +70,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     sender.expectMsg("ok")
     val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
     alice2bob.forward(bob)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == htlc :: Nil)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc :: Nil)
     // alice signs
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -78,13 +78,13 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.acked == htlc :: Nil)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == Nil && bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.acked == htlc :: Nil)
     // bob fulfills
     sender.send(bob, CMD_FULFILL_HTLC(1, r))
     sender.expectMsg("ok")
     bob2alice.expectMsgType[UpdateFulfillHtlc]
     bob2alice.forward(alice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirChanges.proposed.size == 1)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed.size == 1)
     // bob signs
     sender.send(bob, CMD_SIGN)
     sender.expectMsg("ok")
@@ -92,7 +92,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     bob2alice.forward(alice)
     alice2bob.expectMsgType[RevokeAndAck]
     alice2bob.forward(bob)
-    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.isEmpty)
+    awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.isEmpty)
     // alice signs
     sender.send(alice, CMD_SIGN)
     sender.expectMsg("ok")
@@ -100,7 +100,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[RevokeAndAck]
     bob2alice.forward(alice)
-    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.isEmpty)
+    awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.isEmpty)
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
     alice2bob.expectMsgType[Shutdown]
@@ -164,7 +164,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
 
   test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.ourCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTx
       alice ! Error(0, "oops".getBytes())
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))

@@ -155,7 +155,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // we fulfill it
-      htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.add.id)
+      htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.head.add.id)
       _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Helpers.revocationPreimage(seed, 0)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
@@ -166,7 +166,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
-      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.add.id)
+      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.head.add.id)
       _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Helpers.revocationPreimage(seed, 1)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
@@ -181,7 +181,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)
-      _ = assert(c.ourCommit.spec.amount_us_msat == 80000000)
+      _ = assert(c.localCommit.spec.to_local_msat == 80000000)
     } yield ()
     Await.result(future, 300000 seconds)
   }
