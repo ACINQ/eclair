@@ -71,11 +71,11 @@ case class ClosingSigned(channelId: Long,
                          signature: BinaryData) extends ChannelMessage
 
 case class UpdateAddHtlc(channelId: Long,
-                   id: Long,
-                   amountMsat: Long,
-                   expiry: Long,
-                   paymentHash: BinaryData,
-                   onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage
+                         id: Long,
+                         amountMsat: Long,
+                         expiry: Long,
+                         paymentHash: BinaryData,
+                         onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage
 
 case class UpdateFulfillHtlc(channelId: Long,
                              id: Long,

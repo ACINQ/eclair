@@ -40,7 +40,8 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
       stage.close()
     }
   }
-  @FXML def handleClose (event: ActionEvent): Unit = {
+
+  @FXML def handleClose(event: ActionEvent): Unit = {
     stage.close()
   }
 }

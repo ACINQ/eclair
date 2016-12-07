@@ -76,14 +76,18 @@ object CommitmentSpec {
   }
 
   def makeLocalTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
+
   //makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
   def makeLocalTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
+
   //makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
   def makeRemoteTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
+
   //makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
   def makeRemoteTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
+
   //makeTheirTxTemplate(ourParams, theirParams, inputs, theirRevocationHash, spec).makeTx
 }

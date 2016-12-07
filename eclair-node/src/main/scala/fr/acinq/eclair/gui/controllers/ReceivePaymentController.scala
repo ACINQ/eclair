@@ -15,26 +15,27 @@ import scala.util.{Success, Try}
 /**
   * Created by DPA on 23/09/2016.
   */
-class ReceivePaymentController(val handlers:Handlers, val stage:Stage, val setup:Setup) extends BaseController with Logging {
+class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends BaseController with Logging {
 
-  @FXML var amount:TextField = _
-  @FXML var amountError:Label = _
+  @FXML var amount: TextField = _
+  @FXML var amountError: Label = _
 
   // this field is generated and readonly
-  @FXML var paymentRequest:TextArea = _
+  @FXML var paymentRequest: TextArea = _
 
-  @FXML def initialize (): Unit = {
+  @FXML def initialize(): Unit = {
   }
 
-  @FXML def handleGenerate (event: ActionEvent): Unit = {
+  @FXML def handleGenerate(event: ActionEvent): Unit = {
     if (GUIValidators.validate(amount.getText, amountError, GUIValidators.amountRegex)) {
       Try(amount.getText.toLong) match {
-        case Success (amountMsat) => handlers.getPaymentRequest(amount.getText.toLong, paymentRequest)
+        case Success(amountMsat) => handlers.getPaymentRequest(amount.getText.toLong, paymentRequest)
         case _ => {}
       }
     }
   }
-  @FXML def handleClose (event: ActionEvent): Unit = {
+
+  @FXML def handleClose(event: ActionEvent): Unit = {
     stage.close()
   }
 }

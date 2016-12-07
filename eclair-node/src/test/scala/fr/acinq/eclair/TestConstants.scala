@@ -11,7 +11,9 @@ import fr.acinq.eclair.transactions.{CommitmentSpec, Htlc}
 object TestConstants {
   val anchorAmount = 1000000L
 
-  lazy val anchorOutput: TxOut = ??? //TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(Alice.channelParams.commitPubKey, Bob.channelParams.commitPubKey))
+  lazy val anchorOutput: TxOut = ???
+
+  //TxOut(Satoshi(anchorAmount), publicKeyScript = Scripts.anchorPubkeyScript(Alice.channelParams.commitPubKey, Bob.channelParams.commitPubKey))
 
   // Alice is funder, Bob is not
 
@@ -84,12 +86,13 @@ object TestConstants {
 
     val ourTx: Transaction = ??? // Helpers.makeOurTx(channelParams, TheirChannelParams(Alice.channelParams), TxIn(OutPoint(Hash.One, 0), Array.emptyByteArray, 0xffffffffL) :: Nil, revocationHash(0), ourSpec)
 
-    val commitments: Commitments = ???/*Commitments(
-      Bob.channelParams,
-      TheirChannelParams(Alice.channelParams),
-      OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Alice.revocationHash(0)),
-      OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
-      Right(Alice.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)*/
+    val commitments: Commitments = ???
+    /*Commitments(
+          Bob.channelParams,
+          TheirChannelParams(Alice.channelParams),
+          OurCommit(0, ourSpec, ourTx), TheirCommit(0, theirSpec, BinaryData(""), Alice.revocationHash(0)),
+          OurChanges(Nil, Nil, Nil), TheirChanges(Nil, Nil), 0L,
+          Right(Alice.revocationHash(1)), anchorOutput, ShaChain.init, new BasicTxDb)*/
   }
 
 }

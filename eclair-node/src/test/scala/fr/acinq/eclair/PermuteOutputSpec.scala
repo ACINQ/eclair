@@ -10,7 +10,7 @@ import org.scalatest.junit.JUnitRunner
 class PermuteOutputSpec extends FlatSpec {
   "permuteOutputs" should "permute tx output in a determinstic way" in {
     val pub1: BinaryData = "0394D30868076AB1EA7736ED3BDBEC99497A6AD30B25AFD709CDF3804CD389996A"
-    val pub2 : BinaryData = "032C58BC9615A6FF24E9132CEF33F1EF373D97DC6DA7933755BC8BB86DBEE9F55C"
+    val pub2: BinaryData = "032C58BC9615A6FF24E9132CEF33F1EF373D97DC6DA7933755BC8BB86DBEE9F55C"
     val pub3: BinaryData = "02C4D72D99CA5AD12C17C9CFE043DC4E777075E8835AF96F46D8E3CCD929FE1926"
 
     val outputs = Seq(

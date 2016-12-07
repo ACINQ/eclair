@@ -13,7 +13,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by PM on 16/08/2016.
   */
-class SendPaymentStage(handlers: Handlers, setup:Setup) extends Stage() with Logging {
+class SendPaymentStage(handlers: Handlers, setup: Setup) extends Stage() with Logging {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair02.png", false))

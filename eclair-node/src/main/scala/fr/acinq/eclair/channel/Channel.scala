@@ -218,7 +218,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event((anchorTx: Transaction, anchorOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, channelParams, pushMsat, remoteFirstPerCommitmentPoint)) =>
       log.info(s"anchor txid=${anchorTx.txid}")
       val theirSpec = CommitmentSpec(Set.empty[Htlc], feeRate = channelParams.remoteParams.feeratePerKb, to_local_msat = pushMsat, to_remote_msat = channelParams.fundingSatoshis * 1000 - pushMsat)
-      val theirRevocationPubkey: BinaryData = ??? // some combination of params.remoteParams.revocationBasepoint and remoteFirstPerCommitmentPoint
+      val theirRevocationPubkey: BinaryData = ???
+      // some combination of params.remoteParams.revocationBasepoint and remoteFirstPerCommitmentPoint
       val ourSigForThem: BinaryData = ??? // signature of their initial commitment tx that pays them pushMsat
       them ! FundingCreated(
         temporaryChannelId = temporaryChannelId,
@@ -258,7 +259,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       blockchain ! WatchSpent(self, anchorTxid, anchorOutputIndex, 0, BITCOIN_FUNDING_SPENT) // TODO : should we wait for an acknowledgment from watcher?
       blockchain ! WatchConfirmed(self, anchorTxid, channelParams.minimumDepth.toInt, BITCOIN_FUNDING_DEPTHOK)
 
-      val ourRevocationPubkey: BinaryData = ??? // Helpers.revocationHash(ourParams.shaSeed, 0)
+      val ourRevocationPubkey: BinaryData = ???
+      // Helpers.revocationHash(ourParams.shaSeed, 0)
       val ourTx: Transaction = ??? // makeOurTx(ourParams, theirParams, TxIn(OutPoint(anchorTxHash, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
 
       val commitments = Commitments(channelParams.localParams, channelParams.remoteParams,
@@ -285,7 +287,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val ourTx = makeLocalTx(channelParams.localParams, channelParams.remoteParams, TxIn(OutPoint(anchorTx, anchorOutputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil, ourRevocationHash, ourSpec)
       log.info(s"checking our tx: $ourTx")
       val ourSig = sign(channelParams.localParams, channelParams.remoteParams, anchorAmount, ourTx)
-      val signedTx: Transaction = ??? //addSigs(ourParams, theirParams, anchorAmount, ourTx, ourSig, theirSig)
+      val signedTx: Transaction = ???
+      //addSigs(ourParams, theirParams, anchorAmount, ourTx, ourSig, theirSig)
       val anchorOutput: TxOut = ??? //anchorTx.txOut(anchorOutputIndex)
       checksig(channelParams.localParams, channelParams.remoteParams, anchorOutput, signedTx) match {
         case Failure(cause) =>
@@ -552,7 +555,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(CMD_SIGN, d: DATA_SHUTDOWN) if d.commitments.remoteNextCommitInfo.isLeft =>
       //TODO : this is a temporary fix
       log.info(s"already in the process of signing, delaying CMD_SIGN")
-      import scala.concurrent.ExecutionContext.Implicits.global
       context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
       stay
 
@@ -706,7 +708,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       stay
 
     case Event(CMD_GETINFO, _) =>
-      sender ! RES_GETINFO(theirNodeId, stateData match { // TODO
+      sender ! RES_GETINFO(theirNodeId, stateData match {
+        // TODO
         case c: DATA_WAIT_FOR_OPEN_CHANNEL => 0L
         case c: DATA_WAIT_FOR_ACCEPT_CHANNEL => c.temporaryChannelId
         case c: DATA_WAIT_FOR_FUNDING_CREATED => c.temporaryChannelId
@@ -853,7 +856,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
         them ! Error(0, "Anchor has been spent".getBytes)
         blockchain ! Publish(spendingTx)
-        blockchain ! WatchConfirmed(self, spendingTx.txid, 3, BITCOIN_STEAL_DONE) // TODO hardcoded mindepth
+        blockchain ! WatchConfirmed(self, spendingTx.txid, 3, BITCOIN_STEAL_DONE)
+        // TODO hardcoded mindepth
         val nextData = d match {
           case closing: DATA_CLOSING => closing.copy(revokedPublished = closing.revokedPublished :+ tx)
           case _ => DATA_CLOSING(d.commitments, revokedPublished = Seq(tx))

@@ -21,7 +21,7 @@ object EncryptorSpec {
 
     def receive = running(Encryptor(sendingKey, 0), Decryptor(receivinKey, 0))
 
-    def running(encryptor: Encryptor, decryptor: Decryptor) : Receive = {
+    def running(encryptor: Encryptor, decryptor: Decryptor): Receive = {
       case chunk: BinaryData =>
         val decryptor1 = Decryptor.add(decryptor, ByteString.fromArray(chunk))
         decryptor1.bodies.map(_ => latch.countDown())
@@ -33,10 +33,12 @@ object EncryptorSpec {
         context become running(encryptor1, decryptor)
     }
   }
+
 }
 
 @RunWith(classOf[JUnitRunner])
 class EncryptorSpec extends FunSuite {
+
   import EncryptorSpec._
 
   test("encryption/description tests") {

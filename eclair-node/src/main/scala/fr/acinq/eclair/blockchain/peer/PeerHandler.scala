@@ -10,12 +10,15 @@ import fr.acinq.bitcoin._
 import scala.util.{Failure, Success, Try}
 
 /**
- * handles communication with a remote BTC node
- * @param remote address of the remote node
- * @param listener listener actor BTC messages sent by the remote node will be forwarded to
- */
+  * handles communication with a remote BTC node
+  *
+  * @param remote   address of the remote node
+  * @param listener listener actor BTC messages sent by the remote node will be forwarded to
+  */
 class PeerHandler(remote: InetSocketAddress, listener: ActorRef) extends Actor with ActorLogging {
+
   import akka.io.Tcp._
+
   implicit val system = context.system
 
   context.watch(listener)

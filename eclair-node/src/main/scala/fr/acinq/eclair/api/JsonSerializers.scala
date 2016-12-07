@@ -15,7 +15,7 @@ class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ( {
 }, {
   case x: BinaryData => JString(x.toString())
 }
-  ))
+))
 
 class StateSerializer extends CustomSerializer[State](format => ( {
   case JString(x) if (false) => // NOT IMPLEMENTED
@@ -23,7 +23,7 @@ class StateSerializer extends CustomSerializer[State](format => ( {
 }, {
   case x: State => JString(x.toString())
 }
-  ))
+))
 
 class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
   case JString(x) if (false) => // NOT IMPLEMENTED
@@ -31,4 +31,4 @@ class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
 }, {
   case x: ShaChain => JNull
 }
-  ))
+))

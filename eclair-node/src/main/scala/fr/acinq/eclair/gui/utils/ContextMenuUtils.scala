@@ -12,6 +12,7 @@ object ContextMenuUtils {
 
   /**
     * Builds a Context Menu with a single Copy action.
+    *
     * @param valueToCopy the value to copy to clipboard
     * @return javafx context menu
     */

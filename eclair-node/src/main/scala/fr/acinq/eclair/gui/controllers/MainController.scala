@@ -108,7 +108,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
   }
 
   @FXML def handleNodeIdContext(event: ContextMenuEvent): Unit = {
-      contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
+    contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
   }
 
   def positionAtCenter(childStage: Stage): Unit = {

@@ -23,7 +23,7 @@ import scala.annotation.tailrec
 case class Encryptor(key: BinaryData, nonce: Long)
 
 object Encryptor {
-  def encrypt(encryptor: Encryptor, data: BinaryData) : (Encryptor, BinaryData) = {
+  def encrypt(encryptor: Encryptor, data: BinaryData): (Encryptor, BinaryData) = {
     val header = Protocol.writeUInt32(data.length)
     val (ciphertext1, mac1) = AeadChacha20Poly1305.encrypt(encryptor.key, Protocol.writeUInt64(encryptor.nonce), header, Array.emptyByteArray)
     val (ciphertext2, mac2) = AeadChacha20Poly1305.encrypt(encryptor.key, Protocol.writeUInt64(encryptor.nonce + 1), data, Array.emptyByteArray)

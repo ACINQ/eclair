@@ -31,7 +31,7 @@ class Router extends Actor with ActorLogging {
       log.info(s"removed channel ${c.id} from available routes")
       context become main(channels - c.id)
     case 'network => sender ! channels.values
-    case RouteRequest(start, end) => findRoute(start, end, channels) map(RouteResponse(_)) pipeTo sender
+    case RouteRequest(start, end) => findRoute(start, end, channels) map (RouteResponse(_)) pipeTo sender
   }
 }
 

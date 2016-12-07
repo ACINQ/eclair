@@ -55,7 +55,7 @@ class OnionSpec extends FunSuite {
     "d93db8019a9392b3df11929896639ab1a069a0096e3defa595af16544957526b"
   )
 
-  val pubs = privs.map(k => Crypto.publicKeyFromPrivateKey(k :+ 1.toByte):BinaryData)
+  val pubs = privs.map(k => Crypto.publicKeyFromPrivateKey(k :+ 1.toByte): BinaryData)
 
   val node_keys: List[(BinaryData, BinaryData)] = List(
     ("665af9917fbbd9758fd53352275f9b555296ee16e20a73a069931959c0980935", "0204053aed6a50fd4062331fc951d5da830ba64c02bfd7a64571fe16a7c46befa8"),

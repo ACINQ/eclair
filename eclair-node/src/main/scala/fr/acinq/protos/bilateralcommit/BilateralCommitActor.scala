@@ -12,10 +12,13 @@ import scala.util.Random
   */
 
 case class CMD_SendChange(change: String)
+
 case class CMD_SendSig()
 
 case class PKT_ReceiveChange(change: String)
+
 case class PKT_ReceiveSig(sig: Set[Change])
+
 case class PKT_ReceiveRev()
 
 class BilateralCommitActor(counterparty: ActorRef) extends Actor with ActorLogging {
@@ -90,12 +93,14 @@ object BilateralCommitActorTest extends App {
 
   var i = new AtomicLong(0)
   val random = new Random()
+
   def msg = random.nextInt(100) % 5 match {
     case 0 | 1 | 2 | 3 => CMD_SendChange(s"A${i.incrementAndGet()}")
     case 4 => CMD_SendSig()
   }
 
   import scala.concurrent.ExecutionContext.Implicits.global
+
   system.scheduler.schedule(0 seconds, 5 milliseconds, new Runnable() {
     override def run(): Unit = a ! msg
   })

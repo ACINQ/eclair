@@ -10,15 +10,19 @@ import fr.acinq.eclair.transactions._
   */
 object Scripts {
 
-  def toSelfDelay2csv(in: Int): Long = ??? /*in match {
-    case locktime(Blocks(blocks)) => blocks
-    case locktime(Seconds(seconds)) => TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG | (seconds >> TxIn.SEQUENCE_LOCKTIME_GRANULARITY)
-  }*/
+  def toSelfDelay2csv(in: Int): Long = ???
 
-  def expiry2cltv(in: Long): Long = ???/*in match {
-    case locktime(Blocks(blocks)) => blocks
-    case locktime(Seconds(seconds)) => seconds
-  }*/
+  /*in match {
+     case locktime(Blocks(blocks)) => blocks
+     case locktime(Seconds(seconds)) => TxIn.SEQUENCE_LOCKTIME_TYPE_FLAG | (seconds >> TxIn.SEQUENCE_LOCKTIME_GRANULARITY)
+   }*/
+
+  def expiry2cltv(in: Long): Long = ???
+
+  /*in match {
+      case locktime(Blocks(blocks)) => blocks
+      case locktime(Seconds(seconds)) => seconds
+    }*/
 
   def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0).toList, b.dropWhile(_ == 0).toList) < 0
 
@@ -257,6 +261,7 @@ object Scripts {
         sequence & TxIn.SEQUENCE_LOCKTIME_MASK
       }
     }
+
     if (tx.version < 2) 0
     else tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
   }

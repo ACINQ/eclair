@@ -16,6 +16,7 @@ import scala.concurrent.{ExecutionContext, Future}
 class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("", "", "", 0)) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
+
   system.scheduler.schedule(100 milliseconds, 100 milliseconds, new Runnable {
     override def run(): Unit = system.eventStream.publish(NewBlock(null)) // blocks are not actually interpreted
   })

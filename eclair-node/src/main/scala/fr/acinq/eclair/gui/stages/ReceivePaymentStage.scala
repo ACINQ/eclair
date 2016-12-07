@@ -12,7 +12,7 @@ import fr.acinq.eclair.gui.controllers.ReceivePaymentController
 /**
   * Created by PM on 16/08/2016.
   */
-class ReceivePaymentStage(handlers: Handlers, setup:Setup) extends Stage() {
+class ReceivePaymentStage(handlers: Handlers, setup: Setup) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair02.png", false))

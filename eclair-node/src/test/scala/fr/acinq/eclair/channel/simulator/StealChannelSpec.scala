@@ -14,7 +14,7 @@ import scala.concurrent.duration._
 class StealChannelSpec extends BaseChannelTestClass {
 
   test("steal revoked commit tx") { case (alice, bob, pipe) =>
-    pipe !(alice, bob) // this starts the communication between alice and bob
+    pipe ! (alice, bob) // this starts the communication between alice and bob
 
     within(30 seconds) {
 
@@ -41,7 +41,7 @@ class StealChannelSpec extends BaseChannelTestClass {
       alice ! CMD_SIGN
       Thread.sleep(500)
 
-      bob !(BITCOIN_FUNDING_SPENT, commitTx)
+      bob ! (BITCOIN_FUNDING_SPENT, commitTx)
       awaitCond(bob.stateName == CLOSING)
     }
   }

@@ -68,6 +68,7 @@ class ThroughputSpec extends FunSuite {
 
     var i = new AtomicLong(0)
     val random = new Random()
+
     def msg = random.nextInt(100) % 5 match {
       case 0 | 1 | 2 | 3 => 'add
       case 4 => 'sig

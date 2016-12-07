@@ -21,6 +21,7 @@ class LocalPaymentHandler extends Actor with ActorLogging {
     random.nextBytes(r)
     r
   }
+
   override def receive: Receive = run(Map())
 
   //TODO: store this map on file ?

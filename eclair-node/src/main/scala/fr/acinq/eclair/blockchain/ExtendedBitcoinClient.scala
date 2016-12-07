@@ -41,9 +41,9 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     * @return a Future[txid] where txid (a String) is the is of the tx that sends the bitcoins
     */
   def sendFromAccount(account: String, destination: String, amount: Double)(implicit ec: ExecutionContext): Future[String] =
-  client.invoke("sendfrom", account, destination, amount) collect {
-    case JString(txid) => txid
-  }
+    client.invoke("sendfrom", account, destination, amount) collect {
+      case JString(txid) => txid
+    }
 
   /**
     * @param txId
@@ -133,7 +133,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     * @return the current number of blocks in the active chain
     */
   def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
-  client.invoke("getblockcount") collect {
-    case JInt(count) => count.toLong
-  }
+    client.invoke("getblockcount") collect {
+      case JInt(count) => count.toLong
+    }
 }

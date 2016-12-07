@@ -71,7 +71,7 @@ object Register {
     * which name is counterparty_id-anchor_id
     */
   def create_alias(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
-  context.actorOf(Props(new AliasActor(context.self)), name = s"$node_id-$anchor_id")
+    context.actorOf(Props(new AliasActor(context.self)), name = s"$node_id-$anchor_id")
 
   def actorPathToNodeId(system: ActorSystem, nodeId: BinaryData): ActorPath =
     system / "register" / "auth-handler-*" / "channel" / s"${nodeId}-*"

@@ -100,7 +100,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
           assert(d.commitments.localCommit.spec.to_local_msat == 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount  * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount * 1000 - 60000000)
       }
 
       // send another HTLC

@@ -12,7 +12,7 @@ import fr.acinq.eclair.gui.controllers.OpenChannelController
 /**
   * Created by PM on 16/08/2016.
   */
-class OpenChannelStage(handlers: Handlers, setup:Setup) extends Stage() {
+class OpenChannelStage(handlers: Handlers, setup: Setup) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair02.png", false))

@@ -21,11 +21,12 @@ import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 /**
   * Created by PM on 16/08/2016.
   */
-class GUIUpdater(primaryStage: Stage, mainController:MainController, setup: Setup) extends Actor with ActorLogging {
+class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Setup) extends Actor with ActorLogging {
 
   class NamedEdge(val id: BinaryData) extends DefaultEdge {
     override def toString: String = s"${id.toString.take(8)}..."
   }
+
   val graph = new SimpleGraph[BinaryData, NamedEdge](classOf[NamedEdge])
   graph.addVertex(Globals.Node.publicKey)
 
