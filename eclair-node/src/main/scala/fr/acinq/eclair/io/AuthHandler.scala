@@ -40,7 +40,7 @@ case object IO_NORMAL extends State
 
 // @formatter:on
 
-class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, our_params: OurChannelParams) extends LoggingFSM[State, Data] with Stash {
+class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, localParams: LocalParams, init: Either[INPUT_INIT_FUNDER, INPUT_INIT_FUNDEE]) extends LoggingFSM[State, Data] with Stash {
 
   val session_key = randomKeyPair()
 
@@ -126,8 +126,10 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
             log.error(s"cannot verify peer signature $their_sig for public key $their_nodeid")
             context.stop(self)
           }
-          val channel = context.actorOf(Channel.props(self, blockchain, paymentHandler, our_params, their_nodeid.toString()), name = "channel")
+          val channel = context.actorOf(Channel.props(self, blockchain, paymentHandler, localParams, their_nodeid.toString()), name = "channel")
           context.watch(channel)
+          val msg = if (init.isLeft) init.left else init.right
+          channel ! msg
           goto(IO_NORMAL) using Normal(channel, s.copy(decryptor = decryptor1.copy(header = None, bodies = decryptor1.bodies.tail)))
       }
   }
@@ -174,7 +176,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
 
 object AuthHandler {
 
-  def props(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, our_params: OurChannelParams) = Props(new AuthHandler(them, blockchain, paymentHandler, our_params))
+  def props(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef, localParams: LocalParams, init: Either[INPUT_INIT_FUNDER, INPUT_INIT_FUNDEE]) = Props(new AuthHandler(them, blockchain, paymentHandler, localParams, init))
 
   case class Secrets(aes_key: BinaryData, hmac_key: BinaryData, aes_iv: BinaryData)
 

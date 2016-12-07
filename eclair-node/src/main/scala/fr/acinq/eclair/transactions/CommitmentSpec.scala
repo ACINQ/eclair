@@ -75,19 +75,13 @@ object CommitmentSpec {
     spec4
   }
 
-  def makeLocalTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
+  def makeLocalTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
 
-  //makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
+  /*def makeLocalTx(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: BinaryData, spec: CommitmentSpec): Transaction =
+    makeLocalTxTemplate(localParams, remoteParams, inputs, localPerCommitmentPoint, spec).makeTx*/
 
-  def makeLocalTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
+  def makeRemoteTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
 
-  //makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
-
-  def makeRemoteTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
-
-  //makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
-
-  def makeRemoteTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
-
-  //makeTheirTxTemplate(ourParams, theirParams, inputs, theirRevocationHash, spec).makeTx
+  /*def makeRemoteTx(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: BinaryData, spec: CommitmentSpec): Transaction =
+    makeRemoteTxTemplate(localParams, remoteParams, inputs, remotePerCommitmentPoint, spec).makeTx*/
 }

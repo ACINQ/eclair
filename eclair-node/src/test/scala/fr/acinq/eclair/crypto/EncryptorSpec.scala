@@ -5,7 +5,7 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
 import akka.util.ByteString
 import fr.acinq.bitcoin.{BinaryData, Crypto, Hash}
-import fr.acinq.eclair.channel.simulator.Pipe
+import fr.acinq.eclair.channel.Pipe
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

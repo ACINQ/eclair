@@ -15,6 +15,13 @@ object Helpers {
 
   object Funding {
 
+    /**
+      * Extracts a [TxIn] from a funding tx and an output index
+      * @param fundingTx
+      * @param fundingTxOutputIndex
+      */
+    def inputFromFundingTx(fundingTx: Transaction, fundingTxOutputIndex: Int): TxIn = TxIn(OutPoint(fundingTx.hash, fundingTxOutputIndex), Array.emptyByteArray, 0xffffffffL)
+
   }
 
   object Closing {

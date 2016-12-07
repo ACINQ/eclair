@@ -24,6 +24,7 @@ import scala.concurrent.duration.FiniteDuration
        "Y8888P"     888  d88P     888     888     8888888888 "Y8888P"
  */
 sealed trait State
+case object WAIT_FOR_INIT_INTERNAL extends State
 case object WAIT_FOR_OPEN_CHANNEL extends State
 case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_CREATED_INTERNAL extends State
@@ -51,6 +52,8 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
+case class INPUT_INIT_FUNDER(fundingSatoshis: Long, pushMsat: Long)
+case class INPUT_INIT_FUNDEE()
 case object INPUT_NO_MORE_HTLCS
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
@@ -111,34 +114,21 @@ sealed trait Data
 
 case object Nothing extends Data
 
-final case class OurChannelParams(delay: Long, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, initialFeeRate: Long, shaSeed: BinaryData, anchorAmount: Option[Satoshi], autoSignInterval: Option[FiniteDuration] = None) {
-  val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
-  val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
-}
-
-final case class TheirChannelParams(delay: Long, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
-
-object TheirChannelParams {
-  def apply(params: OurChannelParams) = new TheirChannelParams(params.delay, params.commitPubKey, params.finalPubKey, Some(params.minDepth), params.initialFeeRate)
-}
-
-final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
-
 trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
-final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, shaSeed: BinaryData, autoSignInterval: Option[FiniteDuration]) extends Data
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, channelParams: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, channelParams: ChannelParams, pushMsat: Long) extends Data
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, channelParams: ChannelParams, pushMsat: Long, anchorTx: Transaction, anchorOutputIndex: Int, remoteCommit: RemoteCommit) extends Data
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(temporaryChannelId: Long, channelParams: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
-final case class DATA_NORMAL(channelId: Long, channelParams: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(channelId: Long, channelParams: ChannelParams, commitments: Commitments,
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, anchorTx: Transaction, anchorOutputIndex: Int, remoteCommit: RemoteCommit) extends Data
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
+final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,
                                ourShutdown: Shutdown, theirShutdown: Shutdown,
                                downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_NEGOTIATING(channelId: Long, channelParams: ChannelParams, commitments: Commitments,
+final case class DATA_NEGOTIATING(channelId: Long, params: ChannelParams, commitments: Commitments,
                                   ourShutdown: Shutdown, theirShutdown: Shutdown, ourClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,
@@ -153,7 +143,6 @@ final case class ChannelParams(localParams: LocalParams,
                                remoteParams: RemoteParams,
                                fundingSatoshis: Long,
                                minimumDepth: Long,
-                               shaSeed: BinaryData,
                                autoSignInterval: Option[FiniteDuration] = None)
 
 final case class LocalParams(dustLimitSatoshis: Long,
@@ -163,11 +152,12 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              feeratePerKw: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             fundingPubkey: BinaryData,
-                             revocationBasepoint: BinaryData,
-                             paymentBasepoint: BinaryData,
-                             delayedPaymentBasepoint: BinaryData,
-                             finalScriptPubKey: BinaryData)
+                             fundingPrivkey: BinaryData,
+                             revocationSecret: BinaryData,
+                             paymentSecret: BinaryData,
+                             delayedPaymentKey: BinaryData,
+                             finalPrivKey: BinaryData,
+                             shaSeed: BinaryData)
 
 final case class RemoteParams(dustLimitSatoshis: Long,
                               maxHtlcValueInFlightMsat: Long,

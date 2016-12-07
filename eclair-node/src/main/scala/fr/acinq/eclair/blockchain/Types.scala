@@ -20,6 +20,6 @@ final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Long, 
 
 final case class Publish(tx: Transaction)
 final case class PublishAsap(tx: Transaction)
-final case class MakeAnchor(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)
+final case class MakeFundingTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)
 
 // @formatter:on

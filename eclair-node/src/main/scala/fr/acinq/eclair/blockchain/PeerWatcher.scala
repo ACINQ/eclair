@@ -76,7 +76,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
       context.become(watching(watches, block2tx1, currentBlockCount))
 
-    case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
+    case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
       client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)
 
     case Terminated(channel) =>

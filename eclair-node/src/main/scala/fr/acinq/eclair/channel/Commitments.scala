@@ -20,9 +20,9 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, the
   * about remoteNextCommitInfo:
   * we either:
   * - have built and signed their next commit tx with their next revocation hash which can now be discarded
-  * - have their next revocation hash
+  * - have their next per-commitment point
   * So, when we've signed and sent a commit message and are waiting for their revocation message,
-  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next revocation hash
+  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
   */
 case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
@@ -30,7 +30,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCurrentHtlcId: Long,
                        remoteNextCommitInfo: Either[RemoteCommit, BinaryData],
                        anchorOutput: TxOut,
-                       shaSeed: BinaryData, theirPreimages: ShaChain, txDb: TxDb) {
+                       remotePerCommitmentSecrets: ShaChain, txDb: TxDb) {
   def anchorId: BinaryData = {
     assert(localCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
     localCommit.publishableTx.txIn(0).outPoint.hash
@@ -179,7 +179,7 @@ object Commitments {
     // receiving money i.e its commit tx has one output for them
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val ourNextRevocationHash = revocationHash(shaSeed, localCommit.index + 1)
+    val ourNextRevocationHash = revocationHash(localParams.shaSeed, localCommit.index + 1)
     val ourTxTemplate = CommitmentSpec.makeLocalTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, ourNextRevocationHash, spec)
 
     // this tx will NOT be signed if our output is empty
@@ -197,8 +197,8 @@ object Commitments {
         }*/
 
     // we will send our revocation preimage + our next revocation hash
-    val ourRevocationPreimage = revocationPreimage(shaSeed, localCommit.index)
-    val ourNextRevocationHash1 = revocationHash(shaSeed, localCommit.index + 2)
+    val ourRevocationPreimage = revocationPreimage(localParams.shaSeed, localCommit.index)
+    val ourNextRevocationHash1 = revocationHash(localParams.shaSeed, localCommit.index + 2)
     val revocation: RevokeAndAck = ??? //RevokeAndAck(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data
@@ -228,7 +228,7 @@ object Commitments {
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
-          theirPreimages = commitments.theirPreimages.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFFFFFL - commitments.remoteCommit.index))
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFFFFFL - commitments.remoteCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected RevokeAndAck message")
     }
@@ -236,7 +236,7 @@ object Commitments {
 
   def makeLocalTxTemplate(commitments: Commitments): CommitTxTemplate = {
     CommitmentSpec.makeLocalTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
-      revocationHash(commitments.shaSeed, commitments.localCommit.index), commitments.localCommit.spec)
+      revocationHash(commitments.localParams.shaSeed, commitments.localCommit.index), commitments.localCommit.spec)
   }
 
   def makeRemoteTxTemplate(commitments: Commitments): CommitTxTemplate = {

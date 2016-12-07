@@ -9,7 +9,7 @@ import fr.acinq.bitcoin.{BinaryData, Satoshi}
 
 trait ChannelEvent
 
-case class ChannelCreated(channel: ActorRef, params: OurChannelParams, theirNodeId: String) extends ChannelEvent
+case class ChannelCreated(channel: ActorRef, params: LocalParams, theirNodeId: String) extends ChannelEvent
 
 case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: Satoshi) extends ChannelEvent
 

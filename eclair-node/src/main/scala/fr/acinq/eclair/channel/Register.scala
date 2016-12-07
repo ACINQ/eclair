@@ -2,9 +2,10 @@ package fr.acinq.eclair.channel
 
 import akka.actor._
 import akka.util.Timeout
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, Satoshi, Script}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.io.AuthHandler
+import fr.acinq.eclair.transactions.OldScripts
 
 import scala.concurrent.duration._
 
@@ -35,11 +36,25 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
   def receive: Receive = main(0L)
 
   def main(counter: Long): Receive = {
-    case CreateChannel(connection, amount) =>
-      val commit_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 0L :: counter :: Nil)
-      val final_priv = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, 1L :: counter :: Nil)
-      val params = OurChannelParams(144, commit_priv.secretkey :+ 1.toByte, final_priv.secretkey :+ 1.toByte, Globals.default_mindepth, Globals.commit_fee, Globals.Node.seed, amount, Some(Globals.autosign_interval))
-      val channel = context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, params), name = s"auth-handler-${counter}")
+    case CreateChannel(connection, amount_opt) =>
+      def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).secretkey
+      val localParams = LocalParams(
+        dustLimitSatoshis = 542,
+        maxHtlcValueInFlightMsat = Long.MaxValue,
+        channelReserveSatoshis = 0,
+        htlcMinimumMsat = 0,
+        feeratePerKw = 10000,
+        toSelfDelay = 144,
+        maxAcceptedHtlcs = 100,
+        fundingPrivkey = generateKey(0),
+        revocationSecret = generateKey(1),
+        paymentSecret = generateKey(2),
+        delayedPaymentKey = generateKey(3),
+        finalPrivKey = generateKey(4),
+        shaSeed = Globals.Node.seed
+      )
+      val init = amount_opt.map(amount => Left(INPUT_INIT_FUNDER(amount.amount, 0))).getOrElse(Right(INPUT_INIT_FUNDEE()))
+      val channel = context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, localParams, init), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children
     case SendCommand(channelId, cmd) =>

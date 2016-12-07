@@ -43,7 +43,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       val root = loader.load[VBox]
 
       channelPaneController.nodeId.setText(s"$theirNodeId")
-      channelPaneController.funder.setText(params.anchorAmount.map(_ => "Yes").getOrElse("No"))
+      channelPaneController.funder.setText("(deprecated)")
       channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent): Unit = channel ! CMD_CLOSE(None)
       })
