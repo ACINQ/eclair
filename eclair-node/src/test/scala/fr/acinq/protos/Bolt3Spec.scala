@@ -327,13 +327,13 @@ class Bolt3Spec extends FunSuite {
   test("derive revocation key") {
     object Local {
       val revocationSecret = Scalar(Crypto.sha256("local foo".getBytes()))
-      val revocationBasePoint = revocationSecret.basePoint
+      val revocationBasePoint = revocationSecret.point
       val perCommitSecret = Scalar(Crypto.sha256("local bar".getBytes()))
     }
     object Remote {
       val revocationSecret = Scalar(Crypto.sha256("remote foo".getBytes()))
       val perCommitSecret = Scalar(Crypto.sha256("remote bar".getBytes()))
-      val perCommitBasePoint = perCommitSecret.basePoint
+      val perCommitBasePoint = perCommitSecret.point
     }
 
     // I can compute their revocation pubkey
@@ -342,6 +342,24 @@ class Bolt3Spec extends FunSuite {
     // and if they give me their per-commit secret I can compute their revocation privkey
     val theirRevocationPrivKey = Bolt3.revocationPrivKey(Local.revocationSecret, Remote.perCommitSecret)
 
-    assert(theirRevocationPrivKey.basePoint == theirRevocationPubKey)
+    assert(theirRevocationPrivKey.point == theirRevocationPubKey)
+  }
+
+  test("derive local/remote/delayed keys") {
+    object Local {
+      val secret = Scalar(Crypto.sha256("local foo".getBytes()))
+      val basePoint = secret.point
+      val perCommitSecret = Scalar(Crypto.sha256("local bar".getBytes()))
+      val perCommitBasePoint = perCommitSecret.point
+    }
+    object Remote {
+      val secret = Scalar(Crypto.sha256("remote foo".getBytes()))
+      val perCommitSecret = Scalar(Crypto.sha256("remote bar".getBytes()))
+      val perCommitBasePoint = perCommitSecret.point
+    }
+
+    val localKey = Bolt3.derivePrivKey(Local.secret, Local.perCommitBasePoint)
+    val localPubKey = Bolt3.derivePubKey(Local.basePoint, Local.perCommitBasePoint)
+    assert(localKey.point == localPubKey)
   }
 }

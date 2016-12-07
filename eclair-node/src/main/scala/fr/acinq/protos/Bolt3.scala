@@ -4,6 +4,7 @@ import java.math.BigInteger
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Scripts
+import org.bouncycastle.math.ec.ECPoint
 
 object Bolt3 {
   // TODO: sort tx according to BIP69 (lexicographical ordering)
@@ -76,46 +77,53 @@ object Bolt3 {
   case class Scalar(data: BinaryData) {
     require(data.length == 32)
 
-    def basePoint = BasePoint(Crypto.publicKeyFromPrivateKey(data :+ 1.toByte))
+    def point = Point(Crypto.publicKeyFromPrivateKey(data :+ 1.toByte))
 
-    def add(scalar: Scalar): Scalar = {
-      val buffer = new BigInteger(1, data).add(new BigInteger(1, scalar.data)).mod(Crypto.curve.getN).toByteArray
-      val buffer1 = fixSize(buffer.dropWhile(_ == 0))
-      Scalar(buffer1)
-    }
+    def bigInteger: BigInteger = new BigInteger(1, data)
 
-    def multiply(scalar: Scalar): Scalar = {
-      val buffer = new BigInteger(1, data).multiply(new BigInteger(1, scalar.data)).mod(Crypto.curve.getN).toByteArray
-      val buffer1 = fixSize(buffer.dropWhile(_ == 0))
-      Scalar(buffer1)
-    }
+    def add(scalar: Scalar): Scalar = Scalar(bigInteger.add(scalar.bigInteger))
+
+    def multiply(scalar: Scalar): Scalar = Scalar(bigInteger.multiply(scalar.bigInteger).mod(Crypto.curve.getN))
   }
 
-  case class BasePoint(data: BinaryData) {
+  object Scalar {
+    def apply(value: BigInteger): Scalar = new Scalar(fixSize(value.toByteArray.dropWhile(_ == 0)))
+  }
+
+  case class Point(data: BinaryData) {
     require(data.length == 33)
 
-    def add(point: BasePoint): BasePoint = {
-      val local = Crypto.curve.getCurve.decodePoint(data)
-      val rhs = Crypto.curve.getCurve.decodePoint(point.data)
-      BasePoint(local.add(rhs).getEncoded(true))
-    }
+    def ecPoint: ECPoint = Crypto.curve.getCurve.decodePoint(data)
 
-    def multiply(scalar: Scalar): BasePoint = {
-      val local = Crypto.curve.getCurve.decodePoint(data)
-      val point = local.multiply(new BigInteger(1, scalar.data))
-      BasePoint(point.getEncoded(true))
-    }
+    def add(point: Point): Point = Point(ecPoint.add(point.ecPoint))
+
+    def multiply(scalar: Scalar): Point = Point(ecPoint.multiply(scalar.bigInteger))
   }
 
-  def revocationPubKey(revocationBasePoint: BasePoint, perCommitPoint: BasePoint): BasePoint = {
-    val a = Scalar(Crypto.sha256(revocationBasePoint.data ++ perCommitPoint.data))
-    val b = Scalar(Crypto.sha256(perCommitPoint.data ++ revocationBasePoint.data))
-    revocationBasePoint.multiply(a).add(perCommitPoint.multiply(b))
+  object Point {
+    def apply(ecPoint: ECPoint): Point = new Point(ecPoint.getEncoded(true))
   }
 
-  def revocationPrivKey(revocationSecret: Scalar, perCommitSecret: Scalar): Scalar = {
-    val a = Scalar(Crypto.sha256(revocationSecret.basePoint.data ++ perCommitSecret.basePoint.data))
-    val b = Scalar(Crypto.sha256(perCommitSecret.basePoint.data ++ revocationSecret.basePoint.data))
-    revocationSecret.multiply(a).add(perCommitSecret.multiply(b))
+  def derivePrivKey(secret: Scalar, perCommitPoint: Point): Scalar = {
+    // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)
+    secret.add(Scalar(Crypto.sha256(perCommitPoint.data ++ secret.point.data)))
+  }
+
+  def derivePubKey(basePoint: Point, perCommitPoint: Point): Point = {
+    //pubkey = basepoint + SHA256(per-commitment-point || basepoint)*G
+    val a = Scalar(Crypto.sha256(perCommitPoint.data ++ basePoint.data))
+    Point(basePoint.ecPoint.add(Crypto.curve.getG.multiply(a.bigInteger)))
+  }
+
+  def revocationPubKey(basePoint: Point, perCommitPoint: Point): Point = {
+    val a = Scalar(Crypto.sha256(basePoint.data ++ perCommitPoint.data))
+    val b = Scalar(Crypto.sha256(perCommitPoint.data ++ basePoint.data))
+    basePoint.multiply(a).add(perCommitPoint.multiply(b))
+  }
+
+  def revocationPrivKey(secret: Scalar, perCommitSecret: Scalar): Scalar = {
+    val a = Scalar(Crypto.sha256(secret.point.data ++ perCommitSecret.point.data))
+    val b = Scalar(Crypto.sha256(perCommitSecret.point.data ++ secret.point.data))
+    secret.multiply(a).add(perCommitSecret.multiply(b))
   }
 }
