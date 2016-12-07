@@ -11,6 +11,7 @@ sealed trait LightningMessage
 sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
+sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 sealed trait RoutingMessage extends LightningMessage
 // @formatter:on
 
@@ -62,9 +63,6 @@ case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
                          nextPerCommitmentPoint: BinaryData) extends ChannelMessage
 
-case class UpdateFee(channelId: Long,
-                     feeratePerKb: Long) extends ChannelMessage
-
 case class Shutdown(channelId: Long,
                     scriptPubKey: BinaryData) extends ChannelMessage
 
@@ -77,15 +75,15 @@ case class UpdateAddHtlc(channelId: Long,
                    amountMsat: Long,
                    expiry: Long,
                    paymentHash: BinaryData,
-                   onionRoutingPacket: BinaryData) extends HtlcMessage
+                   onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage
 
 case class UpdateFulfillHtlc(channelId: Long,
                              id: Long,
-                             paymentPreimage: BinaryData) extends HtlcMessage
+                             paymentPreimage: BinaryData) extends HtlcMessage with UpdateMessage
 
 case class UpdateFailHtlc(channelId: Long,
                           id: Long,
-                          reason: BinaryData) extends HtlcMessage
+                          reason: BinaryData) extends HtlcMessage with UpdateMessage
 
 case class CommitSig(channelId: Long,
                      signature: BinaryData,
@@ -95,4 +93,7 @@ case class RevokeAndAck(channelId: Long,
                         perCommitmentSecret: BinaryData,
                         nextPerCommitmentPoint: BinaryData,
                         htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage
+
+case class UpdateFee(channelId: Long,
+                     feeratePerKb: Long) extends ChannelMessage with UpdateMessage
 

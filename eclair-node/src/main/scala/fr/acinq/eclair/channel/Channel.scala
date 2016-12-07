@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers._
-import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.wire._
 
@@ -783,8 +782,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     }
   }
 
-  def handleCommandSuccess(sender: ActorRef, change: Change, newData: Data) = {
-    them ! change
+  def handleCommandSuccess(sender: ActorRef, msg: LightningMessage, newData: Data) = {
+    them ! msg
     sender ! "ok"
     stay using newData
   }

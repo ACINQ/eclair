@@ -77,10 +77,6 @@ object Codecs {
       ("channelId" | uint64) ::
       ("nextPerCommitmentPoint" | binarydata(33))).as[FundingLocked]
 
-  val updateFeeCodec: Codec[UpdateFee] = (
-    ("channelId" | uint64) ::
-      ("feeratePerKb" | uint32)).as[UpdateFee]
-
   val shutdownCodec: Codec[wire.Shutdown] = (
     ("channelId" | uint64) ::
       ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
@@ -121,6 +117,10 @@ object Codecs {
       ("htlcTimeoutSignature" | listofbinarydata(64))
     ).as[RevokeAndAck]
 
+  val updateFeeCodec: Codec[UpdateFee] = (
+    ("channelId" | uint64) ::
+      ("feeratePerKb" | uint32)).as[UpdateFee]
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -129,7 +129,6 @@ object Codecs {
     .typecase(34, fundingCreatedCodec)
     .typecase(35, fundingSignedCodec)
     .typecase(36, fundingLockedCodec)
-    .typecase(37, updateFeeCodec)
     .typecase(38, shutdownCodec)
     .typecase(39, closingSignedCodec)
     .typecase(128, updateAddHtlcCodec)
@@ -137,5 +136,6 @@ object Codecs {
     .typecase(131, updateFailHtlcCodec)
     .typecase(132, commitSigCodec)
     .typecase(133, revokeAndAckCodec)
+    .typecase(134, updateFeeCodec)
 
 }

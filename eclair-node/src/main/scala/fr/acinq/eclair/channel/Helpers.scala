@@ -2,10 +2,10 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.channel.Scripts._
-import fr.acinq.eclair.channel.TypeDefs.Change
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.transactions.{CommitTxTemplate, HtlcTemplate}
+import fr.acinq.eclair.wire.{UpdateMessage, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 
 import scala.util.Try
 
@@ -14,7 +14,7 @@ import scala.util.Try
   */
 object Helpers {
 
-  def removeHtlc(changes: List[Change], id: Long): List[Change] = changes.filterNot(_ match {
+  def removeHtlc(changes: List[UpdateMessage], id: Long): List[UpdateMessage] = changes.filterNot(_ match {
     case u: UpdateAddHtlc if u.id == id => true
     case _ => false
   })
@@ -45,7 +45,7 @@ object Helpers {
     }
   }
 
-  def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[Change], theirChanges: List[Change]): CommitmentSpec = {
+  def reduce(ourCommitSpec: CommitmentSpec, ourChanges: List[UpdateMessage], theirChanges: List[UpdateMessage]): CommitmentSpec = {
     val spec1 = ourChanges.foldLeft(ourCommitSpec) {
       case (spec, u: UpdateAddHtlc) => addHtlc(spec, OUT, u)
       case (spec, _) => spec
@@ -67,13 +67,13 @@ object Helpers {
     spec4
   }
 
-  def makeLocalTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
+  def makeLocalTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
     //makeCommitTxTemplate(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
   def makeLocalTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], ourRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
     //makeCommitTx(inputs, ourParams.finalPubKey, theirParams.finalPubKey, ourParams.delay, ourRevocationHash, spec)
 
-  def makeRemoteTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): TxTemplate = ???
+  def makeRemoteTxTemplate(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
     //makeCommitTxTemplate(inputs, theirParams.finalPubKey, ourParams.finalPubKey, theirParams.delay, theirRevocationHash, spec)
 
   def makeRemoteTx(localParams: LocalParams, RemoteParams: RemoteParams, inputs: Seq[TxIn], theirRevocationHash: BinaryData, spec: CommitmentSpec): Transaction = ???
@@ -166,12 +166,12 @@ object Helpers {
     * @param privateKey         private key to send the claimed funds to (the returned tx will include a single P2WPKH output)
     * @return a signed transaction that spends the revoked commit tx
     */
-  def claimRevokedCommitTx(theirTxTemplate: TxTemplate, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = {
+  def claimRevokedCommitTx(theirTxTemplate: CommitTxTemplate, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = {
     val theirTx = theirTxTemplate.makeTx
     val outputs = collection.mutable.ListBuffer.empty[TxOut]
 
     // first, find out how much we can claim
-    val outputsToClaim = (theirTxTemplate.ourOutput.toSeq ++ theirTxTemplate.htlcReceived ++ theirTxTemplate.htlcSent).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
+    val outputsToClaim = (theirTxTemplate.localOutput.toSeq ++ theirTxTemplate.htlcReceived ++ theirTxTemplate.htlcSent).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
     val totalAmount = outputsToClaim.map(_.amount).sum // TODO: substract a small network fee
 
     // create a tx that sends everything to our private key
@@ -233,7 +233,7 @@ object Helpers {
     * @param commitments our commitment data, which include payment preimages
     * @return a list of transactions (one per HTLC that we can claim)
     */
-  def claimReceivedHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = {
+  def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = {
     val preImages = commitments.ourChanges.all.collect { case UpdateFulfillHtlc(_, id, paymentPreimage) => paymentPreimage }
     // TODO: FIXME !!!
     //val htlcTemplates = txTemplate.htlcSent
@@ -266,7 +266,7 @@ object Helpers {
     tx1.updateWitness(0, witness)
   }
 
-  def claimSentHtlcs(tx: Transaction, txTemplate: TxTemplate, commitments: Commitments): Seq[Transaction] = ???/*{
+  def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = ???/*{
     // txTemplate could be our template (we published our commit tx) or their template (they published their commit tx)
     val htlcs1 = txTemplate.htlcSent.filter(_.ourKey == commitments.ourParams.finalPubKey)
     val htlcs2 = txTemplate.htlcReceived.filter(_.theirKey == commitments.ourParams.finalPubKey)

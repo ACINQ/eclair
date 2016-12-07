@@ -1,39 +1,18 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction, TxOut}
-import fr.acinq.eclair.channel.Scripts.TxTemplate
-import fr.acinq.eclair.channel.TypeDefs.Change
+import fr.acinq.eclair.transactions.CommitTxTemplate
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.wire._
 
-trait TxDb {
-  def add(parentId: BinaryData, spending: Transaction): Unit
-
-  def get(parentId: BinaryData): Option[Transaction]
-}
-
-class BasicTxDb extends TxDb {
-  val db = collection.mutable.HashMap.empty[BinaryData, Transaction]
-
-  override def add(parentId: BinaryData, spending: Transaction): Unit = {
-    db += parentId -> spending
-  }
-
-  override def get(parentId: BinaryData): Option[Transaction] = db.get(parentId)
-}
-
 // @formatter:off
 
-object TypeDefs {
-  type Change = LightningMessage
+case class OurChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
+  def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
 
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change]) {
-  def all: List[Change] = proposed ++ signed ++ acked
-}
-
-case class TheirChanges(proposed: List[Change], acked: List[Change])
+case class TheirChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage])
 
 case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
 
@@ -65,9 +44,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def hasNoPendingHtlcs: Boolean = ourCommit.spec.htlcs.isEmpty && theirCommit.spec.htlcs.isEmpty
 
-  def addOurProposal(proposal: Change): Commitments = Commitments.addOurProposal(this, proposal)
+  def addOurProposal(proposal: UpdateMessage): Commitments = Commitments.addOurProposal(this, proposal)
 
-  def addTheirProposal(proposal: Change): Commitments = Commitments.addTheirProposal(this, proposal)
+  def addTheirProposal(proposal: UpdateMessage): Commitments = Commitments.addTheirProposal(this, proposal)
 }
 
 object Commitments {
@@ -78,10 +57,10 @@ object Commitments {
     * @param proposal
     * @return an updated commitment instance
     */
-  private def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
+  private def addOurProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
   commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
 
-  private def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
+  private def addTheirProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(theirChanges = commitments.theirChanges.copy(proposed = commitments.theirChanges.proposed :+ proposal))
 
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
@@ -253,12 +232,12 @@ object Commitments {
     }
   }
 
-  def makeOurTxTemplate(commitments: Commitments): TxTemplate = {
+  def makeOurTxTemplate(commitments: Commitments): CommitTxTemplate = {
     Helpers.makeLocalTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,
       Helpers.revocationHash(commitments.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
   }
 
-  def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {
+  def makeTheirTxTemplate(commitments: Commitments): CommitTxTemplate = {
     commitments.theirNextCommitInfo match {
       case Left(theirNextCommit) =>
         Helpers.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.ourCommit.publishableTx.txIn,

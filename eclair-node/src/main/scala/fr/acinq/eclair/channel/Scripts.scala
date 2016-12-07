@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
+import fr.acinq.eclair.transactions._
 
 /**
   * Created by PM on 21/01/2016.
@@ -168,63 +169,8 @@ object Scripts {
     (amount_us1, amount_them1)
   }
 
-  sealed trait OutputTemplate {
-    def amount: Satoshi
 
-    def txOut: TxOut
-
-    // this is the actual script that must be used to claim this output
-    def redeemScript: BinaryData
-  }
-
-  case class HtlcTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, delay: Int, revocationHash: BinaryData) extends OutputTemplate {
-    override def amount = Satoshi(htlc.add.amountMsat / 1000)
-
-    override def redeemScript = htlc.direction match {
-      case IN => Script.write(Scripts.scriptPubKeyHtlcReceive(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
-      case OUT => Script.write(Scripts.scriptPubKeyHtlcSend(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
-    }
-
-    override def txOut = TxOut(amount, pay2wsh(redeemScript))
-  }
-
-  case class P2WSH(amount: Satoshi, script: BinaryData) extends OutputTemplate {
-    override def txOut: TxOut = TxOut(amount, pay2wsh(script))
-
-    override def redeemScript = script
-  }
-
-  object P2WSH {
-    def apply(amount: Satoshi, script: Seq[ScriptElt]): P2WSH = new P2WSH(amount, Script.write(script))
-  }
-
-  case class P2WPKH(amount: Satoshi, publicKey: BinaryData) extends OutputTemplate {
-    override def txOut: TxOut = TxOut(amount, pay2wpkh(publicKey))
-
-    override def redeemScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(publicKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-  }
-
-  case class TxTemplate(inputs: Seq[TxIn], ourOutput: Option[OutputTemplate], theirOutput: Option[OutputTemplate], htlcSent: Seq[HtlcTemplate], htlcReceived: Seq[HtlcTemplate]) {
-    def makeTx: Transaction = {
-      val outputs = ourOutput.toSeq ++ theirOutput.toSeq ++ htlcSent ++ htlcReceived
-      val tx = Transaction(
-        version = 2,
-        txIn = inputs,
-        txOut = outputs.map(_.txOut),
-        lockTime = 0
-      )
-      permuteOutputs(tx)
-    }
-
-    /**
-      *
-      * @return true is their is an output that we can claim: either our output or any HTLC (even the ones that we sent
-      *         could be claimed by us if the tx is revoked and we have the revocation preimage)
-      */
-    def weHaveAnOutput: Boolean = ourOutput.isDefined || !htlcReceived.isEmpty || !htlcSent.isEmpty
-  }
-
-  def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): TxTemplate = {
+  def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): CommitTxTemplate = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, toSelfDelay2csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
     val htlcs = commitmentSpec.htlcs.filter(_.add.amountMsat >= 546000).toSeq
     val fee_msat = computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
@@ -236,11 +182,11 @@ object Scripts {
 
     // our output is a pay2wsh output than can be claimed by them if they know the preimage, or by us after a delay
     // when * they * publish a revoked commit tx, we use the preimage that they sent us to claim it
-    val ourOutput = if (amount_us_msat >= 546000) Some(P2WSH(Satoshi(amount_us_msat / 1000), redeemScript)) else None
+    val ourOutput = if (amount_us_msat >= 546000) Some(P2WSHTemplate(Satoshi(amount_us_msat / 1000), redeemScript)) else None
 
     // their output is a simple pay2pkh output that sends money to their final key and can only be claimed by them
     // when * they * publish a revoked commit tx we don't have anything special to do about it
-    val theirOutput = if (amount_them_msat >= 546000) Some(P2WPKH(Satoshi(amount_them_msat / 1000), theirFinalKey)) else None
+    val theirOutput = if (amount_them_msat >= 546000) Some(P2WPKHTemplate(Satoshi(amount_them_msat / 1000), theirFinalKey)) else None
 
     val sendOuts: Seq[HtlcTemplate] = htlcs.filter(_.direction == OUT).map(htlc => {
       HtlcTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
@@ -248,7 +194,7 @@ object Scripts {
     val receiveOuts: Seq[HtlcTemplate] = htlcs.filter(_.direction == IN).map(htlc => {
       HtlcTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
     })
-    TxTemplate(inputs, ourOutput, theirOutput, sendOuts, receiveOuts)
+    CommitTxTemplate(inputs, ourOutput, theirOutput, sendOuts, receiveOuts)
   }
 
   def makeCommitTx(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): Transaction = {
