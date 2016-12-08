@@ -16,11 +16,11 @@ object Helpers {
   object Funding {
 
     /**
-      * Extracts a [TxIn] from a funding tx and an output index
-      * @param fundingTx
+      * Extracts a [TxIn] from a funding tx id and an output index
+      * @param fundingTxId
       * @param fundingTxOutputIndex
       */
-    def inputFromFundingTx(fundingTx: Transaction, fundingTxOutputIndex: Int): TxIn = TxIn(OutPoint(fundingTx.hash, fundingTxOutputIndex), Array.emptyByteArray, 0xffffffffL)
+    def inputFromFundingTx(fundingTxId: BinaryData, fundingTxOutputIndex: Int): TxIn = TxIn(OutPoint(fundingTxId, fundingTxOutputIndex), Array.emptyByteArray, 0xffffffffL)
 
   }
 
@@ -61,7 +61,7 @@ object Helpers {
       *         last commit tx
       */
     def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, Long, BinaryData) = {
-      val commitFee = commitments.anchorOutput.amount.toLong - commitments.localCommit.publishableTx.txOut.map(_.amount.toLong).sum
+      val commitFee = commitments.fundingTxOutput.amount.toLong - commitments.localCommit.publishableTx.txOut.map(_.amount.toLong).sum
       val closeFee = Satoshi(2 * (commitFee / 4))
       makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
     }

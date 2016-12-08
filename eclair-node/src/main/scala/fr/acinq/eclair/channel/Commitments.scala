@@ -29,7 +29,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localCurrentHtlcId: Long,
                        remoteNextCommitInfo: Either[RemoteCommit, BinaryData],
-                       anchorOutput: TxOut,
+                       fundingTxOutput: TxOut,
                        remotePerCommitmentSecrets: ShaChain, txDb: TxDb) {
   def anchorId: BinaryData = {
     assert(localCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
