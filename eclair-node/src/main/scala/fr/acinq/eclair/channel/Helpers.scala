@@ -46,7 +46,7 @@ object Helpers {
       val localTx = CommitmentSpec.makeLocalTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, localPerCommitmentPoint.data, localSpec).makeTx
       val remoteTx = CommitmentSpec.makeRemoteTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec).makeTx
 
-      val localFundingPubkey = Crypto.publicKeyFromPrivateKey(params.localParams.fundingPrivkey)
+      val localFundingPubkey = params.localParams.fundingPrivkey.point
       val fundingTxOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = OldScripts.anchorPubkeyScript(localFundingPubkey, params.remoteParams.fundingPubkey))
 
       (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)

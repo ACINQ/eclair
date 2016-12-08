@@ -2,9 +2,11 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{BinaryData, TxIn}
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Generators.Point
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair._
 
 /**
   * Created by PM on 07/12/2016.
@@ -76,13 +78,18 @@ object CommitmentSpec {
     spec4
   }
 
-  def makeLocalTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = ???
+  def makeLocalTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = {
+    // TODO: derivePrivkey(key).point or derivePubkey(key.point) ?
+    val localDelayedPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.point, localPerCommitmentPoint)
+    val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
+    val localRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.point, localPerCommitmentPoint)
+    CommitTxTemplate.makeCommitTxTemplate(inputs, localParams.toSelfDelay, localDelayedPubkey, remotePubkey, localRevocationPubkey, spec)
+  }
 
-  /*def makeLocalTx(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: BinaryData, spec: CommitmentSpec): Transaction =
-    makeLocalTxTemplate(localParams, remoteParams, inputs, localPerCommitmentPoint, spec).makeTx*/
-
-  def makeRemoteTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = ???
-
-  /*def makeRemoteTx(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: BinaryData, spec: CommitmentSpec): Transaction =
-    makeRemoteTxTemplate(localParams, remoteParams, inputs, remotePerCommitmentPoint, spec).makeTx*/
+  def makeRemoteTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = {
+    val localPubkey = Generators.derivePubKey(localParams.paymentSecret.point, remotePerCommitmentPoint)
+    val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+    val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.point, remotePerCommitmentPoint)
+    CommitTxTemplate.makeCommitTxTemplate(inputs, remoteParams.toSelfDelay, remoteDelayedPubkey, localPubkey, remoteRevocationPubkey, spec)
+  }
 }

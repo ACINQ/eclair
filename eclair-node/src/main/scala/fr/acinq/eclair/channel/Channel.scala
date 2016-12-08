@@ -80,10 +80,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         feeratePerKw = localParams.feeratePerKw,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = Crypto.publicKeyFromPrivateKey(localParams.fundingPrivkey),
-        revocationBasepoint = Crypto.publicKeyFromPrivateKey(localParams.revocationSecret),
-        paymentBasepoint = Crypto.publicKeyFromPrivateKey(localParams.paymentSecret),
-        delayedPaymentBasepoint = Crypto.publicKeyFromPrivateKey(localParams.delayedPaymentKey),
+        fundingPubkey = localParams.fundingPrivkey.point,
+        revocationBasepoint = localParams.revocationSecret.point,
+        paymentBasepoint = localParams.paymentSecret.point,
+        delayedPaymentBasepoint = localParams.delayedPaymentKey.point,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = autoSignInterval)
 
@@ -106,10 +106,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         htlcMinimumMsat = localParams.htlcMinimumMsat,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = Crypto.publicKeyFromPrivateKey(localParams.fundingPrivkey),
-        revocationBasepoint = Crypto.publicKeyFromPrivateKey(localParams.revocationSecret),
-        paymentBasepoint = Crypto.publicKeyFromPrivateKey(localParams.paymentSecret),
-        delayedPaymentBasepoint = Crypto.publicKeyFromPrivateKey(localParams.delayedPaymentKey),
+        fundingPubkey = localParams.fundingPrivkey.point,
+        revocationBasepoint = localParams.revocationSecret.point,
+        paymentBasepoint = localParams.paymentSecret.point,
+        delayedPaymentBasepoint = localParams.delayedPaymentKey.point,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       val remoteParams = RemoteParams(
         dustLimitSatoshis = open.dustLimitSatoshis,
@@ -163,7 +163,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         fundingSatoshis = fundingSatoshis,
         minimumDepth = accept.minimumDepth,
         autoSignInterval = autoSignInterval)
-      val localFundingPubkey = Crypto.publicKeyFromPrivateKey(params.localParams.fundingPrivkey)
+      val localFundingPubkey = params.localParams.fundingPrivkey.point
       blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubkey, Satoshi(params.fundingSatoshis))
       goto(WAIT_FOR_FUNDING_CREATED_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, accept.firstPerCommitmentPoint)
 
@@ -441,7 +441,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         sender ! "closing already in progress"
         stay
       } else {
-        val defaultScriptPubkey: BinaryData = Script.write(OldScripts.pay2wpkh(Crypto.publicKeyFromPrivateKey(d.params.localParams.finalPrivKey)))
+        val defaultScriptPubkey: BinaryData = Script.write(OldScripts.pay2wpkh(d.params.localParams.finalPrivKey.point))
         val ourScriptPubKey = ourScriptPubKey_opt.getOrElse(defaultScriptPubkey)
         val ourShutdown = Shutdown(d.channelId, ourScriptPubKey)
         them ! ourShutdown
@@ -450,7 +450,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(theirShutdown@Shutdown(_, theirScriptPubKey), d@DATA_NORMAL(channelId, params, commitments, ourShutdownOpt, downstreams)) =>
       val ourShutdown: Shutdown = ourShutdownOpt.getOrElse {
-        val defaultScriptPubkey: BinaryData = Script.write(OldScripts.pay2wpkh(Crypto.publicKeyFromPrivateKey(params.localParams.finalPrivKey)))
+        val defaultScriptPubkey: BinaryData = Script.write(OldScripts.pay2wpkh(params.localParams.finalPrivKey.point))
         val c = Shutdown(channelId, defaultScriptPubkey)
         them ! c
         c

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
-import OldScripts._
+import fr.acinq.eclair.transactions.OldScripts._
 
 /**
   * Created by PM on 06/12/2016.
@@ -26,6 +26,48 @@ case class CommitTxTemplate(inputs: Seq[TxIn], localOutput: Option[OutputTemplat
     *         could be claimed by us if the tx is revoked and we have the revocation preimage)
     */
   def weHaveAnOutput: Boolean = localOutput.isDefined || !htlcReceived.isEmpty || !htlcSent.isEmpty
+}
+
+object CommitTxTemplate {
+
+  /**
+    * Creates a commitment publishable by 'Local' (meaning that main output to local is delayed)
+    * @param inputs
+    * @param toLocalDelay
+    * @param localDelayedPubkey
+    * @param remotePubkey
+    * @param localRevocationPubkey
+    * @param commitmentSpec
+    * @return
+    */
+  def makeCommitTxTemplate(inputs: Seq[TxIn], toLocalDelay: Int, localDelayedPubkey: BinaryData, remotePubkey: BinaryData, localRevocationPubkey: BinaryData, commitmentSpec: CommitmentSpec): CommitTxTemplate = ???
+
+  /*def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): CommitTxTemplate = {
+    val redeemScript = redeemSecretOrDelay(ourFinalKey, toSelfDelay2csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
+    val htlcs = commitmentSpec.htlcs.filter(_.add.amountMsat >= 546000).toSeq
+    val fee_msat = computeFee(commitmentSpec.feeRate, htlcs.size) * 1000
+    val (amount_us_msat: Long, amount_them_msat: Long) = (commitmentSpec.to_local_msat, commitmentSpec.to_remote_msat) match {
+      case (us, them) if us >= fee_msat / 2 && them >= fee_msat / 2 => (us - fee_msat / 2, them - fee_msat / 2)
+      case (us, them) if us < fee_msat / 2 => (0L, Math.max(0L, them - fee_msat + us))
+      case (us, them) if them < fee_msat / 2 => (Math.max(us - fee_msat + them, 0L), 0L)
+    }
+
+    // our output is a pay2wsh output than can be claimed by them if they know the preimage, or by us after a delay
+    // when * they * publish a revoked commit tx, we use the preimage that they sent us to claim it
+    val ourOutput = if (amount_us_msat >= 546000) Some(P2WSHTemplate(Satoshi(amount_us_msat / 1000), redeemScript)) else None
+
+    // their output is a simple pay2pkh output that sends money to their final key and can only be claimed by them
+    // when * they * publish a revoked commit tx we don't have anything special to do about it
+    val theirOutput = if (amount_them_msat >= 546000) Some(P2WPKHTemplate(Satoshi(amount_them_msat / 1000), theirFinalKey)) else None
+
+    val sendOuts: Seq[HTLCTemplate] = htlcs.filter(_.direction == OUT).map(htlc => {
+      HTLCTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
+    })
+    val receiveOuts: Seq[HTLCTemplate] = htlcs.filter(_.direction == IN).map(htlc => {
+      HTLCTemplate(htlc, ourFinalKey, theirFinalKey, theirDelay, revocationHash)
+    })
+    CommitTxTemplate(inputs, ourOutput, theirOutput, sendOuts, receiveOuts)
+  }*/
 }
 
 case class HTLCSuccessTxTemplate() extends TxTemplate

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Transaction, TxOut}
+import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
 import lightning.{route, route_step}
@@ -153,11 +154,11 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              feeratePerKw: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             fundingPrivkey: BinaryData,
-                             revocationSecret: BinaryData,
-                             paymentSecret: BinaryData,
-                             delayedPaymentKey: BinaryData,
-                             finalPrivKey: BinaryData,
+                             fundingPrivkey: Scalar,
+                             revocationSecret: Scalar,
+                             paymentSecret: Scalar,
+                             delayedPaymentKey: Scalar,
+                             finalPrivKey: Scalar,
                              shaSeed: BinaryData)
 
 final case class RemoteParams(dustLimitSatoshis: Long,
@@ -167,9 +168,9 @@ final case class RemoteParams(dustLimitSatoshis: Long,
                               feeratePerKw: Long,
                               toSelfDelay: Int,
                               maxAcceptedHtlcs: Int,
-                              fundingPubkey: BinaryData,
-                              revocationBasepoint: BinaryData,
-                              paymentBasepoint: BinaryData,
-                              delayedPaymentBasepoint: BinaryData)
+                              fundingPubkey: Point,
+                              revocationBasepoint: Point,
+                              paymentBasepoint: Point,
+                              delayedPaymentBasepoint: Point)
 
 // @formatter:on

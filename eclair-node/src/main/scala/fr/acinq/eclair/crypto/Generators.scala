@@ -49,7 +49,6 @@ object Generators {
 
   def perCommitPoint(seed: BinaryData, index: Int): Point = perCommitSecret(seed, index).point
 
-
   def derivePrivKey(secret: Scalar, perCommitPoint: Point): Scalar = {
     // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)
     secret.add(Scalar(Crypto.sha256(perCommitPoint.data ++ secret.point.data)))
