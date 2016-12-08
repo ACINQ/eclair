@@ -45,11 +45,9 @@ object Generators {
     def apply(ecPoint: ECPoint): Point = new Point(ecPoint.getEncoded(true))
   }
 
-  def perCommitSecret(seed: BinaryData, index: Int): Scalar = ???
+  def perCommitSecret(seed: BinaryData, index: Int): Scalar = ShaChain.shaChainFromSeed(seed, index)
 
-  def perCommitPoint(perCommitSecret: Scalar): Point = ???
-
-  def perCommitPoint(seed: BinaryData, index: Int): Point = perCommitPoint(perCommitSecret(seed, index))
+  def perCommitPoint(seed: BinaryData, index: Int): Point = perCommitSecret(seed, index).point
 
 
   def derivePrivKey(secret: Scalar, perCommitPoint: Point): Scalar = {

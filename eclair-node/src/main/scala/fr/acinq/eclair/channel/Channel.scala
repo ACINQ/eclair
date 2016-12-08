@@ -849,7 +849,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       } catch {
         case t: Throwable => event.stateData match {
           case d: HasCommitments => handleOurError(t, d)
-          case _ => goto(CLOSED)
+          case _ =>
+            log.error(t, "")
+            goto(CLOSED)
         }
       }
   }

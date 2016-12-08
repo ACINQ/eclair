@@ -9,7 +9,9 @@ import scala.annotation.tailrec
   */
 object ShaChain {
 
-  case class Node(value: BinaryData, height: Int, parent: Option[Node])
+  case class Node(value: BinaryData, height: Int, parent: Option[Node]) {
+    require(value.length == 32)
+  }
 
   def flip(in: BinaryData, index: Int): BinaryData = in.data.updated(index / 8, (in.data(index / 8) ^ (1 << index % 8)).toByte)
 

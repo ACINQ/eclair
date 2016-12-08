@@ -2,12 +2,12 @@ package fr.acinq.eclair.channel.states.a
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTx, PeerWatcher}
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_CREATED_INTERNAL, _}
 import fr.acinq.eclair.channel.states.StateSpecBaseClass
-import fr.acinq.eclair.wire.{Error, OpenChannel}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -30,22 +30,25 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
+    alice ! INPUT_INIT_FUNDER(TestConstants.anchorAmount, 0)
+    bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
-      awaitCond(alice.stateName == WAIT_FOR_OPEN_CHANNEL)
+      alice2bob.forward(bob)
+      awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv OpenChannel") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv AcceptChannel") { case (alice, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
-      bob2alice.expectMsgType[OpenChannel]
+      bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_OPEN_CHANNEL)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CREATED_INTERNAL)
     }
   }
 
-  test("recv anchor") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
+  /*test("recv anchor") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
     within(30 seconds) {
       bob2alice.expectMsgType[OpenChannel]
       bob2alice.forward(alice)
@@ -54,7 +57,7 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
       alice2bob.expectMsgType[OpenChannel]
     }
-  }
+  }*/
 
   test("recv error") { case (bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {

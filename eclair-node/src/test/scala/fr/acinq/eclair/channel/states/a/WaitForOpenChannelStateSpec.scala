@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateSpecBaseClass
@@ -26,8 +27,9 @@ class WaitForOpenChannelStateSpec extends StateSpecBaseClass {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
+    alice ! INPUT_INIT_FUNDER(TestConstants.anchorAmount, 0)
+    bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
-      bob2alice.expectMsgType[OpenChannel]
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))

@@ -1,5 +1,6 @@
 package fr.acinq.eclair
 
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.channel._
 
 /**
@@ -18,11 +19,11 @@ object TestConstants {
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
       fundingPrivkey = Array.fill[Byte](32)(1),
-      revocationSecret = Array.fill[Byte](33)(2),
-      paymentSecret = Array.fill[Byte](33)(3),
-      delayedPaymentKey = Array.fill[Byte](33)(4),
-      finalPrivKey = Array.fill[Byte](33)(5),
-      shaSeed = "alice-seed".getBytes()
+      revocationSecret = Array.fill[Byte](32)(2),
+      paymentSecret = Array.fill[Byte](32)(3),
+      delayedPaymentKey = Array.fill[Byte](32)(4),
+      finalPrivKey = Array.fill[Byte](32)(5),
+      shaSeed = Crypto.sha256("alice-seed".getBytes())
     )
   }
 
@@ -36,11 +37,11 @@ object TestConstants {
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
       fundingPrivkey = Array.fill[Byte](32)(11),
-      revocationSecret = Array.fill[Byte](33)(12),
-      paymentSecret = Array.fill[Byte](33)(13),
-      delayedPaymentKey = Array.fill[Byte](33)(14),
-      finalPrivKey = Array.fill[Byte](33)(15),
-      shaSeed = "bob-seed".getBytes()
+      revocationSecret = Array.fill[Byte](32)(12),
+      paymentSecret = Array.fill[Byte](32)(13),
+      delayedPaymentKey = Array.fill[Byte](32)(14),
+      finalPrivKey = Array.fill[Byte](32)(15),
+      shaSeed = Crypto.sha256("alice-seed".getBytes())
     )
   }
 
