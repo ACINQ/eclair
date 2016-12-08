@@ -139,7 +139,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
       log.debug(s"received chunk=${BinaryData(chunk)}")
       val decryptor1 = Decryptor.add(decryptor, chunk)
       decryptor1.bodies.map(plaintext => {
-        // TODO : redo this
+        // TODO: redo this
         val msg = lightningMessageCodec.decode(BitVector(plaintext.data)).toOption.get.value
         self ! msg
       })

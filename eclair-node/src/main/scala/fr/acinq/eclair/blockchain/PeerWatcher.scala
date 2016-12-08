@@ -35,7 +35,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
 
     case NewBlock(block) =>
       client.getBlockCount.map(count => context.system.eventStream.publish(CurrentBlockCount(count)))
-      // TODO : beware of the herd effect
+      // TODO: beware of the herd effect
       watches.collect {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
           client.getTxConfirmations(txId.toString).map(_ match {

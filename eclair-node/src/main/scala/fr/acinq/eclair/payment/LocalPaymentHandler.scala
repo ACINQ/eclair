@@ -24,7 +24,7 @@ class LocalPaymentHandler extends Actor with ActorLogging {
 
   override def receive: Receive = run(Map())
 
-  //TODO: store this map on file ?
+  // TODO: store this map on file ?
   def run(h2r: Map[BinaryData, BinaryData]): Receive = {
     case 'genh =>
       val r = generateR()

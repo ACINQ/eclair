@@ -100,7 +100,7 @@ object PaymentLifecycle {
 
   def buildRoute(finalAmountMsat: Int, nodeIds: Seq[BinaryData]): lightning.route = {
 
-    // TODO : use actual fee parameters that are specific to each node
+    // TODO: use actual fee parameters that are specific to each node
     def fee(amountMsat: Int) = nodeFee(Globals.base_fee, Globals.proportional_fee, amountMsat).toInt
 
     var amountMsat = finalAmountMsat

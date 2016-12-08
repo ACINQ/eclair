@@ -694,7 +694,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       assert(revokedTx.txOut.size == 6)
       // the punishment tx consumes all output but ours (which already goes to our final key)
       assert(punishTx.txIn.size == 5)
-      // TODO : when changefee is implemented we should set fee = 0 and check against 304 000
+      // TODO: when changefee is implemented we should set fee = 0 and check against 304 000
       assert(punishTx.txOut == Seq(TxOut(Satoshi(301670), Script.write(OldScripts.pay2wpkh(Crypto.publicKeyFromPrivateKey(Alice.channelParams.finalPrivKey))))))
     }
   }

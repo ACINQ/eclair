@@ -13,7 +13,7 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: BinaryData)
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: BinaryData)
 // @formatter:on
 
 /**
@@ -101,7 +101,7 @@ object Commitments {
     commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => (addRemoteProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
-      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO : we should fail the channel
+      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO: we should fail the channel
     }
   }
 
@@ -119,7 +119,7 @@ object Commitments {
   def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): (Commitments, UpdateAddHtlc) = {
     commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u.add } match {
       case Some(htlc) => (addRemoteProposal(commitments, fail), htlc)
-      case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO : we should fail the channel
+      case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO: we should fail the channel
     }
   }
 
@@ -134,13 +134,13 @@ object Commitments {
   def sendCommit(commitments: Commitments): (Commitments, CommitSig) = {
     import commitments._
     commitments.remoteNextCommitInfo match {
-      case Right(remoteNextRevocationHash) if !localHasChanges(commitments) =>
+      case Right(remoteNextPerCommitmentPoint) if !localHasChanges(commitments) =>
         throw new RuntimeException("cannot sign when there are no changes")
-      case Right(theirNextRevocationHash) =>
+      case Right(remoteNextPerCommitmentPoint) =>
         // sign all our proposals + their acked proposals
         // their commitment now includes all our changes  + their acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val theirTxTemplate = CommitmentSpec.makeRemoteTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val theirTxTemplate = CommitmentSpec.makeRemoteTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, remoteNextPerCommitmentPoint, spec)
         val theirTx = theirTxTemplate.makeTx
         // don't sign if they don't get paid
         val commit: CommitSig = ???
@@ -151,7 +151,7 @@ object Commitments {
                  CommitSig(None)
                }*/
         val commitments1 = commitments.copy(
-          remoteNextCommitInfo = Left(RemoteCommit(remoteCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
+          remoteNextCommitInfo = Left(RemoteCommit(remoteCommit.index + 1, spec, theirTx.txid, remoteNextPerCommitmentPoint)),
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
           remoteChanges = remoteChanges.copy(acked = Nil))
         (commitments1, commit)
@@ -214,11 +214,11 @@ object Commitments {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
-      case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.perCommitmentSecret)) != BinaryData(remoteCommit.theirRevocationHash) =>
+      case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.perCommitmentSecret)) != BinaryData(remoteCommit.remotePerCommitmentPoint) =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // this is their revoked commit tx
-        val theirTxTemplate = CommitmentSpec.makeRemoteTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, remoteCommit.theirRevocationHash, remoteCommit.spec)
+        val theirTxTemplate = CommitmentSpec.makeRemoteTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
         val theirTx = theirTxTemplate.makeTx
         val punishTx: Transaction = ??? //Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, localParams.finalPrivKey)
         Transaction.correctlySpends(punishTx, Seq(theirTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -243,10 +243,10 @@ object Commitments {
     commitments.remoteNextCommitInfo match {
       case Left(theirNextCommit) =>
         CommitmentSpec.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
-          theirNextCommit.theirRevocationHash, theirNextCommit.spec)
+          theirNextCommit.remotePerCommitmentPoint, theirNextCommit.spec)
       case Right(revocationHash) =>
         CommitmentSpec.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
-          commitments.remoteCommit.theirRevocationHash, commitments.remoteCommit.spec)
+          commitments.remoteCommit.remotePerCommitmentPoint, commitments.remoteCommit.spec)
     }
   }
 }

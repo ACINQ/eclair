@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{OutPoint, _}
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.OldScripts._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
@@ -21,6 +22,35 @@ object Helpers {
       * @param fundingTxOutputIndex
       */
     def inputFromFundingTx(fundingTxId: BinaryData, fundingTxOutputIndex: Int): TxIn = TxIn(OutPoint(fundingTxId, fundingTxOutputIndex), Array.emptyByteArray, 0xffffffffL)
+
+    /**
+      * Creates both sides's first commitment transaction
+      * @param funder
+      * @param params
+      * @param pushMsat
+      * @param fundingTxHash
+      * @param fundingTxOutputIndex
+      * @param remoteFirstPerCommitmentPoint
+      * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
+      */
+    def makeFirstCommitmentTx(funder: Boolean, params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: BinaryData): (CommitmentSpec, Transaction, CommitmentSpec, Transaction, TxOut) = {
+      val toLocalMsat = if (funder) params.fundingSatoshis * 1000 - pushMsat else pushMsat
+      val toRemoteMsat = if (funder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
+
+      // local and remote feerate are the same at this point (funder gets to choose the initial feerate)
+      val localSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.localParams.feeratePerKw, to_local_msat = toLocalMsat, to_remote_msat = toRemoteMsat)
+      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.remoteParams.feeratePerKw, to_local_msat = toRemoteMsat, to_remote_msat = toLocalMsat)
+
+      val commitmentInput = Funding.inputFromFundingTx(fundingTxHash, fundingTxOutputIndex)
+      val localPerCommitmentPoint: BinaryData = Generators.perCommitPoint(params.localParams.shaSeed, 0)
+      val localTx = CommitmentSpec.makeLocalTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, localPerCommitmentPoint, localSpec).makeTx
+      val remoteTx = CommitmentSpec.makeRemoteTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec).makeTx
+
+      val localFundingPubkey = Crypto.publicKeyFromPrivateKey(params.localParams.fundingPrivkey)
+      val fundingTxOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = OldScripts.anchorPubkeyScript(localFundingPubkey, params.remoteParams.fundingPubkey))
+
+      (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
+    }
 
   }
 
