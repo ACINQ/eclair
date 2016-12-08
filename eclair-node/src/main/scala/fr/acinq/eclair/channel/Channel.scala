@@ -69,7 +69,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
     case Event(INPUT_INIT_FUNDER(fundingSatoshis, pushMsat), Nothing) =>
       val temporaryChannelId = Platform.currentTime
-      val firstPerCommitmentPoint: BinaryData = Generators.perCommitPoint(localParams.shaSeed, 0)
+      val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
       them ! OpenChannel(temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
         pushMsat = pushMsat,
@@ -97,7 +97,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       // TODO: here we should check if remote parameters suit us
       // TODO: maybe also check uniqueness of temporary channel id
       val minimumDepth = Globals.default_mindepth
-      val firstPerCommitmentPoint: BinaryData = Generators.perCommitPoint(localParams.shaSeed, 0)
+      val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
       them ! AcceptChannel(temporaryChannelId = Platform.currentTime,
         dustLimitSatoshis = localParams.dustLimitSatoshis,
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
@@ -280,7 +280,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(BITCOIN_FUNDING_DEPTHOK, d@DATA_WAIT_FOR_FUNDING_LOCKED(temporaryChannelId, params, commitments, deferred)) =>
       val channelId = 0L
       blockchain ! WatchLost(self, commitments.anchorId, params.minimumDepth, BITCOIN_FUNDING_LOST)
-      val nextPerCommitmentPoint: BinaryData = Generators.perCommitPoint(localParams.shaSeed, 1)
+      val nextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 1)
       them ! FundingLocked(channelId, 0L, "00" * 64, "00" * 64, nextPerCommitmentPoint) // TODO: routing announcements disabled
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection

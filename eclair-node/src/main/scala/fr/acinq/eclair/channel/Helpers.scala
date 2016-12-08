@@ -42,8 +42,8 @@ object Helpers {
       val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.remoteParams.feeratePerKw, to_local_msat = toRemoteMsat, to_remote_msat = toLocalMsat)
 
       val commitmentInput = Funding.inputFromFundingTx(fundingTxHash, fundingTxOutputIndex)
-      val localPerCommitmentPoint: BinaryData = Generators.perCommitPoint(params.localParams.shaSeed, 0)
-      val localTx = CommitmentSpec.makeLocalTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, localPerCommitmentPoint, localSpec).makeTx
+      val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
+      val localTx = CommitmentSpec.makeLocalTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, localPerCommitmentPoint.data, localSpec).makeTx
       val remoteTx = CommitmentSpec.makeRemoteTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec).makeTx
 
       val localFundingPubkey = Crypto.publicKeyFromPrivateKey(params.localParams.fundingPrivkey)

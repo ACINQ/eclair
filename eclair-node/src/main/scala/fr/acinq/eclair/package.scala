@@ -5,6 +5,7 @@ import java.math.BigInteger
 
 import com.google.protobuf.ByteString
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
 import lightning.{bitcoin_pubkey, signature}
 
 import scala.annotation.tailrec
@@ -16,6 +17,14 @@ package object eclair {
   implicit def array2pubkey(in: Array[Byte]) = bin2pubkey(in)
 
   implicit def pubkey2bin(in: bitcoin_pubkey): BinaryData = in.key.toByteArray
+
+  implicit def point2bin(in: Point): BinaryData = in.data
+
+  implicit def bin2point(in: BinaryData): Point = Point(in)
+
+  implicit def scalar2bin(in: Scalar): BinaryData = in.data
+
+  implicit def bin2scalar(in: BinaryData): Scalar = Scalar(in)
 
   private def fixSize(in: Array[Byte]): Array[Byte] = in.size match {
     case 32 => in

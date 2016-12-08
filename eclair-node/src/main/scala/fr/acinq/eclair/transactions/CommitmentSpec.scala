@@ -1,7 +1,8 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{BinaryData, Transaction, TxIn}
+import fr.acinq.bitcoin.{BinaryData, TxIn}
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
+import fr.acinq.eclair.crypto.Generators.Point
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, UpdateMessage}
 
@@ -75,12 +76,12 @@ object CommitmentSpec {
     spec4
   }
 
-  def makeLocalTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
+  def makeLocalTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = ???
 
   /*def makeLocalTx(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: BinaryData, spec: CommitmentSpec): Transaction =
     makeLocalTxTemplate(localParams, remoteParams, inputs, localPerCommitmentPoint, spec).makeTx*/
 
-  def makeRemoteTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: BinaryData, spec: CommitmentSpec): CommitTxTemplate = ???
+  def makeRemoteTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = ???
 
   /*def makeRemoteTx(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: BinaryData, spec: CommitmentSpec): Transaction =
     makeRemoteTxTemplate(localParams, remoteParams, inputs, remotePerCommitmentPoint, spec).makeTx*/
