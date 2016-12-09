@@ -43,7 +43,7 @@ class WaitForOpenChannelStateSpec extends StateSpecBaseClass {
     }
   }
 
-  test("recv error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv Error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
       bob ! Error(0, "oops".getBytes())
       awaitCond(bob.stateName == CLOSED)

@@ -179,7 +179,7 @@ object Helpers {
       val htlcTemplates = txTemplate.htlcReceived ++ txTemplate.htlcSent
 
       //@tailrec
-      def loop(htlcs: Seq[HTLCTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = ???
+      def loop(htlcs: Seq[HTLCTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = Nil
 
       /*{
       htlcs.headOption match {
@@ -207,7 +207,8 @@ object Helpers {
       tx1.updateWitness(0, witness)
     }
 
-    def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = ???
+    // TODO: fix this!
+    def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = Nil
 
     /*{
     // txTemplate could be our template (we published our commit tx) or their template (they published their commit tx)

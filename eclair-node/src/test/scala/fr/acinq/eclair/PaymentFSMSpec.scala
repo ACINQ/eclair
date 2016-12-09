@@ -63,8 +63,8 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     router ! ChannelDiscovered(ChannelDesc("01", node_a, node_b))
     router ! ChannelDiscovered(ChannelDesc("02", node_b, node_c))
 
-    selector ! ChannelChangedState(channel00.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL_2(0, Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000), null, null), null, null, 0L, null, null, null, null, null), null, null))
-    selector ! ChannelChangedState(channel01.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000000), null, null), null, null, 0L, null, null, null, null, null), null, null))
+    selector ! ChannelChangedState(channel00.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURFUNDING, NORMAL, DATA_NORMAL_2(0, Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000), null, null), null, null, 0L, null, null, null, null, null), null, null))
+    selector ! ChannelChangedState(channel01.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURFUNDING, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000000), null, null), null, null, 0L, null, null, null, null, null), null, null))
 
     val paymentFsm = system.actorOf(PaymentLifecycle.props(router, selector, 1440))
 
@@ -99,8 +99,8 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
     router ! ChannelDiscovered(ChannelDesc("01", node_a, node_b))
     router ! ChannelDiscovered(ChannelDesc("02", node_b, node_c))
 
-    selector ! ChannelChangedState(channel00.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000), null, null), null, null, 0L, null, null, null, null, null), null, null))
-    selector ! ChannelChangedState(channel01.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURANCHOR, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000000), null, null), null, null, 0L, null, null, null, null, null), null, null))
+    selector ! ChannelChangedState(channel00.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURFUNDING, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000), null, null), null, null, 0L, null, null, null, null, null), null, null))
+    selector ! ChannelChangedState(channel01.ref, node_b, OPEN_WAIT_FOR_COMPLETE_OURFUNDING, NORMAL, DATA_NORMAL(Commitments(null, null, null, TheirCommit(0L, CommitmentSpec(Set(), 0L, 0L, 100000000), null, null), null, null, 0L, null, null, null, null, null), null, null))
 
     val paymentFsm = system.actorOf(PaymentLifecycle.props(router, selector, 1440))
 

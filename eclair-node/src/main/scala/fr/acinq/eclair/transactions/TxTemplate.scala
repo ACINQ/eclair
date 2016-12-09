@@ -33,14 +33,28 @@ object CommitTxTemplate {
   /**
     * Creates a commitment publishable by 'Local' (meaning that main output to local is delayed)
     * @param inputs
-    * @param toLocalDelay
-    * @param localDelayedPubkey
-    * @param remotePubkey
     * @param localRevocationPubkey
-    * @param commitmentSpec
+    * @param toLocalDelay
+    * @param localPubkey
+    * @param remotePubkey
+    * @param spec
     * @return
     */
-  def makeCommitTxTemplate(inputs: Seq[TxIn], toLocalDelay: Int, localDelayedPubkey: BinaryData, remotePubkey: BinaryData, localRevocationPubkey: BinaryData, commitmentSpec: CommitmentSpec): CommitTxTemplate = ???
+  def makeCommitTxTemplate(inputs: Seq[TxIn], localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTxTemplate = {
+
+    // TODO: no fees!!!
+    val (toLocal: Satoshi, toRemote: Satoshi) = (Satoshi(spec.to_local_msat / 1000), Satoshi(spec.to_remote_msat / 1000))
+
+    val toLocalDelayedOutputScript = OutputScripts.toLocal(localRevocationPubkey, toLocalDelay, localPubkey)
+    val toLocalDelayedOutput_opt = if (spec.to_local_msat >= 546000) Some(P2WSHTemplate(toLocal, toLocalDelayedOutputScript)) else None
+
+    val toRemoteOutputScript = OutputScripts.toRemote(remotePubkey)
+    val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(P2WSHTemplate(toRemote, toRemoteOutputScript)) else None
+
+    assert(spec.htlcs.isEmpty, "not implemented")
+
+    CommitTxTemplate(inputs, toLocalDelayedOutput_opt, toRemoteOutput_opt, Nil, Nil)
+  }
 
   /*def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): CommitTxTemplate = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, toSelfDelay2csv(theirDelay), theirFinalKey, revocationHash: BinaryData)

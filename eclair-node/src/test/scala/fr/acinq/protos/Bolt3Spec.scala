@@ -82,7 +82,7 @@ class Bolt3Spec extends FunSuite {
     )
 
     val redeemScript: BinaryData = Bolt3.fundingScript(localPubKey, remotePubKey)
-    println(s"size of funding script: ${redeemScript.length}")
+    println(s"size of funding tx script: ${redeemScript.length}")
     val localSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, fundingTx.txOut(fundingPos).amount, SigVersion.SIGVERSION_WITNESS_V0, localPrivKey)
     println(s"local sig size: ${localSig.length}")
     val remoteSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, fundingTx.txOut(fundingPos).amount, SigVersion.SIGVERSION_WITNESS_V0, remotePrivKey)

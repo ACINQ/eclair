@@ -48,7 +48,7 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
     }
   }
 
-  /*test("recv anchor") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
+  /*test("recv funding tx") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
     within(30 seconds) {
       bob2alice.expectMsgType[OpenChannel]
       bob2alice.forward(alice)
@@ -59,7 +59,7 @@ class WaitForAcceptChannelStateSpec extends StateSpecBaseClass {
     }
   }*/
 
-  test("recv error") { case (bob, alice2bob, bob2alice, _, _) =>
+  test("recv Error") { case (bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       bob ! Error(0, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)

@@ -218,7 +218,7 @@ object InteroperabilitySpec {
 
     /**
       *
-      * @return a funding address that can be used to connect to another node
+      * @return a funding tx address that can be used to connect to another node
       */
     def fund: String = {
       val raw = s"$path newaddr" !!
@@ -232,7 +232,7 @@ object InteroperabilitySpec {
       *
       * @param host node address
       * @param port node port
-      * @param tx   transaction that sends money to a funding address generated with the "fund" method
+      * @param tx   transaction that sends money to a funding tx address generated with the "fund" method
       */
     def connect(host: String, port: Int, tx: String): Unit = {
       assert(s"$path connect $host $port $tx".! == 0)

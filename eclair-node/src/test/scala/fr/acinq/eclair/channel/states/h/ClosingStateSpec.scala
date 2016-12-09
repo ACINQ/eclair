@@ -104,7 +104,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (our commit)") { case (_, _, _, _, _, _, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (our commit)") { case (_, _, _, _, _, _, _) =>
     within(30 seconds) {
       // this test needs a specific intialization because we need to have published our own commitment tx (that's why ignored fixture args)
       // to do that alice will receive an error packet when in NORMAL state, which will make her publish her commit tx and then reach CLOSING state
@@ -219,7 +219,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_FUNDING_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
@@ -249,7 +249,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes one of his revoked txes
@@ -264,7 +264,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (multiple revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_FUNDING_SPENT (multiple revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
     within(30 seconds) {
       // bob publishes multiple revoked txes (last one isn't revoked)
       for (bobRevokedTx <- bobCommitTxes.dropRight(1)) {

@@ -75,12 +75,12 @@ object OldScripts {
     *
     * @param pubkey1     public key for A
     * @param pubkey2     public key for B
-    * @param amount      anchor tx amount
-    * @param previousTx  tx that will fund the anchor; it * must * be a P2PWPK embedded in a standard P2SH tx: the p2sh
+    * @param amount      funding tx amount
+    * @param previousTx  tx that will fund the funding tx; it * must * be a P2PWPK embedded in a standard P2SH tx: the p2sh
     *                    script is just the P2WPK script for the public key that matches our "key" parameter
     * @param outputIndex index of the output in the funding tx
     * @param key         private key that can redeem the funding tx
-    * @return a signed anchor tx
+    * @return a signed funding tx
     */
   def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTx: Transaction, outputIndex: Int, key: BinaryData): (Transaction, Int) = {
     val tx = Transaction(version = 2,
@@ -173,7 +173,7 @@ object OldScripts {
     * Create a "final" channel transaction that will be published when the channel is closed
     *
     * @param inputs            inputs to include in the tx. In most cases, there's only one input that points to the output of
-    *                          the anchor tx
+    *                          the funding tx
     * @param ourPubkeyScript   our public key script
     * @param theirPubkeyScript their public key script
     * @param amount_us         pay to us
@@ -193,7 +193,7 @@ object OldScripts {
       lockTime = 0))
   }
 
-  //def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_ANCHOR
+  //def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_FUNDING
 
   def findPublicKeyScriptIndex(tx: Transaction, publicKeyScript: BinaryData): Option[Int] =
     tx.txOut.zipWithIndex.find {

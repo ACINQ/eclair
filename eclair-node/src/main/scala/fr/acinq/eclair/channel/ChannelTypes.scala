@@ -39,8 +39,8 @@ case object SHUTDOWN extends State
 case object NEGOTIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
-case object ERR_ANCHOR_LOST extends State
-case object ERR_ANCHOR_TIMEOUT extends State
+case object ERR_FUNDING_LOST extends State
+case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
 
 /*
@@ -125,7 +125,7 @@ final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localPar
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, fundingTxOutputIndex: Int, fundingTxOutput: TxOut, localSpec: CommitmentSpec, localTx: Transaction, remoteCommit: RemoteCommit) extends Data
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
 final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,
                                ourShutdown: Shutdown, theirShutdown: Shutdown,

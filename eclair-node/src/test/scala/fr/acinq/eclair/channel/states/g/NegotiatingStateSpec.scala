@@ -139,7 +139,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (counterparty's mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  test("recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     within(30 seconds) {
       var aliceCloseFee, bobCloseFee = 0L
       do {
@@ -151,7 +151,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
         }
       } while (aliceCloseFee != bobCloseFee)
       // at this point alice and bob have converged on closing fees, but alice has not yet received the final signature whereas bob has
-      // bob publishes the mutual close and alice is notified that the anchor has been spent
+      // bob publishes the mutual close and alice is notified that the funding tx has been spent
       // actual test starts here
       assert(alice.stateName == NEGOTIATING)
       val mutualCloseTx = bob2blockchain.expectMsgType[Publish].tx
@@ -162,7 +162,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     }
   }
 
-  test("recv error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTx
       alice ! Error(0, "oops".getBytes())

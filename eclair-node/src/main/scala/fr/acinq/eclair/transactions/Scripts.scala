@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.{BinaryData, OP_2, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTI
   */
 object OutputScripts {
 
-  def toLocal(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
+  def toLocal(revocationPubKey: BinaryData, toSelfDelay: Int, localDelayedKey: BinaryData) = {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubKey) ::

@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel.states.b
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -31,6 +31,8 @@ class WaitForFundingSignedStateSpec extends StateSpecBaseClass {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
+    alice ! INPUT_INIT_FUNDER(TestConstants.anchorAmount, 0)
+    bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -49,9 +51,9 @@ class WaitForFundingSignedStateSpec extends StateSpecBaseClass {
     within(30 seconds) {
       bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
       alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.expectMsgType[Publish]
     }
   }

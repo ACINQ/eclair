@@ -378,7 +378,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       // bob publishes his current commit tx, which contains two pending htlcs alice->bob
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
@@ -402,7 +402,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     }
   }
 
-  test("recv BITCOIN_ANCHOR_SPENT (revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
 
@@ -428,7 +428,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     }
   }
 
-  test("recv error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
       alice ! Error(0, "oops".getBytes)

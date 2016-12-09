@@ -1,7 +1,8 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{BinaryData, Satoshi, ScriptFlags, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, SIGHASH_ALL, Satoshi, ScriptFlags, Transaction, TxOut}
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
+import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
 
 import scala.util.Try
 
@@ -10,27 +11,24 @@ import scala.util.Try
   */
 object Signature {
 
-  def sign(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Satoshi, tx: Transaction): BinaryData = ???
+  def sign(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Satoshi, tx: Transaction): BinaryData = {
+    // this is because by convention in bitcoin-core-speak 32B keys are 'uncompressed' and 33B keys (ending by 0x01) are 'compressed'
+    val localCompressedFundingPrivkey: Seq[Byte] = localParams.fundingPrivkey.data.toSeq :+ 1.toByte
+    Transaction.signInput(tx, 0, OldScripts.multiSig2of2(localParams.fundingPrivkey.point, remoteParams.fundingPubkey), SIGHASH_ALL, fundingSatoshis, 1, localCompressedFundingPrivkey)
+  }
 
-  // Transaction.signInput(tx, 0, OldScripts.multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
+  def addSigs(tx: Transaction, localFundingPubkey: Point, remoteFundingPubkey: Point, localSig: BinaryData, remoteSig: BinaryData): Transaction = {
+    val witness = OldScripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
+    tx.updateWitness(0, witness)
+  }
 
-  def addSigs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Satoshi, tx: Transaction, localSig: BinaryData, remoteSig: BinaryData): Transaction = ???
-
-  /*{
-     // TODO: Transaction.sign(...) should handle multisig
-     val ourSig = Transaction.signInput(tx, 0, multiSig2of2(ourParams.commitPubKey, theirParams.commitPubKey), SIGHASH_ALL, anchorAmount, 1, ourParams.commitPrivKey)
-     val witness = witness2of2(theirSig, ourSig, theirParams.commitPubKey, ourParams.commitPubKey)
-     tx.updateWitness(0, witness)
-   }*/
-
-  def checksig(localParams: LocalParams, remoteParams: RemoteParams, anchorOutput: TxOut, tx: Transaction): Try[Unit] =
+  def checksig(anchorOutput: TxOut, tx: Transaction): Try[Unit] =
     Try(Transaction.correctlySpends(tx, Map(tx.txIn(0).outPoint -> anchorOutput), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
-
-  def signAndCheckSig(localParams: LocalParams, remoteParams: RemoteParams, anchorOutput: TxOut, tx: Transaction, remoteSig: BinaryData): Try[Transaction] = {
-    val localSig = sign(localParams, remoteParams, anchorOutput.amount, tx)
-    val signedTx = addSigs(localParams, remoteParams, anchorOutput.amount, tx, localSig, remoteSig)
-    checksig(localParams, remoteParams, anchorOutput, signedTx).map(_ => signedTx)
+  def signAndCheckSig(localParams: LocalParams, remoteParams: RemoteParams, anchorOutput: TxOut, localPerCommitmentPoint: Point, tx: Transaction, remoteSig: BinaryData): Try[Transaction] = {
+    val localSig = sign(localParams: LocalParams, remoteParams: RemoteParams, anchorOutput.amount, tx)
+    val signedTx = addSigs(tx, localParams.fundingPrivkey.point, remoteParams.fundingPubkey, localSig, remoteSig)
+    checksig(anchorOutput, signedTx).map(_ => signedTx)
   }
 
 }
