@@ -45,10 +45,11 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.forward(blockchainA)
       alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.forward(blockchainA)
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
-      alice ! BITCOIN_FUNDING_DEPTHOK
       bob ! BITCOIN_FUNDING_DEPTHOK
       alice2blockchain.expectMsgType[WatchLost]
       bob2blockchain.expectMsgType[WatchLost]

@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
@@ -32,34 +32,36 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice2bob.expectMsgType[OpenChannel]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[AcceptChannel]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[MakeFundingTx]
-    alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingSigned]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.forward(blockchainA)
-    alice2blockchain.expectMsgType[WatchSpent]
-    alice2blockchain.forward(blockchainA)
-    alice2blockchain.expectMsgType[Publish]
-    alice2blockchain.forward(blockchainA)
-    bob2blockchain.expectMsgType[WatchConfirmed]
-    bob2blockchain.expectMsgType[WatchSpent]
-    bob ! BITCOIN_FUNDING_DEPTHOK
-    bob2blockchain.expectMsgType[WatchLost]
-    bob2alice.expectMsgType[FundingLocked]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[WatchLost]
-    alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[FundingLocked]
-    alice2bob.forward(bob)
-    awaitCond(alice.stateName == NORMAL)
-    awaitCond(bob.stateName == NORMAL)
+    alice ! INPUT_INIT_FUNDER(TestConstants.anchorAmount, 0)
+    bob ! INPUT_INIT_FUNDEE()
+    within(30 seconds) {
+      alice2bob.expectMsgType[OpenChannel]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[AcceptChannel]
+      bob2alice.forward(alice)
+      alice2blockchain.expectMsgType[MakeFundingTx]
+      alice2blockchain.forward(blockchainA)
+      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingSigned]
+      bob2alice.forward(alice)
+      alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.forward(blockchainA)
+      alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.forward(blockchainA)
+      bob2blockchain.expectMsgType[WatchSpent]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      bob ! BITCOIN_FUNDING_DEPTHOK
+      alice2blockchain.expectMsgType[WatchLost]
+      bob2blockchain.expectMsgType[WatchLost]
+      alice2bob.expectMsgType[FundingLocked]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[FundingLocked]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+    }
     // note : alice is funder and bob is fundee, so alice has all the money
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
   }
