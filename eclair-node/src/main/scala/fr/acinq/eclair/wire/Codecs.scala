@@ -1,8 +1,10 @@
 package fr.acinq.eclair.wire
 
+import java.net.{Inet4Address, Inet6Address, InetAddress}
+
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.wire
-import scodec.bits.ByteVector
+import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
@@ -22,16 +24,28 @@ object Codecs {
 
   def listofbinarydata(size: Int): Codec[List[BinaryData]] = listOfN(uint16, binarydata(size))
 
+  def ipv6: Codec[InetAddress] = Codec[InetAddress](
+    (ia: InetAddress) => ia match {
+      case a: Inet4Address => bytes(16).encode(hex"00 00 00 00 00 00 00 00 00 00 FF FF" ++ ByteVector(a.getAddress))
+      case a: Inet6Address => bytes(16).encode(ByteVector(a.getAddress))
+    },
+    (buf: BitVector) => bytes(16).decode(buf).map(_.map(b => InetAddress.getByAddress(b.toArray)))
+  )
+
+  def rgb: Codec[(Byte, Byte, Byte)] = bytes(3).xmap(buf => (buf(0), buf(1), buf(2)), t => ByteVector(t._1, t._2, t._3))
+
+  def string21: Codec[String] = fixedSizeBytes(21, utf8).xmap(s => s.takeWhile(_ != '\0'), s => s)
+
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[Init]
 
   val errorCodec: Codec[Error] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("data" | varsizebinarydata)).as[Error]
 
   val openChannelCodec: Codec[OpenChannel] = (
-    ("temporaryChannelId" | uint64) ::
+    ("temporaryChannelId" | int64) ::
       ("fundingSatoshis" | uint64) ::
       ("pushMsat" | uint64) ::
       ("dustLimitSatoshis" | uint64) ::
@@ -48,7 +62,7 @@ object Codecs {
       ("firstPerCommitmentPoint" | binarydata(33))).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
-    ("temporaryChannelId" | uint64) ::
+    ("temporaryChannelId" | int64) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
@@ -63,33 +77,33 @@ object Codecs {
       ("firstPerCommitmentPoint" | binarydata(33))).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
-    ("temporaryChannelId" | uint64) ::
+    ("temporaryChannelId" | int64) ::
       ("txid" | binarydata(32)) ::
       ("outputIndex" | uint16) ::
       ("signature" | binarydata(64))).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
-    ("temporaryChannelId" | uint64) ::
+    ("temporaryChannelId" | int64) ::
       ("signature" | binarydata(64))).as[FundingSigned]
 
   val fundingLockedCodec: Codec[FundingLocked] = (
-    ("temporaryChannelId" | uint64) ::
-      ("channelId" | uint64) ::
+    ("temporaryChannelId" | int64) ::
+      ("channelId" | int64) ::
       ("announcementNodeSignature" | binarydata(64)) ::
       ("announcementBitcoinSignature" | binarydata(64)) ::
       ("nextPerCommitmentPoint" | binarydata(33))).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
 
   val closingSignedCodec: Codec[ClosingSigned] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("feeSatoshis" | uint64) ::
       ("signature" | binarydata(64))).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("id" | uint64) ::
       ("amountMsat" | uint32) ::
       ("expiry" | uint32) ::
@@ -97,22 +111,22 @@ object Codecs {
       ("onionRoutingPacket" | binarydata(1254))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("id" | uint64) ::
       ("paymentPreimage" | binarydata(32))).as[UpdateFulfillHtlc]
 
   val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("id" | uint64) ::
       ("reason" | binarydata(154))).as[UpdateFailHtlc]
 
   val commitSigCodec: Codec[CommitSig] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("signature" | binarydata(64)) ::
       ("htlcSignatures" | listofbinarydata(64))).as[CommitSig]
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("perCommitmentSecret" | binarydata(32)) ::
       ("nextPerCommitmentPoint" | binarydata(33)) ::
       ("padding" | ignore(3)) ::
@@ -120,8 +134,39 @@ object Codecs {
     ).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (
-    ("channelId" | uint64) ::
+    ("channelId" | int64) ::
       ("feeratePerKw" | uint32)).as[UpdateFee]
+
+  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
+    ("nodeSignature1" | binarydata(64)) ::
+      ("nodeSignature2" | binarydata(64)) ::
+      ("channelId" | int64) ::
+      ("bitcoinSignature1" | binarydata(64)) ::
+      ("bitcoinSignature2" | binarydata(64)) ::
+      ("nodeId1" | binarydata(33)) ::
+      ("nodeId2" | binarydata(33)) ::
+      ("bitcoinKey1" | binarydata(33)) ::
+      ("bitcoinKey2" | binarydata(33))).as[ChannelAnnouncement]
+
+  val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
+    ("signature" | binarydata(64)) ::
+      ("timestamp" | uint32) ::
+      ("ip" | ipv6) ::
+      ("port" | uint16) ::
+      ("nodeId" | binarydata(32)) ::
+      ("rgbColor" | rgb) ::
+      ("alias" | string21) ::
+      ("padding" | ignore(32 - 21))).as[NodeAnnouncement]
+
+  val channelUpdateCodec: Codec[ChannelUpdate] = (
+    ("signature" | binarydata(64)) ::
+      ("channelId" | int64) ::
+      ("timestamp" | uint32) ::
+      ("flags" | binarydata(2)) ::
+      ("expiry" | uint16) ::
+      ("htlcMinimumMsat" | uint32) ::
+      ("feeBaseMsat" | uint32) ::
+      ("feeProportionalMillionths" | uint32)).as[ChannelUpdate]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -139,5 +184,8 @@ object Codecs {
     .typecase(132, commitSigCodec)
     .typecase(133, revokeAndAckCodec)
     .typecase(134, updateFeeCodec)
+    .typecase(256, channelAnnouncementCodec)
+    .typecase(257, nodeAnnouncementCodec)
+    .typecase(258, channelUpdateCodec)
 
 }

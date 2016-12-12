@@ -1,5 +1,7 @@
 package fr.acinq.eclair.wire
 
+import java.net.{Inet6Address, InetAddress}
+
 import fr.acinq.bitcoin.BinaryData
 
 /**
@@ -99,3 +101,29 @@ case class RevokeAndAck(channelId: Long,
 case class UpdateFee(channelId: Long,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage
 
+case class ChannelAnnouncement(nodeSignature1: BinaryData,
+                               nodeSignature2: BinaryData,
+                               channelId: Long,
+                               bitcoinSignature1: BinaryData,
+                               bitcoinSignature2: BinaryData,
+                               nodeId1: BinaryData,
+                               nodeId2: BinaryData,
+                               bitcoinKey1: BinaryData,
+                               bitcoinKey2: BinaryData) extends RoutingMessage
+
+case class NodeAnnouncement(signature: BinaryData,
+                            timestamp: Long,
+                            ip: InetAddress,
+                            port: Int,
+                            nodeId: BinaryData,
+                            rgbColor: (Byte, Byte, Byte),
+                            alias: String) extends RoutingMessage
+
+case class ChannelUpdate(signature: BinaryData,
+                         channelId: Long,
+                         timestamp: Long,
+                         flags: BinaryData,
+                         expiry: Int,
+                         htlcMinimumMsat: Long,
+                         feeBaseMsat: Long,
+                         feeProportionalMillionths: Long) extends RoutingMessage
