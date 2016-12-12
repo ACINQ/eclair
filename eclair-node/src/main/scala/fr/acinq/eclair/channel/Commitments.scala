@@ -30,7 +30,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCurrentHtlcId: Long,
                        remoteNextCommitInfo: Either[RemoteCommit, BinaryData],
                        fundingTxOutput: TxOut,
-                       remotePerCommitmentSecrets: ShaChain, txDb: TxDb) {
+                       remotePerCommitmentSecrets: ShaChain, txDb: TxDb, channelId: Long) {
   def anchorId: BinaryData = {
     assert(localCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
     localCommit.publishableTx.txIn(0).outPoint.hash
@@ -66,8 +66,8 @@ object Commitments {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
       val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
-      val add: UpdateAddHtlc = ???
-      //AddHtlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(cmd.payment_route.toByteArray)))
+      // TODO: fix routing
+      val add: UpdateAddHtlc = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, ""/*routing(ByteString.copyFrom(cmd.payment_route.toByteArray))*/)
       val commitments1 = addLocalProposal(commitments, add).copy(localCurrentHtlcId = id)
       (commitments1, add)
     }
@@ -134,7 +134,7 @@ object Commitments {
   def sendCommit(commitments: Commitments): (Commitments, CommitSig) = {
     import commitments._
     commitments.remoteNextCommitInfo match {
-      case Right(remoteNextPerCommitmentPoint) if !localHasChanges(commitments) =>
+      case Right(_) if !localHasChanges(commitments) =>
         throw new RuntimeException("cannot sign when there are no changes")
       case Right(remoteNextPerCommitmentPoint) =>
         // sign all our proposals + their acked proposals

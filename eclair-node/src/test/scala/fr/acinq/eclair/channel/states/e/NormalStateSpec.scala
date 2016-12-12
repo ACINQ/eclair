@@ -138,7 +138,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
-      val htlc = UpdateAddHtlc(0, 42, Int.MaxValue, 144, BinaryData("00112233445566778899aabbccddeeff"), "")
+      val htlc = UpdateAddHtlc(0, 42, Long.MaxValue, 144, BinaryData("00112233445566778899aabbccddeeff"), "")
       alice2bob.forward(bob, htlc)
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)

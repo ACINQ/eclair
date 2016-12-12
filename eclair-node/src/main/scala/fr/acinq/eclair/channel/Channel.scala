@@ -229,7 +229,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(BinaryData("")), // we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
-            fundingTxOutput, ShaChain.init, new BasicTxDb)
+            fundingTxOutput, ShaChain.init, new BasicTxDb, 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
       }
@@ -261,7 +261,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(BinaryData("")), // we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
-            fundingTxOutput, ShaChain.init, new BasicTxDb)
+            fundingTxOutput, ShaChain.init, new BasicTxDb, 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
@@ -287,7 +287,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       them ! FundingLocked(channelId, 0L, "00" * 64, "00" * 64, nextPerCommitmentPoint) // TODO: routing announcements disabled
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection
-      goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(channelId, params, commitments, None, Map())
+      goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(channelId, params, commitments.copy(channelId = channelId), None, Map())
 
     case Event(BITCOIN_FUNDING_TIMEOUT, _) =>
       them ! Error(0, "Funding tx timed out".getBytes)
@@ -313,7 +313,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(FundingLocked(temporaryChannelId, channelId, _, _, nextPerCommitmentPoint), d: DATA_NORMAL) =>
       // TODO: check channelId matches ours
       Register.create_alias(theirNodeId, d.commitments.anchorId)
-      goto(NORMAL)
+      goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))
 
     case Event((BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -763,7 +763,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   def handleLocalError(cause: Throwable, d: HasCommitments) = {
     log.error(cause, "")
-    them ! Error(0, cause.getMessage)
+    them ! Error(0, cause.getMessage.getBytes)
     spendLocalCurrent(d)
   }
 
