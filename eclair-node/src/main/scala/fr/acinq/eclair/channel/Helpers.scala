@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.transactions.OldScripts._
+import fr.acinq.eclair.transactions.Common._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.UpdateFulfillHtlc
 
@@ -47,7 +47,7 @@ object Helpers {
       val remoteTx = CommitmentSpec.makeRemoteTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec).makeTx
 
       val localFundingPubkey = params.localParams.fundingPrivkey.point
-      val fundingTxOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = OldScripts.anchorPubkeyScript(localFundingPubkey, params.remoteParams.fundingPubkey))
+      val fundingTxOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = Common.anchorPubkeyScript(localFundingPubkey, params.remoteParams.fundingPubkey))
 
       (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
     }
@@ -155,8 +155,8 @@ object Helpers {
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
 
       val tx1 = Transaction(version = 2,
-        txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = OldScripts.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
-        txOut = TxOut(htlcTemplate.amount, OldScripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+        txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = Common.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
+        txOut = TxOut(htlcTemplate.amount, Common.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
         lockTime = ??? /*Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry)*/)
 
       val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
@@ -198,8 +198,8 @@ object Helpers {
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
       val tx1 = Transaction(
         version = 2,
-        txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = OldScripts.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
-        txOut = TxOut(htlcTemplate.amount, OldScripts.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
+        txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = Common.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
+        txOut = TxOut(htlcTemplate.amount, Common.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
         lockTime = ??? /*Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry)*/)
 
       val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.transactions.OldScripts._
+import fr.acinq.eclair.transactions.Common._
 
 /**
   * Created by PM on 06/12/2016.
@@ -101,8 +101,8 @@ case class HTLCTemplate(htlc: Htlc, ourKey: BinaryData, theirKey: BinaryData, de
   override def amount = Satoshi(htlc.add.amountMsat / 1000)
 
   override def redeemScript = htlc.direction match {
-    case IN => Script.write(OldScripts.scriptPubKeyHtlcReceive(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
-    case OUT => Script.write(OldScripts.scriptPubKeyHtlcSend(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
+    case IN => Script.write(Common.scriptPubKeyHtlcReceive(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
+    case OUT => Script.write(Common.scriptPubKeyHtlcSend(ourKey, theirKey, expiry2cltv(htlc.add.expiry), toSelfDelay2csv(delay), htlc.add.paymentHash, revocationHash))
   }
 
   override def txOut = TxOut(amount, pay2wsh(redeemScript))

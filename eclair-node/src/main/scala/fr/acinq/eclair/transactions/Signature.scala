@@ -14,11 +14,11 @@ object Signature {
   def sign(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Satoshi, tx: Transaction): BinaryData = {
     // this is because by convention in bitcoin-core-speak 32B keys are 'uncompressed' and 33B keys (ending by 0x01) are 'compressed'
     val localCompressedFundingPrivkey: Seq[Byte] = localParams.fundingPrivkey.data.toSeq :+ 1.toByte
-    Transaction.signInput(tx, 0, OldScripts.multiSig2of2(localParams.fundingPrivkey.point, remoteParams.fundingPubkey), SIGHASH_ALL, fundingSatoshis, 1, localCompressedFundingPrivkey)
+    Transaction.signInput(tx, 0, Common.multiSig2of2(localParams.fundingPrivkey.point, remoteParams.fundingPubkey), SIGHASH_ALL, fundingSatoshis, 1, localCompressedFundingPrivkey)
   }
 
   def addSigs(tx: Transaction, localFundingPubkey: Point, remoteFundingPubkey: Point, localSig: BinaryData, remoteSig: BinaryData): Transaction = {
-    val witness = OldScripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
+    val witness = Common.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     tx.updateWitness(0, witness)
   }
 

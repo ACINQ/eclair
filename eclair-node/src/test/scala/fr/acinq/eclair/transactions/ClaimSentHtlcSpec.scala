@@ -1,7 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.transactions.OldScripts._
+import fr.acinq.eclair.transactions.Common._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

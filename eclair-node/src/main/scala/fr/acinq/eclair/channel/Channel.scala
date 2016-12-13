@@ -442,7 +442,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         sender ! "closing already in progress"
         stay
       } else {
-        val defaultScriptPubkey: BinaryData = Script.write(OldScripts.pay2wpkh(d.params.localParams.finalPrivKey.point))
+        val defaultScriptPubkey: BinaryData = Script.write(Common.pay2wpkh(d.params.localParams.finalPrivKey.point))
         val ourScriptPubKey = ourScriptPubKey_opt.getOrElse(defaultScriptPubkey)
         val ourShutdown = Shutdown(d.channelId, ourScriptPubKey)
         them ! ourShutdown
@@ -451,7 +451,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(theirShutdown@Shutdown(_, theirScriptPubKey), d@DATA_NORMAL(channelId, params, commitments, ourShutdownOpt, downstreams)) =>
       val ourShutdown: Shutdown = ourShutdownOpt.getOrElse {
-        val defaultScriptPubkey: BinaryData = Script.write(OldScripts.pay2wpkh(params.localParams.finalPrivKey.point))
+        val defaultScriptPubkey: BinaryData = Script.write(Common.pay2wpkh(params.localParams.finalPrivKey.point))
         val c = Shutdown(channelId, defaultScriptPubkey)
         them ! c
         c

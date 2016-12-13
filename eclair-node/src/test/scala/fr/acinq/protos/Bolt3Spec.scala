@@ -7,7 +7,7 @@ import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Generators.Scalar
-import fr.acinq.eclair.transactions.OldScripts
+import fr.acinq.eclair.transactions.Common
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -87,7 +87,7 @@ class Bolt3Spec extends FunSuite {
     println(s"local sig size: ${localSig.length}")
     val remoteSig: BinaryData = Transaction.signInput(tx, 0, redeemScript, SIGHASH_ALL, fundingTx.txOut(fundingPos).amount, SigVersion.SIGVERSION_WITNESS_V0, remotePrivKey)
     println(s"remote sig size: ${remoteSig.length}")
-    val witness = if (OldScripts.isLess(localPubKey, remotePubKey))
+    val witness = if (Common.isLess(localPubKey, remotePubKey))
       ScriptWitness(BinaryData.empty :: localSig :: remoteSig :: redeemScript :: Nil)
     else
       ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: redeemScript :: Nil)
