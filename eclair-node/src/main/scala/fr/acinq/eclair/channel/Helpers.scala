@@ -110,7 +110,7 @@ object Helpers {
       val outputs = collection.mutable.ListBuffer.empty[TxOut]
 
       // first, find out how much we can claim
-      val outputsToClaim = (theirTxTemplate.localOutput.toSeq ++ theirTxTemplate.htlcReceived ++ theirTxTemplate.htlcSent).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
+      val outputsToClaim = (theirTxTemplate.localOutput.toSeq ++ theirTxTemplate.htlcReceivedOutputs ++ theirTxTemplate.htlcSentOutputs).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
       val totalAmount = outputsToClaim.map(_.amount).sum // TODO: substract a small network fee
 
       // create a tx that sends everything to our private key
@@ -149,7 +149,8 @@ object Helpers {
       *         This tx is not spendable right away: it has both an absolute CLTV time-out and a relative CSV time-out
       *         before which it can be published
       */
-    def claimReceivedHtlc(tx: Transaction, htlcTemplate: HTLCTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = {
+    def claimReceivedHtlc(tx: Transaction, htlcTemplate: ReceivedHTLCOutputTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = ???
+    /*{
       require(htlcTemplate.htlc.add.paymentHash == BinaryData(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
       // find its index in their tx
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
@@ -163,7 +164,7 @@ object Helpers {
       val witness = ScriptWitness(sig :: paymentPreimage :: htlcTemplate.redeemScript :: Nil)
       val tx2 = tx1.updateWitness(0, witness)
       tx2
-    }
+    }*/
 
     /**
       * claim all the HTLCs that we've received from their current commit tx
@@ -172,7 +173,8 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = {
+    def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = ???
+    /*{
       val preImages = commitments.localChanges.all.collect { case UpdateFulfillHtlc(_, id, paymentPreimage) => paymentPreimage }
       // TODO: FIXME !!!
       //val htlcTemplates = txTemplate.htlcSent
@@ -192,9 +194,10 @@ object Helpers {
       }
     }*/
       loop(htlcTemplates)
-    }
+    }*/
 
-    def claimSentHtlc(tx: Transaction, htlcTemplate: HTLCTemplate, privateKey: BinaryData): Transaction = {
+    def claimSentHtlc(tx: Transaction, htlcTemplate: OfferedHTLCOutputTemplate, privateKey: BinaryData): Transaction = ???
+    /*{
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
       val tx1 = Transaction(
         version = 2,
@@ -205,7 +208,7 @@ object Helpers {
       val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
       val witness = ScriptWitness(sig :: Hash.Zeroes :: htlcTemplate.redeemScript :: Nil)
       tx1.updateWitness(0, witness)
-    }
+    }*/
 
     // TODO: fix this!
     def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = Nil
