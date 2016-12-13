@@ -231,13 +231,13 @@ object Common {
 
 object OutputScripts {
 
-  def toLocal(revocationPubKey: BinaryData, toSelfDelay: Int, localDelayedKey: BinaryData) = {
+  def toLocal(revocationPubkey: BinaryData, toSelfDelay: Int, localDelayedPubkey: BinaryData) = {
     // @formatter:off
     OP_IF ::
-      OP_PUSHDATA(revocationPubKey) ::
+      OP_PUSHDATA(revocationPubkey) ::
     OP_ELSE ::
       OP_PUSHDATA(Script.encodeNumber(toSelfDelay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-      OP_PUSHDATA(localDelayedKey) ::
+      OP_PUSHDATA(localDelayedPubkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -245,12 +245,12 @@ object OutputScripts {
 
   def toRemote(remoteKey: BinaryData) = remoteKey
 
-  def htlcOffered(localKey: BinaryData, remoteKey: BinaryData, paymentHash: BinaryData) = {
+  def htlcOffered(localPubkey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData) = {
     // @formatter:off
-    OP_PUSHDATA(remoteKey) :: OP_SWAP ::
+    OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
     OP_NOTIF ::
-      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
+      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
     OP_ELSE ::
       OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
       OP_CHECKSIG ::
@@ -258,9 +258,9 @@ object OutputScripts {
     // @formatter:on
   }
 
-  def htlcReceived(localKey: BinaryData, remoteKey: BinaryData, paymentHash: BinaryData, lockTime: Long) = {
+  def htlcReceived(localKey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
-    OP_PUSHDATA(remoteKey) :: OP_SWAP ::
+    OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
     OP_IF ::
       OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
@@ -271,13 +271,13 @@ object OutputScripts {
     // @formatter:on
   }
 
-  def htlcSuccessOrTimeout(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
+  def htlcSuccessOrTimeout(revocationPubkey: BinaryData, toSelfDelay: Long, localDelayedPubkey: BinaryData) = {
     // @formatter:off
     OP_IF ::
-      OP_PUSHDATA(revocationPubKey) ::
+      OP_PUSHDATA(revocationPubkey) ::
     OP_ELSE ::
       OP_PUSHDATA(Script.encodeNumber(toSelfDelay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-      OP_PUSHDATA(localDelayedKey) ::
+      OP_PUSHDATA(localDelayedPubkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on

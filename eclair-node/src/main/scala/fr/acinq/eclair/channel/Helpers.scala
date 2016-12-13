@@ -110,7 +110,7 @@ object Helpers {
       val outputs = collection.mutable.ListBuffer.empty[TxOut]
 
       // first, find out how much we can claim
-      val outputsToClaim = (theirTxTemplate.localOutput.toSeq ++ theirTxTemplate.htlcReceivedOutputs ++ theirTxTemplate.htlcSentOutputs).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
+      val outputsToClaim = (theirTxTemplate.localOutput.toSeq ++ theirTxTemplate.htlcReceivedOutputs ++ theirTxTemplate.htlcOfferedOutputs).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
       val totalAmount = outputsToClaim.map(_.amount).sum // TODO: substract a small network fee
 
       // create a tx that sends everything to our private key

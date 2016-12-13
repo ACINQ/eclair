@@ -1,17 +1,20 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{BinaryData, Crypto, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, OutPoint, Satoshi, Script, ScriptElt, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.transactions.Common._
 import fr.acinq.eclair.transactions.OutputScripts._
+import fr.acinq.eclair.wire.UpdateAddHtlc
 
 /**
   * Created by PM on 06/12/2016.
   */
-sealed trait TxTemplate
+sealed trait TxTemplate {
+  def makeTx: Transaction
+}
 
-case class CommitTxTemplate(inputs: Seq[TxIn], localOutput: Option[DelayedPaymentOutputTemplate], remoteOutput: Option[P2WPKHTemplate], htlcSentOutputs: Seq[OfferedHTLCOutputTemplate], htlcReceivedOutputs: Seq[ReceivedHTLCOutputTemplate]) extends TxTemplate {
-  def makeTx: Transaction = {
-    val outputs = localOutput.toSeq ++ remoteOutput.toSeq ++ htlcSentOutputs ++ htlcReceivedOutputs
+case class CommitTxTemplate(inputs: Seq[TxIn], localOutput: Option[DelayedPaymentOutputTemplate], remoteOutput: Option[P2WPKHOutputTemplate], htlcOfferedOutputs: Seq[OfferedHTLCOutputTemplate], htlcReceivedOutputs: Seq[ReceivedHTLCOutputTemplate]) extends TxTemplate {
+  def makeTx = {
+    val outputs = localOutput.toSeq ++ remoteOutput.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputs
     val tx = Transaction(
       version = 2,
       txIn = inputs,
@@ -20,19 +23,29 @@ case class CommitTxTemplate(inputs: Seq[TxIn], localOutput: Option[DelayedPaymen
     )
     permuteOutputs(tx)
   }
+}
 
-  /**
-    *
-    * @return true is their is an output that we can claim: either our output or any HTLC (even the ones that we sent
-    *         could be claimed by us if the tx is revoked and we have the revocation preimage)
-    */
-  def weHaveAnOutput: Boolean = localOutput.isDefined || !htlcSentOutputs.isEmpty || !htlcReceivedOutputs.isEmpty
+case class HTLCSuccessTxTemplate(inputs: Seq[TxIn], successOutputTemplate: SuccessOrTimeoutOutputTemplate, locktime: Long) extends TxTemplate {
+  def makeTx = Transaction(
+    version = 2,
+    txIn = inputs,
+    txOut = successOutputTemplate.txOut :: Nil,
+    lockTime = locktime)
+}
+
+case class HTLCTimeoutTxTemplate(inputs: Seq[TxIn], successOutputTemplate: SuccessOrTimeoutOutputTemplate) extends TxTemplate {
+  def makeTx = Transaction(
+    version = 2,
+    txIn = inputs,
+    txOut = successOutputTemplate.txOut :: Nil,
+    lockTime = 0)
 }
 
 object CommitTxTemplate {
 
   /**
     * Creates a commitment publishable by 'Local' (meaning that main output to local is delayed)
+    *
     * @param inputs
     * @param localRevocationPubkey
     * @param toLocalDelay
@@ -44,22 +57,50 @@ object CommitTxTemplate {
   def makeCommitTxTemplate(inputs: Seq[TxIn], localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTxTemplate = {
 
     // TODO: no fees!!!
+
     val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = (Satoshi(spec.to_local_msat / 1000), Satoshi(spec.to_remote_msat / 1000))
 
     val toLocalDelayedOutput_opt = if (spec.to_local_msat >= 546000) Some(DelayedPaymentOutputTemplate(toLocalAmount, localRevocationPubkey, toLocalDelay, localPubkey)) else None
 
-    val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(P2WPKHTemplate(toRemoteAmount, toRemote(remotePubkey))) else None
+    val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(P2WPKHOutputTemplate(toRemoteAmount, toRemote(remotePubkey))) else None
 
     val htlcSentOutputs = spec.htlcs.
       filter(_.direction == OUT)
-      .map(htlc => OfferedHTLCOutputTemplate(Satoshi(htlc.add.amountMsat / 1000), localPubkey, remotePubkey, htlc.add.paymentHash)).toSeq
+      .map(htlc => OfferedHTLCOutputTemplate(htlc.add, localPubkey, remotePubkey)).toSeq
 
     val htlcReceivedOutputs = spec.htlcs
       .filter(_.direction == IN)
-      .map(htlc => ReceivedHTLCOutputTemplate(Satoshi(htlc.add.amountMsat / 1000), localPubkey, remotePubkey, htlc.add.paymentHash, htlc.add.expiry)).toSeq
+      .map(htlc => ReceivedHTLCOutputTemplate(htlc.add, localPubkey, remotePubkey, htlc.add.paymentHash)).toSeq
 
     CommitTxTemplate(inputs, toLocalDelayedOutput_opt, toRemoteOutput_opt, htlcSentOutputs, htlcReceivedOutputs)
   }
+
+  def makeHtlcTxTemplates(commitTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): (Seq[HTLCTimeoutTxTemplate], Seq[HTLCSuccessTxTemplate]) = {
+
+    // TODO: no fees!!!
+
+    val commitTxId = commitTx.txid
+    val indexed = commitTx.txOut.zipWithIndex.toMap
+
+    val htlcTimeoutTxTemplates = spec.htlcs
+      .filter(_.direction == OUT)
+      .map(htlc => {
+        val outputIndex = indexed(OfferedHTLCOutputTemplate(htlc.add, localPubkey, remotePubkey).txOut)
+        val inputs = TxIn(OutPoint(commitTxId, outputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil
+        HTLCTimeoutTxTemplate(inputs, SuccessOrTimeoutOutputTemplate(htlc.add, localRevocationPubkey, toLocalDelay, localPubkey))
+      }).toSeq
+
+    val htlcSuccessTxTemplates = spec.htlcs
+      .filter(_.direction == OUT)
+      .map(htlc => {
+        val outputIndex = indexed(OfferedHTLCOutputTemplate(htlc.add, localPubkey, remotePubkey).txOut)
+        val inputs = TxIn(OutPoint(commitTxId, outputIndex), Array.emptyByteArray, 0xffffffffL) :: Nil
+        HTLCSuccessTxTemplate(inputs, SuccessOrTimeoutOutputTemplate(htlc.add, localRevocationPubkey, toLocalDelay, localPubkey), htlc.add.expiry)
+      }).toSeq
+
+    (htlcTimeoutTxTemplates, htlcSuccessTxTemplates)
+  }
+
 
   /*def makeCommitTxTemplate(inputs: Seq[TxIn], ourFinalKey: BinaryData, theirFinalKey: BinaryData, theirDelay: Int, revocationHash: BinaryData, commitmentSpec: CommitmentSpec): CommitTxTemplate = {
     val redeemScript = redeemSecretOrDelay(ourFinalKey, toSelfDelay2csv(theirDelay), theirFinalKey, revocationHash: BinaryData)
@@ -89,10 +130,6 @@ object CommitTxTemplate {
   }*/
 }
 
-case class HTLCSuccessTxTemplate() extends TxTemplate
-
-case class HTLCTimeoutTxTemplate() extends TxTemplate
-
 sealed trait OutputTemplate {
   def amount: Satoshi
 
@@ -102,7 +139,7 @@ sealed trait OutputTemplate {
   def redeemScript: BinaryData
 }
 
-class P2WSHTemplate(val amount: Satoshi, val script: BinaryData) extends OutputTemplate {
+class P2WSHOutputTemplate(val amount: Satoshi, val script: BinaryData) extends OutputTemplate {
 
   def this(amount: Satoshi, script: Seq[ScriptElt]) = this(amount, Script.write(script))
 
@@ -112,15 +149,18 @@ class P2WSHTemplate(val amount: Satoshi, val script: BinaryData) extends OutputT
 }
 
 case class DelayedPaymentOutputTemplate(override val amount: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData)
-  extends P2WSHTemplate(amount, toLocal(localRevocationPubkey, toLocalDelay, localPubkey))
+  extends P2WSHOutputTemplate(amount, toLocal(localRevocationPubkey, toLocalDelay, localPubkey))
 
-case class OfferedHTLCOutputTemplate(override val amount: Satoshi, localPubkey: BinaryData, remotePubKey: BinaryData, paymentHash: BinaryData)
-  extends P2WSHTemplate(amount, htlcOffered(localPubkey, remotePubKey, paymentHash))
+case class OfferedHTLCOutputTemplate(htlc: UpdateAddHtlc, localPubkey: BinaryData, remotePubKey: BinaryData)
+  extends P2WSHOutputTemplate(Satoshi(htlc.amountMsat / 1000), htlcOffered(localPubkey, remotePubKey, htlc.paymentHash))
 
-case class ReceivedHTLCOutputTemplate(override val amount: Satoshi, localPubkey: BinaryData, remotePubKey: BinaryData, paymentHash: BinaryData, lockTime: Long)
-  extends P2WSHTemplate(amount, htlcReceived(localPubkey, remotePubKey, paymentHash, lockTime))
+case class ReceivedHTLCOutputTemplate(htlc: UpdateAddHtlc, localPubkey: BinaryData, remotePubKey: BinaryData, paymentHash: BinaryData)
+  extends P2WSHOutputTemplate(Satoshi(htlc.amountMsat / 1000), htlcReceived(localPubkey, remotePubKey, paymentHash, htlc.expiry))
 
-case class P2WPKHTemplate(amount: Satoshi, pubKey: BinaryData) extends OutputTemplate {
+case class SuccessOrTimeoutOutputTemplate(htlc: UpdateAddHtlc, revocationPubkey: BinaryData, toSelfDelay: Long, localDelayedPubkey: BinaryData)
+  extends P2WSHOutputTemplate(Satoshi(htlc.amountMsat / 1000), htlcSuccessOrTimeout(revocationPubkey, toSelfDelay, localDelayedPubkey))
+
+case class P2WPKHOutputTemplate(amount: Satoshi, pubKey: BinaryData) extends OutputTemplate {
   override def txOut: TxOut = TxOut(amount, pay2wpkh(pubKey))
 
   override def redeemScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
