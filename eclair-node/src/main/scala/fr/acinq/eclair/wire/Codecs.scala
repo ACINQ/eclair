@@ -34,7 +34,7 @@ object Codecs {
 
   def rgb: Codec[(Byte, Byte, Byte)] = bytes(3).xmap(buf => (buf(0), buf(1), buf(2)), t => ByteVector(t._1, t._2, t._3))
 
-  def string21: Codec[String] = fixedSizeBytes(21, utf8).xmap(s => s.takeWhile(_ != '\0'), s => s)
+  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\0'), s => s)
 
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
@@ -153,10 +153,9 @@ object Codecs {
       ("timestamp" | uint32) ::
       ("ip" | ipv6) ::
       ("port" | uint16) ::
-      ("nodeId" | binarydata(32)) ::
+      ("nodeId" | binarydata(33)) ::
       ("rgbColor" | rgb) ::
-      ("alias" | string21) ::
-      ("padding" | ignore(32 - 21))).as[NodeAnnouncement]
+      ("alias" | zeropaddedstring(32))).as[NodeAnnouncement]
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | binarydata(64)) ::

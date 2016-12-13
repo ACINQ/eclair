@@ -3,11 +3,11 @@ package fr.acinq.eclair.wire
 import java.net.InetAddress
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.wire.Codecs.{ipv6, lightningMessageCodec, rgb, string21}
+import fr.acinq.eclair.wire.Codecs.{ipv6, lightningMessageCodec, rgb, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import scodec.Attempt
+import scodec.Codec
 import scodec.bits.{BitVector, HexStringSyntax}
 
 /**
@@ -43,17 +43,28 @@ class CodecsSpec extends FunSuite {
     }
   }
 
-  test("encode/decode with string21 codec") {
+  test("encode/decode with zeropaddedstring codec") {
+    val c = zeropaddedstring(32)
+
     {
       val alias = "IRATEMONK"
-      val bin = string21.encode(alias).toOption.get
-      assert(bin === hex"49524154454d4f4e4b000000000000000000000000".toBitVector)
-      val alias2 = string21.decode(bin).toOption.get.value
+      val bin = c.encode(alias).toOption.get
+      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.size)(0)))
+      val alias2 = c.decode(bin).toOption.get.value
       assert(alias === alias2)
     }
+
     {
-      val alias = "this-alias-is-far-too-long"
-      assert(string21.encode(alias).isFailure)
+      val alias = "this-alias-is-exactly-32-B-long."
+      val bin = c.encode(alias).toOption.get
+      assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.size)(0)))
+      val alias2 = c.decode(bin).toOption.get.value
+      assert(alias === alias2)
+    }
+
+    {
+      val alias = "this-alias-is-far-too-long-because-we-are-limited-to-32-bytes"
+      assert(c.encode(alias).isFailure)
     }
   }
 
@@ -67,18 +78,26 @@ class CodecsSpec extends FunSuite {
     val update_fee = UpdateFee(1, 2)
     val shutdown = Shutdown(1, bin(47, 0))
     val closing_signed = ClosingSigned(1, 2, bin(64, 0))
-    val add_htlc = UpdateAddHtlc(1, 2, 3, 4, bin(32, 0), bin(1254, 0))
+    val update_add_htlc = UpdateAddHtlc(1, 2, 3, 4, bin(32, 0), bin(1254, 0))
     val update_fulfill_htlc = UpdateFulfillHtlc(1, 2, bin(32, 0))
     val update_fail_htlc = UpdateFailHtlc(1, 2, bin(154, 0))
     val commit_sig = CommitSig(1, bin(64, 0), bin(64, 1) :: bin(64, 2) :: bin(64, 3) :: Nil)
     val revoke_and_ack = RevokeAndAck(1, bin(32, 0), bin(33, 1), bin(64, 1) :: bin(64, 2) :: bin(64, 3) :: bin(64, 4) :: bin(64, 5) :: Nil)
+    val channel_announcement = ChannelAnnouncement(bin(64, 1), bin(64, 2), 1, bin(64, 3), bin(64, 4), bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
+    val node_announcement = NodeAnnouncement(bin(64, 1), 1, InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 2, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias")
+    val channel_update = ChannelUpdate(bin(64, 1), 1, 2, bin(2, 2), 3, 4, 5, 6)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
-        add_htlc :: update_fulfill_htlc :: update_fail_htlc :: commit_sig :: revoke_and_ack :: Nil
+        update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: commit_sig :: revoke_and_ack ::
+        channel_announcement :: node_announcement :: channel_update :: Nil
 
     msgs.foreach {
-      case msg => assert(msg === lightningMessageCodec.encode(msg).flatMap(lightningMessageCodec.decode(_)).toOption.get.value)
+      case msg => {
+        val encoded = lightningMessageCodec.encode(msg)
+        val decoded = encoded.flatMap(lightningMessageCodec.decode(_))
+        assert(msg === decoded.toOption.get.value)
+      }
     }
   }
 
