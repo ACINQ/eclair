@@ -1,7 +1,7 @@
 package fr.acinq.eclair.crypto
 
 import java.math.BigInteger
-import java.security.{SecureRandom, Security}
+import java.security.Security
 import javax.crypto.Cipher
 import javax.crypto.spec.{IvParameterSpec, SecretKeySpec}
 
@@ -16,11 +16,13 @@ import org.bouncycastle.jce.provider.BouncyCastleProvider
 import scala.util.Random
 
 /**
- * Created by PM on 27/10/2015.
- */
+  * Created by PM on 27/10/2015.
+  */
 object LightningCrypto {
 
   Security.addProvider(new BouncyCastleProvider())
+
+  def sha256(bin: BinaryData): BinaryData = Crypto.sha256(bin)
 
   def ecdh(pub: BinaryData, priv: BinaryData): BinaryData = {
     val ecSpec = ECNamedCurveTable.getParameterSpec("secp256k1")
@@ -55,7 +57,7 @@ object LightningCrypto {
     out
   }
 
-  def chacha20Encrypt(plaintext: BinaryData, key: BinaryData, nonce: BinaryData, counter: Int = 0) : BinaryData = {
+  def chacha20Encrypt(plaintext: BinaryData, key: BinaryData, nonce: BinaryData, counter: Int = 0): BinaryData = {
     val engine = new ChaChaEngine(20)
     engine.init(true, new ParametersWithIV(new KeyParameter(key), nonce))
     val ciphertext: BinaryData = new Array[Byte](plaintext.length)
@@ -72,7 +74,7 @@ object LightningCrypto {
     ciphertext
   }
 
-  def chacha20Decrypt(ciphertext: BinaryData, key: BinaryData, nonce: BinaryData, counter: Int = 0) : BinaryData = {
+  def chacha20Decrypt(ciphertext: BinaryData, key: BinaryData, nonce: BinaryData, counter: Int = 0): BinaryData = {
     val engine = new ChaChaEngine(20)
     engine.init(false, new ParametersWithIV(new KeyParameter(key), nonce))
     val plaintext: BinaryData = new Array[Byte](ciphertext.length)
@@ -91,14 +93,14 @@ object LightningCrypto {
 
   def poly1305KenGen(key: BinaryData, nonce: BinaryData): BinaryData = chacha20Encrypt(new Array[Byte](32), key, nonce)
 
-  def pad16(data: Seq[Byte]) : Seq[Byte] =
+  def pad16(data: Seq[Byte]): Seq[Byte] =
     if (data.size % 16 == 0)
       Seq.empty[Byte]
     else
       Seq.fill[Byte](16 - (data.size % 16))(0)
 
   object AeadChacha20Poly1305 {
-    def encrypt(key: BinaryData, nonce: BinaryData, plaintext: BinaryData, aad: BinaryData) : (BinaryData, BinaryData) = {
+    def encrypt(key: BinaryData, nonce: BinaryData, plaintext: BinaryData, aad: BinaryData): (BinaryData, BinaryData) = {
       val polykey: BinaryData = poly1305KenGen(key, nonce)
       val ciphertext = chacha20Encrypt(plaintext, key, nonce, 1)
       val data = aad ++ Protocol.writeUInt64(aad.length) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length)
@@ -106,7 +108,7 @@ object LightningCrypto {
       (ciphertext, tag)
     }
 
-    def decrypt(key: BinaryData, nonce: BinaryData, ciphertext: BinaryData, aad: BinaryData, mac: BinaryData) : BinaryData = {
+    def decrypt(key: BinaryData, nonce: BinaryData, ciphertext: BinaryData, aad: BinaryData, mac: BinaryData): BinaryData = {
       val polykey: BinaryData = poly1305KenGen(key, nonce)
       val data = aad ++ Protocol.writeUInt64(aad.length) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length)
       val tag = poly1305(polykey, data)

@@ -1,66 +1,68 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.String?>
-<?import java.net.URL?>
 <?import javafx.geometry.Insets?>
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.effect.BoxBlur?>
-<?import javafx.scene.image.Image?>
-<?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.ColumnConstraints?>
-<?import javafx.scene.layout.GridPane?>
-<?import javafx.scene.layout.Pane?>
-<?import javafx.scene.layout.RowConstraints?>
-<?import javafx.scene.layout.VBox?>
-
-<Pane fx:id="splash" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="457.0" prefWidth="760.0" styleClass="transparent" xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1" fx:controller="fr.acinq.eclair.gui.controllers.SplashController">
-  <children>
-      <ImageView fx:id="imgBlurred" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="115.0" pickOnBounds="true" preserveRatio="true">
-         <image>
-            <Image url="@../commons/images/eclair01-icon.png" />
-         </image>
-         <effect>
-            <BoxBlur height="114.75" width="92.44" />
-         </effect>
-      </ImageView>
-    <ImageView fx:id="img" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="114.0" opacity="0.0" pickOnBounds="true" preserveRatio="true">
-      <image>
-        <Image url="@../commons/images/eclair01-icon.png" />
-      </image>
-    </ImageView>
-      <VBox fx:id="errorBox" alignment="CENTER" layoutX="195.0" layoutY="71.0" opacity="0.0" prefWidth="370.0" styleClass="error-box">
-         <children>
-            <GridPane hgap="10.0">
-               <columnConstraints>
-                  <ColumnConstraints hgrow="SOMETIMES" minWidth="40.0" prefWidth="40.0" />
-                  <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" />
-               </columnConstraints>
-               <rowConstraints>
-                  <RowConstraints minHeight="45.0" vgrow="SOMETIMES" />
-               </rowConstraints>
-               <children>
-                  <ImageView fitHeight="32.0" fitWidth="32.0" pickOnBounds="true" preserveRatio="true" GridPane.halignment="RIGHT">
-                     <image>
-                        <Image url="@../commons/images/warning.png" />
-                     </image>
-                  </ImageView>
-                  <Label fx:id="errorLabel" text="An error has occured!" wrapText="true" GridPane.columnIndex="1" />
-               </children>
-               <VBox.margin>
-                  <Insets bottom="40.0" />
-               </VBox.margin>
-            </GridPane>
-            <Button fx:id="closeButton" mnemonicParsing="false" onAction="#closeAndKill" text="Close">
-               <styleClass>
-                  <String fx:value="button" />
-                  <String fx:value="grey" />
-               </styleClass></Button>
-         </children>
-      </VBox>
-  </children>
-   <stylesheets>
-      <URL value="@splash.css" />
-      <URL value="@../commons/globals.css" />
-   </stylesheets>
+<?import javafx.scene.image.*?>
+<?import javafx.scene.layout.*?>
+<?import java.lang.String?>
+<?import java.net.URL?>
+<Pane fx:id="splash" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
+      prefHeight="457.0" prefWidth="760.0" styleClass="transparent" xmlns="http://javafx.com/javafx/8.0.60"
+      xmlns:fx="http://javafx.com/fxml/1" fx:controller="fr.acinq.eclair.gui.controllers.SplashController">
+    <children>
+        <ImageView fx:id="imgBlurred" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="115.0" pickOnBounds="true"
+                   preserveRatio="true">
+            <image>
+                <Image url="@../commons/images/eclair01-icon.png"/>
+            </image>
+            <effect>
+                <BoxBlur height="114.75" width="92.44"/>
+            </effect>
+        </ImageView>
+        <ImageView fx:id="img" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="114.0" opacity="0.0"
+                   pickOnBounds="true" preserveRatio="true">
+            <image>
+                <Image url="@../commons/images/eclair01-icon.png"/>
+            </image>
+        </ImageView>
+        <VBox fx:id="errorBox" alignment="CENTER" layoutX="195.0" layoutY="71.0" opacity="0.0" prefWidth="370.0"
+              styleClass="error-box">
+            <children>
+                <GridPane hgap="10.0">
+                    <columnConstraints>
+                        <ColumnConstraints hgrow="SOMETIMES" minWidth="40.0" prefWidth="40.0"/>
+                        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0"/>
+                    </columnConstraints>
+                    <rowConstraints>
+                        <RowConstraints minHeight="45.0" vgrow="SOMETIMES"/>
+                    </rowConstraints>
+                    <children>
+                        <ImageView fitHeight="32.0" fitWidth="32.0" pickOnBounds="true" preserveRatio="true"
+                                   GridPane.halignment="RIGHT">
+                            <image>
+                                <Image url="@../commons/images/warning.png"/>
+                            </image>
+                        </ImageView>
+                        <Label fx:id="errorLabel" text="An error has occured!" wrapText="true"
+                               GridPane.columnIndex="1"/>
+                    </children>
+                    <VBox.margin>
+                        <Insets bottom="40.0"/>
+                    </VBox.margin>
+                </GridPane>
+                <Button fx:id="closeButton" mnemonicParsing="false" onAction="#closeAndKill" text="Close">
+                    <styleClass>
+                        <String fx:value="button"/>
+                        <String fx:value="grey"/>
+                    </styleClass>
+                </Button>
+            </children>
+        </VBox>
+    </children>
+    <stylesheets>
+        <URL value="@splash.css"/>
+        <URL value="@../commons/globals.css"/>
+    </stylesheets>
 </Pane>

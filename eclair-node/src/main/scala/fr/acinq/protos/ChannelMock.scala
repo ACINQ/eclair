@@ -95,7 +95,7 @@ object NewChannel extends App {
   val pipe = system.actorOf(Props(new TestPipe()))
   val a = system.actorOf(Props(new ChannelMock(pipe)), name = "a")
   val b = system.actorOf(Props(new ChannelMock(pipe)), name = "b")
-  pipe !(a, b, new File("eclair-node/rusty-scripts/15-fee-twice-back-to-back.script"))
+  pipe ! (a, b, new File("eclair-node/rusty-scripts/15-fee-twice-back-to-back.script"))
 
 }
 
@@ -118,6 +118,7 @@ class TestPipe() extends Actor with ActorLogging with Stash {
 
   def exec(script: List[String], a: ActorRef, b: ActorRef): Unit = {
     def resolve(x: String) = if (x == "A") a else b
+
     script match {
       case offer(x, i) :: rest =>
         resolve(x) ! CmdOffer(i.toInt)
@@ -188,8 +189,11 @@ class TestPipe() extends Actor with ActorLogging with Stash {
         s"  Offered htlcs: ${my_commit.selected.filter(_ % 2 != even).mkString(" ")}",
         s"  Received htlcs: ${my_commit.selected.filter(_ % 2 == even).mkString(" ")}",
         s"  Fee level ${my_commit.fee_level}",
-        s"  SIGNED").filterNot(_ == "  Fee level 0") // TODO ???
-    def rtrim(s: String) = s.replaceAll("\\s+$", "")
+        s"  SIGNED").filterNot(_ == "  Fee level 0")
+
+      // TODO ???
+      def rtrim(s: String) = s.replaceAll("\\s+$", "")
+
       l.foreach(s => {
         fout.write(rtrim(s))
         fout.newLine()

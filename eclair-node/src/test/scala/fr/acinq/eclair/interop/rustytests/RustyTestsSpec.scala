@@ -4,10 +4,10 @@ import java.io.File
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit.{TestActorRef, TestFSMRef, TestKit}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import akka.testkit.{TestFSMRef, TestKit}
+import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
-import TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import org.junit.runner.RunWith
@@ -33,7 +33,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "A"))
-    pipe !(alice, bob)
+    pipe ! (alice, bob)
     within(30 seconds) {
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
@@ -49,13 +49,13 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     TestKit.shutdownActorSystem(system)
   }
 
-  test("01-offer1") { case (ref, res) => assert(ref === res)}
-  test("02-offer2") { case (ref, res) => assert(ref === res)}
-  test("03-fulfill1") { case (ref, res) => assert(ref === res)}
-  test("04-two-commits-onedir") { case (ref, res) => assert(ref === res)}
+  test("01-offer1") { case (ref, res) => assert(ref === res) }
+  test("02-offer2") { case (ref, res) => assert(ref === res) }
+  test("03-fulfill1") { case (ref, res) => assert(ref === res) }
+  test("04-two-commits-onedir") { case (ref, res) => assert(ref === res) }
   // test("05-two-commits-in-flight") { case (ref, res) => assert(ref === res)} DOES NOT PASS : cannot send two commit in a row (without having first revocation)
-  test("10-offers-crossover") { case (ref, res) => assert(ref === res)}
-  test("11-commits-crossover") { case (ref, res) => assert(ref === res)}
+  test("10-offers-crossover") { case (ref, res) => assert(ref === res) }
+  test("11-commits-crossover") { case (ref, res) => assert(ref === res) }
   /*test("13-fee") { case (ref, res) => assert(ref === res)}
   test("14-fee-twice") { case (ref, res) => assert(ref === res)}
   test("15-fee-twice-back-to-back") { case (ref, res) => assert(ref === res)}*/

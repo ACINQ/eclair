@@ -4,15 +4,14 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
 import akka.util.ByteString
-import fr.acinq.eclair._
 import fr.acinq.bitcoin.{BinaryData, Crypto, Hash}
-import fr.acinq.eclair.channel.simulator.Pipe
+import fr.acinq.eclair.channel.Pipe
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
 object EncryptorSpec {
   val random = new scala.util.Random()
@@ -22,7 +21,7 @@ object EncryptorSpec {
 
     def receive = running(Encryptor(sendingKey, 0), Decryptor(receivinKey, 0))
 
-    def running(encryptor: Encryptor, decryptor: Decryptor) : Receive = {
+    def running(encryptor: Encryptor, decryptor: Decryptor): Receive = {
       case chunk: BinaryData =>
         val decryptor1 = Decryptor.add(decryptor, ByteString.fromArray(chunk))
         decryptor1.bodies.map(_ => latch.countDown())
@@ -34,10 +33,12 @@ object EncryptorSpec {
         context become running(encryptor1, decryptor)
     }
   }
+
 }
 
 @RunWith(classOf[JUnitRunner])
 class EncryptorSpec extends FunSuite {
+
   import EncryptorSpec._
 
   test("encryption/description tests") {

@@ -24,7 +24,7 @@ class Client(remote: InetSocketAddress, amount: Satoshi, register: ActorRef) ext
       log.info(s"connected to $remote")
       val connection = sender()
       register ! CreateChannel(connection, Some(amount))
-    // TODO : kill this actor ?
+    // TODO: kill this actor ?
   }
 }
 

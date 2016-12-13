@@ -5,10 +5,10 @@ import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.peer.{NewBlock, NewTransaction}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.channel.Scripts
+import fr.acinq.eclair.transactions.OldScripts
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 26/04/2016.
@@ -16,6 +16,7 @@ import scala.concurrent.duration._
 class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinClient(new BitcoinJsonRPCClient("", "", "", 0)) {
 
   import scala.concurrent.ExecutionContext.Implicits.global
+
   system.scheduler.schedule(100 milliseconds, 100 milliseconds, new Runnable {
     override def run(): Unit = system.eventStream.publish(NewBlock(null)) // blocks are not actually interpreted
   })
@@ -23,7 +24,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
   override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, Scripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
+      txOut = TxOut(amount, OldScripts.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
       lockTime = 0
     )
     Future.successful((anchorTx, 0))

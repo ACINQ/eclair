@@ -2,9 +2,8 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CMD_SIGN}
-import lightning.update_add_htlc
+import fr.acinq.eclair.wire.UpdateAddHtlc
 
 import scala.util.Random
 
@@ -22,9 +21,10 @@ class LocalPaymentHandler extends Actor with ActorLogging {
     random.nextBytes(r)
     r
   }
+
   override def receive: Receive = run(Map())
 
-  //TODO: store this map on file ?
+  // TODO: store this map on file ?
   def run(h2r: Map[BinaryData, BinaryData]): Receive = {
     case 'genh =>
       val r = generateR()
@@ -32,14 +32,14 @@ class LocalPaymentHandler extends Actor with ActorLogging {
       sender ! h
       context.become(run(h2r + (h -> r)))
 
-    case htlc: update_add_htlc if h2r.contains(htlc.rHash) =>
-      val r = h2r(htlc.rHash)
+    case htlc: UpdateAddHtlc if h2r.contains(htlc.paymentHash) =>
+      val r = h2r(htlc.paymentHash)
       sender ! CMD_SIGN
       sender ! CMD_FULFILL_HTLC(htlc.id, r)
       sender ! CMD_SIGN
-      context.become(run(h2r - htlc.rHash))
+      context.become(run(h2r - htlc.paymentHash))
 
-    case htlc: update_add_htlc =>
+    case htlc: UpdateAddHtlc =>
       sender ! CMD_SIGN
       sender ! CMD_FAIL_HTLC(htlc.id, "unkown H")
       sender ! CMD_SIGN

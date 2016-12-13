@@ -5,7 +5,6 @@ import fr.acinq.eclair.Globals
 import fr.acinq.eclair.channel.{ChannelChangedState, DATA_NORMAL, NORMAL}
 import grizzled.slf4j.Logging
 import org.kitteh.irc.client.library.Client
-import org.kitteh.irc.client.library.element.ISupportParameter.Network
 import org.kitteh.irc.client.library.event.channel.ChannelUsersUpdatedEvent
 import org.kitteh.irc.client.library.event.client.ClientConnectedEvent
 import org.kitteh.irc.client.library.event.helper.ChannelUserListChangeEvent
@@ -13,8 +12,8 @@ import org.kitteh.irc.client.library.event.helper.ChannelUserListChangeEvent.Cha
 import org.kitteh.irc.client.library.event.user.PrivateMessageEvent
 import org.kitteh.irc.lib.net.engio.mbassy.listener.Handler
 
-import scala.util.Random
 import scala.collection.JavaConversions._
+import scala.util.Random
 
 /**
   * Created by PM on 25/08/2016.

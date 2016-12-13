@@ -9,6 +9,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef}
 /**
   * Purpose of this actor is to be an alias for its origin actor.
   * It allows to reference the using {{{system.actorSelection()}}} with a meaningful name
+  *
   * @param origin aliased actor
   */
 class AliasActor(origin: ActorRef) extends Actor with ActorLogging {

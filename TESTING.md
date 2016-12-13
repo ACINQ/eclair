@@ -55,9 +55,9 @@ curl -X POST -H "Content-Type: application/json" -d '{
      "params" : [ "localhost", 46000, 3000000 ]
  }' http://localhost:8080
 ```
-Since eclair is funder, it will create and publish the anchor tx
+Since eclair is funder, it will create and publish the funding tx
 
-Mine a few blocks to confirm the anchor tx:
+Mine a few blocks to confirm the funding tx:
 ```shell
 bitcoin-cli generate 10
 ```

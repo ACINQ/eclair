@@ -7,13 +7,12 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router._
-import lightning.locktime.Locktime.Blocks
+import lightning.route_step
 import lightning.route_step.Next
-import lightning.{locktime, route_step, sha256_hash}
 
 // @formatter:off
 
-case class CreatePayment(amountMsat: Int, h: sha256_hash, targetNodeId: BinaryData)
+case class CreatePayment(amountMsat: Int, h: BinaryData, targetNodeId: BinaryData)
 
 sealed trait Data
 case class WaitingForRequest(currentBlockCount: Long) extends Data
@@ -67,7 +66,7 @@ class PaymentLifecycle(router: ActorRef, selector: ActorRef, initialBlockCount: 
       val next = r.drop(1).head
       val others = r.drop(2)
       val route = buildRoute(c.amountMsat, next +: others)
-      val cmd = CMD_ADD_HTLC(route.steps(0).amount, c.h, locktime(Blocks(currentBlockCount.toInt + 100 + route.steps.size - 2)), route.copy(steps = route.steps.tail), commit = true)
+      val cmd = CMD_ADD_HTLC(route.steps(0).amount, c.h, currentBlockCount.toInt + 100 + route.steps.size - 2, route.copy(steps = route.steps.tail), commit = true)
       context.system.eventStream.subscribe(self, classOf[PaymentSent])
       context.system.eventStream.subscribe(self, classOf[PaymentFailed])
       context.system.eventStream.unsubscribe(self, classOf[CurrentBlockCount])
@@ -81,11 +80,11 @@ class PaymentLifecycle(router: ActorRef, selector: ActorRef, initialBlockCount: 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event("ok", _) => stay()
 
-    case Event(e@PaymentSent(_, h), WaitingForComplete(s, cmd, channel)) if h == cmd.rHash =>
+    case Event(e@PaymentSent(_, h), WaitingForComplete(s, cmd, channel)) if h == cmd.paymentHash =>
       s ! "sent"
       stop(FSM.Normal)
 
-    case Event(e@PaymentFailed(_, h, reason), WaitingForComplete(s, cmd, channel)) if h == cmd.rHash =>
+    case Event(e@PaymentFailed(_, h, reason), WaitingForComplete(s, cmd, channel)) if h == cmd.paymentHash =>
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 
@@ -101,7 +100,7 @@ object PaymentLifecycle {
 
   def buildRoute(finalAmountMsat: Int, nodeIds: Seq[BinaryData]): lightning.route = {
 
-    // TODO : use actual fee parameters that are specific to each node
+    // TODO: use actual fee parameters that are specific to each node
     def fee(amountMsat: Int) = nodeFee(Globals.base_fee, Globals.proportional_fee, amountMsat).toInt
 
     var amountMsat = finalAmountMsat

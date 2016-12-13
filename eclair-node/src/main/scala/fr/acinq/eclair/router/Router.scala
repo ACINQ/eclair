@@ -1,15 +1,13 @@
 package fr.acinq.eclair.router
 
-import akka.actor.{Actor, ActorLogging, Status}
+import akka.actor.{Actor, ActorLogging}
 import akka.pattern.pipe
-
 import fr.acinq.bitcoin.BinaryData
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
-import scala.concurrent.{ExecutionContext, Future}
 import scala.collection.JavaConversions._
-import scala.util.{Failure, Success}
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Created by PM on 24/05/2016.
@@ -33,7 +31,7 @@ class Router extends Actor with ActorLogging {
       log.info(s"removed channel ${c.id} from available routes")
       context become main(channels - c.id)
     case 'network => sender ! channels.values
-    case RouteRequest(start, end) => findRoute(start, end, channels) map(RouteResponse(_)) pipeTo sender
+    case RouteRequest(start, end) => findRoute(start, end, channels) map (RouteResponse(_)) pipeTo sender
   }
 }
 

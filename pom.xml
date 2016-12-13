@@ -45,8 +45,11 @@
         <maven.compiler.target>1.7</maven.compiler.target>
         <scala.version>2.11.8</scala.version>
         <scala.version.short>2.11</scala.version.short>
-        <akka.version>2.4.12</akka.version>
+        <akka.version>2.4.9</akka.version>
         <bitcoinlib.version>0.9.6</bitcoinlib.version>
+        <acinqtools.version>1.2</acinqtools.version>
+        <akka.version>2.4.12</akka.version>
+        <bitcoinlib.version>0.9.7</bitcoinlib.version>
         <scalapb.version>0.4.21</scalapb.version>
     </properties>
 

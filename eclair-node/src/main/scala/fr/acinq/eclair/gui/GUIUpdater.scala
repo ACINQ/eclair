@@ -21,11 +21,12 @@ import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 /**
   * Created by PM on 16/08/2016.
   */
-class GUIUpdater(primaryStage: Stage, mainController:MainController, setup: Setup) extends Actor with ActorLogging {
+class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Setup) extends Actor with ActorLogging {
 
   class NamedEdge(val id: BinaryData) extends DefaultEdge {
     override def toString: String = s"${id.toString.take(8)}..."
   }
+
   val graph = new SimpleGraph[BinaryData, NamedEdge](classOf[NamedEdge])
   graph.addVertex(Globals.Node.publicKey)
 
@@ -42,7 +43,7 @@ class GUIUpdater(primaryStage: Stage, mainController:MainController, setup: Setu
       val root = loader.load[VBox]
 
       channelPaneController.nodeId.setText(s"$theirNodeId")
-      channelPaneController.funder.setText(params.anchorAmount.map(_ => "Yes").getOrElse("No"))
+      channelPaneController.funder.setText("(deprecated)")
       channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent): Unit = channel ! CMD_CLOSE(None)
       })
@@ -78,10 +79,10 @@ class GUIUpdater(primaryStage: Stage, mainController:MainController, setup: Setu
 
     case ChannelSignatureReceived(channel, commitments) =>
       val channelPane = m(channel)
-      val bal = commitments.ourCommit.spec.amount_us_msat.toDouble / (commitments.ourCommit.spec.amount_us_msat.toDouble + commitments.ourCommit.spec.amount_them_msat.toDouble)
+      val bal = commitments.localCommit.spec.to_local_msat.toDouble / (commitments.localCommit.spec.to_local_msat.toDouble + commitments.localCommit.spec.to_remote_msat.toDouble)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
-          channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.ourCommit.spec.amount_us_msat / 1000L)).amount}")
+          channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.localCommit.spec.to_local_msat / 1000L)).amount}")
           channelPane.balanceBar.setProgress(bal)
         }
       })

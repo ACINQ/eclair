@@ -4,7 +4,8 @@ import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
-import fr.acinq.eclair.channel.{BITCOIN_ANCHOR_SPENT, Scripts}
+import fr.acinq.eclair.channel.BITCOIN_FUNDING_SPENT
+import fr.acinq.eclair.transactions.OldScripts
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
@@ -27,14 +28,14 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, minDepth, event)
           if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          channel ! (BITCOIN_ANCHOR_SPENT, tx)
+          channel ! (BITCOIN_FUNDING_SPENT, tx)
           self ! ('remove, w)
         case _ => {}
       }
 
     case NewBlock(block) =>
       client.getBlockCount.map(count => context.system.eventStream.publish(CurrentBlockCount(count)))
-      // TODO : beware of the herd effect
+      // TODO: beware of the herd effect
       watches.collect {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
           client.getTxConfirmations(txId.toString).map(_ match {
@@ -69,13 +70,13 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       }
 
     case PublishAsap(tx) =>
-      val cltvTimeout = Scripts.cltvTimeout(tx)
-      val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
+      val cltvTimeout = OldScripts.cltvTimeout(tx)
+      val csvTimeout = currentBlockCount + OldScripts.csvTimeout(tx)
       val timeout = Math.max(cltvTimeout, csvTimeout)
       val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
       context.become(watching(watches, block2tx1, currentBlockCount))
 
-    case MakeAnchor(ourCommitPub, theirCommitPub, amount) =>
+    case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
       client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)
 
     case Terminated(channel) =>

@@ -1,74 +1,46 @@
 package fr.acinq.eclair.channel
 
-import com.google.protobuf.ByteString
-import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction, TxOut}
-import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Scripts.TxTemplate
-import fr.acinq.eclair.channel.TypeDefs.Change
+import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.crypto.ShaChain
-import lightning._
-
-trait TxDb {
-  def add(parentId: BinaryData, spending: Transaction): Unit
-
-  def get(parentId: BinaryData): Option[Transaction]
-}
-
-class BasicTxDb extends TxDb {
-  val db = collection.mutable.HashMap.empty[BinaryData, Transaction]
-
-  override def add(parentId: BinaryData, spending: Transaction): Unit = {
-    db += parentId -> spending
-  }
-
-  override def get(parentId: BinaryData): Option[Transaction] = db.get(parentId)
-}
+import fr.acinq.eclair.transactions.{CommitTxTemplate, CommitmentSpec, Htlc}
+import fr.acinq.eclair.wire._
 
 // @formatter:off
-
-object TypeDefs {
-  type Change = GeneratedMessage
+case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
+  def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
-
-case class OurChanges(proposed: List[Change], signed: List[Change], acked: List[Change]) {
-  def all: List[Change] = proposed ++ signed ++ acked
-}
-
-case class TheirChanges(proposed: List[Change], acked: List[Change])
-
-case class Changes(ourChanges: OurChanges, theirChanges: TheirChanges)
-
-case class OurCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-
-case class TheirCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, theirRevocationHash: sha256_hash)
-
+case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage])
+case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
+case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: BinaryData)
 // @formatter:on
 
 /**
-  * about theirNextCommitInfo:
+  * about remoteNextCommitInfo:
   * we either:
   * - have built and signed their next commit tx with their next revocation hash which can now be discarded
-  * - have their next revocation hash
+  * - have their next per-commitment point
   * So, when we've signed and sent a commit message and are waiting for their revocation message,
-  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next revocation hash
+  * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
   */
-case class Commitments(ourParams: OurChannelParams, theirParams: TheirChannelParams,
-                       ourCommit: OurCommit, theirCommit: TheirCommit,
-                       ourChanges: OurChanges, theirChanges: TheirChanges,
-                       ourCurrentHtlcId: Long,
-                       theirNextCommitInfo: Either[TheirCommit, BinaryData],
-                       anchorOutput: TxOut, theirPreimages: ShaChain, txDb: TxDb) {
+case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
+                       localCommit: LocalCommit, remoteCommit: RemoteCommit,
+                       localChanges: LocalChanges, remoteChanges: RemoteChanges,
+                       localCurrentHtlcId: Long,
+                       remoteNextCommitInfo: Either[RemoteCommit, BinaryData],
+                       fundingTxOutput: TxOut,
+                       remotePerCommitmentSecrets: ShaChain, txDb: TxDb, channelId: Long) {
   def anchorId: BinaryData = {
-    assert(ourCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
-    ourCommit.publishableTx.txIn(0).outPoint.hash
+    assert(localCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
+    localCommit.publishableTx.txIn(0).outPoint.hash
   }
 
-  def hasNoPendingHtlcs: Boolean = ourCommit.spec.htlcs.isEmpty && theirCommit.spec.htlcs.isEmpty
+  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 
-  def addOurProposal(proposal: Change): Commitments = Commitments.addOurProposal(this, proposal)
+  def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
-  def addTheirProposal(proposal: Change): Commitments = Commitments.addTheirProposal(this, proposal)
+  def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 }
 
 object Commitments {
@@ -79,109 +51,116 @@ object Commitments {
     * @param proposal
     * @return an updated commitment instance
     */
-  private def addOurProposal(commitments: Commitments, proposal: Change): Commitments =
-  commitments.copy(ourChanges = commitments.ourChanges.copy(proposed = commitments.ourChanges.proposed :+ proposal))
+  private def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
+    commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
 
-  private def addTheirProposal(commitments: Commitments, proposal: Change): Commitments =
-    commitments.copy(theirChanges = commitments.theirChanges.copy(proposed = commitments.theirChanges.proposed :+ proposal))
+  private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
+    commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
 
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, update_add_htlc) = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
     // our available funds as seen by them, including all pending changes
-    val reduced = Helpers.reduce(commitments.theirCommit.spec, commitments.theirChanges.acked, commitments.ourChanges.proposed)
+    val reduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.acked, commitments.localChanges.proposed)
     // a node cannot spend pending incoming htlcs
-    val available = reduced.amount_them_msat
+    val available = reduced.to_remote_msat
     if (cmd.amountMsat > available) {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
-      val id = cmd.id.getOrElse(commitments.ourCurrentHtlcId + 1)
-      val add = update_add_htlc(id, cmd.amountMsat, cmd.rHash, cmd.expiry, routing(ByteString.copyFrom(cmd.payment_route.toByteArray)))
-      val commitments1 = addOurProposal(commitments, add).copy(ourCurrentHtlcId = id)
+      val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
+      // TODO: fix routing
+      val add: UpdateAddHtlc = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, ""/*routing(ByteString.copyFrom(cmd.payment_route.toByteArray))*/)
+      val commitments1 = addLocalProposal(commitments, add).copy(localCurrentHtlcId = id)
       (commitments1, add)
     }
   }
 
-  def receiveAdd(commitments: Commitments, add: update_add_htlc): Commitments = {
+  def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     // their available funds as seen by us, including all pending changes
-    val reduced = Helpers.reduce(commitments.ourCommit.spec, commitments.ourChanges.acked, commitments.theirChanges.proposed)
+    val reduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments.localChanges.acked, commitments.remoteChanges.proposed)
     // a node cannot spend pending incoming htlcs
-    val available = reduced.amount_them_msat
+    val available = reduced.to_remote_msat
     if (add.amountMsat > available) {
       throw new RuntimeException("Insufficient funds")
     } else {
       // TODO: nodeIds are ignored
-      addTheirProposal(commitments, add)
+      addRemoteProposal(commitments, add)
     }
   }
 
-  def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, update_fulfill_htlc) = {
-    commitments.ourCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
-      case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(cmd.r)) =>
-        val fulfill = update_fulfill_htlc(cmd.id, cmd.r)
-        val commitments1 = addOurProposal(commitments, fulfill)
+  def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC, channelId: Long): (Commitments, UpdateFulfillHtlc) = {
+    commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
+      case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
+        val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
+        val commitments1 = addLocalProposal(commitments, fulfill)
         (commitments1, fulfill)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${cmd.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
     }
   }
 
-  def receiveFulfill(commitments: Commitments, fulfill: update_fulfill_htlc): (Commitments, update_add_htlc) = {
-    commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
-      case Some(htlc) if htlc.rHash == bin2sha256(Crypto.sha256(fulfill.r)) => (addTheirProposal(commitments, fulfill), htlc)
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): (Commitments, UpdateAddHtlc) = {
+    commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
+      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => (addRemoteProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
-      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO : we should fail the channel
+      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO: we should fail the channel
     }
   }
 
-  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, update_fail_htlc) = {
-    commitments.ourCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u } match {
+  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, UpdateFailHtlc) = {
+    commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u } match {
       case Some(htlc) =>
-        val fail = update_fail_htlc(cmd.id, fail_reason(ByteString.copyFromUtf8(cmd.reason)))
-        val commitments1 = addOurProposal(commitments, fail)
+        val fail: UpdateFailHtlc = ???
+        //UpdateFailHtlc(cmd.channelId, cmd.id, fail_reason(ByteString.copyFromUtf8(cmd.reason)))
+        val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: update_fail_htlc): (Commitments, update_add_htlc) = {
-    commitments.theirCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u.add } match {
-      case Some(htlc) => (addTheirProposal(commitments, fail), htlc)
-      case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO : we should fail the channel
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): (Commitments, UpdateAddHtlc) = {
+    commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fail.id => u.add } match {
+      case Some(htlc) => (addRemoteProposal(commitments, fail), htlc)
+      case None => throw new RuntimeException(s"unknown htlc id=${fail.id}") // TODO: we should fail the channel
     }
   }
 
-  def weHaveChanges(commitments: Commitments): Boolean = commitments.theirChanges.acked.size > 0 || commitments.ourChanges.proposed.size > 0
+  def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.size > 0 || commitments.localChanges.proposed.size > 0
 
-  def theyHaveChanges(commitments: Commitments): Boolean = commitments.ourChanges.acked.size > 0 || commitments.theirChanges.proposed.size > 0
+  def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.size > 0 || commitments.remoteChanges.proposed.size > 0
 
-  def sendCommit(commitments: Commitments): (Commitments, update_commit) = {
+  def revocationPreimage(seed: BinaryData, index: Long): BinaryData = ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index)
+
+  def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
+
+  def sendCommit(commitments: Commitments): (Commitments, CommitSig) = {
     import commitments._
-    commitments.theirNextCommitInfo match {
-      case Right(theirNextRevocationHash) if !weHaveChanges(commitments) =>
+    commitments.remoteNextCommitInfo match {
+      case Right(_) if !localHasChanges(commitments) =>
         throw new RuntimeException("cannot sign when there are no changes")
-      case Right(theirNextRevocationHash) =>
+      case Right(remoteNextPerCommitmentPoint) =>
         // sign all our proposals + their acked proposals
         // their commitment now includes all our changes  + their acked changes
-        val spec = Helpers.reduce(theirCommit.spec, theirChanges.acked, ourChanges.proposed)
-        val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirNextRevocationHash, spec)
+        val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
+        val theirTxTemplate = CommitmentSpec.makeRemoteTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, remoteNextPerCommitmentPoint, spec)
         val theirTx = theirTxTemplate.makeTx
         // don't sign if they don't get paid
-        val commit = if (theirTxTemplate.weHaveAnOutput) {
-          val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, theirTx)
-          update_commit(Some(ourSig))
-        } else {
-          update_commit(None)
-        }
+        val commit: CommitSig = ???
+        /*if (theirTxTemplate.weHaveAnOutput) {
+                 val ourSig = Helpers.sign(localParams, remoteParams, anchorOutput.amount, theirTx)
+                 CommitSig(Some(ourSig))
+               } else {
+                 CommitSig(None)
+               }*/
         val commitments1 = commitments.copy(
-          theirNextCommitInfo = Left(TheirCommit(theirCommit.index + 1, spec, theirTx.txid, theirNextRevocationHash)),
-          ourChanges = ourChanges.copy(proposed = Nil, signed = ourChanges.proposed),
-          theirChanges = theirChanges.copy(acked = Nil))
+          remoteNextCommitInfo = Left(RemoteCommit(remoteCommit.index + 1, spec, theirTx.txid, remoteNextPerCommitmentPoint)),
+          localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
+          remoteChanges = remoteChanges.copy(acked = Nil))
         (commitments1, commit)
-      case Left(theirNextCommit) =>
+      case Left(remoteNextCommit) =>
         throw new RuntimeException("cannot sign until next revocation hash is received")
     }
   }
 
-  def receiveCommit(commitments: Commitments, commit: update_commit): (Commitments, update_revocation) = {
+  def receiveCommit(commitments: Commitments, commit: CommitSig): (Commitments, RevokeAndAck) = {
     import commitments._
     // they sent us a signature for *their* view of *our* next commit tx
     // so in terms of rev.hashes and indexes we have:
@@ -192,81 +171,82 @@ object Commitments {
     // we will reply to this sig with our old revocation hash preimage (at index) and our next revocation hash (at index + 1)
     // and will increment our index
 
-    if (!theyHaveChanges(commitments))
+    if (!remoteHasChanges(commitments))
       throw new RuntimeException("cannot sign when there are no changes")
 
     // check that their signature is valid
     // signatures are now optional in the commit message, and will be sent only if the other party is actually
     // receiving money i.e its commit tx has one output for them
 
-    val spec = Helpers.reduce(ourCommit.spec, ourChanges.acked, theirChanges.proposed)
-    val ourNextRevocationHash = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 1)
-    val ourTxTemplate = Helpers.makeOurTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, ourNextRevocationHash, spec)
+    val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
+    val ourNextRevocationHash = revocationHash(localParams.shaSeed, localCommit.index + 1)
+    val ourTxTemplate = CommitmentSpec.makeLocalTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, ourNextRevocationHash, spec)
 
     // this tx will NOT be signed if our output is empty
-    val ourCommitTx = commit.sig match {
-      case None if ourTxTemplate.weHaveAnOutput => throw new RuntimeException("expected signature")
-      case None => ourTxTemplate.makeTx
-      case Some(_) if !ourTxTemplate.weHaveAnOutput => throw new RuntimeException("unexpected signature")
-      case Some(theirSig) =>
-        val ourTx = ourTxTemplate.makeTx
-        val ourSig = Helpers.sign(ourParams, theirParams, anchorOutput.amount, ourTx)
-        val signedTx = Helpers.addSigs(ourParams, theirParams, anchorOutput.amount, ourTx, ourSig, theirSig)
-        Helpers.checksig(ourParams, theirParams, anchorOutput, signedTx).get
-        signedTx
-    }
+    val ourCommitTx: Transaction = ???
+    /*commit.sig match {
+          case None if ourTxTemplate.weHaveAnOutput => throw new RuntimeException("expected signature")
+          case None => ourTxTemplate.makeTx
+          case Some(_) if !ourTxTemplate.weHaveAnOutput => throw new RuntimeException("unexpected signature")
+          case Some(theirSig) =>
+            val ourTx = ourTxTemplate.makeTx
+            val ourSig = Helpers.sign(localParams, remoteParams, anchorOutput.amount, ourTx)
+            val signedTx = Helpers.addSigs(localParams, remoteParams, anchorOutput.amount, ourTx, ourSig, theirSig)
+            Helpers.checksig(localParams, remoteParams, anchorOutput, signedTx).get
+            signedTx
+        }*/
 
     // we will send our revocation preimage + our next revocation hash
-    val ourRevocationPreimage = Helpers.revocationPreimage(ourParams.shaSeed, ourCommit.index)
-    val ourNextRevocationHash1 = Helpers.revocationHash(ourParams.shaSeed, ourCommit.index + 2)
-    val revocation = update_revocation(ourRevocationPreimage, ourNextRevocationHash1)
+    val ourRevocationPreimage = revocationPreimage(localParams.shaSeed, localCommit.index)
+    val ourNextRevocationHash1 = revocationHash(localParams.shaSeed, localCommit.index + 2)
+    val revocation: RevokeAndAck = ??? //RevokeAndAck(ourRevocationPreimage, ourNextRevocationHash1)
 
     // update our commitment data
-    val ourCommit1 = ourCommit.copy(index = ourCommit.index + 1, spec, publishableTx = ourCommitTx)
-    val ourChanges1 = ourChanges.copy(acked = Nil)
-    val theirChanges1 = theirChanges.copy(proposed = Nil, acked = theirChanges.acked ++ theirChanges.proposed)
-    val commitments1 = commitments.copy(ourCommit = ourCommit1, ourChanges = ourChanges1, theirChanges = theirChanges1)
+    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTx = ourCommitTx)
+    val ourChanges1 = localChanges.copy(acked = Nil)
+    val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
+    val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
 
     (commitments1, revocation)
   }
 
-  def receiveRevocation(commitments: Commitments, revocation: update_revocation): Commitments = {
+  def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Commitments = {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
-    theirNextCommitInfo match {
-      case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.revocationPreimage)) != BinaryData(theirCommit.theirRevocationHash) =>
+    remoteNextCommitInfo match {
+      case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.perCommitmentSecret)) != BinaryData(remoteCommit.remotePerCommitmentPoint) =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // this is their revoked commit tx
-        val theirTxTemplate = Helpers.makeTheirTxTemplate(ourParams, theirParams, ourCommit.publishableTx.txIn, theirCommit.theirRevocationHash, theirCommit.spec)
+        val theirTxTemplate = CommitmentSpec.makeRemoteTxTemplate(localParams, remoteParams, localCommit.publishableTx.txIn, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
         val theirTx = theirTxTemplate.makeTx
-        val punishTx = Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, ourParams.finalPrivKey)
+        val punishTx: Transaction = ??? //Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, localParams.finalPrivKey)
         Transaction.correctlySpends(punishTx, Seq(theirTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         txDb.add(theirTx.txid, punishTx)
 
         commitments.copy(
-          ourChanges = ourChanges.copy(signed = Nil, acked = ourChanges.acked ++ ourChanges.signed),
-          theirCommit = theirNextCommit,
-          theirNextCommitInfo = Right(revocation.nextRevocationHash),
-          theirPreimages = commitments.theirPreimages.addHash(revocation.revocationPreimage, 0xFFFFFFFFFFFFFFFFL - commitments.theirCommit.index))
+          localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
+          remoteCommit = theirNextCommit,
+          remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+          remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFFFFFL - commitments.remoteCommit.index))
       case Right(_) =>
-        throw new RuntimeException("received unexpected update_revocation message")
+        throw new RuntimeException("received unexpected RevokeAndAck message")
     }
   }
 
-  def makeOurTxTemplate(commitments: Commitments): TxTemplate = {
-    Helpers.makeOurTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
-      Helpers.revocationHash(commitments.ourParams.shaSeed, commitments.ourCommit.index), commitments.ourCommit.spec)
+  def makeLocalTxTemplate(commitments: Commitments): CommitTxTemplate = {
+    CommitmentSpec.makeLocalTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
+      revocationHash(commitments.localParams.shaSeed, commitments.localCommit.index), commitments.localCommit.spec)
   }
 
-  def makeTheirTxTemplate(commitments: Commitments): TxTemplate = {
-    commitments.theirNextCommitInfo match {
+  def makeRemoteTxTemplate(commitments: Commitments): CommitTxTemplate = {
+    commitments.remoteNextCommitInfo match {
       case Left(theirNextCommit) =>
-        Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
-          theirNextCommit.theirRevocationHash, theirNextCommit.spec)
+        CommitmentSpec.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
+          theirNextCommit.remotePerCommitmentPoint, theirNextCommit.spec)
       case Right(revocationHash) =>
-        Helpers.makeTheirTxTemplate(commitments.ourParams, commitments.theirParams, commitments.ourCommit.publishableTx.txIn,
-          commitments.theirCommit.theirRevocationHash, commitments.theirCommit.spec)
+        CommitmentSpec.makeRemoteTxTemplate(commitments.localParams, commitments.remoteParams, commitments.localCommit.publishableTx.txIn,
+          commitments.remoteCommit.remotePerCommitmentPoint, commitments.remoteCommit.spec)
     }
   }
 }

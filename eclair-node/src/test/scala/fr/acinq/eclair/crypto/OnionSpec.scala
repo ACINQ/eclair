@@ -2,10 +2,9 @@ package fr.acinq.eclair.crypto
 
 import com.google.common.io.ByteStreams
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.ProtocolSpec
 import org.junit.runner.RunWith
-import org.scalatest.{Ignore, FunSuite}
 import org.scalatest.junit.JUnitRunner
+import org.scalatest.{FunSuite, Ignore}
 
 @Ignore
 @RunWith(classOf[JUnitRunner])
@@ -56,7 +55,7 @@ class OnionSpec extends FunSuite {
     "d93db8019a9392b3df11929896639ab1a069a0096e3defa595af16544957526b"
   )
 
-  val pubs = privs.map(k => Crypto.publicKeyFromPrivateKey(k :+ 1.toByte):BinaryData)
+  val pubs = privs.map(k => Crypto.publicKeyFromPrivateKey(k :+ 1.toByte): BinaryData)
 
   val node_keys: List[(BinaryData, BinaryData)] = List(
     ("665af9917fbbd9758fd53352275f9b555296ee16e20a73a069931959c0980935", "0204053aed6a50fd4062331fc951d5da830ba64c02bfd7a64571fe16a7c46befa8"),
@@ -81,7 +80,7 @@ class OnionSpec extends FunSuite {
     ("7c658eaf5532f5b1227b492f79e32bde474e03454f596066ded64a9e7805d5a3", "028e3d32443d5a927226a3c1959abd21fd7425687a65d39da4d00d19d60bd3dac7")
   )
 
-  val firstMessage: BinaryData = ByteStreams.toByteArray(classOf[ProtocolSpec].getResourceAsStream("/msg20"))
+  val firstMessage: BinaryData = ByteStreams.toByteArray(classOf[OnionSpec].getResourceAsStream("/msg20"))
 
   test("generate first message") {
     val check = Onion.makeFirstMessage(privs, node_keys.map(_._2), payloads)

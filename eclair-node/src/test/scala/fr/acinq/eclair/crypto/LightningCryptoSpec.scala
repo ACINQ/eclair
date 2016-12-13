@@ -19,7 +19,7 @@ class LightningCryptoSpec extends FunSuite {
   }
 
   test("Chacha20") {
-    val plaintext: BinaryData =  "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.".getBytes
+    val plaintext: BinaryData = "Ladies and Gentlemen of the class of '99: If I could offer you only one tip for the future, sunscreen would be it.".getBytes
     val key: BinaryData = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
     val nonce: BinaryData = "0000004a00000000"
 

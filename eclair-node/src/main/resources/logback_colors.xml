@@ -27,7 +27,8 @@
             <OnMatch>ACCEPT</OnMatch>
         </filter>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %blue(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %blue(%msg) %ex{12}%n
+            </pattern>
         </encoder>
     </appender>
 
@@ -42,13 +43,15 @@
             <OnMatch>ACCEPT</OnMatch>
         </filter>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %boldGreen(%msg) %ex{12}%n</pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %boldGreen(%msg)
+                %ex{12}%n
+            </pattern>
         </encoder>
     </appender>
 
-    <logger name="fr.acinq.eclair.channel" level="DEBUG" />
-    <logger name="fr.acinq.eclair.router" level="DEBUG" />
-    <logger name="fr.acinq.eclair.blockchain.peer.PeerClient" level="INFO" />
+    <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
+    <logger name="fr.acinq.eclair.router" level="DEBUG"/>
+    <logger name="fr.acinq.eclair.blockchain.peer.PeerClient" level="INFO"/>
 
     <root level="INFO">
         <appender-ref ref="CHANNEL"/>

@@ -12,8 +12,6 @@ import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
-import lightning.locktime
-import lightning.locktime.Locktime.Blocks
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
@@ -130,7 +128,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
   test("connect to lightningd") {
     val future = for {
       _ <- connect("localhost", 45000)
-      _ <- waitForState(OPEN_WAITING_THEIRANCHOR)
+      _ <- waitForState(WAIT_FOR_FUNDING_CREATED)
     } yield ()
     Await.result(future, 30 seconds)
   }
@@ -147,43 +145,43 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
     def now: Int = (System.currentTimeMillis() / 1000).toInt
 
     val future = for {
-      channelId <- listChannels.map(_.head).map(_.channelid.toString)
+      channelId <- listChannels.map(_.head).map(_.channelId.toString)
       peer = lncli.getPeers.head
       // lightningd sends us a htlc
       blockcount <- btccli.getBlockCount
       _ = lncli.devroutefail(false)
-      _ = lncli.newhtlc(peer.peerid, 70000000, blockcount + 288, Helpers.revocationHash(seed, 0))
+      _ = lncli.newhtlc(peer.peerid, 70000000, blockcount + 288, Commitments.revocationHash(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // we fulfill it
-      htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.add.id)
-      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Helpers.revocationPreimage(seed, 0)))
+      htlcid <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.head.add.id)
+      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid, Commitments.revocationPreimage(seed, 0)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       peer1 = lncli.getPeers.head
       _ = assert(peer1.their_amount + peer1.their_fee == 70000000)
       // lightningd sends us another htlc
-      _ = lncli.newhtlc(peer.peerid, 80000000, blockcount + 288, Helpers.revocationHash(seed, 1))
+      _ = lncli.newhtlc(peer.peerid, 80000000, blockcount + 288, Commitments.revocationHash(seed, 1))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
-      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.theirCommit.spec.htlcs.head.add.id)
-      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Helpers.revocationPreimage(seed, 1)))
+      htlcid1 <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.head.add.id)
+      _ <- sendCommand(channelId, CMD_FULFILL_HTLC(htlcid1, Commitments.revocationPreimage(seed, 1)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       peer2 = lncli.getPeers.head
       _ = assert(peer2.their_amount + peer2.their_fee == 70000000 + 80000000)
       // we send lightningd a HTLC
-      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Helpers.revocationHash(seed, 0), locktime(Blocks(blockcount.toInt + 576)), id = Some(42)))
+      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Commitments.revocationHash(seed, 0), blockcount.toInt + 576, id = Some(42)))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // and we ask lightingd to fulfill it
-      _ = lncli.fulfillhtlc(peer.peerid, 42, Helpers.revocationPreimage(seed, 0))
+      _ = lncli.fulfillhtlc(peer.peerid, 42, Commitments.revocationPreimage(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)
-      _ = assert(c.ourCommit.spec.amount_us_msat == 80000000)
+      _ = assert(c.localCommit.spec.to_local_msat == 80000000)
     } yield ()
     Await.result(future, 300000 seconds)
   }
@@ -220,7 +218,7 @@ object InteroperabilitySpec {
 
     /**
       *
-      * @return a funding address that can be used to connect to another node
+      * @return a funding tx address that can be used to connect to another node
       */
     def fund: String = {
       val raw = s"$path newaddr" !!
@@ -234,7 +232,7 @@ object InteroperabilitySpec {
       *
       * @param host node address
       * @param port node port
-      * @param tx   transaction that sends money to a funding address generated with the "fund" method
+      * @param tx   transaction that sends money to a funding tx address generated with the "fund" method
       */
     def connect(host: String, port: Int, tx: String): Unit = {
       assert(s"$path connect $host $port $tx".! == 0)

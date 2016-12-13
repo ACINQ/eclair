@@ -1,8 +1,10 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.ActorRef
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
-import lightning._
+import fr.acinq.bitcoin.{BinaryData, Transaction, TxOut}
+import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
+import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
+import lightning.{route, route_step}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -24,23 +26,21 @@ import scala.concurrent.duration.FiniteDuration
        "Y8888P"     888  d88P     888     888     8888888888 "Y8888P"
  */
 sealed trait State
-case object INIT_NOANCHOR extends State
-case object INIT_WITHANCHOR extends State
-case object OPEN_WAIT_FOR_OPEN_NOANCHOR extends State
-case object OPEN_WAIT_FOR_OPEN_WITHANCHOR extends State
-case object OPEN_WAIT_FOR_ANCHOR extends State
-case object OPEN_WAIT_FOR_COMMIT_SIG extends State
-case object OPEN_WAITING_THEIRANCHOR extends State
-case object OPEN_WAITING_OURANCHOR extends State
-case object OPEN_WAIT_FOR_COMPLETE_OURANCHOR extends State
-case object OPEN_WAIT_FOR_COMPLETE_THEIRANCHOR extends State
+case object WAIT_FOR_INIT_INTERNAL extends State
+case object WAIT_FOR_OPEN_CHANNEL extends State
+case object WAIT_FOR_ACCEPT_CHANNEL extends State
+case object WAIT_FOR_FUNDING_CREATED_INTERNAL extends State
+case object WAIT_FOR_FUNDING_CREATED extends State
+case object WAIT_FOR_FUNDING_SIGNED extends State
+case object WAIT_FOR_FUNDING_LOCKED_INTERNAL extends State
+case object WAIT_FOR_FUNDING_LOCKED extends State
 case object NORMAL extends State
 case object SHUTDOWN extends State
 case object NEGOTIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
-case object ERR_ANCHOR_LOST extends State
-case object ERR_ANCHOR_TIMEOUT extends State
+case object ERR_FUNDING_LOST extends State
+case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
 
 /*
@@ -54,17 +54,18 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
+case class INPUT_INIT_FUNDER(fundingSatoshis: Long, pushMsat: Long)
+case class INPUT_INIT_FUNDEE()
 case object INPUT_NO_MORE_HTLCS
-
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 
 sealed trait BitcoinEvent
-case object BITCOIN_ANCHOR_DEPTHOK extends BitcoinEvent
-case object BITCOIN_ANCHOR_LOST extends BitcoinEvent
-case object BITCOIN_ANCHOR_TIMEOUT extends BitcoinEvent
-case object BITCOIN_ANCHOR_SPENT extends BitcoinEvent
-case object BITCOIN_ANCHOR_OURCOMMIT_DELAYPASSED extends BitcoinEvent
+case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
+case object BITCOIN_FUNDING_LOST extends BitcoinEvent
+case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
+case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
+case object BITCOIN_FUNDING_OURCOMMIT_DELAYPASSED extends BitcoinEvent
 case object BITCOIN_SPEND_THEIRS_DONE extends BitcoinEvent
 case object BITCOIN_SPEND_OURS_DONE extends BitcoinEvent
 case object BITCOIN_STEAL_DONE extends BitcoinEvent
@@ -90,15 +91,15 @@ final case class Origin(channelId: BinaryData, htlc_id: Long)
 /**
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amountMsat: Int, rHash: sha256_hash, expiry: locktime, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
-final case class CMD_FULFILL_HTLC(id: Long, r: rval, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command
-final case class RES_GETINFO(nodeid: BinaryData, channelid: BinaryData, state: State, data: Data)
+final case class RES_GETINFO(nodeid: BinaryData, channelId: Long, state: State, data: Data)
 
 /*
       8888888b.        d8888 88888888888     d8888
@@ -115,53 +116,61 @@ sealed trait Data
 
 case object Nothing extends Data
 
-final case class OurChannelParams(delay: locktime, commitPrivKey: BinaryData, finalPrivKey: BinaryData, minDepth: Int, initialFeeRate: Long, shaSeed: BinaryData, anchorAmount: Option[Satoshi], autoSignInterval: Option[FiniteDuration] = None) {
-  val commitPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(commitPrivKey)
-  val finalPubKey: BinaryData = Crypto.publicKeyFromPrivateKey(finalPrivKey)
-}
-
-final case class TheirChannelParams(delay: locktime, commitPubKey: BinaryData, finalPubKey: BinaryData, minDepth: Option[Int], initialFeeRate: Long)
-
-object TheirChannelParams {
-  def apply(params: OurChannelParams) = new TheirChannelParams(params.delay, params.commitPubKey, params.finalPubKey, Some(params.minDepth), params.initialFeeRate)
-}
-
-sealed trait Direction
-case object IN extends Direction
-case object OUT extends Direction
-
-case class Htlc(direction: Direction, add: update_add_htlc, val previousChannelId: Option[BinaryData])
-
-final case class CommitmentSpec(htlcs: Set[Htlc], feeRate: Long, amount_us_msat: Long, amount_them_msat: Long) {
-  val totalFunds = amount_us_msat + amount_them_msat + htlcs.toSeq.map(_.add.amountMsat).sum
-}
-
-final case class ClosingData(ourScriptPubKey: BinaryData, theirScriptPubKey: Option[BinaryData])
-
 trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
-final case class DATA_OPEN_WAIT_FOR_OPEN(ourParams: OurChannelParams) extends Data
-final case class DATA_OPEN_WITH_ANCHOR_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: BinaryData, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAIT_FOR_ANCHOR(ourParams: OurChannelParams, theirParams: TheirChannelParams, theirRevocationHash: sha256_hash, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAIT_FOR_COMMIT_SIG(ourParams: OurChannelParams, theirParams: TheirChannelParams, anchorTx: Transaction, anchorOutputIndex: Int, initialCommitment: TheirCommit, theirNextRevocationHash: sha256_hash) extends Data
-final case class DATA_OPEN_WAITING(commitments: Commitments, deferred: Option[open_complete]) extends Data with HasCommitments
-final case class DATA_NORMAL(commitments: Commitments,
-                             ourShutdown: Option[close_shutdown],
-                             downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(commitments: Commitments,
-                               ourShutdown: close_shutdown, theirShutdown: close_shutdown,
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, fundingTxOutputIndex: Int, fundingTxOutput: TxOut, localSpec: CommitmentSpec, localTx: Transaction, remoteCommit: RemoteCommit) extends Data
+final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
+final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,
+                               ourShutdown: Shutdown, theirShutdown: Shutdown,
                                downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  ourShutdown: close_shutdown, theirShutdown: close_shutdown, ourSignature: close_signature) extends Data with HasCommitments
+final case class DATA_NEGOTIATING(channelId: Long, params: ChannelParams, commitments: Commitments,
+                                  ourShutdown: Shutdown, theirShutdown: Shutdown, ourClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
-                              ourSignature: Option[close_signature] = None,
+                              ourSignature: Option[ClosingSigned] = None,
                               mutualClosePublished: Option[Transaction] = None,
                               ourCommitPublished: Option[Transaction] = None,
                               theirCommitPublished: Option[Transaction] = None,
                               revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
   assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
 }
+
+final case class ChannelParams(localParams: LocalParams,
+                               remoteParams: RemoteParams,
+                               fundingSatoshis: Long,
+                               minimumDepth: Long,
+                               autoSignInterval: Option[FiniteDuration] = None)
+
+final case class LocalParams(dustLimitSatoshis: Long,
+                             maxHtlcValueInFlightMsat: Long,
+                             channelReserveSatoshis: Long,
+                             htlcMinimumMsat: Long,
+                             feeratePerKw: Long,
+                             toSelfDelay: Int,
+                             maxAcceptedHtlcs: Int,
+                             fundingPrivkey: Scalar,
+                             revocationSecret: Scalar,
+                             paymentSecret: Scalar,
+                             delayedPaymentKey: Scalar,
+                             finalPrivKey: Scalar,
+                             shaSeed: BinaryData)
+
+final case class RemoteParams(dustLimitSatoshis: Long,
+                              maxHtlcValueInFlightMsat: Long,
+                              channelReserveSatoshis: Long,
+                              htlcMinimumMsat: Long,
+                              feeratePerKw: Long,
+                              toSelfDelay: Int,
+                              maxAcceptedHtlcs: Int,
+                              fundingPubkey: Point,
+                              revocationBasepoint: Point,
+                              paymentBasepoint: Point,
+                              delayedPaymentBasepoint: Point)
 
 // @formatter:on

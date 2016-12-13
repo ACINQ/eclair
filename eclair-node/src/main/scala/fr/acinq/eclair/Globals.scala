@@ -2,8 +2,6 @@ package fr.acinq.eclair
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import lightning.locktime
-import lightning.locktime.Locktime.{Blocks}
 
 import scala.concurrent.duration._
 
@@ -24,10 +22,9 @@ object Globals {
     val id = publicKey.toString()
   }
 
-  val default_locktime = locktime(Blocks(144))
+  val default_locktime = 144
   val default_mindepth = 3
-  val commit_fee = config.getInt("eclair.commit-fee")
-  val closing_fee = config.getInt("eclair.closing-fee")
+  val default_feeratePerKw = 10000
   val base_fee = config.getInt("eclair.base-fee")
   val proportional_fee = config.getInt("eclair.proportional-fee")
   val default_anchor_amount = 1000000

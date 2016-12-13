@@ -3,19 +3,16 @@ package fr.acinq.eclair.gui.controllers
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.embed.swing.SwingNode
 import javafx.fxml.FXML
-import javafx.scene.Parent
 import javafx.scene.control.{ContextMenu, Label, MenuItem, Tab}
 import javafx.scene.input.ContextMenuEvent
-import javafx.scene.layout.{BorderPane, HBox, TilePane, VBox}
+import javafx.scene.layout.{BorderPane, TilePane, VBox}
 import javafx.stage.Stage
-import javafx.scene.Node
 
 import com.mxgraph.swing.mxGraphComponent
-import com.sun.javafx.scene.control.skin.LabeledText
-import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages.{AboutStage, OpenChannelStage, ReceivePaymentStage, SendPaymentStage}
 import fr.acinq.eclair.gui.utils.ContextMenuUtils
+import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
 
 /**
@@ -111,7 +108,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
   }
 
   @FXML def handleNodeIdContext(event: ContextMenuEvent): Unit = {
-      contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
+    contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
   }
 
   def positionAtCenter(childStage: Stage): Unit = {
