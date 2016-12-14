@@ -798,8 +798,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_THEIRS_DONE) // TODO hardcoded mindepth
 
-    val txs1 = claimReceivedHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
-    val txs2 = claimSentHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
+    val txs1: Seq[Transaction] = ??? //claimReceivedHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
+    val txs2: Seq[Transaction] = ??? //claimSentHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
     val txs = txs1 ++ txs2
     txs.map(tx => blockchain ! PublishAsap(tx))
 

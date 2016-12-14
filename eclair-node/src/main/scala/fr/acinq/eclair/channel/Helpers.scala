@@ -44,7 +44,8 @@ object Helpers {
       val commitmentInput = Funding.inputFromFundingTx(fundingTxHash, fundingTxOutputIndex)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
       val localTx = CommitmentSpec.makeLocalTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, localPerCommitmentPoint.data, localSpec).makeTx
-      val remoteTx = CommitmentSpec.makeRemoteTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec).makeTx
+      val (remoteTxTemplate, _, _) = CommitmentSpec.makeRemoteTxTemplates(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec)
+      val remoteTx = remoteTxTemplate.makeTx
 
       val localFundingPubkey = params.localParams.fundingPrivkey.point
       val fundingTxOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = Common.anchorPubkeyScript(localFundingPubkey, params.remoteParams.fundingPubkey))
