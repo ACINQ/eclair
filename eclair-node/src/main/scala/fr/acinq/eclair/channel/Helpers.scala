@@ -3,8 +3,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Common._
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.UpdateFulfillHtlc
 
 import scala.util.Try
 
@@ -16,15 +16,15 @@ object Helpers {
 
   object Funding {
 
-    /**
-      * Extracts a [TxIn] from a funding tx id and an output index
-      * @param fundingTxId
-      * @param fundingTxOutputIndex
-      */
-    def inputFromFundingTx(fundingTxId: BinaryData, fundingTxOutputIndex: Int): TxIn = TxIn(OutPoint(fundingTxId, fundingTxOutputIndex), Array.emptyByteArray, 0xffffffffL)
+    def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: BinaryData, fundingPubkey2: BinaryData): InputInfo = {
+      val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
+      val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
+      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, fundingScript)
+    }
 
     /**
       * Creates both sides's first commitment transaction
+      *
       * @param funder
       * @param params
       * @param pushMsat
@@ -33,7 +33,7 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitmentTx(funder: Boolean, params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: BinaryData): (CommitmentSpec, Transaction, CommitmentSpec, Transaction, TxOut) = {
+    def makeFirstCommitTxs(funder: Boolean, params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: BinaryData): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (funder) params.fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (funder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
 
@@ -41,16 +41,12 @@ object Helpers {
       val localSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.localParams.feeratePerKw, to_local_msat = toLocalMsat, to_remote_msat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.remoteParams.feeratePerKw, to_local_msat = toRemoteMsat, to_remote_msat = toLocalMsat)
 
-      val commitmentInput = Funding.inputFromFundingTx(fundingTxHash, fundingTxOutputIndex)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.point, params.remoteParams.fundingPubkey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
-      val localTx = CommitmentSpec.makeLocalTxTemplate(params.localParams, params.remoteParams, commitmentInput :: Nil, localPerCommitmentPoint.data, localSpec).makeTx
-      val (remoteTxTemplate, _, _) = CommitmentSpec.makeRemoteTxTemplates(params.localParams, params.remoteParams, commitmentInput :: Nil, remoteFirstPerCommitmentPoint, remoteSpec)
-      val remoteTx = remoteTxTemplate.makeTx
+      val localTxTemplate = CommitmentSpec.makeLocalTxs(params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint.data, localSpec)
+      val (remoteTxTemplate, _, _) = CommitmentSpec.makeRemoteTxs(params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
-      val localFundingPubkey = params.localParams.fundingPrivkey.point
-      val fundingTxOutput = TxOut(Satoshi(params.fundingSatoshis), publicKeyScript = Common.anchorPubkeyScript(localFundingPubkey, params.remoteParams.fundingPubkey))
-
-      (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
+      (localSpec, localTxTemplate, remoteSpec, remoteTxTemplate)
     }
 
   }
@@ -92,7 +88,7 @@ object Helpers {
       *         last commit tx
       */
     def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, Long, BinaryData) = {
-      val commitFee = commitments.fundingTxOutput.amount.toLong - commitments.localCommit.publishableTx.txOut.map(_.amount.toLong).sum
+      val commitFee = commitments.commitInput.txOut.amount.toLong - commitments.localCommit.publishableTx.txOut.map(_.amount.toLong).sum
       val closeFee = Satoshi(2 * (commitFee / 4))
       makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
     }
@@ -106,7 +102,9 @@ object Helpers {
       * @param privateKey         private key to send the claimed funds to (the returned tx will include a single P2WPKH output)
       * @return a signed transaction that spends the revoked commit tx
       */
-    def claimRevokedCommitTx(theirTxTemplate: CommitTxTemplate, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = {
+    def claimRevokedCommitTx(theirTxTemplate: CommitTx, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = ???
+
+    /*{
       val theirTx = theirTxTemplate.makeTx
       val outputs = collection.mutable.ListBuffer.empty[TxOut]
 
@@ -136,7 +134,7 @@ object Helpers {
       }
 
       tx1.updateWitnesses(witnesses)
-    }
+    }*/
 
     /**
       * claim an HTLC that we received using its payment preimage. This is used only when the other party publishes its
@@ -150,7 +148,7 @@ object Helpers {
       *         This tx is not spendable right away: it has both an absolute CLTV time-out and a relative CSV time-out
       *         before which it can be published
       */
-    def claimReceivedHtlc(tx: Transaction, htlcTemplate: ReceivedHTLCOutputTemplate, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = ???
+    //def claimReceivedHtlc(tx: Transaction, htlcTemplate: ReceivedHTLC, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = ???
     /*{
       require(htlcTemplate.htlc.add.paymentHash == BinaryData(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
       // find its index in their tx
@@ -174,7 +172,7 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = ???
+    //def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = ???
     /*{
       val preImages = commitments.localChanges.all.collect { case UpdateFulfillHtlc(_, id, paymentPreimage) => paymentPreimage }
       // TODO: FIXME !!!
@@ -197,7 +195,7 @@ object Helpers {
       loop(htlcTemplates)
     }*/
 
-    def claimSentHtlc(tx: Transaction, htlcTemplate: OfferedHTLCOutputTemplate, privateKey: BinaryData): Transaction = ???
+    //def claimSentHtlc(tx: Transaction, htlcTemplate: OfferedHTLCOutputTemplate, privateKey: BinaryData): Transaction = ???
     /*{
       val index = tx.txOut.indexOf(htlcTemplate.txOut)
       val tx1 = Transaction(
@@ -212,7 +210,7 @@ object Helpers {
     }*/
 
     // TODO: fix this!
-    def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = Nil
+    //def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = Nil
 
     /*{
     // txTemplate could be our template (we published our commit tx) or their template (they published their commit tx)

@@ -2,7 +2,7 @@ package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
-import fr.acinq.eclair.{channel, transactions}
+import fr.acinq.eclair.transactions
 import fr.acinq.eclair.transactions.Common
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
@@ -93,7 +93,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     publishTransaction(tx2Hex(tx))
 
   def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
-    val anchorOutputScript = transactions.Common.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+    val anchorOutputScript = Script.write(Common.pay2wsh(Common.multiSig2of2(ourCommitPub, theirCommitPub)))
     val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
     val future = for {
       FundTransactionResponse(tx1, changepos, fee) <- fundTransaction(tx)
@@ -113,7 +113,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       tx <- getTransaction(id)
       Some(pos) = Common.findPublicKeyScriptIndex(tx, script)
       output = tx.txOut(pos)
-      anchorOutputScript = transactions.Common.anchorPubkeyScript(ourCommitPub, theirCommitPub)
+      anchorOutputScript = Script.write(Common.pay2wsh(Common.multiSig2of2(ourCommitPub, theirCommitPub)))
       tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
       pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount, 1, fundingPriv)

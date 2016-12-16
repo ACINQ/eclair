@@ -37,12 +37,6 @@ object Common {
   else
     Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
 
-
-  def sigScript2of2(sig1: BinaryData, sig2: BinaryData, pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
-    Script.write(OP_0 :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil)
-  else
-    Script.write(OP_0 :: OP_PUSHDATA(sig2) :: OP_PUSHDATA(sig1) :: OP_PUSHDATA(multiSig2of2(pubkey1, pubkey2)) :: Nil)
-
   /**
     *
     * @param sig1
@@ -82,7 +76,7 @@ object Common {
     * @param key         private key that can redeem the funding tx
     * @return a signed funding tx
     */
-  def makeAnchorTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTx: Transaction, outputIndex: Int, key: BinaryData): (Transaction, Int) = {
+  def makeFundingTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTx: Transaction, outputIndex: Int, key: BinaryData): (Transaction, Int) = {
     val tx = Transaction(version = 2,
       txIn = TxIn(outPoint = OutPoint(previousTx, outputIndex), signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
       txOut = TxOut(Satoshi(amount), publicKeyScript = pay2wsh(multiSig2of2(pubkey1, pubkey2))) :: Nil,
@@ -103,8 +97,6 @@ object Common {
     // we don't permute outputs because by convention the multisig output has index = 0
     (signedTx, 0)
   }
-
-  def anchorPubkeyScript(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = Script.write(pay2wsh(multiSig2of2(pubkey1, pubkey2)))
 
   def encodeNumber(n: Long): BinaryData = {
     // TODO: added for compatibility with lightningd => check (it's either a bug in lighningd or bitcoin-lib)
@@ -286,5 +278,20 @@ object OutputScripts {
 }
 
 object InputScripts {
+
+  def witnessHtlcReceived(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
+    ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
+
+  def witnessHtlcSuccess(localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
+    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
+
+  def witnessHtlcOffered(localSig: BinaryData, htlcReceivedScript: BinaryData) =
+    ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
+
+  def witnessHtlcTimeout(localSig: BinaryData, remoteSig: BinaryData, htlcReceivedScript: BinaryData) =
+    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
+
+  def witnessHtlcDelayed(localSig: BinaryData, htlcDelayedScript: BinaryData) =
+    ScriptWitness(localSig :: BinaryData.empty :: htlcDelayedScript :: Nil)
 
 }

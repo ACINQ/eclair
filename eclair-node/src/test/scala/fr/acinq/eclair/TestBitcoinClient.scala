@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.peer.{NewBlock, NewTransaction}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
@@ -24,7 +24,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
   override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, Common.anchorPubkeyScript(ourCommitPub, theirCommitPub)) :: Nil,
+      txOut = TxOut(amount, Common.pay2wsh(Common.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,
       lockTime = 0
     )
     Future.successful((anchorTx, 0))

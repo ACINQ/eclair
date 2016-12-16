@@ -1,12 +1,13 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.{BinaryData, TxIn}
+import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.crypto.Generators.Point
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcSuccessTx, HtlcTimeoutTx, InputInfo}
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, UpdateMessage}
-import fr.acinq.eclair._
 
 /**
   * Created by PM on 07/12/2016.
@@ -78,19 +79,19 @@ object CommitmentSpec {
     spec4
   }
 
-  def makeLocalTxTemplate(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTxTemplate = {
+  def makeLocalTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTx = {
     val localPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.point, localPerCommitmentPoint)
     val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     val localRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.point, localPerCommitmentPoint)
-    CommitTxTemplate.makeCommitTxTemplate(inputs, localRevocationPubkey, localParams.toSelfDelay, localPubkey, remotePubkey, spec)
+    Transactions.makeCommitTx(commitmentInput, localRevocationPubkey, localParams.toSelfDelay, localPubkey, remotePubkey, spec)
   }
 
-  def makeRemoteTxTemplates(localParams: LocalParams, remoteParams: RemoteParams, inputs: Seq[TxIn], remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTxTemplate, Seq[HTLCTimeoutTxTemplate], Seq[HTLCSuccessTxTemplate]) = {
+  def makeRemoteTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localPubkey = Generators.derivePubKey(localParams.paymentSecret.point, remotePerCommitmentPoint)
     val remotePubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, remotePerCommitmentPoint)
-    val commitTxTemplate = CommitTxTemplate.makeCommitTxTemplate(inputs, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
-    val (htlcTimeoutTxTemplates, htlcSuccessTxTemplates) = CommitTxTemplate.makeHtlcTxTemplates(commitTxTemplate.makeTx, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
-    (commitTxTemplate, htlcTimeoutTxTemplates, htlcSuccessTxTemplates)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
+    (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 }

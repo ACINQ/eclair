@@ -1,8 +1,9 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{BinaryData, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
 import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
 import lightning.{route, route_step}
 
@@ -124,7 +125,7 @@ final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignIn
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, fundingTxOutputIndex: Int, fundingTxOutput: TxOut, localSpec: CommitmentSpec, localTx: Transaction, remoteCommit: RemoteCommit) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit) extends Data
 final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
 final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,

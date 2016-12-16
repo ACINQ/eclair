@@ -7,7 +7,6 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.Closing._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.transactions.Signature._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -180,16 +179,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       log.info(s"funding tx txid=${fundingTx.txid}")
 
       // let's create the first commitment tx that spends the yet uncommitted funding tx
-      val (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput) = Funding.makeFirstCommitmentTx(funder = true, params, pushMsat, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(funder = true, params, pushMsat, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
-      val localSigOfRemoteTx = Signature.sign(params.localParams, params.remoteParams, Satoshi(params.fundingSatoshis), remoteTx) // signature of their initial commitment tx that pays them pushMsat
+      val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivkey) // signature of their initial commitment tx that pays them pushMsat
       them ! FundingCreated(
         temporaryChannelId = temporaryChannelId,
         txid = fundingTx.hash,
         outputIndex = fundingTxOutputIndex,
         signature = localSigOfRemoteTx
       )
-      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, fundingTxOutputIndex, fundingTxOutput, localSpec, localTx, RemoteCommit(0, remoteSpec, remoteTx.txid, remoteFirstPerCommitmentPoint))
+      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -201,35 +200,36 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
     case Event(FundingCreated(_, fundingTxHash, fundingTxOutputIndex, remoteSig), DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId, params, pushMsat, remoteFirstPerCommitmentPoint)) =>
       // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
-      val (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput) = Funding.makeFirstCommitmentTx(funder = false, params, pushMsat, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(funder = false, params, pushMsat, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
       // check remote signature validity
-      val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-      signAndCheckSig(params.localParams, params.remoteParams, fundingTxOutput, firstPerCommitmentPoint, localTx, remoteSig) match {
+      val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.point, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
+      Transactions.checkSig(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingCreated message contains an invalid signature")
           them ! Error(temporaryChannelId, cause.getMessage.getBytes)
           // we haven't anything at stake yet, we can just stop
           goto(CLOSED)
-        case Success(signedTx) =>
-          log.info(s"signing remote tx: $remoteTx")
-          val localSigOfRemoteTx = Signature.sign(params.localParams, params.remoteParams, Satoshi(params.fundingSatoshis), remoteTx) // signature of their initial commitment tx that pays them pushMsat
+        case Success(_) =>
+          log.info(s"signing remote tx: $remoteCommitTx")
+          val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivkey)
           them ! FundingSigned(
             temporaryChannelId = temporaryChannelId,
             signature = localSigOfRemoteTx
           )
 
           // watch the funding tx transaction
-          val fundingTxid = fundingTxHash.reverse //see https://github.com/ElementsProject/lightning/issues/17
-          blockchain ! WatchSpent(self, fundingTxid, fundingTxOutputIndex, 0, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchConfirmed(self, fundingTxid, params.minimumDepth.toInt, BITCOIN_FUNDING_DEPTHOK)
+          val commitInput = localCommitTx.input
+          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, minDepth = 0, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth.toInt, BITCOIN_FUNDING_DEPTHOK)
 
           val commitments = Commitments(params.localParams, params.remoteParams,
-            LocalCommit(0, localSpec, signedTx), RemoteCommit(0, remoteSpec, remoteTx.txid, remoteFirstPerCommitmentPoint),
+            LocalCommit(0, localSpec, signedLocalCommitTx.tx), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(BinaryData("")), // we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
-            fundingTxOutput, ShaChain.init, new BasicTxDb, 0)
+            commitInput, ShaChain.init, new BasicTxDb, 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
       }
@@ -242,26 +242,27 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
-    case Event(FundingSigned(_, remoteSig), DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, fundingTxOutputIndex, fundingTxOutput, localSpec, localTx, remoteCommit)) =>
+    case Event(FundingSigned(_, remoteSig), DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, localSpec, localCommitTx, remoteCommit)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
-      log.info(s"checking our tx: $localTx")
-      val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-      signAndCheckSig(params.localParams, params.remoteParams, fundingTxOutput, firstPerCommitmentPoint, localTx, remoteSig) match {
+      val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.point, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
+      Transactions.checkSig(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
           them ! Error(temporaryChannelId, cause.getMessage.getBytes)
           // we haven't published anything yet, we can just stop
           goto(CLOSED)
-        case Success(signedTx) =>
-          blockchain ! WatchSpent(self, fundingTx.txid, fundingTxOutputIndex, 0, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-          blockchain ! WatchConfirmed(self, fundingTx.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
+        case Success(_) =>
+          val commitInput = localCommitTx.input
+          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, minDepth = 0, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
           blockchain ! Publish(fundingTx)
           val commitments = Commitments(params.localParams, params.remoteParams,
-            LocalCommit(0, localSpec, signedTx), remoteCommit,
+            LocalCommit(0, localSpec, signedLocalCommitTx.tx), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(BinaryData("")), // we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
-            fundingTxOutput, ShaChain.init, new BasicTxDb, 0)
+            commitInput, ShaChain.init, new BasicTxDb, 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
@@ -591,7 +592,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           log.info(s"finalTxId=${finalTx.txid}")
           them ! closingSigned
           if (closeFee == theirCloseFee) {
-            val signedTx = addSigs(finalTx, d.commitments.localParams.fundingPrivkey.point, d.commitments.remoteParams.fundingPubkey, localSig, remoteSig)
+            val signedTx: Transaction = ??? //Signature.addSigs(finalTx, d.commitments.localParams.fundingPrivkey.point, d.commitments.remoteParams.fundingPubkey, localSig, remoteSig)
             blockchain ! Publish(signedTx)
             blockchain ! WatchConfirmed(self, signedTx.txid, 3, BITCOIN_CLOSE_DONE) // hardcoded mindepth
             goto(CLOSING) using DATA_CLOSING(d.commitments, ourSignature = Some(closingSigned), mutualClosePublished = Some(signedTx))
