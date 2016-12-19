@@ -4,8 +4,7 @@ import fr.acinq.bitcoin.Crypto.ripemd160
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
 import fr.acinq.bitcoin.{BinaryData, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.crypto.Generators.Point
-import fr.acinq.eclair.transactions.Common.{pay2wsh, _}
-import fr.acinq.eclair.transactions.OutputScripts.{htlcSuccessOrTimeout, _}
+import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
 import scala.util.Try
@@ -141,32 +140,32 @@ object Transactions {
   }
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: Point, remoteFundingPubkey: Point, localSig: BinaryData, remoteSig: BinaryData): CommitTx = {
-    val witness = Common.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
+    val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     commitTx.copy(tx = commitTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx = {
-    val witness = InputScripts.witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
+    val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcTimeoutTx: HtlcTimeoutTx, localSig: BinaryData, remoteSig: BinaryData): HtlcTimeoutTx = {
-    val witness = InputScripts.witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript)
+    val witness = witnessHtlcTimeout(localSig, remoteSig, htlcTimeoutTx.input.redeemScript)
     htlcTimeoutTx.copy(tx = htlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcSuccessTx: ClaimHtlcSuccessTx, localSig: BinaryData, paymentPreimage: BinaryData): ClaimHtlcSuccessTx = {
-    val witness = InputScripts.witnessHtlcReceived(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
+    val witness = witnessClaimHtlcSuccessFromCommitTx(localSig, paymentPreimage, claimHtlcSuccessTx.input.redeemScript)
     claimHtlcSuccessTx.copy(tx = claimHtlcSuccessTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: BinaryData): ClaimHtlcTimeoutTx = {
-    val witness = InputScripts.witnessHtlcOffered(localSig, claimHtlcTimeoutTx.input.redeemScript)
+    val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcDelayed: ClaimHtlcDelayed, localSig: BinaryData): ClaimHtlcDelayed = {
-    val witness = InputScripts.witnessHtlcDelayed(localSig, claimHtlcDelayed.input.redeemScript)
+    val witness = witnessHtlcDelayed(localSig, claimHtlcDelayed.input.redeemScript)
     claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
   }
 

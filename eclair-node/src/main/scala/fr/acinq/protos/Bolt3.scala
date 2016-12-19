@@ -1,7 +1,7 @@
 package fr.acinq.protos
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.transactions.Common
+import fr.acinq.eclair.transactions.Scripts
 
 object Bolt3 {
   // TODO: sort tx according to BIP69 (lexicographical ordering)
@@ -12,7 +12,7 @@ object Bolt3 {
 
   def weight(tx: Transaction) = 3 * baseSize(tx) + totalSize(tx)
 
-  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Common.multiSig2of2(pubKey1, pubKey2)
+  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Scripts.multiSig2of2(pubKey1, pubKey2)
 
   def toLocal(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
     // @formatter:off

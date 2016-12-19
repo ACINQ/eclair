@@ -7,7 +7,7 @@ import fr.acinq.eclair.memcmp
 /**
   * Created by PM on 02/12/2016.
   */
-object Common {
+object Scripts {
 
   def toSelfDelay2csv(in: Int): Long = ???
 
@@ -219,9 +219,6 @@ object Common {
     if (tx.version < 2) 0
     else tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
   }
-}
-
-object OutputScripts {
 
   def toLocal(revocationPubkey: BinaryData, toSelfDelay: Int, localDelayedPubkey: BinaryData) = {
     // @formatter:off
@@ -250,6 +247,19 @@ object OutputScripts {
     // @formatter:on
   }
 
+  /**
+    * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
+    */
+  def witnessHtlcSuccess(localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
+    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
+
+  /**
+    * If local publishes its commit tx where there was a local->remote htlc, then remote uses this script to
+    * claim its funds using a payment preimage (consumes htlcOffered script from commit tx)
+    */
+  def witnessClaimHtlcSuccessFromCommitTx(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
+    ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
+
   def htlcReceived(localKey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
@@ -263,6 +273,19 @@ object OutputScripts {
     // @formatter:on
   }
 
+  /**
+    * This is the witness script of the 2nd-stage HTLC Timeout transaction (consumes htlcReceived script from commit tx)
+    */
+  def witnessHtlcTimeout(localSig: BinaryData, remoteSig: BinaryData, htlcReceivedScript: BinaryData) =
+    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
+
+  /**
+    * If local publishes its commit tx where there was a remote->local htlc, then remote uses this script to
+    * claim its funds after timeout (consumes htlcReceived script from commit tx)
+    */
+  def witnessClaimHtlcTimeoutFromCommitTx(localSig: BinaryData, htlcReceivedScript: BinaryData) =
+    ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
+
   def htlcSuccessOrTimeout(revocationPubkey: BinaryData, toSelfDelay: Long, localDelayedPubkey: BinaryData) = {
     // @formatter:off
     OP_IF ::
@@ -275,23 +298,6 @@ object OutputScripts {
     // @formatter:on
   }
 
-}
-
-object InputScripts {
-
-  def witnessHtlcReceived(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
-    ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
-
-  def witnessHtlcSuccess(localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
-    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
-
-  def witnessHtlcOffered(localSig: BinaryData, htlcReceivedScript: BinaryData) =
-    ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
-
-  def witnessHtlcTimeout(localSig: BinaryData, remoteSig: BinaryData, htlcReceivedScript: BinaryData) =
-    ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
-
   def witnessHtlcDelayed(localSig: BinaryData, htlcDelayedScript: BinaryData) =
     ScriptWitness(localSig :: BinaryData.empty :: htlcDelayedScript :: Nil)
-
 }

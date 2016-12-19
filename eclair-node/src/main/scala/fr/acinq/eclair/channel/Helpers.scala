@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.transactions.Common._
+import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
 import fr.acinq.eclair.transactions._
 

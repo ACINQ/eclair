@@ -5,7 +5,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, Satoshi, Script}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.io.AuthHandler
-import fr.acinq.eclair.transactions.Common
+import fr.acinq.eclair.transactions.Scripts
 
 import scala.concurrent.duration._
 
