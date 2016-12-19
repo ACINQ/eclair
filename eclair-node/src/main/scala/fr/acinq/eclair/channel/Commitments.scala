@@ -1,9 +1,10 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptFlags, Transaction}
+import fr.acinq.bitcoin.Crypto.{Point, Scalar}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
-import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
+import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -13,8 +14,8 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 }
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
-case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTx: Transaction)
-case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: BinaryData)
+case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]))
+case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
 // @formatter:on
 
 /**
@@ -29,13 +30,10 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localCurrentHtlcId: Long,
-                       remoteNextCommitInfo: Either[RemoteCommit, BinaryData],
+                       remoteNextCommitInfo: Either[RemoteCommit, Point],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, txDb: TxDb, channelId: Long) {
-  def anchorId: BinaryData = {
-    assert(localCommit.publishableTx.txIn.size == 1, "commitment tx should only have one input")
-    localCommit.publishableTx.txIn(0).outPoint.hash
-  }
+  def anchorId: BinaryData = commitInput.outPoint.txid
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 
@@ -140,24 +138,25 @@ object Commitments {
       case Right(remoteNextPerCommitmentPoint) =>
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
-        val (remoteCommitTx, htlcTimeoutTx, htlcSuccessTx) = CommitmentSpec.makeRemoteTxs(localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
+        val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
         val sig = Transactions.sign(remoteCommitTx, localParams.fundingPrivkey)
-        // TODO: sigs!
-        val htlcTimeoutSigs: List[BinaryData] = ??? //htlcTimeoutTx.map(tpl => Signature.sign(localParams, remoteParams, fundingTxOutput.amount, tpl.makeTx))
-        val htlcSuccessSigs: List[BinaryData] = ??? //htlcTimeoutTx.map(tpl => Signature.sign(localParams, remoteParams, fundingTxOutput.amount, tpl.makeTx))
+
+        val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
+        val paymentKey = Generators.derivePrivKey(localParams.paymentSecret, remoteNextPerCommitmentPoint)
+        val htlcSigs = sortedHtlcTxs.map(Transactions.sign(_, paymentKey))
 
         // don't sign if they don't get paid
         val commitSig = CommitSig(
           channelId = commitments.channelId,
           signature = sig,
-          htlcSignatures = htlcTimeoutSigs ++ htlcSuccessSigs // TODO: ordering!!
+          htlcSignatures = htlcSigs.toList
         )
         val commitments1 = commitments.copy(
           remoteNextCommitInfo = Left(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)),
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
           remoteChanges = remoteChanges.copy(acked = Nil))
         (commitments1, commitSig)
-      case Left(remoteNextCommit) =>
+      case Left(_) =>
         throw new RuntimeException("cannot sign until next revocation hash is received")
     }
   }
@@ -181,30 +180,55 @@ object Commitments {
     // receiving money i.e its commit tx has one output for them
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val ourNextRevocationHash = revocationHash(localParams.shaSeed, localCommit.index + 1)
-    val ourTxTemplate = CommitmentSpec.makeLocalTxs(localParams, remoteParams, commitInput, ourNextRevocationHash, spec)
+    val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 1) // TODO: Long or Int??
+    val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
+    val sig = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
 
-    // this tx will NOT be signed if our output is empty
-    val ourCommitTx: Transaction = ???
-    /*commit.sig match {
-          case None if ourTxTemplate.weHaveAnOutput => throw new RuntimeException("expected signature")
-          case None => ourTxTemplate.makeTx
-          case Some(_) if !ourTxTemplate.weHaveAnOutput => throw new RuntimeException("unexpected signature")
-          case Some(theirSig) =>
-            val ourTx = ourTxTemplate.makeTx
-            val ourSig = Helpers.sign(localParams, remoteParams, anchorOutput.amount, ourTx)
-            val signedTx = Helpers.addSigs(localParams, remoteParams, anchorOutput.amount, ourTx, ourSig, theirSig)
-            Helpers.checksig(localParams, remoteParams, anchorOutput, signedTx).get
-            signedTx
-        }*/
+    // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
+
+    // no need to compute htlc sigs if commit sig doesn't check out
+    val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivkey.toPoint, remoteParams.fundingPubkey, sig, commit.signature)
+    if (Transactions.checkSig(signedCommitTx).isFailure) throw new RuntimeException("invalid sig")
+
+    val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
+    require(commit.htlcSignatures.size == sortedHtlcTxs.size, s"htlc sig count mismatch (received=${commit.htlcSignatures.size}, expected=${sortedHtlcTxs.size})")
+    val paymentKey = Generators.derivePrivKey(localParams.paymentSecret, localPerCommitmentPoint)
+    val signedHtlcTxsAndSigs = sortedHtlcTxs.zipWithIndex.collect {
+      case (htlcTx: HtlcTimeoutTx, index) =>
+        val htlcSig = Transactions.sign(htlcTx, paymentKey)
+        val signedHtlcTx = Transactions.addSigs(htlcTx, htlcSig, commit.htlcSignatures(index))
+        if (Transactions.checkSig(signedHtlcTx).isFailure) throw new RuntimeException("invalid sig")
+        (signedHtlcTx, htlcSig)
+      case (htlcTx: HtlcSuccessTx, index) =>
+        val htlcSig = Transactions.sign(htlcTx, paymentKey)
+        // TODO: bad sig for now, should test with pubkey
+        val paymentPreimage: BinaryData = BinaryData("00" * 32)
+        val signedHtlcTx = Transactions.addSigs(htlcTx, htlcSig, commit.htlcSignatures(index), paymentPreimage)
+        //if (Transactions.checkSig(signedHtlcTx).isFailure) throw new RuntimeException("invalid sig")
+        (signedHtlcTx, htlcSig)
+    }
+    val timeoutHtlcSigs = signedHtlcTxsAndSigs.collect {
+      case (_: HtlcTimeoutTx, sig) => sig
+    }
+    val signedHtlcTimeoutTxs = signedHtlcTxsAndSigs.collect {
+      case (htlcTx: HtlcTimeoutTx, _) => htlcTx
+    }
+    val signedHtlcSuccessTxs = signedHtlcTxsAndSigs.collect {
+      case (htlcTx: HtlcSuccessTx, _) => htlcTx
+    }
 
     // we will send our revocation preimage + our next revocation hash
-    val ourRevocationPreimage = revocationPreimage(localParams.shaSeed, localCommit.index)
-    val ourNextRevocationHash1 = revocationHash(localParams.shaSeed, localCommit.index + 2)
-    val revocation: RevokeAndAck = ??? //RevokeAndAck(ourRevocationPreimage, ourNextRevocationHash1)
+    val localPerCommitmentSecret = Generators.perCommitSecret(localParams.shaSeed, commitments.localCommit.index.toInt) // TODO: Long or Int??
+    val localNextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 2) // TODO: Long or Int??
+    val revocation = RevokeAndAck(
+      channelId = commitments.channelId,
+      perCommitmentSecret = localPerCommitmentSecret,
+      nextPerCommitmentPoint = localNextPerCommitmentPoint,
+      htlcTimeoutSignatures = timeoutHtlcSigs.toList
+    )
 
     // update our commitment data
-    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTx = ourCommitTx)
+    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTxs = (signedCommitTx, signedHtlcTimeoutTxs, signedHtlcSuccessTxs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
@@ -216,12 +240,16 @@ object Commitments {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
-      case Left(theirNextCommit) if BinaryData(Crypto.sha256(revocation.perCommitmentSecret)) != BinaryData(remoteCommit.remotePerCommitmentPoint) =>
+      case Left(theirNextCommit) if Scalar(revocation.perCommitmentSecret).toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // this is their revoked commit tx
-        val (remoteCommitTx, htlcTimeoutCommitTx, htlcSuccessCommitTx) = CommitmentSpec.makeRemoteTxs(localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
-        val punishTx: Transaction = ??? //Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, localParams.finalPrivKey)
+
+        // TODO: check their HTLC-Timeout sigs are valid and store their sig
+
+        // TODO: add
+        val (remoteCommitTx, htlcTimeoutCommitTx, htlcSuccessCommitTx) = makeRemoteTxs(localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+        //val punishTx: Transaction = ??? //Helpers.claimRevokedCommitTx(theirTxTemplate, revocation.revocationPreimage, localParams.finalPrivKey)
         //Transaction.correctlySpends(punishTx, Seq(theirTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         //txDb.add(theirTx.txid, punishTx)
 
@@ -235,9 +263,22 @@ object Commitments {
     }
   }
 
-  def makeLocalTxTemplate(commitments: Commitments): CommitTx = {
-    CommitmentSpec.makeLocalTxs(commitments.localParams, commitments.remoteParams, commitments.commitInput,
-      revocationHash(commitments.localParams.shaSeed, commitments.localCommit.index), commitments.localCommit.spec)
+  def makeLocalTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+    val localPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.toPoint, localPerCommitmentPoint)
+    val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
+    val localRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.toPoint, localPerCommitmentPoint)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, localRevocationPubkey, localParams.toSelfDelay, localPubkey, remotePubkey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, localRevocationPubkey, localParams.toSelfDelay, localPubkey, remotePubkey, spec)
+    (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
+  }
+
+  def makeRemoteTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+    val localPubkey = Generators.derivePubKey(localParams.paymentSecret.toPoint, remotePerCommitmentPoint)
+    val remotePubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+    val remoteRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, remotePerCommitmentPoint)
+    val commitTx = Transactions.makeCommitTx(commitmentInput, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
+    (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
   }
 }
 

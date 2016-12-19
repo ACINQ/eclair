@@ -44,8 +44,8 @@ object Helpers {
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
-      val localTxTemplate = CommitmentSpec.makeLocalTxs(params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteTxTemplate, _, _) = CommitmentSpec.makeRemoteTxs(params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val (localTxTemplate, _, _) = Commitments.makeLocalTxs(params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteTxTemplate, _, _) = Commitments.makeRemoteTxs(params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localTxTemplate, remoteSpec, remoteTxTemplate)
     }
@@ -89,7 +89,7 @@ object Helpers {
       *         last commit tx
       */
     def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, Long, BinaryData) = {
-      val commitFee = commitments.commitInput.txOut.amount.toLong - commitments.localCommit.publishableTx.txOut.map(_.amount.toLong).sum
+      val commitFee = commitments.commitInput.txOut.amount.toLong - commitments.localCommit.publishableTxs._1.tx.txOut.map(_.amount.toLong).sum
       val closeFee = Satoshi(2 * (commitFee / 4))
       makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
     }

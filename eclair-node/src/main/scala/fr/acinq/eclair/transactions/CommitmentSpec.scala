@@ -77,20 +77,4 @@ object CommitmentSpec {
     }
     spec4
   }
-
-  def makeLocalTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTx = {
-    val localPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.toPoint, localPerCommitmentPoint)
-    val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-    val localRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.toPoint, localPerCommitmentPoint)
-    Transactions.makeCommitTx(commitmentInput, localRevocationPubkey, localParams.toSelfDelay, localPubkey, remotePubkey, spec)
-  }
-
-  def makeRemoteTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val localPubkey = Generators.derivePubKey(localParams.paymentSecret.toPoint, remotePerCommitmentPoint)
-    val remotePubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-    val remoteRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, remotePerCommitmentPoint)
-    val commitTx = Transactions.makeCommitTx(commitmentInput, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
-    val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)
-    (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
-  }
 }

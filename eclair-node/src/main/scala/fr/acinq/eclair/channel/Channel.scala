@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
+import fr.acinq.bitcoin.Crypto.Point
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -225,10 +226,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth.toInt, BITCOIN_FUNDING_DEPTHOK)
 
           val commitments = Commitments(params.localParams, params.remoteParams,
-            LocalCommit(0, localSpec, signedLocalCommitTx.tx), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
+            LocalCommit(0, localSpec, (signedLocalCommitTx, Nil, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
-            remoteNextCommitInfo = Right(BinaryData("")), // we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
+            remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             commitInput, ShaChain.init, new BasicTxDb, 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
@@ -258,10 +259,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
           blockchain ! Publish(fundingTx)
           val commitments = Commitments(params.localParams, params.remoteParams,
-            LocalCommit(0, localSpec, signedLocalCommitTx.tx), remoteCommit,
+            LocalCommit(0, localSpec, (signedLocalCommitTx, Nil, Nil)), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
-            remoteNextCommitInfo = Right(BinaryData("")), // we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
+            remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             commitInput, ShaChain.init, new BasicTxDb, 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
@@ -299,15 +300,15 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event((BITCOIN_FUNDING_SPENT, _), d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => handleInformationLeak(d)
 
     case Event(cmd: CMD_CLOSE, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
-      blockchain ! Publish(d.commitments.localCommit.publishableTx)
-      blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTx))
+      blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
+      blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTxs._1.tx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTxs._1.tx))
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      blockchain ! Publish(d.commitments.localCommit.publishableTx)
-      blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTx))
+      blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
+      blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTxs._1.tx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTxs._1.tx))
   })
 
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
@@ -321,9 +322,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event((BITCOIN_FUNDING_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
     case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) =>
-      blockchain ! Publish(d.commitments.localCommit.publishableTx)
-      blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTx))
+      blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
+      blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTxs._1.tx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTxs._1.tx))
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
   })
@@ -618,7 +619,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   when(CLOSING) {
 
-    case Event((BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.localCommit.publishableTx.txid =>
+    case Event((BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.localCommit.publishableTxs._1.tx.txid =>
       // we just initiated a uniclose moments ago and are now receiving the blockchain notification, there is nothing to do
       stay()
 
@@ -774,7 +775,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   }
 
   def spendLocalCurrent(d: HasCommitments) = {
-    val tx = d.commitments.localCommit.publishableTx
+    val tx = d.commitments.localCommit.publishableTxs._1.tx
 
     blockchain ! Publish(tx)
     blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_OURS_DONE) // TODO hardcoded mindepth
@@ -838,7 +839,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     log.error(s"our funding tx ${d.commitments.anchorId} was spent !!")
     // TODO! channel id
     them ! Error(0, "Anchor has been spent".getBytes)
-    blockchain ! Publish(d.commitments.localCommit.publishableTx)
+    blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
     goto(ERR_INFORMATION_LEAK)
   }
 

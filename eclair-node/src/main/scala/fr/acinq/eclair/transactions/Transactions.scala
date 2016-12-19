@@ -1,6 +1,6 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, Scalar, ripemd160}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
 import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, OutPoint, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
@@ -32,16 +32,16 @@ object Transactions {
     // TODO: no fees!!!
     val toLocalDelayedOutput_opt = if (spec.to_local_msat >= 546000) Some(TxOut(Satoshi(spec.to_local_msat / 1000), pay2wsh(toLocal(localRevocationPubkey, toLocalDelay, localPubkey)))) else None
     val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(TxOut(Satoshi(spec.to_remote_msat / 1000), pay2wpkh(toRemote(remotePubkey)))) else None
-    val htlcOfferedOutputs = spec.htlcs.
-      filter(_.direction == OUT)
+    val htlcOfferedOutputs = spec.htlcs.toSeq
+      .filter(_.direction == OUT)
       .map(htlc => TxOut(Satoshi(htlc.add.amountMsat / 1000), pay2wsh(htlcOffered(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash)))))
-    val htlcReceivedOutputs = spec.htlcs.
-      filter(_.direction == IN)
+    val htlcReceivedOutputs = spec.htlcs.toSeq
+      .filter(_.direction == IN)
       .map(htlc => TxOut(Satoshi(htlc.add.amountMsat / 1000), pay2wsh(htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs.toSeq ++ htlcReceivedOutputs.toSeq,
+      txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputs,
       lockTime = 0)
     CommitTx(commitTxInput, LexicographicalOrdering.sort(tx))
   }

@@ -30,7 +30,7 @@ class OurCommitChannelSpec extends BaseChannelTestClass {
       Thread.sleep(500)
 
       val commitTx = (alice.stateData: @unchecked) match {
-        case d: DATA_NORMAL => d.commitments.localCommit.publishableTx
+        case d: DATA_NORMAL => d.commitments.localCommit.publishableTxs._1.tx
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)

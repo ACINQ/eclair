@@ -164,7 +164,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
 
   test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs._1.tx
       alice ! Error(0, "oops".getBytes())
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
