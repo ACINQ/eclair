@@ -1,5 +1,6 @@
 package fr.acinq.eclair.crypto
 
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.LightningCrypto._
 
@@ -90,12 +91,4 @@ object Onion extends App {
   //lazy val random = SecureRandom.getInstanceStrong
   lazy val random = new Random()
 
-
-  def generatePrivateKey(): BinaryData = {
-    val key = new Array[Byte](32)
-    do {
-      random.nextBytes(key)
-    } while (Crypto.publicKeyFromPrivateKey(key :+ 0x01.toByte)(0) != 0x02)
-    key
-  }
 }

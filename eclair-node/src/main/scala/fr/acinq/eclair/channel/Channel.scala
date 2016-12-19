@@ -79,10 +79,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         feeratePerKw = localParams.feeratePerKw,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = localParams.fundingPrivkey.point,
-        revocationBasepoint = localParams.revocationSecret.point,
-        paymentBasepoint = localParams.paymentSecret.point,
-        delayedPaymentBasepoint = localParams.delayedPaymentKey.point,
+        fundingPubkey = localParams.fundingPrivkey.toPoint,
+        revocationBasepoint = localParams.revocationSecret.toPoint,
+        paymentBasepoint = localParams.paymentSecret.toPoint,
+        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = autoSignInterval)
 
@@ -105,10 +105,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         htlcMinimumMsat = localParams.htlcMinimumMsat,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = localParams.fundingPrivkey.point,
-        revocationBasepoint = localParams.revocationSecret.point,
-        paymentBasepoint = localParams.paymentSecret.point,
-        delayedPaymentBasepoint = localParams.delayedPaymentKey.point,
+        fundingPubkey = localParams.fundingPrivkey.toPoint,
+        revocationBasepoint = localParams.revocationSecret.toPoint,
+        paymentBasepoint = localParams.paymentSecret.toPoint,
+        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       val remoteParams = RemoteParams(
         dustLimitSatoshis = open.dustLimitSatoshis,
@@ -162,7 +162,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         fundingSatoshis = fundingSatoshis,
         minimumDepth = accept.minimumDepth,
         autoSignInterval = autoSignInterval)
-      val localFundingPubkey = params.localParams.fundingPrivkey.point
+      val localFundingPubkey = params.localParams.fundingPrivkey.toPoint
       blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubkey, Satoshi(params.fundingSatoshis))
       goto(WAIT_FOR_FUNDING_CREATED_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, accept.firstPerCommitmentPoint)
 
@@ -204,7 +204,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
       // check remote signature validity
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
-      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.point, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
       Transactions.checkSig(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingCreated message contains an invalid signature")
@@ -245,7 +245,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(FundingSigned(_, remoteSig), DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, localSpec, localCommitTx, remoteCommit)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
-      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.point, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
+      val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
       Transactions.checkSig(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
@@ -443,7 +443,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         sender ! "closing already in progress"
         stay
       } else {
-        val defaultScriptPubkey: BinaryData = Script.write(Scripts.pay2wpkh(d.params.localParams.finalPrivKey.point))
+        val defaultScriptPubkey: BinaryData = Script.write(Script.pay2wpkh(d.params.localParams.finalPrivKey.toPoint))
         val ourScriptPubKey = ourScriptPubKey_opt.getOrElse(defaultScriptPubkey)
         val ourShutdown = Shutdown(d.channelId, ourScriptPubKey)
         them ! ourShutdown
@@ -452,7 +452,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(theirShutdown@Shutdown(_, theirScriptPubKey), d@DATA_NORMAL(channelId, params, commitments, ourShutdownOpt, downstreams)) =>
       val ourShutdown: Shutdown = ourShutdownOpt.getOrElse {
-        val defaultScriptPubkey: BinaryData = Script.write(Scripts.pay2wpkh(params.localParams.finalPrivKey.point))
+        val defaultScriptPubkey: BinaryData = Script.write(Script.pay2wpkh(params.localParams.finalPrivKey.toPoint))
         val c = Shutdown(channelId, defaultScriptPubkey)
         them ! c
         c

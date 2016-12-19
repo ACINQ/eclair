@@ -101,7 +101,7 @@ class AuthHandler(them: ActorRef, blockchain: ActorRef, paymentHandler: ActorRef
           * session_sig is the signature of the SHA256 of SHA256 of the receivers node_id, using the secret key corresponding to the sender's node_id.
           */
         val sig: BinaryData = Crypto.encodeSignature(Crypto.sign(Crypto.hash256(their_session_key), Globals.Node.privateKey))
-        val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey, bin2signature(sig))))
+        val our_auth = pkt(Auth(lightning.authenticate(Globals.Node.publicKey.toBin, bin2signature(sig))))
 
         val encryptor = Encryptor(sending_key, 0)
         val decryptor = Decryptor(receiving_key, 0)

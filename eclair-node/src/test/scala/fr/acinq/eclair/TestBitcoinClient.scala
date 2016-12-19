@@ -24,7 +24,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
   override def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, Scripts.pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,
+      txOut = TxOut(amount, Script.pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,
       lockTime = 0
     )
     Future.successful((anchorTx, 0))

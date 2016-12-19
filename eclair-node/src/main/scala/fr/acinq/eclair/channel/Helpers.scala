@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{OutPoint, _}
+import fr.acinq.bitcoin.Script._
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
@@ -19,7 +20,7 @@ object Helpers {
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: BinaryData, fundingPubkey2: BinaryData): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
       val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
-      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, fundingScript)
+      InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
     }
 
     /**
@@ -41,9 +42,9 @@ object Helpers {
       val localSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.localParams.feeratePerKw, to_local_msat = toLocalMsat, to_remote_msat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRate = params.remoteParams.feeratePerKw, to_local_msat = toRemoteMsat, to_remote_msat = toLocalMsat)
 
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.point, params.remoteParams.fundingPubkey)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
-      val localTxTemplate = CommitmentSpec.makeLocalTxs(params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint.data, localSpec)
+      val localTxTemplate = CommitmentSpec.makeLocalTxs(params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteTxTemplate, _, _) = CommitmentSpec.makeRemoteTxs(params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localTxTemplate, remoteSpec, remoteTxTemplate)

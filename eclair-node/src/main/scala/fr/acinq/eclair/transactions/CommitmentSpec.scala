@@ -1,10 +1,9 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.Crypto.Point
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.crypto.Generators.Point
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcSuccessTx, HtlcTimeoutTx, InputInfo}
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, UpdateMessage}
@@ -80,14 +79,14 @@ object CommitmentSpec {
   }
 
   def makeLocalTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): CommitTx = {
-    val localPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.point, localPerCommitmentPoint)
+    val localPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.toPoint, localPerCommitmentPoint)
     val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
-    val localRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.point, localPerCommitmentPoint)
+    val localRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.toPoint, localPerCommitmentPoint)
     Transactions.makeCommitTx(commitmentInput, localRevocationPubkey, localParams.toSelfDelay, localPubkey, remotePubkey, spec)
   }
 
   def makeRemoteTxs(localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val localPubkey = Generators.derivePubKey(localParams.paymentSecret.point, remotePerCommitmentPoint)
+    val localPubkey = Generators.derivePubKey(localParams.paymentSecret.toPoint, remotePerCommitmentPoint)
     val remotePubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, remotePerCommitmentPoint)
     val commitTx = Transactions.makeCommitTx(commitmentInput, remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, localPubkey, spec)

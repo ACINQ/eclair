@@ -424,7 +424,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       assert(revokedTx.txOut.size == 3)
       // the punishment tx consumes all output but ours (which already goes to our final key)
       assert(punishTx.txIn.size == 2)
-      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(Scripts.pay2wpkh(Alice.channelParams.finalPrivKey.point)))))
+      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(Script.pay2wpkh(Alice.channelParams.finalPrivKey.toPoint)))))
     }
   }
 

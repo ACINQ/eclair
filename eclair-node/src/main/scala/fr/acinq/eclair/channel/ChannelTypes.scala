@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.Crypto.{Point, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
-import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}

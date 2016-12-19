@@ -1,9 +1,9 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.ripemd160
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, Scalar, ripemd160}
+import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BinaryData, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.crypto.Generators.Point
+import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, OutPoint, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -43,15 +43,15 @@ object Transactions {
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
       txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs.toSeq ++ htlcReceivedOutputs.toSeq,
       lockTime = 0)
-    CommitTx(commitTxInput, permuteOutputs(tx))
+    CommitTx(commitTxInput, LexicographicalOrdering.sort(tx))
   }
 
   def makeHtlcTimeoutTx(commitTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, htlc: UpdateAddHtlc): HtlcTimeoutTx = {
     val redeemScript = htlcOffered(localPubkey, remotePubkey, ripemd160(htlc.paymentHash))
-    val pubkeyScript = Script.write(pay2wsh(redeemScript))
+    val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), Script.write(redeemScript))
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     HtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
@@ -61,10 +61,10 @@ object Transactions {
 
   def makeHtlcSuccessTx(commitTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, htlc: UpdateAddHtlc): HtlcSuccessTx = {
     val redeemScript = htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.paymentHash), htlc.expiry)
-    val pubkeyScript = Script.write(pay2wsh(redeemScript))
+    val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), Script.write(redeemScript))
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     HtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
@@ -87,10 +87,10 @@ object Transactions {
 
   def makeClaimHtlcSuccessTx(commitTx: Transaction, localPubkey: BinaryData, remotePubkey: BinaryData, finalLocalPubkey: BinaryData, htlc: UpdateAddHtlc): ClaimHtlcSuccessTx = {
     val redeemScript = htlcOffered(remotePubkey, localPubkey, ripemd160(htlc.paymentHash))
-    val pubkeyScript = Script.write(pay2wsh(redeemScript))
+    val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), Script.write(redeemScript))
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     ClaimHtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
@@ -100,10 +100,10 @@ object Transactions {
 
   def makeClaimHtlcTimeoutTx(commitTx: Transaction, localPubkey: BinaryData, remotePubkey: BinaryData, finalLocalPubkey: BinaryData, htlc: UpdateAddHtlc): ClaimHtlcTimeoutTx = {
     val redeemScript = htlcReceived(remotePubkey, localPubkey, ripemd160(htlc.paymentHash), htlc.expiry)
-    val pubkeyScript = Script.write(pay2wsh(redeemScript))
+    val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
-    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), Script.write(redeemScript))
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     ClaimHtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
@@ -113,10 +113,10 @@ object Transactions {
 
   def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, finalLocalPubkey: BinaryData, htlc: UpdateAddHtlc): ClaimHtlcDelayed = {
     val redeemScript = htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localPubkey)
-    val pubkeyScript = Script.write(pay2wsh(redeemScript))
+    val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(htlcSuccessOrTimeoutTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
-    val input = InputInfo(OutPoint(htlcSuccessOrTimeoutTx, outputIndex), htlcSuccessOrTimeoutTx.txOut(outputIndex), Script.write(redeemScript))
+    val input = InputInfo(OutPoint(htlcSuccessOrTimeoutTx, outputIndex), htlcSuccessOrTimeoutTx.txOut(outputIndex), write(redeemScript))
     ClaimHtlcDelayed(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
@@ -126,15 +126,13 @@ object Transactions {
 
   def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData): Int = tx.txOut.indexWhere(_.publicKeyScript == pubkeyScript)
 
-  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: Seq[ScriptElt]): Int = findPubKeyScriptIndex(tx, Script.write(pubkeyScript))
+  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: Seq[ScriptElt]): Int = findPubKeyScriptIndex(tx, write(pubkeyScript))
 
-  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: BinaryData): BinaryData = {
-    // this is because by convention in bitcoin-core-speak 32B keys are 'uncompressed' and 33B keys (ending by 0x01) are 'compressed'
-    val compressedKey: Seq[Byte] = key.data :+ 1.toByte
-    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, compressedKey)
+  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey): BinaryData = {
+    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
   }
 
-  def sign(txinfo: TransactionWithInputInfo, key: BinaryData): BinaryData = {
+  def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): BinaryData = {
     require(txinfo.tx.txIn.size == 1, "only one input allowed")
     sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
   }

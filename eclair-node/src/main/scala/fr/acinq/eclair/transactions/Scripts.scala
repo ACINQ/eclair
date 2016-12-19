@@ -1,7 +1,8 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{hash160, ripemd160, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, LockTimeThreshold, OP_0, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, hash160, ripemd160, sha256}
+import fr.acinq.bitcoin.Script._
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.memcmp
 
 /**
@@ -23,16 +24,7 @@ object Scripts {
       case locktime(Seconds(seconds)) => seconds
     }*/
 
-  def isLess(a: Seq[Byte], b: Seq[Byte]): Boolean = memcmp(a.dropWhile(_ == 0).toList, b.dropWhile(_ == 0).toList) < 0
-
-  def lessThan(output1: TxOut, output2: TxOut): Boolean = (output1, output2) match {
-    case (TxOut(amount1, script1), TxOut(amount2, script2)) if amount1 == amount2 => memcmp(script1.toList, script2.toList) < 0
-    case (TxOut(amount1, _), TxOut(amount2, _)) => amount1.toLong < amount2.toLong
-  }
-
-  def permuteOutputs(tx: Transaction): Transaction = tx.copy(txOut = tx.txOut.sortWith(lessThan))
-
-  def multiSig2of2(pubkey1: BinaryData, pubkey2: BinaryData): BinaryData = if (isLess(pubkey1, pubkey2))
+  def multiSig2of2(pubkey1: PublicKey, pubkey2: PublicKey): Seq[ScriptElt] = if (LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin))
     Script.createMultiSigMofN(2, Seq(pubkey1, pubkey2))
   else
     Script.createMultiSigMofN(2, Seq(pubkey2, pubkey1))
@@ -45,25 +37,13 @@ object Scripts {
     * @param pubkey2
     * @return a script witness that matches the msig 2-of-2 pubkey script for pubkey1 and pubkey2
     */
-  def witness2of2(sig1: BinaryData, sig2: BinaryData, pubkey1: BinaryData, pubkey2: BinaryData): ScriptWitness = {
-    if (isLess(pubkey1, pubkey2))
-      ScriptWitness(Seq(BinaryData.empty, sig1, sig2, multiSig2of2(pubkey1, pubkey2)))
+  def witness2of2(sig1: BinaryData, sig2: BinaryData, pubkey1: PublicKey, pubkey2: PublicKey): ScriptWitness = {
+    if (LexicographicalOrdering.isLessThan(pubkey1.toBin, pubkey2.toBin))
+      ScriptWitness(Seq(BinaryData.empty, sig1, sig2, write(multiSig2of2(pubkey1, pubkey2))))
     else
-      ScriptWitness(Seq(BinaryData.empty, sig2, sig1, multiSig2of2(pubkey1, pubkey2)))
+      ScriptWitness(Seq(BinaryData.empty, sig2, sig1, write(multiSig2of2(pubkey1, pubkey2))))
 
   }
-
-  def pay2pkh(pubKey: BinaryData): Seq[ScriptElt] = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash160(pubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil
-
-  def pay2sh(script: Seq[ScriptElt]): Seq[ScriptElt] = pay2sh(Script.write(script))
-
-  def pay2sh(script: BinaryData): Seq[ScriptElt] = OP_HASH160 :: OP_PUSHDATA(hash160(script)) :: OP_EQUAL :: Nil
-
-  def pay2wsh(script: Seq[ScriptElt]): Seq[ScriptElt] = pay2wsh(Script.write(script))
-
-  def pay2wsh(script: BinaryData): Seq[ScriptElt] = OP_0 :: OP_PUSHDATA(sha256(script)) :: Nil
-
-  def pay2wpkh(pubKey: BinaryData): Seq[ScriptElt] = OP_0 :: OP_PUSHDATA(hash160(pubKey)) :: Nil
 
   /**
     *
@@ -76,12 +56,12 @@ object Scripts {
     * @param key         private key that can redeem the funding tx
     * @return a signed funding tx
     */
-  def makeFundingTx(pubkey1: BinaryData, pubkey2: BinaryData, amount: Long, previousTx: Transaction, outputIndex: Int, key: BinaryData): (Transaction, Int) = {
+  def makeFundingTx(pubkey1: PublicKey, pubkey2: PublicKey, amount: Long, previousTx: Transaction, outputIndex: Int, key: PrivateKey): (Transaction, Int) = {
     val tx = Transaction(version = 2,
       txIn = TxIn(outPoint = OutPoint(previousTx, outputIndex), signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
       txOut = TxOut(Satoshi(amount), publicKeyScript = pay2wsh(multiSig2of2(pubkey1, pubkey2))) :: Nil,
       lockTime = 0)
-    val pub: BinaryData = Crypto.publicKeyFromPrivateKey(key)
+    val pub: BinaryData = key.toPoint
     val pkh = OP_0 :: OP_PUSHDATA(Crypto.hash160(pub)) :: Nil
     val p2sh: BinaryData = Script.write(pay2sh(pkh))
 
@@ -89,7 +69,7 @@ object Scripts {
 
     val pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
     val hash = Transaction.hashForSigning(tx, 0, pubKeyScript, SIGHASH_ALL, tx.txOut(0).amount, signatureVersion = 1)
-    val sig = Crypto.encodeSignature(Crypto.sign(hash, key.take(32))) :+ SIGHASH_ALL.toByte
+    val sig = Crypto.encodeSignature(Crypto.sign(hash, key)) :+ SIGHASH_ALL.toByte
     val witness = ScriptWitness(Seq(sig, pub))
     val script = Script.write(OP_0 :: OP_PUSHDATA(Crypto.hash160(pub)) :: Nil)
     val signedTx = tx.updateSigScript(0, OP_PUSHDATA(script) :: Nil).updateWitness(0, witness)
@@ -175,7 +155,7 @@ object Scripts {
   def makeFinalTx(inputs: Seq[TxIn], ourPubkeyScript: BinaryData, theirPubkeyScript: BinaryData, amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi): Transaction = {
     val (amount_us1: Satoshi, amount_them1: Satoshi) = applyFees(amount_us, amount_them, fee)
 
-    permuteOutputs(Transaction(
+    LexicographicalOrdering.sort(Transaction(
       version = 2,
       txIn = inputs,
       txOut = Seq(

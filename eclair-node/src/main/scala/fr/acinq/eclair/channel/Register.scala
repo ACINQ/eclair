@@ -37,7 +37,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
 
   def main(counter: Long): Receive = {
     case CreateChannel(connection, amount_opt) =>
-      def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).secretkey
+      def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
       val localParams = LocalParams(
         dustLimitSatoshis = 542,
         maxHtlcValueInFlightMsat = Long.MaxValue,
