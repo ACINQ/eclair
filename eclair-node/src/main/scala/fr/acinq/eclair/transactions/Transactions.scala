@@ -3,7 +3,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, OutPoint, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, MilliSatoshi, OutPoint, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -30,14 +30,14 @@ object Transactions {
 
   def makeCommitTx(commitTxInput: InputInfo, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTx = {
     // TODO: no fees!!!
-    val toLocalDelayedOutput_opt = if (spec.to_local_msat >= 546000) Some(TxOut(Satoshi(spec.to_local_msat / 1000), pay2wsh(toLocal(localRevocationPubkey, toLocalDelay, localPubkey)))) else None
-    val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(TxOut(Satoshi(spec.to_remote_msat / 1000), pay2wpkh(toRemote(remotePubkey)))) else None
+    val toLocalDelayedOutput_opt = if (spec.to_local_msat >= 546000) Some(TxOut(MilliSatoshi(spec.to_local_msat), pay2wsh(toLocal(localRevocationPubkey, toLocalDelay, localPubkey)))) else None
+    val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(TxOut(MilliSatoshi(spec.to_remote_msat), pay2wpkh(toRemote(remotePubkey)))) else None
     val htlcOfferedOutputs = spec.htlcs.toSeq
       .filter(_.direction == OUT)
-      .map(htlc => TxOut(Satoshi(htlc.add.amountMsat / 1000), pay2wsh(htlcOffered(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash)))))
+      .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash)))))
     val htlcReceivedOutputs = spec.htlcs.toSeq
       .filter(_.direction == IN)
-      .map(htlc => TxOut(Satoshi(htlc.add.amountMsat / 1000), pay2wsh(htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
+      .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
@@ -55,7 +55,7 @@ object Transactions {
     HtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localPubkey))) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localPubkey))) :: Nil,
       lockTime = htlc.expiry))
   }
 
@@ -68,7 +68,7 @@ object Transactions {
     HtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localPubkey))) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localPubkey))) :: Nil,
       lockTime = 0))
   }
 
@@ -94,7 +94,7 @@ object Transactions {
     ClaimHtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = 0))
   }
 
@@ -107,7 +107,7 @@ object Transactions {
     ClaimHtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
-      txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = htlc.expiry))
   }
 
@@ -120,7 +120,7 @@ object Transactions {
     ClaimHtlcDelayed(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-      txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = 0))
   }
 
