@@ -3,7 +3,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, MilliSatoshi, OutPoint, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering, MilliSatoshi, OutPoint, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut, millisatoshi2satoshi}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -28,16 +28,66 @@ object Transactions {
   case class ClaimHtlcDelayed(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   // @formatter:on
 
-  def makeCommitTx(commitTxInput: InputInfo, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTx = {
-    // TODO: no fees!!!
-    val toLocalDelayedOutput_opt = if (spec.to_local_msat >= 546000) Some(TxOut(MilliSatoshi(spec.to_local_msat), pay2wsh(toLocal(localRevocationPubkey, toLocalDelay, localPubkey)))) else None
-    val toRemoteOutput_opt = if (spec.to_remote_msat >= 546000) Some(TxOut(MilliSatoshi(spec.to_remote_msat), pay2wpkh(toRemote(remotePubkey)))) else None
+  val commitWeight = 724
+  val htlcTimeoutWeight = 634
+  val htlcSuccessWeight = 671
+
+  def weight2fee(feeRatePerKw: Long, weight: Int) = Satoshi((feeRatePerKw * weight) / 1024)
+
+  def commitTxFee(feeRatePerKw: Long, dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
+
+    case class Fee(weight: Int, amount: Satoshi)
+
+    val fee1 = Fee(commitWeight, Satoshi(0))
+
+    val fee2 = spec.htlcs
+      .filter(_.direction == OUT)
+      .map(htlc => MilliSatoshi(htlc.add.amountMsat))
+      .foldLeft(fee1) {
+        case (fee, htlcAmount) if (htlcAmount + weight2fee(feeRatePerKw, htlcTimeoutWeight)).compare(dustLimit) >= 0 =>
+          fee.copy(weight = fee.weight + 172)
+        case (fee, htlcAmount) =>
+          fee.copy(amount = fee.amount + htlcAmount)
+      }
+
+    val fee3 = spec.htlcs
+      .filter(_.direction == IN)
+      .map(htlc => MilliSatoshi(htlc.add.amountMsat))
+      .foldLeft(fee2) {
+        case (fee, htlcAmount) if (htlcAmount + weight2fee(feeRatePerKw, htlcSuccessWeight)).compare(dustLimit) >= 0 =>
+          fee.copy(weight = fee.weight + 172)
+        case (fee, htlcAmount) =>
+          fee.copy(amount = fee.amount + htlcAmount)
+      }
+
+    weight2fee(feeRatePerKw, fee3.weight) + fee3.amount
+  }
+
+  def makeCommitTx(commitTxInput: InputInfo, localDustLimit: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTx = {
+
+    val htlcTimeoutFee = weight2fee(spec.feeRatePerKw, htlcTimeoutWeight)
+    val htlcSuccessFee = weight2fee(spec.feeRatePerKw, htlcSuccessWeight)
     val htlcOfferedOutputs = spec.htlcs.toSeq
       .filter(_.direction == OUT)
+      .filter(htlc => (MilliSatoshi(htlc.add.amountMsat) + htlcTimeoutFee).compare(localDustLimit) >= 0)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash)))))
     val htlcReceivedOutputs = spec.htlcs.toSeq
       .filter(_.direction == IN)
+      .filter(htlc => (MilliSatoshi(htlc.add.amountMsat) + htlcSuccessFee).compare(localDustLimit) >= 0)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
+
+    val commitFee = commitTxFee(spec.feeRatePerKw, localDustLimit, spec)
+    val totalFees = commitFee + htlcOfferedOutputs.map(_ => htlcTimeoutFee).sum + htlcOfferedOutputs.map(_ => htlcSuccessFee).sum
+    // TODO: check dust amount!
+    val (toLocalAmount, toRemoteAmount) = (MilliSatoshi(spec.toLocal), MilliSatoshi(spec.toRemote)) match {
+      case (local, remote) if (local + remote).compare(totalFees) < 0 => ??? //TODO: can't pay fees!
+      case (local, remote) if local.compare(totalFees / 2) < 0 => (Satoshi(0), remote - totalFees + local) // local pays whatever it can and remote pays the rest
+      case (local, remote) if remote.compare(totalFees / 2) < 0 => (local - totalFees + remote, Satoshi(0)) // remote pays whatever it can and local pays the rest
+      case (local, remote) => (local - totalFees / 2, remote - totalFees / 2) // each party pays half the fee
+    }
+    val toLocalDelayedOutput_opt = if (toLocalAmount.compare(localDustLimit) >= 0) Some(TxOut(toLocalAmount, pay2wsh(toLocal(localRevocationPubkey, toLocalDelay, localPubkey)))) else None
+    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) >= 0) Some(TxOut(toRemoteAmount, pay2wpkh(toRemote(remotePubkey)))) else None
+
     val tx = Transaction(
       version = 2,
       txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
@@ -72,14 +122,17 @@ object Transactions {
       lockTime = 0))
   }
 
-  def makeHtlcTxs(commitTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    // TODO: no fees!!!
+  def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
+    val htlcTimeoutFee = weight2fee(spec.feeRatePerKw, htlcTimeoutWeight)
+    val htlcSuccessFee = weight2fee(spec.feeRatePerKw, htlcSuccessWeight)
     val htlcTimeoutTxs = spec.htlcs
       .filter(_.direction == OUT)
+      .filter(htlc => (MilliSatoshi(htlc.add.amountMsat) + htlcTimeoutFee).compare(localDustLimit) >= 0)
       .map(htlc => makeHtlcTimeoutTx(commitTx, localRevocationPubkey, toLocalDelay, localPubkey, remotePubkey, htlc.add))
       .toSeq
     val htlcSuccessTxs = spec.htlcs
       .filter(_.direction == IN)
+      .filter(htlc => (MilliSatoshi(htlc.add.amountMsat) + htlcSuccessFee).compare(localDustLimit) >= 0)
       .map(htlc => makeHtlcSuccessTx(commitTx, localRevocationPubkey, toLocalDelay, localPubkey, remotePubkey, htlc.add))
       .toSeq
     (htlcTimeoutTxs, htlcSuccessTxs)

@@ -92,14 +92,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == TestConstants.anchorAmount * 1000 - 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == 60000000)
+          assert(d.commitments.localCommit.spec.toLocal == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.toRemote == 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.toLocal == 60000000)
+          assert(d.commitments.localCommit.spec.toRemote == TestConstants.anchorAmount * 1000 - 60000000)
       }
 
       // send another HTLC
@@ -145,14 +145,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toLocal == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toRemote == 2 * 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == 2 * 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toLocal == 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toRemote == TestConstants.anchorAmount * 1000 - 2 * 60000000)
       }
     }
   }

@@ -139,16 +139,16 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
         s" Commit ${d.commitments.localCommit.index}:",
         s"  Offered htlcs: ${localCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
         s"  Received htlcs: ${localCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${localCommit.spec.to_local_msat}",
-        s"  Balance them: ${localCommit.spec.to_remote_msat}",
-        s"  Fee rate: ${localCommit.spec.feeRate}",
+        s"  Balance us: ${localCommit.spec.toLocal}",
+        s"  Balance them: ${localCommit.spec.toRemote}",
+        s"  Fee rate: ${localCommit.spec.feeRatePerKw}",
         "REMOTE COMMITS:",
         s" Commit ${remoteCommit.index}:",
         s"  Offered htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == OUT).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
         s"  Received htlcs: ${remoteCommit.spec.htlcs.filter(_.direction == IN).map(h => (h.add.id, h.add.amountMsat)).mkString(" ")}",
-        s"  Balance us: ${remoteCommit.spec.to_local_msat}",
-        s"  Balance them: ${remoteCommit.spec.to_remote_msat}",
-        s"  Fee rate: ${remoteCommit.spec.feeRate}")
+        s"  Balance us: ${remoteCommit.spec.toLocal}",
+        s"  Balance them: ${remoteCommit.spec.toRemote}",
+        s"  Fee rate: ${remoteCommit.spec.feeRatePerKw}")
         .foreach(s => {
           fout.write(rtrim(s))
           fout.newLine()

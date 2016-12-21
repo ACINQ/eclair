@@ -181,7 +181,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)
-      _ = assert(c.localCommit.spec.to_local_msat == 80000000)
+      _ = assert(c.localCommit.spec.toLocal == 80000000)
     } yield ()
     Await.result(future, 300000 seconds)
   }
