@@ -118,8 +118,8 @@ class TransactionsSpec extends FunSuite {
     val remotePaymentPriv = Scalar(BinaryData("ce65059278a571ee4f4c9b4d5d7fa07449bbe09d9c716879343d9e975df1de33") :+ 1.toByte)
     val commitInput = Funding.makeFundingInputInfo(BinaryData("42a26bb3a430a536cf9e3a8ce2cbcb0427c29ec6c7d647175cfc78328b57fba7"), 1, MilliBtc(100), localFundingPriv.toPoint, remoteFundingPriv.toPoint)
     val toLocalDelay = 144
-    val localDustLimit = Satoshi(35000)
-    val feeRatePerKw = 50000
+    val localDustLimit = Satoshi(546)
+    val feeRatePerKw = 15000
 
     println(s"    funding_tx_hash: ${commitInput.outPoint.hash}")
     println(s"    funding_output_index: ${commitInput.outPoint.index}")
@@ -183,9 +183,9 @@ class TransactionsSpec extends FunSuite {
     {
       // with htlcs, all above dust limit
       val paymentPreimage1 = BinaryData("f1a90faf44857d6c6b83dba3d27259bc0c9edb7215d21d2d5d9e7b84a9a555ab")
-      val htlc1 = UpdateAddHtlc(0, 0, Satoshi(10000).amount * 1000, 443210, sha256(paymentPreimage1), BinaryData(""))
+      val htlc1 = UpdateAddHtlc(0, 0, MilliSatoshi(10000000).amount, 443210, sha256(paymentPreimage1), BinaryData(""))
       val paymentPreimage2 = BinaryData("5bd0169de7a4a90c0b2b44a6f7c93860ac96630f60e40252fdd0e9f4758bc4ed")
-      val htlc2 = UpdateAddHtlc(0, 1, Satoshi(20000).amount * 1000, 453203, sha256(paymentPreimage2), BinaryData(""))
+      val htlc2 = UpdateAddHtlc(0, 1, MilliSatoshi(20000000).amount, 453203, sha256(paymentPreimage2), BinaryData(""))
       val spec = CommitmentSpec(
         htlcs = Set(
           Htlc(OUT, htlc1, None),
@@ -202,15 +202,15 @@ class TransactionsSpec extends FunSuite {
     {
       // with htlcs, some below dust limit
       val paymentPreimage1 = BinaryData("257d67d518b1f1a840096a8eaa9c6351a9296d01240f8edd694ad329a10ca019")
-      val htlc1 = UpdateAddHtlc(0, 0, Satoshi(10000).amount * 1000, 443210, sha256(paymentPreimage1), BinaryData(""))
+      val htlc1 = UpdateAddHtlc(0, 0, MilliSatoshi(10000000).amount, 443210, sha256(paymentPreimage1), BinaryData(""))
       val paymentPreimage2 = BinaryData("7f91b6f7f014a275da70959fdcc3bcc435650a6551b3ffe743e73955885c35e4")
-      val htlc2 = UpdateAddHtlc(0, 1, Satoshi(200).amount * 1000, 443120, sha256(paymentPreimage2), BinaryData(""))
+      val htlc2 = UpdateAddHtlc(0, 1, MilliSatoshi(200000).amount, 443120, sha256(paymentPreimage2), BinaryData(""))
       val paymentPreimage3 = BinaryData("c2d651a0d96ae2cd6b53570ef1c9663eea1dca7c6d8226a330cb8c073783d654")
-      val htlc3 = UpdateAddHtlc(0, 0, Satoshi(20000).amount * 1000, 445435, sha256(paymentPreimage3), BinaryData(""))
+      val htlc3 = UpdateAddHtlc(0, 0, MilliSatoshi(20000000).amount, 445435, sha256(paymentPreimage3), BinaryData(""))
       val paymentPreimage4 = BinaryData("e65e9fdc1593a434ccd58cf24225b5ba43d7fcc8137d998159bd009cf2bf948f")
-      val htlc4 = UpdateAddHtlc(0, 1, Satoshi(100).amount * 1000, 448763, sha256(paymentPreimage4), BinaryData(""))
+      val htlc4 = UpdateAddHtlc(0, 1, MilliSatoshi(100000).amount, 448763, sha256(paymentPreimage4), BinaryData(""))
       val paymentPreimage5 = BinaryData("bc37269e37a774aa948ebddff3187fedc70aae3f0a029d8775f31bda33b02d55")
-      val htlc5 = UpdateAddHtlc(0, 2, Satoshi(130000).amount * 1000, 445678, sha256(paymentPreimage5), BinaryData(""))
+      val htlc5 = UpdateAddHtlc(0, 2, MilliSatoshi(130000000).amount, 445678, sha256(paymentPreimage5), BinaryData(""))
       val spec = CommitmentSpec(
         htlcs = Set(
           Htlc(OUT, htlc1, None),
