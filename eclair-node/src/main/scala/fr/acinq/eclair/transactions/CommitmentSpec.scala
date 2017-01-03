@@ -20,8 +20,8 @@ case object OUT extends Direction
 
 case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])
 
-final case class CommitmentSpec(htlcs: Set[Htlc], feeRatePerKw: Long, toLocal: Long, toRemote: Long) {
-  val totalFunds = toLocal + toRemote + htlcs.toSeq.map(_.add.amountMsat).sum
+final case class CommitmentSpec(htlcs: Set[Htlc], feeRatePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
+  val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
 object CommitmentSpec {
@@ -33,16 +33,16 @@ object CommitmentSpec {
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
     val htlc = Htlc(direction, update, previousChannelId = None)
     direction match {
-      case OUT => spec.copy(toLocal = spec.toLocal - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
-      case IN => spec.copy(toRemote = spec.toRemote - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
+      case OUT => spec.copy(toLocalMsat = spec.toLocalMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
+      case IN => spec.copy(toRemoteMsat = spec.toRemoteMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
     }
   }
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFulfillHtlc): CommitmentSpec = {
     spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.paymentHash == sha256(update.paymentPreimage)) match {
-      case Some(htlc) if direction == OUT => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == OUT => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == IN => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
     }
   }
@@ -50,8 +50,8 @@ object CommitmentSpec {
   // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
   def failHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFailHtlc): CommitmentSpec = {
     spec.htlcs.find(_.add.id == update.id) match {
-      case Some(htlc) if direction == OUT => spec.copy(toRemote = spec.toRemote + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case Some(htlc) if direction == IN => spec.copy(toLocal = spec.toLocal + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == OUT => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
+      case Some(htlc) if direction == IN => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
     }
   }

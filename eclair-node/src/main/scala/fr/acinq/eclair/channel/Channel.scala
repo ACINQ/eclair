@@ -67,7 +67,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(INPUT_INIT_FUNDER(fundingSatoshis, pushMsat), Nothing) =>
+    case Event(INPUT_INIT_FUNDER(fundingSatoshis, pushMsat), Nothing) if localParams.isFunder =>
       val temporaryChannelId = Platform.currentTime
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
       them ! OpenChannel(temporaryChannelId = temporaryChannelId,
@@ -87,7 +87,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = autoSignInterval)
 
-    case Event(INPUT_INIT_FUNDEE(), Nothing) =>
+    case Event(INPUT_INIT_FUNDEE(), Nothing) if !localParams.isFunder =>
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(localParams, autoSignInterval = autoSignInterval)
   })
 

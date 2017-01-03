@@ -51,10 +51,11 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
         paymentSecret = generateKey(2),
         delayedPaymentKey = generateKey(3),
         finalPrivKey = generateKey(4),
-        shaSeed = Globals.Node.seed
+        shaSeed = Globals.Node.seed,
+        isFunder = amount_opt.isDefined
       )
       val init = amount_opt.map(amount => Left(INPUT_INIT_FUNDER(amount.amount, 0))).getOrElse(Right(INPUT_INIT_FUNDEE()))
-      val channel = context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, localParams, init), name = s"auth-handler-${counter}")
+      context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, localParams, init), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children
     case SendCommand(channelId, cmd) =>

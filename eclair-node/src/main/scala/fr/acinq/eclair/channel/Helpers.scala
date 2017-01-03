@@ -39,8 +39,8 @@ object Helpers {
       val toRemoteMsat = if (funder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
 
       // local and remote feerate are the same at this point (funder gets to choose the initial feerate)
-      val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.localParams.feeratePerKw, toLocal = toLocalMsat, toRemote = toRemoteMsat)
-      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.remoteParams.feeratePerKw, toLocal = toRemoteMsat, toRemote = toLocalMsat)
+      val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
+      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.remoteParams.feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)

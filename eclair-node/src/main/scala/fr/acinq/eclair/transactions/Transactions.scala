@@ -63,7 +63,7 @@ object Transactions {
     weight2fee(feeRatePerKw, fee3.weight) + fee3.amount
   }
 
-  def makeCommitTx(commitTxInput: InputInfo, localDustLimit: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTx = {
+  def makeCommitTx(commitTxInput: InputInfo, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTx = {
 
     val htlcTimeoutFee = weight2fee(spec.feeRatePerKw, htlcTimeoutWeight)
     val htlcSuccessFee = weight2fee(spec.feeRatePerKw, htlcSuccessWeight)
@@ -79,11 +79,11 @@ object Transactions {
     val commitFee = commitTxFee(spec.feeRatePerKw, localDustLimit, spec)
     val totalFees = commitFee + htlcOfferedOutputs.map(_ => htlcTimeoutFee).sum + htlcOfferedOutputs.map(_ => htlcSuccessFee).sum
     // TODO: check dust amount!
-    val (toLocalAmount, toRemoteAmount) = (MilliSatoshi(spec.toLocal), MilliSatoshi(spec.toRemote)) match {
-      case (local, remote) if (local + remote).compare(totalFees) < 0 => ??? //TODO: can't pay fees!
-      case (local, remote) if local.compare(totalFees / 2) < 0 => (Satoshi(0), remote - totalFees + local) // local pays whatever it can and remote pays the rest
-      case (local, remote) if remote.compare(totalFees / 2) < 0 => (local - totalFees + remote, Satoshi(0)) // remote pays whatever it can and local pays the rest
-      case (local, remote) => (local - totalFees / 2, remote - totalFees / 2) // each party pays half the fee
+    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = (MilliSatoshi(spec.toLocalMsat), MilliSatoshi(spec.toRemoteMsat)) match {
+      case (local, remote) if localIsFunder && local.compare(totalFees) < 0 => (Satoshi(0), millisatoshi2satoshi(remote)) //TODO: can't pay fees!
+      case (local, remote) if localIsFunder && local.compare(totalFees) >= 0 => (local - totalFees, millisatoshi2satoshi(remote))
+      case (local, remote) if !localIsFunder && remote.compare(totalFees) < 0 => (millisatoshi2satoshi(local), Satoshi(0)) //TODO: can't pay fees!
+      case (local, remote) if !localIsFunder && remote.compare(totalFees) >= 0 => (millisatoshi2satoshi(local), remote - totalFees)
     }
     val toLocalDelayedOutput_opt = if (toLocalAmount.compare(localDustLimit) >= 0) Some(TxOut(toLocalAmount, pay2wsh(toLocal(localRevocationPubkey, toLocalDelay, localPubkey)))) else None
     val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) >= 0) Some(TxOut(toRemoteAmount, pay2wpkh(toRemote(remotePubkey)))) else None

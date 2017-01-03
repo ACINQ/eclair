@@ -24,7 +24,8 @@ object TestConstants {
       paymentSecret = Scalar(Array.fill[Byte](32)(3) :+ 1.toByte),
       delayedPaymentKey = Scalar(Array.fill[Byte](32)(4) :+ 1.toByte),
       finalPrivKey = Scalar(Array.fill[Byte](32)(5) :+ 1.toByte),
-      shaSeed = Crypto.sha256("alice-seed".getBytes())
+      shaSeed = Crypto.sha256("alice-seed".getBytes()),
+      isFunder = true
     )
   }
 
@@ -42,7 +43,8 @@ object TestConstants {
       paymentSecret = Scalar(Array.fill[Byte](32)(13) :+ 1.toByte),
       delayedPaymentKey = Scalar(Array.fill[Byte](32)(14) :+ 1.toByte),
       finalPrivKey = Scalar(Array.fill[Byte](32)(15) :+ 1.toByte),
-      shaSeed = Crypto.sha256("alice-seed".getBytes())
+      shaSeed = Crypto.sha256("alice-seed".getBytes()),
+      isFunder = false
     )
   }
 

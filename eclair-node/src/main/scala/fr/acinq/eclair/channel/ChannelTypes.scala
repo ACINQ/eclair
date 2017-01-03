@@ -160,7 +160,8 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              paymentSecret: Scalar,
                              delayedPaymentKey: Scalar,
                              finalPrivKey: Scalar,
-                             shaSeed: BinaryData)
+                             shaSeed: BinaryData,
+                             isFunder: Boolean)
 
 final case class RemoteParams(dustLimitSatoshis: Long,
                               maxHtlcValueInFlightMsat: Long,
