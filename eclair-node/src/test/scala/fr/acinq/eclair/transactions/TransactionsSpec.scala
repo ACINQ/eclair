@@ -1,7 +1,9 @@
 package fr.acinq.eclair.transactions
 
+import java.nio.{ByteBuffer, ByteOrder}
+
 import fr.acinq.bitcoin.Crypto.{Scalar, sha256}
-import fr.acinq.bitcoin.{BinaryData, Btc, MilliBtc, MilliSatoshi, Satoshi, Transaction, millibtc2satoshi}
+import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi, Transaction, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -38,8 +40,16 @@ class TransactionsSpec extends FunSuite {
       toLocalMsat = millibtc2satoshi(MilliBtc(400)).amount * 1000,
       toRemoteMsat = millibtc2satoshi(MilliBtc(300)).amount * 1000)
 
-    val commitTx = makeCommitTx(commitInput, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+    val commitTxNumber = 0x404142434445L
+    val commitTx = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
 
+    {
+      assert(getCommitTxNumber(commitTx.tx, localPaymentPriv.toPoint, remotePaymentPriv.toPoint) == commitTxNumber)
+      val hash: Array[Byte] = Crypto.sha256(localPaymentPriv.toPoint.toBin ++ remotePaymentPriv.toPoint.toBin)
+      val num = ByteBuffer.wrap(hash.takeRight(8)).order(ByteOrder.BIG_ENDIAN).getLong & 0xffffffffffffL
+      val check = ((commitTx.tx.txIn(0).sequence & 0xffffff) << 24) | (commitTx.tx.lockTime)
+      assert((check ^ num) == commitTxNumber)
+    }
     val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
 
     assert(htlcTimeoutTxs.size == 1)
@@ -163,7 +173,7 @@ class TransactionsSpec extends FunSuite {
         feeRatePerKw = feeRatePerKw,
         toLocalMsat = millibtc2satoshi(MilliBtc(70)).amount * 1000,
         toRemoteMsat = millibtc2satoshi(MilliBtc(30)).amount * 1000)
-      val commitTx = makeCommitTx(commitInput, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+      val commitTx = makeCommitTx(commitInput, 42, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       run("simple tx with two outputs", spec, commitTx, htlcTimeoutTxs, htlcSuccessTxs)
     }
@@ -175,7 +185,7 @@ class TransactionsSpec extends FunSuite {
         feeRatePerKw = feeRatePerKw,
         toLocalMsat = (MilliBtc(100) - Satoshi(1000)).amount * 1000,
         toRemoteMsat = Satoshi(1000).amount * 1000)
-      val commitTx = makeCommitTx(commitInput, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+      val commitTx = makeCommitTx(commitInput, 42, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       run("two outputs with fundee below dust limit", spec, commitTx, htlcTimeoutTxs, htlcSuccessTxs)
     }
@@ -194,7 +204,7 @@ class TransactionsSpec extends FunSuite {
         feeRatePerKw = feeRatePerKw,
         toLocalMsat = (MilliBtc(100) - MilliBtc(30) - MilliSatoshi(htlc1.amountMsat) - MilliSatoshi(htlc2.amountMsat)).amount * 1000,
         toRemoteMsat = millibtc2satoshi(MilliBtc(30)).amount * 1000)
-      val commitTx = makeCommitTx(commitInput, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+      val commitTx = makeCommitTx(commitInput, 42, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       run("with htlcs, all above dust limit", spec, commitTx, htlcTimeoutTxs, htlcSuccessTxs)
     }
@@ -222,7 +232,7 @@ class TransactionsSpec extends FunSuite {
         feeRatePerKw = feeRatePerKw,
         toLocalMsat = (MilliBtc(100) - MilliBtc(30) - MilliSatoshi(htlc1.amountMsat) - MilliSatoshi(htlc2.amountMsat) - MilliSatoshi(htlc3.amountMsat) - MilliSatoshi(htlc4.amountMsat) - MilliSatoshi(htlc5.amountMsat)).amount * 1000,
         toRemoteMsat = millibtc2satoshi(MilliBtc(30)).amount * 1000)
-      val commitTx = makeCommitTx(commitInput, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+      val commitTx = makeCommitTx(commitInput, 42, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
       run("with htlcs, some below dust limit", spec, commitTx, htlcTimeoutTxs, htlcSuccessTxs)
     }
