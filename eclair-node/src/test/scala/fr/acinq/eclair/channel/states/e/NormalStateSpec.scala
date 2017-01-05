@@ -233,12 +233,12 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val r = BinaryData("00112233445566778899aabbccddeeff")
       val h: BinaryData = Crypto.sha256(r)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, 144))
+      sender.send(alice, CMD_ADD_HTLC(50000000, h, 144))
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
 
-      sender.send(alice, CMD_ADD_HTLC(5000000, h, 144))
+      sender.send(alice, CMD_ADD_HTLC(50000000, h, 144))
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
@@ -250,7 +250,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc1.id && h.direction == IN))
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc2.id && h.direction == IN))
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx.txOut.count(_.amount == Satoshi(5000)) == 2)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx.txOut.count(_.amount == Satoshi(50000)) == 2)
     }
   }
 
