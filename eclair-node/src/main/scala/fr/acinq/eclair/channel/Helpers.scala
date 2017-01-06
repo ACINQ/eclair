@@ -1,11 +1,12 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.bitcoin.Script._
+import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions.{ClosingTx, CommitTx, InputInfo}
 import fr.acinq.eclair.transactions._
+import fr.acinq.eclair.wire.ClosingSigned
 
 import scala.util.Try
 
@@ -26,7 +27,6 @@ object Helpers {
     /**
       * Creates both sides's first commitment transaction
       *
-      * @param funder
       * @param params
       * @param pushMsat
       * @param fundingTxHash
@@ -34,9 +34,9 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(funder: Boolean, params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: BinaryData): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      val toLocalMsat = if (funder) params.fundingSatoshis * 1000 - pushMsat else pushMsat
-      val toRemoteMsat = if (funder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
+    def makeFirstCommitTxs(params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: BinaryData): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+      val toLocalMsat = if (params.localParams.isFunder) params.fundingSatoshis * 1000 - pushMsat else pushMsat
+      val toRemoteMsat = if (params.localParams.isFunder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
 
       // local and remote feerate are the same at this point (funder gets to choose the initial feerate)
       val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
@@ -54,44 +54,43 @@ object Helpers {
 
   object Closing {
 
-    def checkCloseSignature(closeSig: BinaryData, closeFee: Satoshi, d: DATA_NEGOTIATING): Try[Transaction] = ???
+    def makeFirstClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
+      // TODO: check that
+      val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
+      // TODO
+      val closingFee = Satoshi(20000)
+      // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
+      val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
+      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivkey)
+      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
+      closingSigned
+    }
 
-    /*{
-    val (finalTx, ourCloseSig) = Helpers.makeFinalTx(d.commitments, d.ourShutdown.scriptPubkey, d.theirShutdown.scriptPubkey, closeFee)
-    val signedTx = addSigs(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput.amount, finalTx, ourCloseSig.sig, closeSig)
-    checksig(d.commitments.ourParams, d.commitments.theirParams, d.commitments.anchorOutput, signedTx).map(_ => signedTx)
-  }*/
+    def makeClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi): (ClosingTx, ClosingSigned) = {
+      // TODO: check that
+      val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
+      // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
+      val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
+      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivkey)
+      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
+      (closingTx, closingSigned)
+    }
 
-    /**
-      *
-      * @param commitments
-      * @param ourScriptPubKey
-      * @param theirScriptPubKey
-      * @param closeFee bitcoin fee for the final tx
-      * @return a (final tx, fee, our signature) tuple. The tx is not signed.
-      */
-    def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData, closeFee: Satoshi): (Transaction, Long, BinaryData) = ???
+    def checkClosingSignature(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
+      // TODO: check that
+      val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
+      val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
+      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivkey)
+      val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivkey.toPoint, commitments.remoteParams.fundingPubkey, localClosingSig, remoteClosingSig)
+      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
+      Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
+    }
 
-    /*{
-    val amount_us = Satoshi(commitments.ourCommit.spec.amount_us_msat / 1000)
-    val amount_them = Satoshi(commitments.theirCommit.spec.amount_us_msat / 1000)
-    val finalTx = Scripts.makeFinalTx(commitments.ourCommit.publishableTx.txIn, ourScriptPubKey, theirScriptPubKey, amount_us, amount_them, closeFee)
-    val ourSig = Helpers.sign(commitments.ourParams, commitments.theirParams, commitments.anchorOutput.amount, finalTx)
-    (finalTx, ClosingSigned(closeFee.toLong, ourSig))
-  }*/
-
-    /**
-      *
-      * @param commitments
-      * @param ourScriptPubKey
-      * @param theirScriptPubKey
-      * @return a (final tx, fee, our signature) tuple. The tx is not signed. Bitcoin fees will be copied from our
-      *         last commit tx
-      */
-    def makeFinalTx(commitments: Commitments, ourScriptPubKey: BinaryData, theirScriptPubKey: BinaryData): (Transaction, Long, BinaryData) = {
-      val commitFee = commitments.commitInput.txOut.amount.toLong - commitments.localCommit.publishableTxs._1.tx.txOut.map(_.amount.toLong).sum
-      val closeFee = Satoshi(2 * (commitFee / 4))
-      makeFinalTx(commitments, ourScriptPubKey, theirScriptPubKey, closeFee)
+    def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = {
+      ((localClosingFee + remoteClosingFee) / 4) * 2 match {
+        case value if value == localClosingFee => value + Satoshi(2)
+        case value => value
+      }
     }
 
     /**
