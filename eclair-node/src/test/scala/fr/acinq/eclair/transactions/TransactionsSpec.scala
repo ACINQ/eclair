@@ -61,7 +61,7 @@ class TransactionsSpec extends FunSuite {
       val localSig = sign(htlcTimeoutTx, localPaymentPriv)
       val remoteSig = sign(htlcTimeoutTx, remotePaymentPriv)
       val signed = addSigs(htlcTimeoutTx, localSig, remoteSig)
-      assert(checkSig(signed).isSuccess)
+      assert(checkSpendable(signed).isSuccess)
     }
 
     {
@@ -71,7 +71,7 @@ class TransactionsSpec extends FunSuite {
       val claimHtlcDelayed = makeClaimHtlcDelayed(htlcTimeoutTx.tx, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, localFinalPriv.toPoint, htlc1)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
-      assert(checkSig(signedTx).isSuccess)
+      assert(checkSpendable(signedTx).isSuccess)
     }
 
     {
@@ -80,7 +80,7 @@ class TransactionsSpec extends FunSuite {
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, remotePaymentPriv.toPoint, localPaymentPriv.toPoint, remoteFinalPriv.toPoint, htlc1)
       val localSig = sign(claimHtlcSuccessTx, remotePaymentPriv)
       val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage1)
-      assert(checkSig(signed).isSuccess)
+      assert(checkSpendable(signed).isSuccess)
     }
 
     {
@@ -89,7 +89,9 @@ class TransactionsSpec extends FunSuite {
       val localSig = sign(htlcSuccessTx, localPaymentPriv)
       val remoteSig = sign(htlcSuccessTx, remotePaymentPriv)
       val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage2)
-      assert(checkSig(signedTx).isSuccess)
+      assert(checkSpendable(signedTx).isSuccess)
+      // check remote sig
+      assert(checkSig(htlcSuccessTx, remoteSig, remotePaymentPriv.toPoint))
     }
 
     {
@@ -99,7 +101,7 @@ class TransactionsSpec extends FunSuite {
       val claimHtlcDelayed = makeClaimHtlcDelayed(htlcSuccessTx.tx, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, localFinalPriv.toPoint, htlc1)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
-      assert(checkSig(signedTx).isSuccess)
+      assert(checkSpendable(signedTx).isSuccess)
     }
 
     {
@@ -108,7 +110,7 @@ class TransactionsSpec extends FunSuite {
       val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, remotePaymentPriv.toPoint, localPaymentPriv.toPoint, remoteFinalPriv.toPoint, htlc2)
       val localSig = sign(claimHtlcTimeoutTx, remotePaymentPriv)
       val signed = addSigs(claimHtlcTimeoutTx, localSig)
-      assert(checkSig(signed).isSuccess)
+      assert(checkSpendable(signed).isSuccess)
     }
 
   }

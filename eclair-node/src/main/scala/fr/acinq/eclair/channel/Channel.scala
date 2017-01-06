@@ -206,7 +206,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       // check remote signature validity
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
-      Transactions.checkSig(signedLocalCommitTx) match {
+      Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingCreated message contains an invalid signature")
           them ! Error(temporaryChannelId, cause.getMessage.getBytes)
@@ -226,7 +226,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth.toInt, BITCOIN_FUNDING_DEPTHOK)
 
           val commitments = Commitments(params.localParams, params.remoteParams,
-            LocalCommit(0, localSpec, (signedLocalCommitTx, Nil, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
+            LocalCommit(0, localSpec, (signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
@@ -247,7 +247,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       // we make sure that their sig checks out and that our first commit tx is spendable
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey, localSigOfLocalTx, remoteSig)
-      Transactions.checkSig(signedLocalCommitTx) match {
+      Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
           them ! Error(temporaryChannelId, cause.getMessage.getBytes)
@@ -259,7 +259,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
           blockchain ! Publish(fundingTx)
           val commitments = Commitments(params.localParams, params.remoteParams,
-            LocalCommit(0, localSpec, (signedLocalCommitTx, Nil, Nil)), remoteCommit,
+            LocalCommit(0, localSpec, (signedLocalCommitTx, Nil)), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array

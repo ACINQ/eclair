@@ -223,8 +223,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       bob2alice.expectMsgType[RevokeAndAck]
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 0)
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._3.size == 1)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 1)
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
     }
   }
@@ -251,8 +250,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       sign(alice, bob, alice2bob, bob2alice)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc1.id && h.direction == IN))
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 0)
-      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._3.size == 2)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 2)
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx.txOut.count(_.amount == Satoshi(50000)) == 2)
     }

@@ -1,6 +1,6 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, ripemd160}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut, millisatoshi2satoshi}
@@ -249,7 +249,12 @@ object Transactions {
     claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
   }
 
-  def checkSig(txinfo: TransactionWithInputInfo): Try[Unit] =
+  def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn(0).outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
+
+  def checkSig(txinfo: TransactionWithInputInfo, sig: BinaryData, pubKey: PublicKey): Boolean = {
+    val data = Transaction.hashForSigning(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, SIGHASH_ALL, txinfo.input.txOut.amount, SIGVERSION_WITNESS_V0)
+    Crypto.verifySignature(data, sig, pubKey)
+  }
 
 }
