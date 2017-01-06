@@ -44,10 +44,10 @@ object Helpers {
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
-      val (localTxTemplate, _, _) = Commitments.makeLocalTxs(0, params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteTxTemplate, _, _) = Commitments.makeRemoteTxs(0, params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val (localCommitTx, _, _) = Commitments.makeLocalTxs(0, params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
-      (localSpec, localTxTemplate, remoteSpec, remoteTxTemplate)
+      (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
 
   }

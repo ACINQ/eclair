@@ -152,7 +152,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         toSelfDelay = accept.toSelfDelay,
         maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
         fundingPubkey = accept.fundingPubkey,
-        revocationBasepoint = accept.fundingPubkey,
+        revocationBasepoint = accept.revocationBasepoint,
         paymentBasepoint = accept.paymentBasepoint,
         delayedPaymentBasepoint = accept.delayedPaymentBasepoint
       )

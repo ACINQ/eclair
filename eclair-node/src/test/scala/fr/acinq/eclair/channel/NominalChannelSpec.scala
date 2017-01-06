@@ -92,14 +92,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.toLocalMsat == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.toLocalMsat == TestConstants.fundingSatoshis * 1000 - 60000000)
           assert(d.commitments.localCommit.spec.toRemoteMsat == 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
           assert(d.commitments.localCommit.spec.toLocalMsat == 60000000)
-          assert(d.commitments.localCommit.spec.toRemoteMsat == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.toRemoteMsat == TestConstants.fundingSatoshis * 1000 - 60000000)
       }
 
       // send another HTLC
@@ -145,14 +145,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.toLocalMsat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toLocalMsat == TestConstants.fundingSatoshis * 1000 - 2 * 60000000)
           assert(d.commitments.localCommit.spec.toRemoteMsat == 2 * 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
           assert(d.commitments.localCommit.spec.toLocalMsat == 2 * 60000000)
-          assert(d.commitments.localCommit.spec.toRemoteMsat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toRemoteMsat == TestConstants.fundingSatoshis * 1000 - 2 * 60000000)
       }
     }
   }

@@ -8,7 +8,8 @@ import fr.acinq.eclair.channel._
   * Created by PM on 26/04/2016.
   */
 object TestConstants {
-  val anchorAmount = 1000000L
+  val fundingSatoshis = 1000000L
+  val pushMsat = 200000000L
 
   object Alice {
     val channelParams = LocalParams(
