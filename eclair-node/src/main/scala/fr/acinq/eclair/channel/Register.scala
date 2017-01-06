@@ -48,7 +48,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
         maxAcceptedHtlcs = 100,
         fundingPrivkey = generateKey(0),
         revocationSecret = generateKey(1),
-        paymentSecret = generateKey(2),
+        paymentKey = generateKey(2),
         delayedPaymentKey = generateKey(3),
         finalPrivKey = generateKey(4),
         shaSeed = Globals.Node.seed,

@@ -8,7 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
-import fr.acinq.eclair.transactions.{IN, Scripts}
+import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AcceptChannel, ClosingSigned, CommitSig, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -217,6 +217,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
+
       // actual test begins
       alice2bob.expectMsgType[CommitSig]
       alice2bob.forward(bob)
@@ -225,6 +226,64 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == IN))
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 1)
       assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.acked.size == 1)
+    }
+  }
+
+  test("recv CommitSig (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+
+      // actual test begins
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.exists(h => h.add.id == htlc.id && h.direction == OUT))
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 1)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.toLocalMsat == initialState.commitments.localCommit.spec.toLocalMsat)
+    }
+  }
+
+  test("recv CommitSig (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice) // a->b (regular)
+      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)  // a->b (regular)
+      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)   // b->a (dust)
+      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)  // a->b (regular)
+      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
+      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)   // a->b (dust)
+      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob)  // b->a (regular)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+
+      // actual test begins
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 3)
+      val a = 1
     }
   }
 
@@ -300,6 +359,33 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.forward(alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localChanges.acked.size == 1)
+    }
+  }
+
+  test("recv RevokeAndAck (one htlc received)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+
+      // actual test begins
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+
+
     }
   }
 

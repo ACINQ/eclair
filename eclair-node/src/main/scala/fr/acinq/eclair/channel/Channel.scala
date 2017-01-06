@@ -82,7 +82,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPrivkey.toPoint,
         revocationBasepoint = localParams.revocationSecret.toPoint,
-        paymentBasepoint = localParams.paymentSecret.toPoint,
+        paymentBasepoint = localParams.paymentKey.toPoint,
         delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = autoSignInterval)
@@ -108,7 +108,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPrivkey.toPoint,
         revocationBasepoint = localParams.revocationSecret.toPoint,
-        paymentBasepoint = localParams.paymentSecret.toPoint,
+        paymentBasepoint = localParams.paymentKey.toPoint,
         delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       val remoteParams = RemoteParams(
