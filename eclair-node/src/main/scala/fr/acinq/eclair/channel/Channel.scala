@@ -365,7 +365,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       }
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_NORMAL) =>
-      Try(Commitments.sendFulfill(d.commitments, c, d.channelId)) match {
+      Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
@@ -488,7 +488,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   when(SHUTDOWN) {
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_SHUTDOWN) =>
-      Try(Commitments.sendFulfill(d.commitments, c, d.channelId)) match {
+      Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }

@@ -85,10 +85,10 @@ object Commitments {
     }
   }
 
-  def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC, channelId: Long): (Commitments, UpdateFulfillHtlc) = {
+  def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) = {
     commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
-        val fulfill = UpdateFulfillHtlc(channelId, cmd.id, cmd.r)
+        val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
         (commitments1, fulfill)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${cmd.id}")
@@ -105,10 +105,9 @@ object Commitments {
   }
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, UpdateFailHtlc) = {
-    commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u } match {
+    commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
       case Some(htlc) =>
-        val fail: UpdateFailHtlc = ???
-        //UpdateFailHtlc(cmd.channelId, cmd.id, fail_reason(ByteString.copyFromUtf8(cmd.reason)))
+        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, BinaryData(cmd.reason.getBytes("UTF-8")))
         val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
