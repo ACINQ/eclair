@@ -254,7 +254,7 @@ object Commitments {
           .zip(htlcSigs)
           .zip(revocation.htlcTimeoutSignatures) // this is a list of ((tx, localSig), remoteSig)
           .map(e => (e._1._1, e._1._2, e._2)) // this is a list of (tx, localSig, remoteSig)
-          .map(x => Transactions.addSigs(x._1, x._2, x._3))
+          .map(x => Transactions.addSigs(x._1, x._3, x._2))
 
         // and finally whe check the sigs
         require(signedHtlcTxs.forall(Transactions.checkSpendable(_).isSuccess), "bad sig")
