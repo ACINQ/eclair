@@ -42,7 +42,7 @@ object Helpers {
       val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.remoteParams.feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
 
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivkey.toPoint, params.remoteParams.fundingPubkey)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivKey.toPoint, params.remoteParams.fundingPubKey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
       val (localCommitTx, _, _) = Commitments.makeLocalTxs(0, params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
@@ -61,7 +61,7 @@ object Helpers {
       val closingFee = Satoshi(20000)
       // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
-      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivkey)
+      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
       closingSigned
     }
@@ -71,7 +71,7 @@ object Helpers {
       val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
       // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
-      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivkey)
+      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
       (closingTx, closingSigned)
     }
@@ -80,8 +80,8 @@ object Helpers {
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
-      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivkey)
-      val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivkey.toPoint, commitments.remoteParams.fundingPubkey, localClosingSig, remoteClosingSig)
+      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
+      val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivKey.toPoint, commitments.remoteParams.fundingPubKey, localClosingSig, remoteClosingSig)
       val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }

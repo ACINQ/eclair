@@ -138,7 +138,7 @@ object Commitments {
         // remote commitment will includes all local changes + remote acked changes
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
-        val sig = Transactions.sign(remoteCommitTx, localParams.fundingPrivkey)
+        val sig = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
 
         val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
         val paymentKey = Generators.derivePrivKey(localParams.paymentKey, remoteNextPerCommitmentPoint)
@@ -182,12 +182,12 @@ object Commitments {
     val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 1)
     // TODO: Long or Int??
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
-    val sig = Transactions.sign(localCommitTx, localParams.fundingPrivkey)
+    val sig = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
 
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 
     // no need to compute htlc sigs if commit sig doesn't check out
-    val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivkey.toPoint, remoteParams.fundingPubkey, sig, commit.signature)
+    val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivKey.toPoint, remoteParams.fundingPubKey, sig, commit.signature)
     if (Transactions.checkSpendable(signedCommitTx).isFailure) throw new RuntimeException("invalid sig")
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)

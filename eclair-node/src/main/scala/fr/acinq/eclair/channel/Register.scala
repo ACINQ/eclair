@@ -46,7 +46,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
         feeratePerKw = 10000,
         toSelfDelay = 144,
         maxAcceptedHtlcs = 100,
-        fundingPrivkey = generateKey(0),
+        fundingPrivKey = generateKey(0),
         revocationSecret = generateKey(1),
         paymentKey = generateKey(2),
         delayedPaymentKey = generateKey(3),

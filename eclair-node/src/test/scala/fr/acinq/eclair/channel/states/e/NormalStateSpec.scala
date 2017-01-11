@@ -3,13 +3,13 @@ package fr.acinq.eclair.channel.states.e
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AcceptChannel, ClosingSigned, CommitSig, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -117,6 +117,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
 
@@ -260,13 +261,19 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
 
-      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice) // a->b (regular)
-      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)  // a->b (regular)
-      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)   // b->a (dust)
-      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)  // a->b (regular)
-      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
-      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)   // a->b (dust)
-      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob)  // b->a (regular)
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      // a->b (regular)
+      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)
+      // a->b (regular)
+      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)
+      // b->a (dust)
+      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
+      // a->b (regular)
+      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
+      // b->a (regular)
+      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      // a->b (dust)
+      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
@@ -388,13 +395,19 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice) // a->b (regular)
-      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)  // a->b (regular)
-      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)   // b->a (dust)
-      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)  // a->b (regular)
-      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
-      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)   // a->b (dust)
-      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob)  // b->a (regular)
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      // a->b (regular)
+      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)
+      // a->b (regular)
+      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)
+      // b->a (dust)
+      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
+      // a->b (regular)
+      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
+      // b->a (regular)
+      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
+      // a->b (dust)
+      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
@@ -640,6 +653,29 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[Shutdown]
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+    }
+  }
+
+  test("recv CMD_CLOSE (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("cannot close when there are pending changes")
+    }
+  }
+
+  test("recv CMD_CLOSE (with signed sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
@@ -651,11 +687,27 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("closing already in progress")
+    }
+  }
+
+  test("recv CMD_CLOSE (while waiting for a RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      // actual test begins
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[Shutdown]
+      awaitCond(alice.stateName == NORMAL)
     }
   }
 
@@ -669,31 +721,30 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  /**
-    * see https://github.com/ElementsProject/lightning/issues/29
-    */
-  ignore("recv Shutdown (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Shutdown (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sender.send(bob, CMD_CLOSE(None))
+      bob2alice.expectMsgType[Shutdown]
       // actual test begins
-      sender.send(alice, Shutdown(0, "00" * 25))
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[CommitSig]
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == SHUTDOWN)
     }
   }
 
-  /**
-    * see https://github.com/ElementsProject/lightning/issues/29
-    */
-  ignore("recv Shutdown (with unacked sent htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Shutdown (with unacked received htlcs)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       // actual test begins
-      sender.send(alice, Shutdown(0, "00" * 25))
-      alice2bob.expectMsgType[Shutdown]
-      awaitCond(alice.stateName == SHUTDOWN)
+      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.toPoint))))
+      bob2alice.expectMsgType[Error]
+      bob2blockchain.expectMsgType[Publish]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(bob.stateName == CLOSING)
     }
   }
 
@@ -702,9 +753,26 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
+      sign(bob, alice, bob2alice, alice2bob)
 
       // actual test begins
-      sender.send(alice, Shutdown(0, "00" * 25))
+      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.toPoint))))
+      bob2alice.expectMsgType[Shutdown]
+      awaitCond(bob.stateName == SHUTDOWN)
+    }
+  }
+
+  test("recv Shutdown (while waiting for a RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      sender.send(bob, CMD_CLOSE(None))
+      bob2alice.expectMsgType[Shutdown]
+      // actual test begins
+      bob2alice.forward(alice)
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == SHUTDOWN)
     }
