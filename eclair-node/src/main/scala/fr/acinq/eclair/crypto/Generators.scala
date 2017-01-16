@@ -13,7 +13,7 @@ object Generators {
     case length if length < 32 => Array.fill(32 - length)(0.toByte) ++ data
   }
 
-  def perCommitSecret(seed: BinaryData, index: Int): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, index) :+ 1.toByte)
+  def perCommitSecret(seed: BinaryData, index: Int): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index) :+ 1.toByte)
 
   def perCommitPoint(seed: BinaryData, index: Int): Point = perCommitSecret(seed, index).toPoint
 

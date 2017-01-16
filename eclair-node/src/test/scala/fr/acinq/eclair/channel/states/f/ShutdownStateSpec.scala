@@ -398,7 +398,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       assert(amountClaimed == Satoshi(500000))
 
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished == Some(bobCommitTx))
     }
   }
 
@@ -439,7 +439,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice2blockchain.expectNoMsg()
 
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished == Some(aliceCommitTx))
     }
   }
 

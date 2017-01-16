@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
 import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions._
@@ -86,7 +86,7 @@ object Commitments {
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) = {
-    commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == cmd.id => u.add } match {
+    commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.direction == IN && u.add.id == cmd.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
@@ -97,7 +97,7 @@ object Commitments {
   }
 
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): (Commitments, UpdateAddHtlc) = {
-    commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.add.id == fulfill.id => u.add } match {
+    commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.direction == IN && u.add.id == fulfill.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => (addRemoteProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
       case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO: we should fail the channel
@@ -220,7 +220,7 @@ object Commitments {
     // TODO: Long or Int??
     val revocation = RevokeAndAck(
       channelId = commitments.channelId,
-      perCommitmentSecret = localPerCommitmentSecret,
+      perCommitmentSecret = localPerCommitmentSecret.toBin.take(32),
       nextPerCommitmentPoint = localNextPerCommitmentPoint,
       htlcTimeoutSignatures = timeoutHtlcSigs.toList
     )
@@ -238,7 +238,7 @@ object Commitments {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
-      case Left(_) if Scalar(revocation.perCommitmentSecret).toPoint != remoteCommit.remotePerCommitmentPoint =>
+      case Left(_) if Scalar(revocation.perCommitmentSecret :+ 1.toByte).toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig

@@ -3,10 +3,11 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.transactions.Scripts._
-import fr.acinq.eclair.transactions.Transactions.{ClosingTx, CommitTx, InputInfo}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.ClosingSigned
+import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
 
 import scala.util.Try
 
@@ -94,131 +95,49 @@ object Helpers {
     }
 
     /**
-      * Claim a revoked commit tx using the matching revocation preimage, which allows us to claim all its inputs without a
-      * delay
       *
-      * @param theirTxTemplate    revoked commit tx template
-      * @param revocationPreimage revocation preimage (which must match this specific commit tx)
-      * @param privateKey         private key to send the claimed funds to (the returned tx will include a single P2WPKH output)
-      * @return a signed transaction that spends the revoked commit tx
-      */
-    def claimRevokedCommitTx(theirTxTemplate: CommitTx, revocationPreimage: BinaryData, privateKey: BinaryData): Transaction = ???
-
-    /*{
-      val theirTx = theirTxTemplate.makeTx
-      val outputs = collection.mutable.ListBuffer.empty[TxOut]
-
-      // first, find out how much we can claim
-      val outputsToClaim = (theirTxTemplate.localOutput.toSeq ++ theirTxTemplate.htlcReceivedOutputs ++ theirTxTemplate.htlcOfferedOutputs).filter(o => theirTx.txOut.indexOf(o.txOut) != -1)
-      val totalAmount = outputsToClaim.map(_.amount).sum // TODO: substract a small network fee
-
-      // create a tx that sends everything to our private key
-      val tx = Transaction(version = 2,
-        txIn = Seq.empty[TxIn],
-        txOut = TxOut(totalAmount, pay2wpkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
-        lockTime = 0)
-
-      // create tx inputs that spend each output that we can spend
-      val inputs = outputsToClaim.map(outputTemplate => {
-        val index = theirTx.txOut.indexOf(outputTemplate.txOut)
-        TxIn(OutPoint(theirTx, index), signatureScript = BinaryData.empty, sequence = 0xffffffffL)
-      })
-      assert(inputs.length == outputsToClaim.length)
-
-      // and sign them
-      val tx1 = tx.copy(txIn = inputs)
-      val witnesses = for (i <- 0 until tx1.txIn.length) yield {
-        val sig = Transaction.signInput(tx1, i, outputsToClaim(i).redeemScript, SIGHASH_ALL, outputsToClaim(i).amount, 1, privateKey)
-        val witness = ScriptWitness(sig :: revocationPreimage :: outputsToClaim(i).redeemScript :: Nil)
-        witness
-      }
-
-      tx1.updateWitnesses(witnesses)
-    }*/
-
-    /**
-      * claim an HTLC that we received using its payment preimage. This is used only when the other party publishes its
-      * current commit tx which contains pending HTLCs.
-      *
-      * @param tx              commit tx published by the other party
-      * @param htlcTemplate    HTLC template for an HTLC in the commit tx for which we have the preimage
-      * @param paymentPreimage HTLC preimage
-      * @param privateKey      private key which matches the pubkey  that the HTLC was sent to
-      * @return a signed transaction that spends the HTLC in their published commit tx.
-      *         This tx is not spendable right away: it has both an absolute CLTV time-out and a relative CSV time-out
-      *         before which it can be published
-      */
-    //def claimReceivedHtlc(tx: Transaction, htlcTemplate: ReceivedHTLC, paymentPreimage: BinaryData, privateKey: BinaryData): Transaction = ???
-    /*{
-      require(htlcTemplate.htlc.add.paymentHash == BinaryData(Crypto.sha256(paymentPreimage)), "invalid payment preimage")
-      // find its index in their tx
-      val index = tx.txOut.indexOf(htlcTemplate.txOut)
-
-      val tx1 = Transaction(version = 2,
-        txIn = TxIn(OutPoint(tx, index), BinaryData.empty, sequence = Common.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
-        txOut = TxOut(htlcTemplate.amount, Common.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
-        lockTime = ??? /*Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry)*/)
-
-      val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
-      val witness = ScriptWitness(sig :: paymentPreimage :: htlcTemplate.redeemScript :: Nil)
-      val tx2 = tx1.updateWitness(0, witness)
-      tx2
-    }*/
-
-    /**
       * claim all the HTLCs that we've received from their current commit tx
       *
-      * @param txTemplate  commit tx published by the other party
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    //def claimReceivedHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = ???
-    /*{
-      val preImages = commitments.localChanges.all.collect { case UpdateFulfillHtlc(_, id, paymentPreimage) => paymentPreimage }
-      // TODO: FIXME !!!
-      //val htlcTemplates = txTemplate.htlcSent
-      val htlcTemplates = txTemplate.htlcReceived ++ txTemplate.htlcSent
+    def claimRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Seq[TransactionWithInputInfo] = {
+      import commitments._
+      require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
+      val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+      require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
-      //@tailrec
-      def loop(htlcs: Seq[HTLCTemplate], acc: Seq[Transaction] = Seq.empty[Transaction]): Seq[Transaction] = Nil
+      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remoteCommit.remotePerCommitmentPoint)
+      val remotePubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
+      val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
 
-      /*{
-      htlcs.headOption match {
-        case Some(head) =>
-          preImages.find(preImage => head.htlc.add.rHash == bin2sha256(Crypto.sha256(preImage))) match {
-            case Some(preImage) => loop(htlcs.tail, claimReceivedHtlc(tx, head, preImage, commitments.ourParams.finalPrivKey) +: acc)
-            case None => loop(htlcs.tail, acc)
-          }
-        case None => acc
+      // those are the preimages to existing received htlcs
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+
+      // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
+
+      // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
+      val txes = commitments.remoteCommit.spec.htlcs.collect {
+        // incoming htlc for which we have the preimage: we spend it directly
+        case Htlc(OUT, add: UpdateAddHtlc, _) if preimages.exists(r => sha256(r) == add.paymentHash) =>
+          val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPubkey, remotePubkey, localPubkey, add)
+          val sig = Transactions.sign(tx, localPrivkey)
+          Transactions.addSigs(tx, sig, preimage)
+        // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
+        // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
+        case Htlc(IN, add: UpdateAddHtlc, _) =>
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPubkey, remotePubkey, localPubkey, add)
+          val sig = Transactions.sign(tx, localPrivkey)
+          Transactions.addSigs(tx, sig)
       }
-    }*/
-      loop(htlcTemplates)
-    }*/
 
-    //def claimSentHtlc(tx: Transaction, htlcTemplate: OfferedHTLCOutputTemplate, privateKey: BinaryData): Transaction = ???
-    /*{
-      val index = tx.txOut.indexOf(htlcTemplate.txOut)
-      val tx1 = Transaction(
-        version = 2,
-        txIn = TxIn(OutPoint(tx, index), Array.emptyByteArray, sequence = Common.toSelfDelay2csv(htlcTemplate.delay)) :: Nil,
-        txOut = TxOut(htlcTemplate.amount, Common.pay2pkh(Crypto.publicKeyFromPrivateKey(privateKey))) :: Nil,
-        lockTime = ??? /*Scripts.locktime2long_cltv(htlcTemplate.htlc.add.expiry)*/)
+      // OPTIONAL: let's check transactions are actually spendable
+      require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      val sig = Transaction.signInput(tx1, 0, htlcTemplate.redeemScript, SIGHASH_ALL, htlcTemplate.amount, 1, privateKey)
-      val witness = ScriptWitness(sig :: Hash.Zeroes :: htlcTemplate.redeemScript :: Nil)
-      tx1.updateWitness(0, witness)
-    }*/
+      txes.toSeq
+    }
 
-    // TODO: fix this!
-    //def claimSentHtlcs(tx: Transaction, txTemplate: CommitTxTemplate, commitments: Commitments): Seq[Transaction] = Nil
-
-    /*{
-    // txTemplate could be our template (we published our commit tx) or their template (they published their commit tx)
-    val htlcs1 = txTemplate.htlcSent.filter(_.ourKey == commitments.ourParams.finalPubKey)
-    val htlcs2 = txTemplate.htlcReceived.filter(_.theirKey == commitments.ourParams.finalPubKey)
-    val htlcs = htlcs1 ++ htlcs2
-    htlcs.map(htlcTemplate => claimSentHtlc(tx, htlcTemplate, commitments.ourParams.finalPrivKey))
-  }*/
   }
 
 }

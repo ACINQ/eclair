@@ -6,6 +6,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -300,13 +301,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(cmd: CMD_CLOSE, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
       blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
       blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTxs._1.tx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTxs._1.tx))
+      // there can't be htlcs at this stage
+      val localCommitPublished = LocalCommitPublished(d.commitments.localCommit.publishableTxs._1.tx, Nil, Nil, Nil)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
       log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
       blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
       blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTxs._1.tx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTxs._1.tx))
+      // there can't be htlcs at this stage
+      val localCommitPublished = LocalCommitPublished(d.commitments.localCommit.publishableTxs._1.tx, Nil, Nil, Nil)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
   })
 
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
@@ -322,7 +327,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) =>
       blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)
       blockchain ! WatchConfirmed(self, d.commitments.localCommit.publishableTxs._1.tx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, ourCommitPublished = Some(d.commitments.localCommit.publishableTxs._1.tx))
+      // there can't be htlcs at this stage
+      val localCommitPublished = LocalCommitPublished(d.commitments.localCommit.publishableTxs._1.tx, Nil, Nil, Nil)
+      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
   })
@@ -636,11 +643,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(BITCOIN_CLOSE_DONE, d: DATA_CLOSING) if d.mutualClosePublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_SPEND_OURS_DONE, d: DATA_CLOSING) if d.ourCommitPublished.isDefined => goto(CLOSED)
+    case Event(BITCOIN_SPEND_OURS_DONE, d: DATA_CLOSING) if d.localCommitPublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_SPEND_THEIRS_DONE, d: DATA_CLOSING) if d.theirCommitPublished.isDefined => goto(CLOSED)
+    case Event(BITCOIN_SPEND_THEIRS_DONE, d: DATA_CLOSING) if d.remoteCommitPublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_STEAL_DONE, d: DATA_CLOSING) if d.revokedPublished.size > 0 => goto(CLOSED)
+    case Event(BITCOIN_STEAL_DONE, d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
     case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
   }
@@ -797,53 +804,54 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     val txs = txs1 ++ txs2
     txs.map(tx => blockchain ! PublishAsap(tx))*/
 
+    // TODO: remove Nils
+    val localCommitPublished = LocalCommitPublished(tx, Nil, Nil, Nil)
+
     val nextData = d match {
-      case closing: DATA_CLOSING => closing.copy(ourCommitPublished = Some(tx))
-      case _ => DATA_CLOSING(d.commitments, ourCommitPublished = Some(tx))
+      case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
     }
 
     goto(CLOSING) using nextData
   }
 
   def handleRemoteSpentCurrent(tx: Transaction, d: HasCommitments) = {
-    log.warning(s"they published their current commit in txid=${
-      tx.txid
-    }")
-    assert(tx.txid == d.commitments.remoteCommit.txid)
+    log.warning(s"they published their current commit in txid=${tx.txid}")
+    require(tx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
     blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_THEIRS_DONE) // TODO hardcoded mindepth
 
-    val txs1: Seq[Transaction] = ???
-    //claimReceivedHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
-    val txs2: Seq[Transaction] = ???
-    //claimSentHtlcs(tx, Commitments.makeRemoteTxTemplate(d.commitments), d.commitments)
-    val txs = txs1 ++ txs2
-    txs.map(tx => blockchain ! PublishAsap(tx))
+    val claimTxs = Helpers.Closing.claimRemoteCommitTxOutputs(d.commitments, tx)
+    claimTxs.map(txinfo => blockchain ! PublishAsap(txinfo.tx))
+
+    val remoteCommitPublished = RemoteCommitPublished(
+      commitTx = tx,
+      claimHtlcSuccessTxs = claimTxs.collect { case c: ClaimHtlcSuccessTx => c.tx },
+      claimHtlcTimeoutTxs = claimTxs.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+    )
 
     val nextData = d match {
-      case closing: DATA_CLOSING => closing.copy(theirCommitPublished = Some(tx))
-      case _ => DATA_CLOSING(d.commitments, theirCommitPublished = Some(tx))
+      case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, remoteCommitPublished = Some(remoteCommitPublished))
     }
 
     goto(CLOSING) using nextData
   }
 
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
-    log.warning(s"funding tx spent in txid=${
-      tx.txid
-    }")
+    log.warning(s"funding tx spent in txid=${tx.txid}")
     d.commitments.txDb.get(tx.txid) match {
       case Some(spendingTx) =>
-        log.warning(s"txid=${
-          tx.txid
-        } was a revoked commitment, publishing the punishment tx")
+        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
         them ! Error(0, "Anchor has been spent".getBytes)
         blockchain ! Publish(spendingTx)
-        blockchain ! WatchConfirmed(self, spendingTx.txid, 3, BITCOIN_STEAL_DONE)
-        // TODO hardcoded mindepth
+        blockchain ! WatchConfirmed(self, spendingTx.txid, 3, BITCOIN_STEAL_DONE) // TODO hardcoded mindepth
+
+        val remoteCommitPublished = RevokedCommitPublished(tx)
+
         val nextData = d match {
-          case closing: DATA_CLOSING => closing.copy(revokedPublished = closing.revokedPublished :+ tx)
-          case _ => DATA_CLOSING(d.commitments, revokedPublished = Seq(tx))
+          case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ remoteCommitPublished)
+          case _ => DATA_CLOSING(d.commitments, revokedCommitPublished = remoteCommitPublished :: Nil)
         }
         goto(CLOSING) using nextData
       case None =>

@@ -154,7 +154,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-      assert(initialState.ourCommitPublished == Some(aliceCommitTx))
+      assert(initialState.localCommitPublished == Some(aliceCommitTx))
 
       // actual test starts here
       alice ! (BITCOIN_FUNDING_SPENT, aliceCommitTx)
@@ -211,7 +211,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished == Some(aliceCommitTx))
 
       // actual test starts here
       alice ! BITCOIN_SPEND_OURS_DONE
@@ -229,7 +229,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(theirCommitPublished = Some(bobCommitTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(remoteCommitPublished = Some(RemoteCommitPublished(bobCommitTx, Nil, Nil))))
     }
   }
 
@@ -241,7 +241,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       assert(bobCommitTx.txOut.size == 2) // two main outputs
       alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(theirCommitPublished = Some(bobCommitTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(remoteCommitPublished = Some(RemoteCommitPublished(bobCommitTx, Nil, Nil))))
 
       // actual test starts here
       alice ! BITCOIN_SPEND_THEIRS_DONE
@@ -260,7 +260,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[Publish]
       alice2blockchain.expectMsgType[WatchConfirmed]
 
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedPublished = Seq(bobRevokedTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
     }
   }
 
@@ -273,9 +273,9 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
         // alice publishes and watches the stealing tx
         alice2blockchain.expectMsgType[Publish]
         alice2blockchain.expectMsgType[WatchConfirmed]
-        awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedPublished = initialState.revokedPublished :+ bobRevokedTx))
+        awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = initialState.revokedCommitPublished :+ RevokedCommitPublished(bobRevokedTx)))
       }
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedPublished.size == bobCommitTxes.size - 1)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == bobCommitTxes.size - 1)
     }
   }
 
@@ -288,7 +288,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // alice publishes and watches the stealing tx
       alice2blockchain.expectMsgType[Publish]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedPublished = Seq(bobRevokedTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
 
       // actual test starts here
       alice ! BITCOIN_STEAL_DONE

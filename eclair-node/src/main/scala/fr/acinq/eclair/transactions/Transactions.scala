@@ -20,6 +20,7 @@ object Transactions {
     def input: InputInfo
     def tx: Transaction
   }
+
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -28,6 +29,18 @@ object Transactions {
   case class ClaimHtlcDelayedTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClosingTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   // @formatter:on
+
+  /**
+    * When *local* *current* [[CommitTx]] is published:
+    *   - [[HtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
+    *     - [[ClaimHtlcDelayedTx]] spends [[HtlcSuccessTx]] after a delay
+    *   - [[HtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
+    *     - [[ClaimHtlcDelayedTx]] spends [[HtlcTimeoutTx]] after a delay
+    *
+    * When *remote* *current* [[CommitTx]] is published:
+    *   - [[ClaimHtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
+    *   - [[ClaimHtlcTimeoutTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
+    */
 
   val commitWeight = 724
   val htlcTimeoutWeight = 634
@@ -114,6 +127,7 @@ object Transactions {
       .filter(htlc => (MilliSatoshi(htlc.add.amountMsat) - htlcSuccessFee).compare(localDustLimit) > 0)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
 
+    // TODO: txnumber can't be > 2^48
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localPaymentBasePoint, remotePaymentBasePoint)
 
     val tx = Transaction(

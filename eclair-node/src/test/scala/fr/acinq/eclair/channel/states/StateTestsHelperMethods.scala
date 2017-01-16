@@ -45,6 +45,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
+    awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
   }
 
 }

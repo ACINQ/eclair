@@ -121,6 +121,10 @@ trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
+case class LocalCommitPublished(commitTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
+case class RemoteCommitPublished(commitTx: Transaction, claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
+case class RevokedCommitPublished(commitTxs: Transaction)
+
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
@@ -136,10 +140,10 @@ final case class DATA_NEGOTIATING(channelId: Long, params: ChannelParams, commit
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,
                               mutualClosePublished: Option[Transaction] = None,
-                              ourCommitPublished: Option[Transaction] = None,
-                              theirCommitPublished: Option[Transaction] = None,
-                              revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
-  assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
+                              localCommitPublished: Option[LocalCommitPublished] = None,
+                              remoteCommitPublished: Option[RemoteCommitPublished] = None,
+                              revokedCommitPublished: Seq[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
+  require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
 }
 
 final case class ChannelParams(localParams: LocalParams,

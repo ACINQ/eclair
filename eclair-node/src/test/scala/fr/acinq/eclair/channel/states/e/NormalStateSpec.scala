@@ -261,19 +261,19 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
 
-      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
-      // a->b (regular)
-      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)
-      // a->b (regular)
-      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)
-      // b->a (dust)
-      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
-      // a->b (regular)
-      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
-      // b->a (regular)
-      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
-      // a->b (dust)
-      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice) // a->b (regular)
+
+      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+
+      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob) //   b->a (dust)
+
+      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+
+      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
+
+      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice) //   a->b (dust)
+
+      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob) //  b->a (regular)
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
@@ -288,6 +288,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       bob2alice.expectMsgType[CommitSig]
       bob2alice.forward(alice)
 
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.index == 1)
       assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._2.size == 3)
     }
   }
@@ -395,19 +396,19 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (multiple htlcs in both directions)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
-      // a->b (regular)
-      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice)
-      // a->b (regular)
-      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob)
-      // b->a (dust)
-      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
-      // a->b (regular)
-      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
-      // b->a (regular)
-      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice)
-      // a->b (dust)
-      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice) // a->b (regular)
+
+      val (r2, htlc2) = addHtlc(8000000, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+
+      val (r3, htlc3) = addHtlc(300000, bob, alice, bob2alice, alice2bob) //   b->a (dust)
+
+      val (r4, htlc4) = addHtlc(1000000, alice, bob, alice2bob, bob2alice) //  a->b (regular)
+
+      val (r5, htlc5) = addHtlc(50000000, bob, alice, bob2alice, alice2bob) // b->a (regular)
+
+      val (r6, htlc6) = addHtlc(500000, alice, bob, alice2bob, bob2alice) //   a->b (dust)
+
+      val (r7, htlc7) = addHtlc(4000000, bob, alice, bob2alice, alice2bob) //  b->a (regular)
 
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
@@ -425,7 +426,10 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // actual test begins
       alice2bob.expectMsgType[RevokeAndAck]
       alice2bob.forward(bob)
+
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.index == 1)
+      assert(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size == 7)
     }
   }
 
@@ -782,32 +786,25 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
 
-      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
-      // id 1
-      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice)
-      // id 2
-      val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
+      val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+      val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
+      val (rb1, htlcb1) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
+      val (rb2, htlcb2) = addHtlc(55000000, bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob)
-      // id 1
-      val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
-      sign(bob, alice, bob2alice, alice2bob)
-      sign(alice, bob, alice2bob, bob2alice)
-      fulfillHtlc(2, r2, bob, alice, bob2alice, alice2bob)
-      fulfillHtlc(1, r4, alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(2, ra2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, rb1, alice, bob, alice2bob, bob2alice)
 
       // at this point here is the situation from alice pov and what she should do :
       // balances :
-      //    alice's balance : 400 000 000                             => nothing to do
-      //    bob's balance   :  30 000 000                             => nothing to do
+      //    alice's balance : 450 000 000                             => nothing to do
+      //    bob's balance   :  95 000 000                             => nothing to do
       // htlcs :
-      //    alice -> bob    : 200 000 000 (bob has the r)             => if bob does not use the r, wait for the timeout and spend
-      //    alice -> bob    : 100 000 000 (bob does not have the r)   => wait for the timeout and spend
-      //    bob -> alice    : 150 000 000 (alice has the r)           => spend immediately using the r
-      //    bob -> alice    : 120 000 000 (alice does not have the r) => nothing to do, bob will get his money back after the timeout
+      //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend
+      //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend
+      //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage
+      //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
       // bob publishes his current commit tx
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
@@ -816,8 +813,8 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
+      // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
       val amountClaimed = (for (i <- 0 until 3) yield {
-        // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
         val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
@@ -825,10 +822,12 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
         assert(claimHtlcTx.txOut.size == 1)
         claimHtlcTx.txOut(0).amount
       }).sum
-      assert(amountClaimed == Satoshi(450000))
+      assert(amountClaimed == Satoshi(400000))
 
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimHtlcSuccessTxs.size == 1)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimHtlcTimeoutTxs.size == 2)
     }
   }
 
@@ -836,25 +835,12 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
 
-      // alice sends 300 000 sat and bob fulfills
-      // we reuse the same r (it doesn't matter here)
-      val (r, htlc) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
-      sign(alice, bob, alice2bob, bob2alice)
-
-      sender.send(bob, CMD_FULFILL_HTLC(1, r))
-      sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-      bob2alice.forward(alice)
-
-      sign(bob, alice, bob2alice, alice2bob)
-
-      // at this point we have :
-      // alice = 700 000
-      //   bob = 300 000
+      // initally we have :
+      // alice = 800 000
+      //   bob = 200 000
       def send(): Transaction = {
-        // alice sends 1 000 sat
-        // we reuse the same r (it doesn't matter here)
-        val (r, htlc) = addHtlc(1000000, alice, bob, alice2bob, bob2alice)
+        // alice sends 10 000 sat
+        val (r, htlc) = addHtlc(10000000, alice, bob, alice2bob, bob2alice)
         sign(alice, bob, alice2bob, bob2alice)
 
         bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
@@ -866,9 +852,12 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // let's say that bob published this tx
       val revokedTx = txs(3)
       // channel state for this revoked tx is as follows:
-      // alice = 696 000
-      //   bob = 300 000
-      //  a->b =   4 000
+      // alice = 760 000
+      //   bob = 200 000
+      //  a->b =  10 000
+      //  a->b =  10 000
+      //  a->b =  10 000
+      //  a->b =  10 000
       alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       val punishTx = alice2blockchain.expectMsgType[Publish].tx
@@ -932,7 +921,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       assert(amountClaimed == Satoshi(450000))
 
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished == Some(aliceCommitTx))
     }
   }
 
