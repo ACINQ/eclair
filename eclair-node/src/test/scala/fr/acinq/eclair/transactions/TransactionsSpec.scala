@@ -11,11 +11,35 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.util.Random
+
 /**
   * Created by PM on 16/12/2016.
   */
 @RunWith(classOf[JUnitRunner])
 class TransactionsSpec extends FunSuite {
+
+  test("encode/decode sequence and locktime (one example)") {
+
+    val txnumber = 0x11F71FB268DL
+
+    val (sequence, locktime) = encodeTxNumber(txnumber)
+    assert(sequence == 0x80011F71L)
+    assert(locktime == 0x20FB268DL)
+
+    val txnumber1 = decodeTxNumber(sequence, locktime)
+    assert(txnumber == txnumber1)
+  }
+
+  test("reconstruct txnumber from sequence and locktime") {
+
+    for (i <- 0 until 1000) {
+      val txnumber = Random.nextLong() & 0xffffffffffffL
+      val (sequence, locktime) = encodeTxNumber(txnumber)
+      val txnumber1 = decodeTxNumber(sequence, locktime)
+      assert(txnumber == txnumber1)
+    }
+  }
 
   test("generate valid commitment and htlc transactions") {
     val localFundingPriv = Scalar(BinaryData("aa" * 32) :+ 1.toByte)

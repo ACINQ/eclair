@@ -103,6 +103,18 @@ object Transactions {
     obscured ^ blind
   }
 
+  /**
+    * This is a trick to split and encode a 48-bit txnumber into the sequence and locktime fields of a tx
+    * @param txnumber
+    * @return (sequence, locktime)
+    */
+  def encodeTxNumber(txnumber: Long) = {
+    require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
+    (0x80000000L | (txnumber >> 24), (txnumber & 0xffffffL) | 0x20000000)
+  }
+
+  def decodeTxNumber(sequence: Long, locktime: Long) = ((sequence & 0xffffffL) << 24) + (locktime & 0xffffffL)
+
   def makeCommitTx(commitTxInput: InputInfo, commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point, localIsFunder: Boolean, localDustLimit: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): CommitTx = {
 
     val commitFee = commitTxFee(spec.feeRatePerKw, localDustLimit, spec)
@@ -127,14 +139,14 @@ object Transactions {
       .filter(htlc => (MilliSatoshi(htlc.add.amountMsat) - htlcSuccessFee).compare(localDustLimit) > 0)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localPubkey, remotePubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
 
-    // TODO: txnumber can't be > 2^48
     val txnumber = obscuredCommitTxNumber(commitTxNumber, localPaymentBasePoint, remotePaymentBasePoint)
+    val (sequence, locktime) = encodeTxNumber(txnumber)
 
     val tx = Transaction(
       version = 2,
-      txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = 0x80000000L | (txnumber >> 24)) :: Nil,
+      txIn = TxIn(commitTxInput.outPoint, Array.emptyByteArray, sequence = sequence) :: Nil,
       txOut = toLocalDelayedOutput_opt.toSeq ++ toRemoteOutput_opt.toSeq ++ htlcOfferedOutputs ++ htlcReceivedOutputs,
-      lockTime = txnumber & 0xffffffL)
+      lockTime = locktime)
     CommitTx(commitTxInput, LexicographicalOrdering.sort(tx))
   }
 
