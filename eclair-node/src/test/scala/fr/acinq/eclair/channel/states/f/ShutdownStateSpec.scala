@@ -8,7 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
-import fr.acinq.eclair.transactions.OldScripts
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{AcceptChannel, CommitSig, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -141,7 +141,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       val fulfill = UpdateFulfillHtlc(0, 42, "00" * 32)
       sender.send(alice, fulfill)
@@ -154,7 +154,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[Error]
@@ -197,7 +197,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv UpdateFailHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       sender.send(alice, UpdateFailHtlc(0, 42, "some reason".getBytes()))
       alice2bob.expectMsgType[Error]
@@ -237,7 +237,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   ignore("recv CMD_SIGN (while waiting for RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       sender.send(alice, UpdateFulfillHtlc(0, 1, "12" * 32))
       sender.send(alice, CMD_SIGN)
@@ -266,7 +266,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv CommitSig (no changes)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       // signature is invalid but it doesn't matter
       sender.send(bob, CommitSig(0, "00" * 64, Nil))
@@ -279,7 +279,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv CommitSig (invalid signature)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       sender.send(bob, CommitSig(0, "00" * 64, Nil))
       bob2alice.expectMsgType[Error]
@@ -345,7 +345,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv RevokeAndAck (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       sender.send(bob, CMD_FULFILL_HTLC(1, "11" * 32))
       sender.expectMsg("ok")
@@ -367,7 +367,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
   test("recv RevokeAndAck (unexpectedly)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
       sender.send(alice, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
@@ -381,7 +381,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
   test("recv BITCOIN_FUNDING_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       // bob publishes his current commit tx, which contains two pending htlcs alice->bob
-      val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       assert(bobCommitTx.txOut.size == 3) // one main outputs (bob has zero) and 2 pending htlcs
       alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
 
@@ -398,13 +398,13 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       assert(amountClaimed == Satoshi(500000))
 
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].theirCommitPublished == Some(bobCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished == Some(bobCommitTx))
     }
   }
 
   test("recv BITCOIN_FUNDING_SPENT (revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
 
       // bob fulfills one of the pending htlc (just so that he can have a new sig)
       fulfillHtlc(1, "11" * 32, bob, alice, bob2alice, alice2bob)
@@ -424,13 +424,13 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       assert(revokedTx.txOut.size == 3)
       // the punishment tx consumes all output but ours (which already goes to our final key)
       assert(punishTx.txIn.size == 2)
-      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(OldScripts.pay2wpkh(Alice.channelParams.finalPrivKey.point)))))
+      assert(punishTx.txOut == Seq(TxOut(Satoshi(500000), Script.write(Script.pay2wpkh(Alice.channelParams.finalPrivKey.toPoint)))))
     }
   }
 
   test("recv Error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs._1.tx
       alice ! Error(0, "oops".getBytes)
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       assert(aliceCommitTx.txOut.size == 1) // only one main output
@@ -439,7 +439,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice2blockchain.expectNoMsg()
 
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished == Some(aliceCommitTx))
     }
   }
 

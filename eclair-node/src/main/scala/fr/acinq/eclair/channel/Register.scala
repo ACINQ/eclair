@@ -5,7 +5,7 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, Satoshi, Script}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.io.AuthHandler
-import fr.acinq.eclair.transactions.OldScripts
+import fr.acinq.eclair.transactions.Scripts
 
 import scala.concurrent.duration._
 
@@ -37,7 +37,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
 
   def main(counter: Long): Receive = {
     case CreateChannel(connection, amount_opt) =>
-      def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).secretkey
+      def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
       val localParams = LocalParams(
         dustLimitSatoshis = 542,
         maxHtlcValueInFlightMsat = Long.MaxValue,
@@ -46,15 +46,16 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
         feeratePerKw = 10000,
         toSelfDelay = 144,
         maxAcceptedHtlcs = 100,
-        fundingPrivkey = generateKey(0),
+        fundingPrivKey = generateKey(0),
         revocationSecret = generateKey(1),
-        paymentSecret = generateKey(2),
+        paymentKey = generateKey(2),
         delayedPaymentKey = generateKey(3),
         finalPrivKey = generateKey(4),
-        shaSeed = Globals.Node.seed
+        shaSeed = Globals.Node.seed,
+        isFunder = amount_opt.isDefined
       )
       val init = amount_opt.map(amount => Left(INPUT_INIT_FUNDER(amount.amount, 0))).getOrElse(Right(INPUT_INIT_FUNDEE()))
-      val channel = context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, localParams, init), name = s"auth-handler-${counter}")
+      context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, localParams, init), name = s"auth-handler-${counter}")
       context.become(main(counter + 1))
     case ListChannels => sender ! context.children
     case SendCommand(channelId, cmd) =>

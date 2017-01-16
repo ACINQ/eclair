@@ -64,11 +64,11 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
       val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
-      val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       bobCommitTx1 :: bobCommitTx2 :: Nil
     }).flatten
 
@@ -148,13 +148,13 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == NORMAL)
 
       // an error occurs and alice publishes her commit tx
-      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       alice ! Error(0, "oops".getBytes)
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-      assert(initialState.ourCommitPublished == Some(aliceCommitTx))
+      assert(initialState.localCommitPublished == Some(aliceCommitTx))
 
       // actual test starts here
       alice ! (BITCOIN_FUNDING_SPENT, aliceCommitTx)
@@ -206,12 +206,12 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == NORMAL)
 
       // an error occurs and alice publishes her commit tx
-      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       alice ! Error(0, "oops".getBytes())
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].ourCommitPublished == Some(aliceCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished == Some(aliceCommitTx))
 
       // actual test starts here
       alice ! BITCOIN_SPEND_OURS_DONE
@@ -229,7 +229,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(theirCommitPublished = Some(bobCommitTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(remoteCommitPublished = Some(RemoteCommitPublished(bobCommitTx, Nil, Nil))))
     }
   }
 
@@ -241,7 +241,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       assert(bobCommitTx.txOut.size == 2) // two main outputs
       alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(theirCommitPublished = Some(bobCommitTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(remoteCommitPublished = Some(RemoteCommitPublished(bobCommitTx, Nil, Nil))))
 
       // actual test starts here
       alice ! BITCOIN_SPEND_THEIRS_DONE
@@ -260,7 +260,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[Publish]
       alice2blockchain.expectMsgType[WatchConfirmed]
 
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedPublished = Seq(bobRevokedTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
     }
   }
 
@@ -273,9 +273,9 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
         // alice publishes and watches the stealing tx
         alice2blockchain.expectMsgType[Publish]
         alice2blockchain.expectMsgType[WatchConfirmed]
-        awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedPublished = initialState.revokedPublished :+ bobRevokedTx))
+        awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = initialState.revokedCommitPublished :+ RevokedCommitPublished(bobRevokedTx)))
       }
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedPublished.size == bobCommitTxes.size - 1)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == bobCommitTxes.size - 1)
     }
   }
 
@@ -288,7 +288,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // alice publishes and watches the stealing tx
       alice2blockchain.expectMsgType[Publish]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedPublished = Seq(bobRevokedTx)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
 
       // actual test starts here
       alice ! BITCOIN_STEAL_DONE

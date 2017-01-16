@@ -1,8 +1,9 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.{BinaryData, Transaction, TxOut}
-import fr.acinq.eclair.crypto.Generators.{Point, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, Scalar}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
 import lightning.{route, route_step}
 
@@ -120,25 +121,29 @@ trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
+case class LocalCommitPublished(commitTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
+case class RemoteCommitPublished(commitTx: Transaction, claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
+case class RevokedCommitPublished(commitTxs: Transaction)
+
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, fundingTxOutputIndex: Int, fundingTxOutput: TxOut, localSpec: CommitmentSpec, localTx: Transaction, remoteCommit: RemoteCommit) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit) extends Data
 final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
-final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, ourShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
+final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,
-                               ourShutdown: Shutdown, theirShutdown: Shutdown,
+                               localShutdown: Shutdown, remoteShutdown: Shutdown,
                                downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(channelId: Long, params: ChannelParams, commitments: Commitments,
-                                  ourShutdown: Shutdown, theirShutdown: Shutdown, ourClosingSigned: ClosingSigned) extends Data with HasCommitments
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,
                               mutualClosePublished: Option[Transaction] = None,
-                              ourCommitPublished: Option[Transaction] = None,
-                              theirCommitPublished: Option[Transaction] = None,
-                              revokedPublished: Seq[Transaction] = Seq()) extends Data with HasCommitments {
-  assert(mutualClosePublished.isDefined || ourCommitPublished.isDefined || theirCommitPublished.isDefined || revokedPublished.size > 0, "there should be at least one tx published in this state")
+                              localCommitPublished: Option[LocalCommitPublished] = None,
+                              remoteCommitPublished: Option[RemoteCommitPublished] = None,
+                              revokedCommitPublished: Seq[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
+  require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
 }
 
 final case class ChannelParams(localParams: LocalParams,
@@ -154,12 +159,13 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              feeratePerKw: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             fundingPrivkey: Scalar,
+                             fundingPrivKey: Scalar,
                              revocationSecret: Scalar,
-                             paymentSecret: Scalar,
+                             paymentKey: Scalar,
                              delayedPaymentKey: Scalar,
                              finalPrivKey: Scalar,
-                             shaSeed: BinaryData)
+                             shaSeed: BinaryData,
+                             isFunder: Boolean)
 
 final case class RemoteParams(dustLimitSatoshis: Long,
                               maxHtlcValueInFlightMsat: Long,
@@ -168,7 +174,7 @@ final case class RemoteParams(dustLimitSatoshis: Long,
                               feeratePerKw: Long,
                               toSelfDelay: Int,
                               maxAcceptedHtlcs: Int,
-                              fundingPubkey: Point,
+                              fundingPubKey: Point,
                               revocationBasepoint: Point,
                               paymentBasepoint: Point,
                               delayedPaymentBasepoint: Point)

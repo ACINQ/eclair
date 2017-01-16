@@ -30,7 +30,7 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice ! INPUT_INIT_FUNDER(TestConstants.anchorAmount, 0)
+    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
@@ -71,7 +71,7 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       // bob publishes his commitment tx
-      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       alice ! (BITCOIN_FUNDING_SPENT, tx)
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
@@ -80,7 +80,7 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
 
   test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       alice ! (BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(Publish(tx))
@@ -90,7 +90,7 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
 
   test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       alice ! Error(0, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -100,7 +100,7 @@ class WaitForFundingLockedStateSpec extends StateSpecBaseClass {
 
   test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))

@@ -16,9 +16,9 @@ object Globals {
     val seed: BinaryData = config.getString("eclair.node.seed")
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val privateKey = extendedPrivateKey.secretkey
+    val privateKey = extendedPrivateKey.privateKey
     val extendedPublicKey = DeterministicWallet.publicKey(extendedPrivateKey)
-    val publicKey = extendedPublicKey.publickey
+    val publicKey = extendedPublicKey.publicKey
     val id = publicKey.toString()
   }
 

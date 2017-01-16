@@ -79,7 +79,7 @@
         <dependency>
             <groupId>fr.acinq</groupId>
             <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
-            <version>0.9.8-SNAPSHOT</version>
+            <version>${bitcoinlib.version}</version>
         </dependency>
         <!-- SERIALIZATION -->
         <dependency>

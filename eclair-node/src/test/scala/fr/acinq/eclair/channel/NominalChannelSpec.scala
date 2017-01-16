@@ -92,14 +92,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == TestConstants.anchorAmount * 1000 - 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == 60000000)
+          assert(d.commitments.localCommit.spec.toLocalMsat == TestConstants.fundingSatoshis * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.toRemoteMsat == 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount * 1000 - 60000000)
+          assert(d.commitments.localCommit.spec.toLocalMsat == 60000000)
+          assert(d.commitments.localCommit.spec.toRemoteMsat == TestConstants.fundingSatoshis * 1000 - 60000000)
       }
 
       // send another HTLC
@@ -145,14 +145,14 @@ class NominalChannelSpec extends BaseChannelTestClass {
       (alice.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toLocalMsat == TestConstants.fundingSatoshis * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toRemoteMsat == 2 * 60000000)
       }
       (bob.stateData: @unchecked) match {
         case d: DATA_NORMAL =>
           assert(d.commitments.localCommit.spec.htlcs.isEmpty)
-          assert(d.commitments.localCommit.spec.to_local_msat == 2 * 60000000)
-          assert(d.commitments.localCommit.spec.to_remote_msat == TestConstants.anchorAmount * 1000 - 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toLocalMsat == 2 * 60000000)
+          assert(d.commitments.localCommit.spec.toRemoteMsat == TestConstants.fundingSatoshis * 1000 - 2 * 60000000)
       }
     }
   }
@@ -234,7 +234,7 @@ class NominalChannelSpec extends BaseChannelTestClass {
       Thread.sleep(500)
 
       val commitTx = (alice.stateData: @unchecked) match {
-        case d: DATA_NORMAL => d.commitments.localCommit.publishableTx
+        case d: DATA_NORMAL => d.commitments.localCommit.publishableTxs._1.tx
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)

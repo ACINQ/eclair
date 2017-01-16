@@ -1,7 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.transactions.OldScripts._
+import fr.acinq.eclair.transactions.Scripts._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -43,21 +43,21 @@ class ClaimReceivedHtlcSpec extends FunSuite {
   val tx = Transaction(
     version = 2,
     txIn = TxIn(OutPoint(Hash.Zeroes, 0), Array.emptyByteArray, 0xffffffffL) :: Nil,
-    txOut = TxOut(10 satoshi, pay2wsh(htlcScript)) :: Nil,
+    txOut = TxOut(10 satoshi, Script.pay2wsh(htlcScript)) :: Nil,
     lockTime = 0)
 
   // this tx tries to spend the previous tx
   val tx1 = Transaction(
     version = 2,
     txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, 0xffffffff) :: Nil,
-    txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+    txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
     lockTime = 0)
 
   test("Alice can spend this HTLC after a delay if she knows the payment hash") {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, reltimeout + 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Alice.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, Script.write(htlcScript), SIGHASH_ALL, tx.txOut(0).amount, 1, Alice.finalKey)
@@ -71,7 +71,7 @@ class ClaimReceivedHtlcSpec extends FunSuite {
     val tx2 = Transaction(
       version = 2,
       txIn = TxIn(OutPoint(tx, 0), Array.emptyByteArray, reltimeout + 1) :: Nil,
-      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Bob.finalPubKey)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
+      txOut = TxOut(10 satoshi, OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(Bob.finalPubKey.toBin)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) :: Nil,
       lockTime = abstimeout + 1)
 
     val sig = Transaction.signInput(tx2, 0, Script.write(htlcScript), SIGHASH_ALL, tx.txOut(0).amount, 1, Bob.finalKey)

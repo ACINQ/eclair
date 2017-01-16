@@ -5,7 +5,7 @@ import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_SPENT
-import fr.acinq.eclair.transactions.OldScripts
+import fr.acinq.eclair.transactions.Scripts
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
@@ -25,27 +25,32 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], currentBlockCount: Long): Receive = {
 
     case NewTransaction(tx) =>
-      watches.collect {
+      val triggeredWatches = watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, minDepth, event)
           if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           channel ! (BITCOIN_FUNDING_SPENT, tx)
-          self ! ('remove, w)
-        case _ => {}
+          w
       }
+      context.become(watching(watches -- triggeredWatches, block2tx, currentBlockCount))
 
     case NewBlock(block) =>
       client.getBlockCount.map(count => context.system.eventStream.publish(CurrentBlockCount(count)))
       // TODO: beware of the herd effect
       watches.collect {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
-          client.getTxConfirmations(txId.toString).map(_ match {
-            case Some(confirmations) if confirmations >= minDepth =>
-              log.info(s"triggering $w")
-              channel ! event
-              self ! ('remove, w)
-            case _ => {} // not enough confirmations
-          })
+          client.getTxConfirmations(txId.toString).collect {
+            // TODO: this is a workaround to not have WatchConfirmed triggered multiple times in testing
+            // the reason is that we cannot fo a become(watches - w, ...) because it happens in the future callback
+            case Some(confirmations) if confirmations >= minDepth => self ! ('trigger, w)
+          }
       }
+
+    case ('trigger, w: WatchConfirmed) if watches.contains(w) =>
+      log.info(s"triggering $w")
+      w.channel ! w.event
+      context.become(watching(watches - w, block2tx, currentBlockCount))
+
+    case ('trigger, w: WatchConfirmed) if !watches.contains(w) => {}
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
@@ -60,9 +65,6 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       context.watch(w.channel)
       context.become(watching(watches + w, block2tx, currentBlockCount))
 
-    case ('remove, w: Watch) if watches.contains(w) =>
-      context.become(watching(watches - w, block2tx, currentBlockCount))
-
     case Publish(tx) =>
       log.info(s"publishing tx $tx")
       client.publishTransaction(tx).onFailure {
@@ -70,8 +72,8 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       }
 
     case PublishAsap(tx) =>
-      val cltvTimeout = OldScripts.cltvTimeout(tx)
-      val csvTimeout = currentBlockCount + OldScripts.csvTimeout(tx)
+      val cltvTimeout = Scripts.cltvTimeout(tx)
+      val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
       val timeout = Math.max(cltvTimeout, csvTimeout)
       val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
       context.become(watching(watches, block2tx1, currentBlockCount))
@@ -81,7 +83,8 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
-      watches.filter(_.channel == channel).foreach(w => self ! ('remove, w))
+      val deprecatedWatches = watches.filter(_.channel == channel)
+      context.become(watching(watches -- deprecatedWatches, block2tx, currentBlockCount))
 
   }
 }

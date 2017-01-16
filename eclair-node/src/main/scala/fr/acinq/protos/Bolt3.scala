@@ -1,9 +1,9 @@
 package fr.acinq.protos
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.transactions.OldScripts
+import fr.acinq.eclair.transactions.Scripts
 
-object Bolt3 {
+object Bolt3 extends App {
   // TODO: sort tx according to BIP69 (lexicographical ordering)
 
   def baseSize(tx: Transaction) = Transaction.write(tx, Protocol.PROTOCOL_VERSION | Transaction.SERIALIZE_TRANSACTION_NO_WITNESS).length
@@ -12,7 +12,7 @@ object Bolt3 {
 
   def weight(tx: Transaction) = 3 * baseSize(tx) + totalSize(tx)
 
-  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = OldScripts.multiSig2of2(pubKey1, pubKey2)
+  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Scripts.multiSig2of2(pubKey1, pubKey2)
 
   def toLocal(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
     // @formatter:off
@@ -65,4 +65,36 @@ object Bolt3 {
     OP_CHECKSIG :: Nil
     // @formatter:on
   }
+
+  val htlcTimeoutWeight = 634
+
+  val htlcSuccessWeight = 671
+
+  def weight2fee(feeRatePerKw: Int, weight: Int) = Satoshi((feeRatePerKw * weight) / 1024)
+
+  def htlcTimeoutFee(feeRatePerKw: Int): Satoshi = weight2fee(feeRatePerKw, htlcTimeoutWeight)
+
+  def htlcSuccessFee(feeRatePerKw: Int): Satoshi = weight2fee(feeRatePerKw, htlcSuccessWeight)
+
+  def commitTxFee(feeRatePerKw: Int, dustLimit: Satoshi, htlcOffered: Seq[MilliSatoshi], htlcReceived: Seq[MilliSatoshi]): Satoshi = {
+    println(s"HTLC timeout tx fee: ${htlcTimeoutFee(feeRatePerKw)}")
+    println(s"HTLC success tx fee: ${htlcSuccessFee(feeRatePerKw)}")
+    val (weight, fee) = htlcOffered.foldLeft((724, 0 satoshi)) {
+      case ((weight, fee), amount) if millisatoshi2satoshi(amount).compare(dustLimit + htlcTimeoutFee(feeRatePerKw)) < 0 =>
+        println(s"offered htlc amount $amount is too small")
+        (weight, fee + amount)
+      case ((weight, fee), _) => (weight + 172, fee)
+    }
+    val (weight1, fee1) = htlcReceived.foldLeft((weight, fee)) {
+      case ((weight, fee), amount) if millisatoshi2satoshi(amount).compare(dustLimit + htlcSuccessFee(feeRatePerKw)) < 0 =>
+        println(s"received htlc amount $amount is too small")
+        (weight, fee + amount)
+      case ((weight, fee), _) => (weight + 172, fee)
+    }
+    weight2fee(feeRatePerKw, weight1) + fee
+  }
+
+  println(s"HTLC timeout fee: ")
+  val fee = commitTxFee(5000, 546 satoshi, Seq(5000 satoshi, 1000 satoshi), Seq(7000 satoshi, 800 satoshi))
+  println(fee)
 }

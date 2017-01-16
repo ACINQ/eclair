@@ -1,14 +1,15 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.Generators.Scalar
 
 /**
   * Created by PM on 26/04/2016.
   */
 object TestConstants {
-  val anchorAmount = 1000000L
+  val fundingSatoshis = 1000000L
+  val pushMsat = 200000000L
 
   object Alice {
     val channelParams = LocalParams(
@@ -19,12 +20,13 @@ object TestConstants {
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
-      fundingPrivkey = Scalar(Array.fill[Byte](32)(1)),
-      revocationSecret = Scalar(Array.fill[Byte](32)(2)),
-      paymentSecret = Scalar(Array.fill[Byte](32)(3)),
-      delayedPaymentKey = Scalar(Array.fill[Byte](32)(4)),
-      finalPrivKey = Scalar(Array.fill[Byte](32)(5)),
-      shaSeed = Crypto.sha256("alice-seed".getBytes())
+      fundingPrivKey = Scalar(Array.fill[Byte](32)(1) :+ 1.toByte),
+      revocationSecret = Scalar(Array.fill[Byte](32)(2) :+ 1.toByte),
+      paymentKey = Scalar(Array.fill[Byte](32)(3) :+ 1.toByte),
+      delayedPaymentKey = Scalar(Array.fill[Byte](32)(4) :+ 1.toByte),
+      finalPrivKey = Scalar(Array.fill[Byte](32)(5) :+ 1.toByte),
+      shaSeed = Crypto.sha256("alice-seed".getBytes()),
+      isFunder = true
     )
   }
 
@@ -37,12 +39,13 @@ object TestConstants {
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
-      fundingPrivkey = Scalar(Array.fill[Byte](32)(11)),
-      revocationSecret = Scalar(Array.fill[Byte](32)(12)),
-      paymentSecret = Scalar(Array.fill[Byte](32)(13)),
-      delayedPaymentKey = Scalar(Array.fill[Byte](32)(14)),
-      finalPrivKey = Scalar(Array.fill[Byte](32)(15)),
-      shaSeed = Crypto.sha256("alice-seed".getBytes())
+      fundingPrivKey = Scalar(Array.fill[Byte](32)(11) :+ 1.toByte),
+      revocationSecret = Scalar(Array.fill[Byte](32)(12) :+ 1.toByte),
+      paymentKey = Scalar(Array.fill[Byte](32)(13) :+ 1.toByte),
+      delayedPaymentKey = Scalar(Array.fill[Byte](32)(14) :+ 1.toByte),
+      finalPrivKey = Scalar(Array.fill[Byte](32)(15) :+ 1.toByte),
+      shaSeed = Crypto.sha256("alice-seed".getBytes()),
+      isFunder = false
     )
   }
 

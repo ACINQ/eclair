@@ -79,10 +79,10 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
     case ChannelSignatureReceived(channel, commitments) =>
       val channelPane = m(channel)
-      val bal = commitments.localCommit.spec.to_local_msat.toDouble / (commitments.localCommit.spec.to_local_msat.toDouble + commitments.localCommit.spec.to_remote_msat.toDouble)
+      val bal = commitments.localCommit.spec.toLocalMsat.toDouble / (commitments.localCommit.spec.toLocalMsat.toDouble + commitments.localCommit.spec.toRemoteMsat.toDouble)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
-          channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.localCommit.spec.to_local_msat / 1000L)).amount}")
+          channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.localCommit.spec.toLocalMsat / 1000L)).amount}")
           channelPane.balanceBar.setProgress(bal)
         }
       })
