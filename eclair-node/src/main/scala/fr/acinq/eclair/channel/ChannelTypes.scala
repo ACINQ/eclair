@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.transactions.Transactions.CommitTx
+import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcPunishmentTx, MainPunishmentTx}
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
 import lightning.{route, route_step}
 
@@ -123,7 +123,7 @@ trait HasCommitments extends Data {
 
 case class LocalCommitPublished(commitTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
 case class RemoteCommitPublished(commitTx: Transaction, claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
-case class RevokedCommitPublished(commitTxs: Transaction)
+case class RevokedCommitPublished(commitTx: Transaction, mainPunishmentTx: Transaction, claimHtlcTimeoutTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], htlcPunishmentTxs: Seq[Transaction])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data

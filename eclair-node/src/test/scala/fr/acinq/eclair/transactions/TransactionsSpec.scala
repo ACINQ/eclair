@@ -65,7 +65,12 @@ class TransactionsSpec extends FunSuite {
       toRemoteMsat = millibtc2satoshi(MilliBtc(300)).amount * 1000)
 
     val commitTxNumber = 0x404142434445L
-    val commitTx = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+    val commitTx = {
+      val txinfo = makeCommitTx(commitInput, commitTxNumber, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, true, localDustLimit, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, remotePaymentPriv.toPoint, spec)
+      val localSig = Transactions.sign(txinfo, localPaymentPriv)
+      val remoteSig = Transactions.sign(txinfo, remotePaymentPriv)
+      Transactions.addSigs(txinfo, localFundingPriv.toPoint, remoteFundingPriv.toPoint, localSig, remoteSig)
+    }
 
     {
       assert(getCommitTxNumber(commitTx.tx, localPaymentPriv.toPoint, remotePaymentPriv.toPoint) == commitTxNumber)

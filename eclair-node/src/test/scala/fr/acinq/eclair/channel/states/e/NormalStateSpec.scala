@@ -796,7 +796,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       fulfillHtlc(2, ra2, bob, alice, bob2alice, alice2bob)
       fulfillHtlc(1, rb1, alice, bob, alice2bob, bob2alice)
 
-      // at this point here is the situation from alice pov and what she should do :
+      // at this point here is the situation from alice pov and what she should do when bob publishes his commit tx:
       // balances :
       //    alice's balance : 450 000 000                             => nothing to do
       //    bob's balance   :  95 000 000                             => nothing to do
@@ -860,47 +860,41 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       //  a->b =  10 000
       alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
-      val punishTx = alice2blockchain.expectMsgType[Publish].tx
       alice2blockchain.expectMsgType[WatchConfirmed]
+      val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
       awaitCond(alice.stateName == CLOSING)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       // two main outputs + 4 htlc
       assert(revokedTx.txOut.size == 6)
-      // the punishment tx consumes all output but ours (which already goes to our final key)
-      assert(punishTx.txIn.size == 5)
-      // TODO: when changefee is implemented we should set fee = 0 and check against 304 000
-      assert(punishTx.txOut == Seq(TxOut(Satoshi(301670), Script.write(Script.pay2wpkh(Alice.channelParams.finalPrivKey.toPoint)))))
+      // TODO: for now the punishment tx only consumes bob's main delayed output
+      assert(punishTx.txIn.size == 1)
+      assert(punishTx.txOut.size == 1)
+      // TODO: should be updated when fees are implemented
+      assert(punishTx.txOut(0).amount == Satoshi(200000))
     }
   }
 
   test("recv Error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val (r1, htlc1) = addHtlc(300000000, alice, bob, alice2bob, bob2alice)
-      // id 1
-      val (r2, htlc2) = addHtlc(200000000, alice, bob, alice2bob, bob2alice)
-      // id 2
-      val (r3, htlc3) = addHtlc(100000000, alice, bob, alice2bob, bob2alice) // id 3
+      val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+      val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
+      val (rb1, htlcb1) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
+      val (rb2, htlcb2) = addHtlc(55000000, bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      fulfillHtlc(1, r1, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      val (r4, htlc4) = addHtlc(150000000, bob, alice, bob2alice, alice2bob)
-      // id 1
-      val (r5, htlc5) = addHtlc(120000000, bob, alice, bob2alice, alice2bob) // id 2
-      sign(bob, alice, bob2alice, alice2bob)
-      sign(alice, bob, alice2bob, bob2alice)
-      fulfillHtlc(2, r2, bob, alice, bob2alice, alice2bob)
-      fulfillHtlc(1, r4, alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(2, ra2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, rb1, alice, bob, alice2bob, bob2alice)
 
-      // at this point here is the situation from alice pov and what she should do :
+      // at this point here is the situation from alice pov and what she should do when she publishes his commit tx:
       // balances :
-      //    alice's balance : 400 000 000                             => nothing to do
-      //    bob's balance   :  30 000 000                             => nothing to do
+      //    alice's balance : 450 000 000                             => nothing to do
+      //    bob's balance   :  95 000 000                             => nothing to do
       // htlcs :
-      //    alice -> bob    : 200 000 000 (bob has the r)             => if bob does not use the r, wait for the timeout and spend
-      //    alice -> bob    : 100 000 000 (bob does not have the r)   => wait for the timeout and spend
-      //    bob -> alice    : 150 000 000 (alice has the r)           => spend immediately using the r
-      //    bob -> alice    : 120 000 000 (alice does not have the r) => nothing to do, bob will get his money back after the timeout
+      //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend using 2nd stage htlc-timeout
+      //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend using 2nd stage htlc-timeout
+      //    bob -> alice    :  50 000 000 (alice has the preimage)           => spend immediately using the preimage using htlc-success
+      //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
 
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx

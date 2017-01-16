@@ -227,6 +227,14 @@ object Scripts {
     // @formatter:on
   }
 
+
+  /**
+    * This witness script spends (steals) a toLocal output using a revocation key as a punishment
+    * for having published a revoked transaction
+    */
+  def witnessToLocalFromRevokedCommitTx(revocationSig: BinaryData, toLocalScript: BinaryData) =
+    ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
+
   /**
     * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
     */

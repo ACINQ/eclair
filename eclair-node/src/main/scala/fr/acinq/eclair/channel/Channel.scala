@@ -6,7 +6,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.transactions.Transactions.{ClaimHtlcSuccessTx, ClaimHtlcTimeoutTx}
+import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -229,7 +229,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
-            commitInput, ShaChain.init, new BasicTxDb, 0)
+            commitInput, ShaChain.init, channelId = 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
       }
@@ -262,7 +262,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
             localCurrentHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
-            commitInput, ShaChain.init, new BasicTxDb, 0)
+            commitInput, ShaChain.init, channelId = 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
@@ -819,9 +819,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     log.warning(s"they published their current commit in txid=${tx.txid}")
     require(tx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
 
-    blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_THEIRS_DONE) // TODO hardcoded mindepth
+    // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
+    blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_SPEND_THEIRS_DONE)
 
-    val claimTxs = Helpers.Closing.claimRemoteCommitTxOutputs(d.commitments, tx)
+    val claimTxs = Helpers.Closing.claimCurrentRemoteCommitTxOutputs(d.commitments, tx)
     claimTxs.map(txinfo => blockchain ! PublishAsap(txinfo.tx))
 
     val remoteCommitPublished = RemoteCommitPublished(
@@ -840,34 +841,40 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
-    d.commitments.txDb.get(tx.txid) match {
-      case Some(spendingTx) =>
-        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
-        them ! Error(0, "Anchor has been spent".getBytes)
-        blockchain ! Publish(spendingTx)
-        blockchain ! WatchConfirmed(self, spendingTx.txid, 3, BITCOIN_STEAL_DONE) // TODO hardcoded mindepth
 
-        val remoteCommitPublished = RevokedCommitPublished(tx)
+    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(d.commitments, tx) match {
+      case Success(claimTxs) =>
+        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
+        them ! Error(0, "Funding tx has been spent".getBytes)
+
+        // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
+        blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_STEAL_DONE)
+
+        claimTxs.map(txinfo => blockchain ! PublishAsap(txinfo.tx))
+
+        val remoteCommitPublished = RevokedCommitPublished(
+          commitTx = tx,
+          mainPunishmentTx = claimTxs.collectFirst { case c: MainPunishmentTx => c.tx }.get,
+          claimHtlcTimeoutTxs = claimTxs.collect { case c: ClaimHtlcTimeoutTx => c.tx },
+          htlcTimeoutTxs = claimTxs.collect { case c: HtlcTimeoutTx => c.tx },
+          htlcPunishmentTxs = claimTxs.collect { case c: HtlcPunishmentTx => c.tx }
+        )
 
         val nextData = d match {
           case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ remoteCommitPublished)
           case _ => DATA_CLOSING(d.commitments, revokedCommitPublished = remoteCommitPublished :: Nil)
         }
         goto(CLOSING) using nextData
-      case None =>
+      case Failure(t) =>
         // the published tx was neither their current commitment nor a revoked one
-        log.error(s"couldn't identify txid=${
-          tx.txid
-        }!")
+        log.error(t, s"couldn't identify txid=${tx.txid}")
         goto(ERR_INFORMATION_LEAK)
     }
   }
 
   def handleInformationLeak(d: HasCommitments) = {
     // this is never supposed to happen !!
-    log.error(s"our funding tx ${
-      d.commitments.anchorId
-    } was spent !!")
+    log.error(s"our funding tx ${d.commitments.anchorId} was spent !!")
     // TODO! channel id
     them ! Error(0, "Anchor has been spent".getBytes)
     blockchain ! Publish(d.commitments.localCommit.publishableTxs._1.tx)

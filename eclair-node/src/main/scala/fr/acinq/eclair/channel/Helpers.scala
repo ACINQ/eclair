@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel
 
+import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
@@ -96,19 +97,19 @@ object Helpers {
 
     /**
       *
-      * claim all the HTLCs that we've received from their current commit tx
+      * Claim all the HTLCs that we've received from their current commit tx
       *
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Seq[TransactionWithInputInfo] = {
+    def claimCurrentRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Seq[TransactionWithInputInfo] = {
       import commitments._
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
       val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remoteCommit.remotePerCommitmentPoint)
-      val remotePubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
+      val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
       val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
 
       // those are the preimages to existing received htlcs
@@ -121,13 +122,13 @@ object Helpers {
         // incoming htlc for which we have the preimage: we spend it directly
         case Htlc(OUT, add: UpdateAddHtlc, _) if preimages.exists(r => sha256(r) == add.paymentHash) =>
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPubkey, remotePubkey, localPubkey, add)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localPubkey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) =>
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPubkey, remotePubkey, localPubkey, add)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localPubkey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig)
       }
@@ -136,6 +137,43 @@ object Helpers {
       require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
       txes.toSeq
+    }
+
+    /**
+      * In reaction to the counterparty publishing a revoked commitment tx, we punish them by
+      */
+    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Try[Seq[TransactionWithInputInfo]] = Try {
+      import commitments._
+      require(tx.txIn.size == 1, "commitment tx should have 1 input")
+      val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
+      // this tx has been published by remote, so we need to invert local/remote params
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
+      require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
+      // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
+      val remotePerCommitmentSecret = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber).map(d => Scalar(d :+ 1.toByte)).getOrElse(throw new RuntimeException(s"cannot get commitment secret for txnumber=$txnumber"))
+      val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
+
+      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remotePerCommitmentPoint)
+      val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+      val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
+
+      // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
+
+      // let's punish remote by stealing its main output
+      val mainDelayedRevokedTx = {
+        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.toPoint, localPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey)
+        val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
+        Transactions.addSigs(txinfo, sig)
+      }
+
+      // TODO: we don't claim htlcs outputs yet
+
+      val txes = mainDelayedRevokedTx :: Nil
+
+      // OPTIONAL: let's check transactions are actually spendable
+      require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
+
+      txes
     }
 
   }
