@@ -115,6 +115,7 @@ object Transactions {
 
   /**
     * This is a trick to split and encode a 48-bit txnumber into the sequence and locktime fields of a tx
+    *
     * @param txnumber
     * @return (sequence, locktime)
     */
@@ -230,32 +231,38 @@ object Transactions {
       lockTime = htlc.expiry))
   }
 
-  def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, finalLocalPubkey: BinaryData): ClaimHtlcDelayedTx = {
+  def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, finalLocalPubkey: BinaryData, feeRatePerKw: Long): ClaimHtlcDelayedTx = {
     val redeemScript = htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(htlcSuccessOrTimeoutTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
     val input = InputInfo(OutPoint(htlcSuccessOrTimeoutTx, outputIndex), htlcSuccessOrTimeoutTx.txOut(outputIndex), write(redeemScript))
-    ClaimHtlcDelayedTx(input, Transaction(
+    val tx = Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-      // TODO: no fees for now
       txOut = TxOut(input.txOut.amount, pay2wpkh(finalLocalPubkey)) :: Nil,
-      lockTime = 0))
+      lockTime = 0)
+    val w = weight(ClaimHtlcDelayedTx(input, tx))
+    val fee = weight2fee(feeRatePerKw, w)
+    val tx1 = tx.copy(txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil)
+    ClaimHtlcDelayedTx(input, tx1)
   }
 
-  def makeMainPunishmentTx(commitTx: Transaction, remoteRevocationPubkey: BinaryData, finalLocalPubkey: BinaryData, toRemoteDelay: Int, remoteDelayedPubkey: BinaryData): MainPunishmentTx = {
+  def makeMainPunishmentTx(commitTx: Transaction, remoteRevocationPubkey: BinaryData, finalLocalPubkey: BinaryData, toRemoteDelay: Int, remoteDelayedPubkey: BinaryData, feeRatePerKw: Long): MainPunishmentTx = {
     val redeemScript = toLocal(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-    MainPunishmentTx(input, Transaction(
+    val tx = Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      // TODO: no fees for now
       txOut = TxOut(input.txOut.amount, pay2wpkh(finalLocalPubkey)) :: Nil,
-      lockTime = 0))
+      lockTime = 0)
+    val w = weight(MainPunishmentTx(input, tx))
+    val fee = weight2fee(feeRatePerKw, w)
+    val tx1 = tx.copy(txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil)
+    MainPunishmentTx(input, tx1)
   }
 
   def makeHtlcPunishmentTx(commitTx: Transaction): HtlcPunishmentTx = ???
@@ -304,6 +311,11 @@ object Transactions {
     claimMainDelayedRevokedTx.copy(tx = claimMainDelayedRevokedTx.tx.updateWitness(0, witness))
   }
 
+  def weight(claimMainDelayedRevokedTx: MainPunishmentTx): Int = {
+    val dummySig = new Array[Byte](71)
+    Transaction.weight(addSigs(claimMainDelayedRevokedTx, dummySig).tx)
+  }
+
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx = {
     val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
@@ -327,6 +339,11 @@ object Transactions {
   def addSigs(claimHtlcDelayed: ClaimHtlcDelayedTx, localSig: BinaryData): ClaimHtlcDelayedTx = {
     val witness = witnessHtlcDelayed(localSig, claimHtlcDelayed.input.redeemScript)
     claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
+  }
+
+  def weight(claimHtlcDelayed: ClaimHtlcDelayedTx): Int = {
+    val dummySig = new Array[Byte](71)
+    Transaction.weight(addSigs(claimHtlcDelayed, dummySig).tx)
   }
 
   def addSigs(closingTx: ClosingTx, localFundingPubkey: Point, remoteFundingPubkey: Point, localSig: BinaryData, remoteSig: BinaryData): ClosingTx = {

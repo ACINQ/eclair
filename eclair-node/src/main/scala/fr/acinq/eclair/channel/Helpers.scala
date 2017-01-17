@@ -131,7 +131,8 @@ object Helpers {
       // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
       val delayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
-          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localPubkey)
+          // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
+          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localPubkey, commitments.localParams.feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }
@@ -212,7 +213,8 @@ object Helpers {
 
       // let's punish remote by stealing its main output
       val mainDelayedRevokedTx = {
-        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.toPoint, localPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey)
+        // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
+        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.toPoint, localPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
         val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
         Transactions.addSigs(txinfo, sig)
       }
