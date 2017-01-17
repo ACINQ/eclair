@@ -841,8 +841,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // TODO: for now the punishment tx only consumes bob's main delayed output
       assert(punishTx.txIn.size == 1)
       assert(punishTx.txOut.size == 1)
-      // TODO: should be updated when fees are implemented
-      assert(punishTx.txOut(0).amount == Satoshi(200000))
+      assert(punishTx.txOut(0).amount == Satoshi(195284))
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
