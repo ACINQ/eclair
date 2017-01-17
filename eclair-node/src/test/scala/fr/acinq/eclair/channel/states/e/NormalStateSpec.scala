@@ -62,7 +62,6 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
     }
-    // note : alice is funder and bob is fundee, so alice has all the money
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
   }
 

@@ -59,8 +59,9 @@ object Helpers {
     def makeFirstClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
-      // TODO
-      val closingFee = Satoshi(20000)
+      // TODO 500 is arbitratry value, replace ASAP
+      val closingKw = 800
+      val closingFee = Transactions.weight2fee(params.localParams.feeratePerKw, closingKw)
       // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
