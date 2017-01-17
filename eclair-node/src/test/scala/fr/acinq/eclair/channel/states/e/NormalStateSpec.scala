@@ -817,9 +817,8 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val amountClaimed = (for (i <- 0 until 3) yield {
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
-        val previousOutputs = Map(claimHtlcTx.txIn(0).outPoint -> bobCommitTx.txOut(claimHtlcTx.txIn(0).outPoint.index.toInt))
-        Transaction.correctlySpends(claimHtlcTx, previousOutputs, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         assert(claimHtlcTx.txOut.size == 1)
+        Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
       assert(amountClaimed == Satoshi(400000))
@@ -862,7 +861,6 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
       val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
-      awaitCond(alice.stateName == CLOSING)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       // two main outputs + 4 htlc
       assert(revokedTx.txOut.size == 6)
@@ -871,6 +869,9 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       assert(punishTx.txOut.size == 1)
       // TODO: should be updated when fees are implemented
       assert(punishTx.txOut(0).amount == Satoshi(200000))
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
+
     }
   }
 
@@ -905,8 +906,18 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
 
       // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
-      for (i <- 0 until 6) yield alice2blockchain.expectMsgType[PublishAsap].tx
+      val claimTxs = for (i <- 0 until 6) yield alice2blockchain.expectMsgType[PublishAsap].tx
       alice2blockchain.expectNoMsg()
+
+      // 2nd stage transactions spend the commitment transaction
+      Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(1), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(2), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+      // 3rd stage transactions spend their respective HTLC-Success/HTLC-Timeout transactions
+      Transaction.correctlySpends(claimTxs(3), claimTxs(0) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(4), claimTxs(1) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(5), claimTxs(2) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
