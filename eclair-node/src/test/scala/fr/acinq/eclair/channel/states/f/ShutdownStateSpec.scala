@@ -2,13 +2,13 @@ package fr.acinq.eclair.channel.states.f
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
-import fr.acinq.eclair.wire.{AcceptChannel, CommitSig, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -31,35 +31,8 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     val paymentHandler = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
-    bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
-      alice2bob.expectMsgType[OpenChannel]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[AcceptChannel]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[FundingCreated]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[FundingSigned]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.forward(blockchainA)
-      alice2blockchain.expectMsgType[Publish]
-      alice2blockchain.forward(blockchainA)
-      bob2blockchain.expectMsgType[WatchSpent]
-      bob2blockchain.expectMsgType[WatchConfirmed]
-      bob ! BITCOIN_FUNDING_DEPTHOK
-      alice2blockchain.expectMsgType[WatchLost]
-      bob2blockchain.expectMsgType[WatchLost]
-      alice2bob.expectMsgType[FundingLocked]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[FundingLocked]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateName == NORMAL)
-      awaitCond(bob.stateName == NORMAL)
+      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32
@@ -93,8 +66,8 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice2bob.forward(bob)
       awaitCond(alice.stateName == SHUTDOWN)
       awaitCond(bob.stateName == SHUTDOWN)
+      test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
     }
-    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
   }
 
   test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
@@ -417,7 +390,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val punishTx = alice2blockchain.expectMsgType[Publish].tx
       awaitCond(alice.stateName == CLOSING)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       // two main outputs + 2 htlc

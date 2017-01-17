@@ -647,7 +647,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(BITCOIN_SPEND_THEIRS_DONE, d: DATA_CLOSING) if d.remoteCommitPublished.isDefined => goto(CLOSED)
 
-    case Event(BITCOIN_STEAL_DONE, d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
+    case Event(BITCOIN_PUNISHMENT_DONE, d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
     case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
   }
@@ -785,11 +785,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
   }
 
   def publishMutualClosing(mutualClosing: Transaction) = {
-    log.info(s"closingTxId=${
-      mutualClosing.txid
-    }")
+    log.info(s"closingTxId=${mutualClosing.txid}")
     blockchain ! Publish(mutualClosing)
-    blockchain ! WatchConfirmed(self, mutualClosing.txid, 3, BITCOIN_CLOSE_DONE) // hardcoded mindepth
+    // TODO: hardcoded mindepth
+    blockchain ! WatchConfirmed(self, mutualClosing.txid, 3, BITCOIN_CLOSE_DONE)
   }
 
   def spendLocalCurrent(d: HasCommitments) = {
@@ -849,9 +848,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         them ! Error(0, "Funding tx has been spent".getBytes)
 
         // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
-        blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_STEAL_DONE)
+        blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_PUNISHMENT_DONE)
 
-        claimTxs.map(txinfo => blockchain ! PublishAsap(txinfo.tx))
+        claimTxs.map(txinfo => blockchain ! Publish(txinfo.tx))
 
         val remoteCommitPublished = RevokedCommitPublished(
           commitTx = tx,

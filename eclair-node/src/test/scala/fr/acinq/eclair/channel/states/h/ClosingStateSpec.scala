@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel.states.h
 
-import akka.actor.Props
+import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestBitcoinClient
@@ -29,49 +29,44 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
-    // note that alice.initialFeeRate != bob.initialFeeRate
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(feeratePerKw = 20000), "A"))
-    alice2bob.expectMsgType[OpenChannel]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[OpenChannel]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[MakeFundingTx]
-    alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[FundingCreated]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[FundingSigned]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.forward(blockchainA)
-    alice2blockchain.expectMsgType[WatchSpent]
-    alice2blockchain.forward(blockchainA)
-    alice2blockchain.expectMsgType[Publish]
-    alice2blockchain.forward(blockchainA)
-    bob2blockchain.expectMsgType[WatchConfirmed]
-    bob2blockchain.expectMsgType[WatchSpent]
-    bob ! BITCOIN_FUNDING_DEPTHOK
-    bob2blockchain.expectMsgType[WatchLost]
-    bob2alice.expectMsgType[FundingLocked]
-    bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[WatchLost]
-    alice2blockchain.forward(blockchainA)
-    alice2bob.expectMsgType[FundingLocked]
-    alice2bob.forward(bob)
-    awaitCond(alice.stateName == NORMAL)
-    awaitCond(bob.stateName == NORMAL)
-    // note : alice is funder and bob is fundee, so alice has all the money
-    val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
-      val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
-      sign(alice, bob, alice2bob, bob2alice)
-      val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
-      sign(bob, alice, bob2alice, alice2bob)
-      sign(alice, bob, alice2bob, bob2alice)
-      val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      bobCommitTx1 :: bobCommitTx2 :: Nil
-    }).flatten
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
+    within(30 seconds) {
+      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
 
+      val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
+        val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
+        sign(alice, bob, alice2bob, bob2alice)
+        val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+        fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
+        sign(bob, alice, bob2alice, alice2bob)
+        sign(alice, bob, alice2bob, bob2alice)
+        val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+        bobCommitTx1 :: bobCommitTx2 :: Nil
+      }).flatten
+
+      awaitCond(alice.stateName == NORMAL)
+      awaitCond(bob.stateName == NORMAL)
+
+      // NOTE
+      // As opposed to other tests, we won't reach the target state (here CLOSING) at the end of the fixture.
+      // The reason for this is that we may reach CLOSING state following several events:
+      // - local commit
+      // - remote commit
+      // - revoked commit
+      // and we want to be able to test the different scenarii.
+      // Hence the NORMAL->CLOSING transition will occur in the individual tests.
+
+      test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes))
+    }
+  }
+
+  def mutualClose(alice: TestFSMRef[State, Data, Channel],
+                  bob: TestFSMRef[State, Data, Channel],
+                  alice2bob: TestProbe,
+                  bob2alice: TestProbe,
+                  alice2blockchain: TestProbe,
+                  bob2blockchain: TestProbe): Unit = {
     val sender = TestProbe()
     // alice initiates a closing
     sender.send(alice, CMD_CLOSE(None))
@@ -94,59 +89,20 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
-    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes))
   }
 
-  test("recv BITCOIN_CLOSE_DONE") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv BITCOIN_CLOSE_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
     within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+
+      // actual test starts here
       alice ! BITCOIN_CLOSE_DONE
       awaitCond(alice.stateName == CLOSED)
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (our commit)") { case (_, _, _, _, _, _, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (our commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
     within(30 seconds) {
-      // this test needs a specific intialization because we need to have published our own commitment tx (that's why ignored fixture args)
-      // to do that alice will receive an error packet when in NORMAL state, which will make her publish her commit tx and then reach CLOSING state
-
-      val alice2bob = TestProbe()
-      val bob2alice = TestProbe()
-      val alice2blockchain = TestProbe()
-      val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
-      val bob2blockchain = TestProbe()
-      val paymentHandler = TestProbe()
-      // note that alice.initialFeeRate != bob.initialFeeRate
-      val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
-      val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(feeratePerKw = 20000), "A"))
-      alice2bob.expectMsgType[OpenChannel]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[OpenChannel]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[FundingCreated]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[FundingSigned]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.forward(blockchainA)
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.forward(blockchainA)
-      alice2blockchain.expectMsgType[Publish]
-      alice2blockchain.forward(blockchainA)
-      bob2blockchain.expectMsgType[WatchConfirmed]
-      bob2blockchain.expectMsgType[WatchSpent]
-      bob ! BITCOIN_FUNDING_DEPTHOK
-      bob2blockchain.expectMsgType[WatchLost]
-      bob2alice.expectMsgType[FundingLocked]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[WatchLost]
-      alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[FundingLocked]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateName == NORMAL)
-      awaitCond(bob.stateName == NORMAL)
-
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
@@ -154,64 +110,24 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
-      assert(initialState.localCommitPublished == Some(aliceCommitTx))
+      assert(initialState.localCommitPublished.isDefined)
 
       // actual test starts here
+      // we are notified afterwards from our watcher about the tx that we just published
       alice ! (BITCOIN_FUNDING_SPENT, aliceCommitTx)
-      assert(alice.stateData == initialState)
+      assert(alice.stateData == initialState) // this was a no-op
     }
   }
 
-  test("recv BITCOIN_SPEND_OURS_DONE") { case (_, _, _, _, _, _, _) =>
+  test("recv BITCOIN_SPEND_OURS_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
     within(30 seconds) {
-      // this test needs a specific intialization because we need to have published our own commitment tx (that's why ignored fixture args)
-      // to do that alice will receive an error packet when in NORMAL state, which will make her publish her commit tx and then reach CLOSING state
-
-      val alice2bob = TestProbe()
-      val bob2alice = TestProbe()
-      val alice2blockchain = TestProbe()
-      val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
-      val bob2blockchain = TestProbe()
-      val paymentHandler = TestProbe()
-      // note that alice.initialFeeRate != bob.initialFeeRate
-      val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
-      val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams.copy(feeratePerKw = 20000), "A"))
-      alice2bob.expectMsgType[OpenChannel]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[AcceptChannel]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[FundingCreated]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[FundingSigned]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.forward(blockchainA)
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.forward(blockchainA)
-      alice2blockchain.expectMsgType[Publish]
-      alice2blockchain.forward(blockchainA)
-      bob2blockchain.expectMsgType[WatchConfirmed]
-      bob2blockchain.expectMsgType[WatchSpent]
-      bob ! BITCOIN_FUNDING_DEPTHOK
-      bob2blockchain.expectMsgType[WatchLost]
-      bob2alice.expectMsgType[FundingLocked]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[WatchLost]
-      alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[FundingLocked]
-      alice2bob.forward(bob)
-      awaitCond(alice.stateName == NORMAL)
-      awaitCond(bob.stateName == NORMAL)
-
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes())
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished == Some(aliceCommitTx))
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
 
       // actual test starts here
       alice ! BITCOIN_SPEND_OURS_DONE
@@ -219,8 +135,9 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_FUNDING_SPENT (their commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
       val bobCommitTx = bobCommitTxes.last
@@ -233,8 +150,9 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_SPEND_THEIRS_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_SPEND_THEIRS_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
       val bobCommitTx = bobCommitTxes.last
@@ -249,31 +167,33 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_FUNDING_SPENT (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes one of his revoked txes
       val bobRevokedTx = bobCommitTxes.head
       alice ! (BITCOIN_FUNDING_SPENT, bobRevokedTx)
 
-      // alice publishes and watches the stealing tx
-      alice2blockchain.expectMsgType[Publish]
+      // alice publishes and watches the punishment tx
       alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectMsgType[Publish]
 
       // TODO
       //awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx, Nil, Nil, Nil, Nil))))
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (multiple revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_FUNDING_SPENT (multiple revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       // bob publishes multiple revoked txes (last one isn't revoked)
       for (bobRevokedTx <- bobCommitTxes.dropRight(1)) {
         val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
         alice ! (BITCOIN_FUNDING_SPENT, bobRevokedTx)
-        // alice publishes and watches the stealing tx
-        alice2blockchain.expectMsgType[Publish]
+        // alice publishes and watches the punishment tx
         alice2blockchain.expectMsgType[WatchConfirmed]
+        alice2blockchain.expectMsgType[Publish]
         // TODO
         //awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = initialState.revokedCommitPublished :+ RevokedCommitPublished(bobRevokedTx)))
       }
@@ -281,20 +201,21 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_STEAL_DONE (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, bobCommitTxes) =>
+  test("recv BITCOIN_PUNISHMENT_DONE (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes one of his revoked txes
       val bobRevokedTx = bobCommitTxes.head
       alice ! (BITCOIN_FUNDING_SPENT, bobRevokedTx)
-      // alice publishes and watches the stealing tx
-      alice2blockchain.expectMsgType[Publish]
+      // alice publishes and watches the punishment tx
       alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectMsgType[Publish]
       // TODO
       // awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
 
       // actual test starts here
-      alice ! BITCOIN_STEAL_DONE
+      alice ! BITCOIN_PUNISHMENT_DONE
       awaitCond(alice.stateName == CLOSED)
     }
   }

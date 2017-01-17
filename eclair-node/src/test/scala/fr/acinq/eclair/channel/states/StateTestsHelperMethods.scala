@@ -1,9 +1,12 @@
 package fr.acinq.eclair.channel.states
 
+import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{CommitSig, RevokeAndAck, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire._
 
 import scala.util.Random
 
@@ -11,6 +14,43 @@ import scala.util.Random
   * Created by PM on 23/08/2016.
   */
 trait StateTestsHelperMethods extends TestKitBase {
+
+  def reachNormal(alice: TestFSMRef[State, Data, Channel],
+                  bob: TestFSMRef[State, Data, Channel],
+                  alice2bob: TestProbe,
+                  bob2alice: TestProbe,
+                  blockchainA: ActorRef,
+                  alice2blockchain: TestProbe,
+                  bob2blockchain: TestProbe): Unit = {
+    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
+    bob ! INPUT_INIT_FUNDEE()
+    alice2bob.expectMsgType[OpenChannel]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[AcceptChannel]
+    bob2alice.forward(alice)
+    alice2blockchain.expectMsgType[MakeFundingTx]
+    alice2blockchain.forward(blockchainA)
+    alice2bob.expectMsgType[FundingCreated]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[FundingSigned]
+    bob2alice.forward(alice)
+    alice2blockchain.expectMsgType[WatchSpent]
+    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice2blockchain.forward(blockchainA)
+    alice2blockchain.expectMsgType[Publish]
+    alice2blockchain.forward(blockchainA)
+    bob2blockchain.expectMsgType[WatchSpent]
+    bob2blockchain.expectMsgType[WatchConfirmed]
+    bob ! BITCOIN_FUNDING_DEPTHOK
+    alice2blockchain.expectMsgType[WatchLost]
+    bob2blockchain.expectMsgType[WatchLost]
+    alice2bob.expectMsgType[FundingLocked]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[FundingLocked]
+    bob2alice.forward(alice)
+    awaitCond(alice.stateName == NORMAL)
+    awaitCond(bob.stateName == NORMAL)
+  }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {
     val rand = new Random()

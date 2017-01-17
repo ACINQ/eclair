@@ -4,7 +4,7 @@ import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.states.StateSpecBaseClass
+import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
 import fr.acinq.eclair.wire.{AcceptChannel, ClosingSigned, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel, Shutdown}
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NegotiatingStateSpec extends StateSpecBaseClass {
+class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -31,35 +31,8 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
     // note that alice.initialFeeRate != bob.initialFeeRate
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
-    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
-    bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
-      alice2bob.expectMsgType[OpenChannel]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[AcceptChannel]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
-      alice2bob.expectMsgType[FundingCreated]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[FundingSigned]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.forward(blockchainA)
-      alice2blockchain.expectMsgType[Publish]
-      alice2blockchain.forward(blockchainA)
-      bob2blockchain.expectMsgType[WatchSpent]
-      bob2blockchain.expectMsgType[WatchConfirmed]
-      bob ! BITCOIN_FUNDING_DEPTHOK
-      alice2blockchain.expectMsgType[WatchLost]
-      bob2blockchain.expectMsgType[WatchLost]
-      alice2bob.expectMsgType[FundingLocked]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[FundingLocked]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateName == NORMAL)
-      awaitCond(bob.stateName == NORMAL)
+      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))
@@ -69,8 +42,8 @@ class NegotiatingStateSpec extends StateSpecBaseClass {
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
       awaitCond(bob.stateName == NEGOTIATING)
+      test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
     }
-    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
   }
 
   // TODO: this must be re-enabled when dynamic fees are implemented
