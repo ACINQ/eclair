@@ -261,8 +261,6 @@ object Commitments {
         // and finally whe check the sigs
         require(signedHtlcTxs.forall(Transactions.checkSpendable(_).isSuccess), "bad sig")
 
-        println(s"add to shachain: secret=${revocation.perCommitmentSecret} index=${commitments.remoteCommit.index} (remoteCommit.remotePerCommitmentPoint=${remoteCommit.remotePerCommitmentPoint.toBin})")
-
         commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteCommit = theirNextCommit,
