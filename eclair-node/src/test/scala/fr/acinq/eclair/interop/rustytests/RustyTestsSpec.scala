@@ -5,7 +5,7 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel._
@@ -33,6 +33,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "B"))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "A"))
+    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, 0)
+    bob ! INPUT_INIT_FUNDEE()
     pipe ! (alice, bob)
     within(30 seconds) {
       awaitCond(alice.stateName == NORMAL)
