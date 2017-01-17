@@ -22,7 +22,7 @@ object Transactions {
   }
 
   case class CommitTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
-  case class HtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class HtlcSuccessTx(input: InputInfo, tx: Transaction, paymentHash: BinaryData) extends TransactionWithInputInfo
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -185,7 +185,7 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
       txOut = TxOut(MilliSatoshi(htlc.amountMsat) - htlcSuccessFee, pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey))) :: Nil,
-      lockTime = 0))
+      lockTime = 0), htlc.paymentHash)
   }
 
   def makeHtlcTxs(commitTx: Transaction, localDustLimit: Satoshi, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, remotePubkey: BinaryData, spec: CommitmentSpec): (Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
@@ -230,7 +230,7 @@ object Transactions {
       lockTime = htlc.expiry))
   }
 
-  def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, finalLocalPubkey: BinaryData, htlc: UpdateAddHtlc): ClaimHtlcDelayedTx = {
+  def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, finalLocalPubkey: BinaryData): ClaimHtlcDelayedTx = {
     val redeemScript = htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(htlcSuccessOrTimeoutTx, pubkeyScript)
@@ -239,7 +239,8 @@ object Transactions {
     ClaimHtlcDelayedTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
+      // TODO: no fees for now
+      txOut = TxOut(input.txOut.amount, pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = 0))
   }
 
@@ -249,10 +250,10 @@ object Transactions {
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-    // TODO: no fees for now
     MainPunishmentTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      // TODO: no fees for now
       txOut = TxOut(input.txOut.amount, pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = 0))
   }

@@ -97,7 +97,7 @@ class TransactionsSpec extends FunSuite {
       // local spends delayed output of htlc timeout tx
       val htlcTimeoutTx = htlcTimeoutTxs(0)
       val localFinalPriv = Scalar(BinaryData("ff" * 32))
-      val claimHtlcDelayed = makeClaimHtlcDelayed(htlcTimeoutTx.tx, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, localFinalPriv.toPoint, htlc1)
+      val claimHtlcDelayed = makeClaimHtlcDelayed(htlcTimeoutTx.tx, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, localFinalPriv.toPoint)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)
@@ -127,7 +127,7 @@ class TransactionsSpec extends FunSuite {
       // local spends delayed output of htlc success tx
       val htlcSuccessTx = htlcSuccessTxs(0)
       val localFinalPriv = Scalar(BinaryData("ff" * 32) :+ 1.toByte)
-      val claimHtlcDelayed = makeClaimHtlcDelayed(htlcSuccessTx.tx, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, localFinalPriv.toPoint, htlc1)
+      val claimHtlcDelayed = makeClaimHtlcDelayed(htlcSuccessTx.tx, localRevocationPriv.toPoint, toLocalDelay, localPaymentPriv.toPoint, localFinalPriv.toPoint)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)

@@ -64,11 +64,11 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
       val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
       sign(alice, bob, alice2bob, bob2alice)
-      val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
+      val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)
-      val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
+      val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       bobCommitTx1 :: bobCommitTx2 :: Nil
     }).flatten
 
@@ -148,7 +148,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == NORMAL)
 
       // an error occurs and alice publishes her commit tx
-      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
@@ -206,7 +206,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == NORMAL)
 
       // an error occurs and alice publishes her commit tx
-      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs._1.tx
+      val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes())
       alice2blockchain.expectMsg(Publish(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid

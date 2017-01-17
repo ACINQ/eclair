@@ -97,6 +97,55 @@ object Helpers {
 
     /**
       *
+      * Claim all the HTLCs that we've received from our current commit tx. This will be
+      * done using 2nd stage HTLC transactions
+      *
+      * @param commitments our commitment data, which include payment preimages
+      * @return a list of transactions (one per HTLC that we can claim)
+      */
+    def claimCurrentLocalCommitTxOutputs(commitments: Commitments, tx: Transaction): Seq[TransactionWithInputInfo] = {
+      import commitments._
+      require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
+
+      // those are the preimages to existing received htlcs
+      val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
+
+      val htlcTxes = localCommit.publishableTxs.htlcTxsAndSigs.collect {
+        // incoming htlc for which we have the preimage: we spend it directly
+        case HtlcTxAndSigs(txinfo@HtlcSuccessTx(_, _, paymentHash), localSig, remoteSig) if preimages.exists(r => sha256(r) == paymentHash) =>
+          val preimage = preimages.find(r => sha256(r) == paymentHash).get
+          Transactions.addSigs(txinfo, localSig, remoteSig, preimage)
+
+        // NB: regarding htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
+
+        // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
+        case HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) =>
+          Transactions.addSigs(txinfo, localSig, remoteSig)
+      }
+
+      val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
+      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, localPerCommitmentPoint)
+      val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
+      val localDelayedPrivkey = Generators.derivePrivKey(localParams.delayedPaymentKey, localPerCommitmentPoint)
+
+      // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
+      val delayedTxes = htlcTxes.map {
+        case txinfo: TransactionWithInputInfo =>
+          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localPubkey)
+          val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
+          Transactions.addSigs(claimDelayed, sig)
+      }
+
+      val txes = htlcTxes ++ delayedTxes
+
+      // OPTIONAL: let's check transactions are actually spendable
+      require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
+
+      txes
+    }
+
+    /**
+      *
       * Claim all the HTLCs that we've received from their current commit tx
       *
       * @param commitments our commitment data, which include payment preimages
@@ -117,6 +166,8 @@ object Helpers {
 
       // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
 
+
+      // TODO: don't handle dust!!!!
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val txes = commitments.remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly

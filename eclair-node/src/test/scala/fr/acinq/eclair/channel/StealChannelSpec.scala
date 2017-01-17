@@ -30,7 +30,7 @@ class StealChannelSpec extends BaseChannelTestClass {
       Thread.sleep(500)
 
       val commitTx = (alice.stateData: @unchecked) match {
-        case d: DATA_NORMAL => d.commitments.localCommit.publishableTxs._1.tx
+        case d: DATA_NORMAL => d.commitments.localCommit.publishableTxs.commitTx.tx
       }
 
       bob ! CMD_FULFILL_HTLC(1, R)

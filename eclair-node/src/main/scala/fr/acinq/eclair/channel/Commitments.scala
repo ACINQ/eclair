@@ -14,7 +14,9 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 }
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
-case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: (CommitTx, Seq[BinaryData]))
+case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
+case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: Seq[HtlcTxAndSigs])
+case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
 // @formatter:on
 
@@ -180,7 +182,7 @@ object Commitments {
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
     val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 1)
-    // TODO: Long or Int??
+    // TODO: index should be a long (max 48 bits)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
 
@@ -196,28 +198,29 @@ object Commitments {
     val htlcSigs = sortedHtlcTxs.map(Transactions.sign(_, localPaymentKey))
     val remotePaymentPubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
     // combine the sigs to make signed txes
-    val signedHtlcTxsAndSigs = sortedHtlcTxs
+    val htlcTxsAndSigs = sortedHtlcTxs
       .zip(htlcSigs)
       .zip(commit.htlcSignatures) // this is a list of ((tx, localSig), remoteSig)
       .map(e => (e._1._1, e._1._2, e._2)) // this is a list of (tx, localSig, remoteSig)
       .collect {
-      case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) => (htlcTx, localSig, remoteSig, Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isSuccess)
-      // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) => (htlcTx, localSig, remoteSig, Transactions.checkSig(htlcTx, remoteSig, remotePaymentPubkey))
-    } // this is a list of (tx, localSig, remoteSig, boolean)
+      case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
+        assert(Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isSuccess, "bad sig")
+        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+      case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
+        // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
+        assert(Transactions.checkSig(htlcTx, remoteSig, remotePaymentPubkey), "bad sig")
+        HtlcTxAndSigs(htlcTx, localSig, remoteSig)
+    }
 
-    // and finally whe check the sigs
-    require(signedHtlcTxsAndSigs.forall(_._4), "bad sig")
-
-    val timeoutHtlcSigs = signedHtlcTxsAndSigs.collect {
-      case (_: HtlcTimeoutTx, localSig, _, _) => localSig
+    val timeoutHtlcSigs = htlcTxsAndSigs.collect {
+      case HtlcTxAndSigs(_: HtlcTimeoutTx, localSig, _) => localSig
     }
 
     // we will send our revocation preimage + our next revocation hash
     val localPerCommitmentSecret = Generators.perCommitSecret(localParams.shaSeed, commitments.localCommit.index.toInt)
-    // TODO: Long or Int??
+    // TODO: index should be a long (max 48 bits)
     val localNextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 2)
-    // TODO: Long or Int??
+    // TODO: index should be a long (max 48 bits)
     val revocation = RevokeAndAck(
       channelId = commitments.channelId,
       perCommitmentSecret = localPerCommitmentSecret.toBin.take(32),
@@ -226,7 +229,7 @@ object Commitments {
     )
 
     // update our commitment data
-    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTxs = (signedCommitTx, commit.htlcSignatures))
+    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
@@ -259,7 +262,6 @@ object Commitments {
         require(signedHtlcTxs.forall(Transactions.checkSpendable(_).isSuccess), "bad sig")
 
         println(s"add to shachain: secret=${revocation.perCommitmentSecret} index=${commitments.remoteCommit.index} (remoteCommit.remotePerCommitmentPoint=${remoteCommit.remotePerCommitmentPoint.toBin})")
-
 
         commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
