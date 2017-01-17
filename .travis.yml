@@ -6,7 +6,7 @@ scala:
 env:
  - export LD_LIBRARY_PATH=/usr/local/lib
 script:
- - mvn install -DskipTests
+ - mvn install
 jdk:
  - oraclejdk8
 notifications:
