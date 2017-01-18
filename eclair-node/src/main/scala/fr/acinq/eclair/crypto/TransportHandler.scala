@@ -7,6 +7,8 @@ import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.channel.{CMD_CLOSE, Command}
 import fr.acinq.eclair.crypto.Noise._
 
+import scala.reflect.ClassTag
+
 /**
   * see BOLT #8
   * This class handles the transport layer:
@@ -23,7 +25,7 @@ import fr.acinq.eclair.crypto.Noise._
   * @param listenerFactory factory that will be used to create the listener that will receive decrypted messages once the
   *                        handshake phase as been completed. Its parameters are a tuple (transport handler, remote public key)
   */
-class TransportHandler[T](keyPair: KeyPair, rs: Option[BinaryData], them: ActorRef, isWriter: Boolean, listenerFactory: (ActorRef, BinaryData) => ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with LoggingFSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], them: ActorRef, isWriter: Boolean, listenerFactory: (ActorRef, BinaryData) => ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with LoggingFSM[TransportHandler.State, TransportHandler.Data] {
 
   import TransportHandler._
 

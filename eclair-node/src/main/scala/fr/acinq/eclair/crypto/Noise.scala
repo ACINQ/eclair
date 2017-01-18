@@ -424,10 +424,12 @@ object Noise {
       val symmetricState1 = (handshakePattern.initiatorPreMessages).foldLeft(symmetricState) {
         case (state, E) => state.mixHash(e.pub)
         case (state, S) => state.mixHash(s.pub)
+        case _ => throw new RuntimeException("invalid pre-message")
       }
       val symmetricState2 = (handshakePattern.responderPreMessages).foldLeft(symmetricState1) {
         case (state, E) => state.mixHash(re)
         case (state, S) => state.mixHash(rs)
+        case _ => throw new RuntimeException("invalid pre-message")
       }
       HandshakeStateWriter(handshakePattern.messages, symmetricState2, s, e, rs, re, dh, byteStream)
     }
@@ -437,10 +439,12 @@ object Noise {
       val symmetricState1 = handshakePattern.initiatorPreMessages.foldLeft(symmetricState) {
         case (state, E) => state.mixHash(re)
         case (state, S) => state.mixHash(rs)
+        case _ => throw new RuntimeException("invalid pre-message")
       }
       val symmetricState2 = handshakePattern.responderPreMessages.foldLeft(symmetricState1) {
         case (state, E) => state.mixHash(e.pub)
         case (state, S) => state.mixHash(s.pub)
+        case _ => throw new RuntimeException("invalid pre-message")
       }
       HandshakeStateReader(handshakePattern.messages, symmetricState2, s, e, rs, re, dh, byteStream)
     }

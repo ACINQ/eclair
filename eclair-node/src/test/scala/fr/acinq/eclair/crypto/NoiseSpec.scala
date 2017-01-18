@@ -304,7 +304,7 @@ object NoiseSpec {
   def handshake(init: HandshakeStateWriter, resp: HandshakeStateReader, inputs: List[BinaryData], outputs: List[BinaryData] = Nil): (List[BinaryData], (CipherState, CipherState)) = {
     assert(init.messages == resp.messages)
     assert(init.messages.length == inputs.length)
-    inputs match {
+    (inputs: @unchecked) match {
       case last :: Nil =>
         val (_, message, Some((ics0, ics1, _))) = init.write(last)
         val (_, _, Some((rcs0, rcs1, _))) = resp.read(message)
