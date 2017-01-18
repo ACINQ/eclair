@@ -2,12 +2,12 @@ package fr.acinq.eclair.channel.states.b
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateSpecBaseClass
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

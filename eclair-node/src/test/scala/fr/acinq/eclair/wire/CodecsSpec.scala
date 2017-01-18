@@ -2,13 +2,12 @@ package fr.acinq.eclair.wire
 
 import java.net.InetAddress
 
-import fr.acinq.bitcoin.{BinaryData, Crypto, Hash}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
+import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.wire.Codecs.{ipv6, lightningMessageCodec, rgb, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import scodec.Codec
 import scodec.bits.{BitVector, HexStringSyntax}
 
 import scala.util.Random

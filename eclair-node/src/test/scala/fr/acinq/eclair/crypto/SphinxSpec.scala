@@ -1,17 +1,10 @@
 package fr.acinq.eclair.crypto
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream, OutputStream}
-
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import org.bouncycastle.crypto.digests.SHA256Digest
-import org.bouncycastle.crypto.macs.HMac
-import org.bouncycastle.crypto.params.KeyParameter
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-
-import scala.annotation.tailrec
 
 /**
   * Created by fabrice on 10/01/17.

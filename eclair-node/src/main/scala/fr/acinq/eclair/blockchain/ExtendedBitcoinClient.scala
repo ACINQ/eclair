@@ -1,9 +1,8 @@
 package fr.acinq.eclair.blockchain
 
-import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Script._
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
-import fr.acinq.eclair.transactions
 import fr.acinq.eclair.transactions.Scripts
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._

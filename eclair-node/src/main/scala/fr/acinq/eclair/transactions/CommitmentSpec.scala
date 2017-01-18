@@ -1,10 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.bitcoin.Crypto.{Point, sha256}
-import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
-import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.transactions.Transactions.{CommitTx, HtlcSuccessTx, HtlcTimeoutTx, InputInfo}
+import fr.acinq.bitcoin.Crypto.sha256
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, UpdateMessage}
 
 /**

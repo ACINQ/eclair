@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire
 
-import java.net.{Inet6Address, InetAddress}
+import java.net.InetAddress
 
 import fr.acinq.bitcoin.BinaryData
 

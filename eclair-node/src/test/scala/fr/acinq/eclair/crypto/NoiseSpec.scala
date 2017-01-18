@@ -1,6 +1,6 @@
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.{BinaryData, Protocol}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.crypto.Noise._
 import org.bouncycastle.crypto.ec.CustomNamedCurves
 import org.junit.runner.RunWith

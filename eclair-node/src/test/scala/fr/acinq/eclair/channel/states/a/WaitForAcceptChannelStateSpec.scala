@@ -2,12 +2,12 @@ package fr.acinq.eclair.channel.states.a
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.{MakeFundingTx, PeerWatcher}
-import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_CREATED_INTERNAL, _}
+import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel.states.StateSpecBaseClass
+import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_CREATED_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, OpenChannel}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

@@ -3,8 +3,8 @@ package fr.acinq.eclair.transactions
 import java.nio.{ByteBuffer, ByteOrder}
 
 import fr.acinq.bitcoin.Crypto.{Scalar, sha256}
-import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, OutPoint, Protocol, Satoshi, Script, Transaction, TxIn, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.htlcSuccessOrTimeout
 import fr.acinq.eclair.transactions.Transactions._

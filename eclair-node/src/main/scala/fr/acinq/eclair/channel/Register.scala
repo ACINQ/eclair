@@ -2,13 +2,11 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Props, _}
 import akka.util.Timeout
-import com.trueaccord.scalapb.GeneratedMessage
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, Satoshi, Script}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.LightningMessageSerializer
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.LightningMessage
 
 import scala.concurrent.duration._

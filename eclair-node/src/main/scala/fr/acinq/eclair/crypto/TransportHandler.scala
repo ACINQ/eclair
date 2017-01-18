@@ -1,6 +1,6 @@
 package fr.acinq.eclair.crypto
 
-import akka.actor.{Actor, ActorLogging, ActorRef, FSM, LoggingFSM, Terminated}
+import akka.actor.{Actor, ActorRef, LoggingFSM, Terminated}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
 import fr.acinq.bitcoin.{BinaryData, Protocol}

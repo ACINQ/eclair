@@ -1,13 +1,13 @@
 package fr.acinq.eclair.channel.states.h
 
-import akka.actor.{ActorRef, Props}
+import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
-import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, Data, State, _}
+import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
