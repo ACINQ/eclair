@@ -55,6 +55,8 @@ object Transactions {
   val commitWeight = 724
   val htlcTimeoutWeight = 634
   val htlcSuccessWeight = 671
+  val claimHtlcDelayedWeight = 482
+  val mainPunishmentWeight = 483
 
   def weight2fee(feeRatePerKw: Long, weight: Int) = Satoshi((feeRatePerKw * weight) / 1024)
 
@@ -162,7 +164,7 @@ object Transactions {
   }
 
   def makeHtlcTimeoutTx(commitTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, remotePubkey: BinaryData, feeRatePerKw: Long, htlc: UpdateAddHtlc): HtlcTimeoutTx = {
-    val htlcTimeoutFee = weight2fee(feeRatePerKw, htlcTimeoutWeight)
+    val fee = weight2fee(feeRatePerKw, htlcTimeoutWeight)
     val redeemScript = htlcOffered(localDelayedPubkey, remotePubkey, ripemd160(htlc.paymentHash))
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
@@ -171,12 +173,12 @@ object Transactions {
     HtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat) - htlcTimeoutFee, pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey))) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat) - fee, pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey))) :: Nil,
       lockTime = htlc.expiry))
   }
 
   def makeHtlcSuccessTx(commitTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, remotePubkey: BinaryData, feeRatePerKw: Long, htlc: UpdateAddHtlc): HtlcSuccessTx = {
-    val htlcSuccessFee = weight2fee(feeRatePerKw, htlcSuccessWeight)
+    val fee = weight2fee(feeRatePerKw, htlcSuccessWeight)
     val redeemScript = htlcReceived(localDelayedPubkey, remotePubkey, ripemd160(htlc.paymentHash), htlc.expiry)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
@@ -185,7 +187,7 @@ object Transactions {
     HtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat) - htlcSuccessFee, pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey))) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat) - fee, pay2wsh(htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey))) :: Nil,
       lockTime = 0), htlc.paymentHash)
   }
 
@@ -214,6 +216,7 @@ object Transactions {
     ClaimHtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      // the fee was pre-computed at the upper stage: fee = input.txOut.amount - htlc.amountMsat
       txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = 0))
   }
@@ -227,42 +230,37 @@ object Transactions {
     ClaimHtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
+      // the fee was pre-computed at the upper stage: fee = input.txOut.amount - htlc.amountMsat
       txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
       lockTime = htlc.expiry))
   }
 
   def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, finalLocalPubkey: BinaryData, feeRatePerKw: Long): ClaimHtlcDelayedTx = {
+    val fee = weight2fee(feeRatePerKw, claimHtlcDelayedWeight)
     val redeemScript = htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(htlcSuccessOrTimeoutTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
     val input = InputInfo(OutPoint(htlcSuccessOrTimeoutTx, outputIndex), htlcSuccessOrTimeoutTx.txOut(outputIndex), write(redeemScript))
-    val tx = Transaction(
+    ClaimHtlcDelayedTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-      txOut = TxOut(input.txOut.amount, pay2wpkh(finalLocalPubkey)) :: Nil,
-      lockTime = 0)
-    val w = weight(ClaimHtlcDelayedTx(input, tx))
-    val fee = weight2fee(feeRatePerKw, w)
-    val tx1 = tx.copy(txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil)
-    ClaimHtlcDelayedTx(input, tx1)
+      txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil,
+      lockTime = 0))
   }
 
   def makeMainPunishmentTx(commitTx: Transaction, remoteRevocationPubkey: BinaryData, finalLocalPubkey: BinaryData, toRemoteDelay: Int, remoteDelayedPubkey: BinaryData, feeRatePerKw: Long): MainPunishmentTx = {
+    val fee = weight2fee(feeRatePerKw, mainPunishmentWeight)
     val redeemScript = toLocal(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-    val tx = Transaction(
+    MainPunishmentTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(input.txOut.amount, pay2wpkh(finalLocalPubkey)) :: Nil,
-      lockTime = 0)
-    val w = weight(MainPunishmentTx(input, tx))
-    val fee = weight2fee(feeRatePerKw, w)
-    val tx1 = tx.copy(txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil)
-    MainPunishmentTx(input, tx1)
+      txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil,
+      lockTime = 0))
   }
 
   def makeHtlcPunishmentTx(commitTx: Transaction): HtlcPunishmentTx = ???
@@ -311,11 +309,6 @@ object Transactions {
     claimMainDelayedRevokedTx.copy(tx = claimMainDelayedRevokedTx.tx.updateWitness(0, witness))
   }
 
-  def weight(claimMainDelayedRevokedTx: MainPunishmentTx): Int = {
-    val dummySig = new Array[Byte](71)
-    Transaction.weight(addSigs(claimMainDelayedRevokedTx, dummySig).tx)
-  }
-
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx = {
     val witness = witnessHtlcSuccess(localSig, remoteSig, paymentPreimage, htlcSuccessTx.input.redeemScript)
     htlcSuccessTx.copy(tx = htlcSuccessTx.tx.updateWitness(0, witness))
@@ -339,11 +332,6 @@ object Transactions {
   def addSigs(claimHtlcDelayed: ClaimHtlcDelayedTx, localSig: BinaryData): ClaimHtlcDelayedTx = {
     val witness = witnessHtlcDelayed(localSig, claimHtlcDelayed.input.redeemScript)
     claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
-  }
-
-  def weight(claimHtlcDelayed: ClaimHtlcDelayedTx): Int = {
-    val dummySig = new Array[Byte](71)
-    Transaction.weight(addSigs(claimHtlcDelayed, dummySig).tx)
   }
 
   def addSigs(closingTx: ClosingTx, localFundingPubkey: Point, remoteFundingPubkey: Point, localSig: BinaryData, remoteSig: BinaryData): ClosingTx = {
