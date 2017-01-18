@@ -13,9 +13,9 @@ object Generators {
     case length if length < 32 => Array.fill(32 - length)(0.toByte) ++ data
   }
 
-  def perCommitSecret(seed: BinaryData, index: Int): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index) :+ 1.toByte)
+  def perCommitSecret(seed: BinaryData, index: Long): Scalar = Scalar(ShaChain.shaChainFromSeed(seed, 0xFFFFFFFFFFFFFFFFL - index) :+ 1.toByte)
 
-  def perCommitPoint(seed: BinaryData, index: Int): Point = perCommitSecret(seed, index).toPoint
+  def perCommitPoint(seed: BinaryData, index: Long): Point = perCommitSecret(seed, index).toPoint
 
   def derivePrivKey(secret: Scalar, perCommitPoint: Point): Scalar = {
     // secretkey = basepoint-secret + SHA256(per-commitment-point || basepoint)

@@ -180,8 +180,7 @@ object Commitments {
     // receiving money i.e its commit tx has one output for them
 
     val spec = CommitmentSpec.reduce(localCommit.spec, localChanges.acked, remoteChanges.proposed)
-    val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 1)
-    // TODO: index should be a long (max 48 bits)
+    val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index + 1)
     val (localCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeLocalTxs(localCommit.index + 1, localParams, remoteParams, commitInput, localPerCommitmentPoint, spec)
     val sig = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
 
@@ -216,10 +215,8 @@ object Commitments {
     }
 
     // we will send our revocation preimage + our next revocation hash
-    val localPerCommitmentSecret = Generators.perCommitSecret(localParams.shaSeed, commitments.localCommit.index.toInt)
-    // TODO: index should be a long (max 48 bits)
-    val localNextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt + 2)
-    // TODO: index should be a long (max 48 bits)
+    val localPerCommitmentSecret = Generators.perCommitSecret(localParams.shaSeed, commitments.localCommit.index)
+    val localNextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index + 2)
     val revocation = RevokeAndAck(
       channelId = commitments.channelId,
       perCommitmentSecret = localPerCommitmentSecret.toBin.take(32),
