@@ -10,7 +10,7 @@
 
     <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
     <logger name="fr.acinq.eclair.channel.Register" level="DEBUG"/>
-    <logger name="fr.acinq.protos" level="DEBUG"/>
+    <logger name="fr.acinq.eclair.crypto.TransportHandler" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

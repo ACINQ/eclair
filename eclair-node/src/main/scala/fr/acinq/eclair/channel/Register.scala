@@ -1,11 +1,15 @@
 package fr.acinq.eclair.channel
 
-import akka.actor._
+import akka.actor.{Props, _}
 import akka.util.Timeout
+import com.trueaccord.scalapb.GeneratedMessage
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, Satoshi, Script}
 import fr.acinq.eclair.Globals
-import fr.acinq.eclair.io.AuthHandler
+import fr.acinq.eclair.crypto.Noise.KeyPair
+import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.io.LightningMessageSerializer
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.wire.LightningMessage
 
 import scala.concurrent.duration._
 
@@ -36,8 +40,9 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
   def receive: Receive = main(0L)
 
   def main(counter: Long): Receive = {
-    case CreateChannel(connection, amount_opt) =>
+    case CreateChannel(connection, pubkey, amount_opt) =>
       def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
+
       val localParams = LocalParams(
         dustLimitSatoshis = 542,
         maxHtlcValueInFlightMsat = Long.MaxValue,
@@ -54,9 +59,29 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
         shaSeed = Globals.Node.seed,
         isFunder = amount_opt.isDefined
       )
-      val init = amount_opt.map(amount => Left(INPUT_INIT_FUNDER(amount.amount, 0))).getOrElse(Right(INPUT_INIT_FUNDEE()))
-      context.actorOf(AuthHandler.props(connection, blockchain, paymentHandler, localParams, init), name = s"auth-handler-${counter}")
+
+      def makeChannel(conn: ActorRef, publicKey: BinaryData): ActorRef = {
+        val channel = context.actorOf(Channel.props(conn, blockchain, paymentHandler, localParams, publicKey.toString()), s"channel-$counter")
+        amount_opt match {
+          case Some(amount) => channel ! INPUT_INIT_FUNDER(amount.amount, 0)
+          case None => channel ! INPUT_INIT_FUNDEE()
+        }
+        channel
+      }
+
+      val transportHandler = context.actorOf(Props(
+        new TransportHandler[LightningMessage](
+          KeyPair(Globals.Node.publicKey.toBin, Globals.Node.privateKey.toBin),
+          pubkey,
+          isWriter = amount_opt.isDefined,
+          them = connection,
+          listenerFactory = makeChannel,
+          serializer = LightningMessageSerializer)),
+        name = s"transport-handler-${counter}")
+
+      connection ! akka.io.Tcp.Register(transportHandler)
       context.become(main(counter + 1))
+
     case ListChannels => sender ! context.children
     case SendCommand(channelId, cmd) =>
       val s = sender
@@ -74,7 +99,7 @@ object Register {
   def props(blockchain: ActorRef, paymentHandler: ActorRef) = Props(classOf[Register], blockchain, paymentHandler)
 
   // @formatter:off
-  case class CreateChannel(connection: ActorRef, anchorAmount: Option[Satoshi])
+  case class CreateChannel(connection: ActorRef, pubkey: Option[BinaryData], anchorAmount: Option[Satoshi])
 
   case class ListChannels()
 

@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel
+package fr.acinq.eclair
 
 import akka.actor.{Actor, ActorRef, Stash}
 

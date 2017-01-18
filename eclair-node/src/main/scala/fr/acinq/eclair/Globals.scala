@@ -19,7 +19,7 @@ object Globals {
     val privateKey = extendedPrivateKey.privateKey
     val extendedPublicKey = DeterministicWallet.publicKey(extendedPrivateKey)
     val publicKey = extendedPublicKey.publicKey
-    val id = publicKey.toString()
+    val id = publicKey.toBin.toString()
   }
 
   val default_locktime = 144

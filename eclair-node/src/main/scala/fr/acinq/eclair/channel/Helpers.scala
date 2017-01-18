@@ -3,8 +3,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
+import Crypto.sha256
 import fr.acinq.eclair.crypto.Generators
-import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._

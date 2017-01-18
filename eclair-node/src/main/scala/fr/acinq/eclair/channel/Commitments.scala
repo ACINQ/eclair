@@ -1,8 +1,7 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.{Point, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, Scalar, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
-import fr.acinq.eclair.crypto.LightningCrypto.sha256
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._

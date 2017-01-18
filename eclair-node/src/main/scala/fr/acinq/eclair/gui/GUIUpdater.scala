@@ -65,6 +65,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
           channelPane.funder.getText match {
             case "Yes" => channelPane.amountUs.setText(s"${satoshi2millibtc(capacity).amount}")
             case "No" => channelPane.amountUs.setText("0")
+            case _ => ()
           }
         }
       })

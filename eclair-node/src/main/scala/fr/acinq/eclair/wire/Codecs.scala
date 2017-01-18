@@ -1,8 +1,10 @@
 package fr.acinq.eclair.wire
 
+import java.math.BigInteger
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.wire
 import scodec.bits.{BitVector, ByteVector, HexStringSyntax}
 import scodec.codecs._
@@ -24,6 +26,8 @@ object Codecs {
 
   def listofbinarydata(size: Int): Codec[List[BinaryData]] = listOfN(uint16, binarydata(size))
 
+  def listofsignatures: Codec[List[BinaryData]] = listOfN(uint16, signature)
+
   def ipv6: Codec[InetAddress] = Codec[InetAddress](
     (ia: InetAddress) => ia match {
       case a: Inet4Address => bytes(16).encode(hex"00 00 00 00 00 00 00 00 00 00 FF FF" ++ ByteVector(a.getAddress))
@@ -32,9 +36,38 @@ object Codecs {
     (buf: BitVector) => bytes(16).decode(buf).map(_.map(b => InetAddress.getByAddress(b.toArray)))
   )
 
+  def signature: Codec[BinaryData] = Codec[BinaryData](
+    (der: BinaryData) => bytes(64).encode(ByteVector(der2wire(der).toArray)),
+    (wire: BitVector) => bytes(64).decode(wire).map(_.map(b => wire2der(b.toArray)))
+  )
+
+  def optionalSignature: Codec[Option[BinaryData]] = Codec[Option[BinaryData]](
+    (der: Option[BinaryData]) => der match {
+      case Some(sig) => bytes(64).encode(ByteVector(der2wire(sig).toArray))
+      case None => bytes(64).encode(ByteVector.fill[Byte](64)(0))
+    },
+    (wire: BitVector) => bytes(64).decode(wire).map(_.map(b => {
+      val a = b.toArray
+      if (a.exists(_ != 0)) Some(wire2der(a)) else None
+    }))
+  )
+
   def rgb: Codec[(Byte, Byte, Byte)] = bytes(3).xmap(buf => (buf(0), buf(1), buf(2)), t => ByteVector(t._1, t._2, t._3))
 
   def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\0'), s => s)
+
+  def der2wire(signature: BinaryData): BinaryData = {
+    require(Crypto.isDERSignature(signature), s"invalid DER signature $signature")
+    val (r, s) = Crypto.decodeSignature(signature)
+    Generators.fixSize(r.toByteArray.dropWhile(_ == 0)) ++ Generators.fixSize(s.toByteArray.dropWhile(_ == 0))
+  }
+
+  def wire2der(sig: BinaryData): BinaryData = {
+    require(sig.length == 64, "wire signature length must be 64")
+    val r = new BigInteger(1, sig.take(32).toArray)
+    val s = new BigInteger(1, sig.takeRight(32).toArray)
+    Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte // wtf ??
+  }
 
   val initCodec: Codec[Init] = (
     ("globalFeatures" | varsizebinarydata) ::
@@ -80,17 +113,17 @@ object Codecs {
     ("temporaryChannelId" | int64) ::
       ("txid" | binarydata(32)) ::
       ("outputIndex" | uint16) ::
-      ("signature" | binarydata(64))).as[FundingCreated]
+      ("signature" | signature)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
     ("temporaryChannelId" | int64) ::
-      ("signature" | binarydata(64))).as[FundingSigned]
+      ("signature" | signature)).as[FundingSigned]
 
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("temporaryChannelId" | int64) ::
       ("channelId" | int64) ::
-      ("announcementNodeSignature" | binarydata(64)) ::
-      ("announcementBitcoinSignature" | binarydata(64)) ::
+      ("announcementNodeSignature" | optionalSignature) ::
+      ("announcementBitcoinSignature" | optionalSignature) ::
       ("nextPerCommitmentPoint" | binarydata(33))).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
@@ -100,7 +133,7 @@ object Codecs {
   val closingSignedCodec: Codec[ClosingSigned] = (
     ("channelId" | int64) ::
       ("feeSatoshis" | uint64) ::
-      ("signature" | binarydata(64))).as[ClosingSigned]
+      ("signature" | signature)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | int64) ::
@@ -122,15 +155,15 @@ object Codecs {
 
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | int64) ::
-      ("signature" | binarydata(64)) ::
-      ("htlcSignatures" | listofbinarydata(64))).as[CommitSig]
+      ("signature" | signature) ::
+      ("htlcSignatures" | listofsignatures)).as[CommitSig]
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | int64) ::
       ("perCommitmentSecret" | binarydata(32)) ::
       ("nextPerCommitmentPoint" | binarydata(33)) ::
       ("padding" | ignore(3)) ::
-      ("htlcTimeoutSignature" | listofbinarydata(64))
+      ("htlcTimeoutSignature" | listofsignatures)
     ).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (
@@ -138,18 +171,18 @@ object Codecs {
       ("feeratePerKw" | uint32)).as[UpdateFee]
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
-    ("nodeSignature1" | binarydata(64)) ::
-      ("nodeSignature2" | binarydata(64)) ::
+    ("nodeSignature1" | signature) ::
+      ("nodeSignature2" | signature) ::
       ("channelId" | int64) ::
-      ("bitcoinSignature1" | binarydata(64)) ::
-      ("bitcoinSignature2" | binarydata(64)) ::
+      ("bitcoinSignature1" | signature) ::
+      ("bitcoinSignature2" | signature) ::
       ("nodeId1" | binarydata(33)) ::
       ("nodeId2" | binarydata(33)) ::
       ("bitcoinKey1" | binarydata(33)) ::
       ("bitcoinKey2" | binarydata(33))).as[ChannelAnnouncement]
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
-    ("signature" | binarydata(64)) ::
+    ("signature" | signature) ::
       ("timestamp" | uint32) ::
       ("ip" | ipv6) ::
       ("port" | uint16) ::
@@ -158,7 +191,7 @@ object Codecs {
       ("alias" | zeropaddedstring(32))).as[NodeAnnouncement]
 
   val channelUpdateCodec: Codec[ChannelUpdate] = (
-    ("signature" | binarydata(64)) ::
+    ("signature" | signature) ::
       ("channelId" | int64) ::
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::

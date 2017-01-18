@@ -12,6 +12,7 @@ object GUIValidators {
   val hostRegex = """[a-zA-Z0-9.]+:[0-9]{1,5}""".r
   val amountRegex = """[0-9]+""".r
   val paymentRequestRegex = """[a-zA-Z0-9]+:[a-zA-Z0-9]+:[a-zA-Z0-9]+""".r
+  val hexRegex = """[0-9a-fA-F]+""".r
 
   /**
     * Validate a field against a regex. If field does not match regex, validatorLabel is shown.

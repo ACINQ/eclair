@@ -63,8 +63,8 @@ case class FundingSigned(temporaryChannelId: Long,
 
 case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
-                         announcementNodeSignature: BinaryData,
-                         announcementBitcoinSignature: BinaryData,
+                         announcementNodeSignature: Option[BinaryData],
+                         announcementBitcoinSignature: Option[BinaryData],
                          nextPerCommitmentPoint: BinaryData) extends ChannelMessage
 
 case class Shutdown(channelId: Long,

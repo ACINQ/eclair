@@ -47,7 +47,7 @@ trait Service extends Logging {
 
   import Json4sSupport.{json4sMarshaller, json4sUnmarshaller}
 
-  def connect(host: String, port: Int, amount: Satoshi): Unit
+  def connect(host: String, port: Int, pubkey: BinaryData, amount: Satoshi): Unit
 
   def register: ActorRef
 
@@ -70,8 +70,8 @@ trait Service extends Logging {
           entity(as[JsonRPCBody]) {
             req =>
               val f_res: Future[AnyRef] = req match {
-                case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JInt(anchor_amount) :: Nil) =>
-                  connect(host, port.toInt, Satoshi(anchor_amount.toLong))
+                case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(anchor_amount) :: Nil) =>
+                  connect(host, port.toInt, BinaryData(pubkey), Satoshi(anchor_amount.toLong))
                   Future.successful("ok")
                 case JsonRPCBody(_, _, "info", _) =>
                   Future.successful(Status(Globals.Node.id))
