@@ -453,8 +453,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       stay
 
     case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) =>
-      val ourScriptPubKey = ourScriptPubKey_opt.getOrElse(Script.write(Script.pay2wpkh(d.params.localParams.finalPrivKey.toPoint)))
-      val localShutdown = Shutdown(d.channelId, ourScriptPubKey)
+      val localShutdown = Shutdown(d.channelId, Script.write(d.params.localParams.defaultFinalScriptPubKey))
       handleCommandSuccess(sender, localShutdown, d.copy(localShutdown = Some(localShutdown)))
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(channelId, params, commitments, ourShutdownOpt, downstreams)) if commitments.remoteChanges.proposed.size > 0 =>
@@ -468,8 +467,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           them ! commit
           commitments1
         } else commitments
-        val defaultScriptPubkey: BinaryData = Script.write(Script.pay2wpkh(params.localParams.finalPrivKey.toPoint))
-        val shutdown = Shutdown(channelId, defaultScriptPubkey)
+        val shutdown = Shutdown(channelId, Script.write(params.localParams.defaultFinalScriptPubKey))
         them ! shutdown
         (shutdown, commitments2)
       }) match {

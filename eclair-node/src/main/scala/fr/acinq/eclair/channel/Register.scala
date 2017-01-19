@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Props, _}
 import akka.util.Timeout
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi, ScriptElt}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
@@ -31,7 +31,7 @@ import scala.concurrent.duration._
   * ├── client (0..m, transient)
   * └── api
   */
-class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
+class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) extends Actor with ActorLogging {
 
   import Register._
 
@@ -53,7 +53,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
         revocationSecret = generateKey(1),
         paymentKey = generateKey(2),
         delayedPaymentKey = generateKey(3),
-        finalPrivKey = generateKey(4),
+        defaultFinalScriptPubKey = defaultFinalScriptPubKey,
         shaSeed = Globals.Node.seed,
         isFunder = amount_opt.isDefined
       )
@@ -94,7 +94,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef) extends Actor wit
 
 object Register {
 
-  def props(blockchain: ActorRef, paymentHandler: ActorRef) = Props(classOf[Register], blockchain, paymentHandler)
+  def props(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) = Props(classOf[Register], blockchain, paymentHandler, defaultFinalScriptPubKey)
 
   // @formatter:off
   case class CreateChannel(connection: ActorRef, pubkey: Option[BinaryData], anchorAmount: Option[Satoshi])

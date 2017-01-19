@@ -128,11 +128,10 @@ object Helpers {
       val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
       val localDelayedPrivkey = Generators.derivePrivKey(localParams.delayedPaymentKey, localPerCommitmentPoint)
 
-      // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
       val delayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localPubkey, commitments.localParams.feeratePerKw)
+          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localParams.defaultFinalScriptPubKey, commitments.localParams.feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }
@@ -165,22 +164,19 @@ object Helpers {
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
 
-      // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
-
-
-      // TODO: don't handle dust!!!!
+      // TODO: we currently don't handle dust!!!!
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val txes = commitments.remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
         case Htlc(OUT, add: UpdateAddHtlc, _) if preimages.exists(r => sha256(r) == add.paymentHash) =>
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localPubkey, add)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) =>
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localPubkey, add)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig)
       }
@@ -209,12 +205,10 @@ object Helpers {
       val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
       val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
 
-      // TODO: final key is the payment pubkey so that it matches the main outputs, is that the best option?
-
       // let's punish remote by stealing its main output
       val mainDelayedRevokedTx = {
         // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.toPoint, localPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
+        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.toPoint, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
         val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
         Transactions.addSigs(txinfo, sig)
       }
