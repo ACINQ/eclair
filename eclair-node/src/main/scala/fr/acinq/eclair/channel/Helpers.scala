@@ -204,7 +204,7 @@ object Helpers {
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
       remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber)
-        .map(d => Scalar(d :+ 1.toByte))
+        .map(d => Scalar(d))
         .map { remotePerCommitmentSecret =>
           val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
 
