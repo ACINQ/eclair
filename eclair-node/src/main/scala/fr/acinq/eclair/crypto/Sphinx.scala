@@ -41,7 +41,7 @@ object Sphinx {
 
   def computeblindingFactor(pub: PublicKey, secret: BinaryData): BinaryData = Crypto.sha256(pub.toBin ++ secret)
 
-  def blind(pub: PublicKey, blindingFactor: BinaryData): PublicKey = pub.multiply(blindingFactor).normalize()
+  def blind(pub: PublicKey, blindingFactor: BinaryData): PublicKey = PublicKey(pub.multiply(blindingFactor).normalize(), compressed = true)
 
   def blind(pub: PublicKey, blindingFactors: Seq[BinaryData]): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
@@ -112,11 +112,11 @@ object Sphinx {
     *         destination
     *         - packet is the next packet, to be forwarded to address
     */
-  def parsePacket(privateKey: BinaryData, associatedData: BinaryData, packet: BinaryData): (BinaryData, BinaryData, BinaryData) = {
+  def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, packet: BinaryData): (BinaryData, BinaryData, BinaryData) = {
     require(packet.length == 1254, "onion packet length should be 1854")
     val header = Header.read(packet)
     val perHopPayload = packet.drop(854)
-    val sharedSecret = computeSharedSecret(header.publicKey, privateKey)
+    val sharedSecret = computeSharedSecret(PublicKey(header.publicKey), privateKey)
     val mu = generateKey("mu", sharedSecret)
     val check: BinaryData = hmac256(mu, header.routingInfo ++ perHopPayload ++ associatedData).take(20)
     assert(check == header.hmac)
@@ -127,7 +127,7 @@ object Sphinx {
     val hmac = bin.slice(20, 40)
     val nextRoutinfo = bin.drop(40)
 
-    val nextPubKey = blind(header.publicKey, computeblindingFactor(header.publicKey, sharedSecret))
+    val nextPubKey = blind(PublicKey(header.publicKey), computeblindingFactor(PublicKey(header.publicKey), sharedSecret))
     println(s"next pubkey@: $nextPubKey")
 
     val gamma = generateKey("gamma", sharedSecret)
@@ -184,8 +184,8 @@ object Sphinx {
     * @param associatedData associated data
     * @return an onion packet that can be sent to the first node in the list
     */
-  def makePacket(sessionKey: BinaryData, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): BinaryData = {
-    val ephemerealPublicKey0 = blind(Crypto.curve.getG, sessionKey)
+  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): BinaryData = {
+    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
 
@@ -198,7 +198,7 @@ object Sphinx {
     @tailrec
     def loop(pubKeys: Seq[PublicKey], hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: BinaryData): BinaryData = {
       if (hoppayloads.isEmpty) packet else {
-        val nextPacket = makeNextPacket(pubKeys.last.hash, hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
+        val nextPacket = makeNextPacket(pubKeys.last.hash160, hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
         loop(pubKeys.dropRight(1), hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
       }
     }

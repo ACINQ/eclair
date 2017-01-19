@@ -1,6 +1,7 @@
 package fr.acinq.eclair.blockchain
 
 import akka.actor.ActorRef
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import fr.acinq.eclair.channel.BitcoinEvent
 
@@ -20,6 +21,6 @@ final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Long, 
 
 final case class Publish(tx: Transaction)
 final case class PublishAsap(tx: Transaction)
-final case class MakeFundingTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)
+final case class MakeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi)
 
 // @formatter:on

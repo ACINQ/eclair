@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.Crypto
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.eclair.channel._
 
 /**
@@ -20,11 +20,11 @@ object TestConstants {
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
-      fundingPrivKey = Scalar(Array.fill[Byte](32)(1) :+ 1.toByte),
-      revocationSecret = Scalar(Array.fill[Byte](32)(2) :+ 1.toByte),
-      paymentKey = Scalar(Array.fill[Byte](32)(3) :+ 1.toByte),
-      delayedPaymentKey = Scalar(Array.fill[Byte](32)(4) :+ 1.toByte),
-      finalPrivKey = Scalar(Array.fill[Byte](32)(5) :+ 1.toByte),
+      fundingPrivKey = PrivateKey(Array.fill[Byte](32)(1), compressed = true),
+      revocationSecret = PrivateKey(Array.fill[Byte](32)(2), compressed = true),
+      paymentKey = PrivateKey(Array.fill[Byte](32)(3), compressed = true),
+      delayedPaymentKey = PrivateKey(Array.fill[Byte](32)(4), compressed = true),
+      finalPrivKey = PrivateKey(Array.fill[Byte](32)(5), compressed = true),
       shaSeed = Crypto.sha256("alice-seed".getBytes()),
       isFunder = true
     )
@@ -39,11 +39,11 @@ object TestConstants {
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
-      fundingPrivKey = Scalar(Array.fill[Byte](32)(11) :+ 1.toByte),
-      revocationSecret = Scalar(Array.fill[Byte](32)(12) :+ 1.toByte),
-      paymentKey = Scalar(Array.fill[Byte](32)(13) :+ 1.toByte),
-      delayedPaymentKey = Scalar(Array.fill[Byte](32)(14) :+ 1.toByte),
-      finalPrivKey = Scalar(Array.fill[Byte](32)(15) :+ 1.toByte),
+      fundingPrivKey = PrivateKey(Array.fill[Byte](32)(11), compressed = true),
+      revocationSecret = PrivateKey(Array.fill[Byte](32)(12), compressed = true),
+      paymentKey = PrivateKey(Array.fill[Byte](32)(13), compressed = true),
+      delayedPaymentKey = PrivateKey(Array.fill[Byte](32)(14), compressed = true),
+      finalPrivKey = PrivateKey(Array.fill[Byte](32)(15), compressed = true),
       shaSeed = Crypto.sha256("alice-seed".getBytes()),
       isFunder = false
     )

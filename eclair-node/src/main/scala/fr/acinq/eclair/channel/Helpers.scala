@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.{Scalar, sha256}
+import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.crypto.Generators
@@ -19,7 +19,7 @@ object Helpers {
 
   object Funding {
 
-    def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: BinaryData, fundingPubkey2: BinaryData): InputInfo = {
+    def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
       val fundingTxOut = TxOut(fundingSatoshis, pay2wsh(fundingScript))
       InputInfo(OutPoint(fundingTxId, fundingTxOutputIndex), fundingTxOut, write(fundingScript))
@@ -35,7 +35,7 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: BinaryData): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (params.localParams.isFunder) params.fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (params.localParams.isFunder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
 
@@ -43,7 +43,7 @@ object Helpers {
       val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.remoteParams.feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
 
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivKey.toPoint, params.remoteParams.fundingPubKey)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivKey.publicKey, params.remoteParams.fundingPubKey)
       val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
       val (localCommitTx, _, _) = Commitments.makeLocalTxs(0, params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
@@ -83,7 +83,7 @@ object Helpers {
       val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
-      val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivKey.toPoint, commitments.remoteParams.fundingPubKey, localClosingSig, remoteClosingSig)
+      val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivKey.publicKey, commitments.remoteParams.fundingPubKey, localClosingSig, remoteClosingSig)
       val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
@@ -132,7 +132,7 @@ object Helpers {
       val delayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localPubkey, commitments.localParams.feeratePerKw)
+          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localPubkey, commitments.localParams.feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }
@@ -202,7 +202,7 @@ object Helpers {
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-      val remotePerCommitmentSecret = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber).map(d => Scalar(d :+ 1.toByte)).getOrElse(throw new RuntimeException(s"cannot get commitment secret for txnumber=$txnumber"))
+      val remotePerCommitmentSecret: Scalar = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber).getOrElse(throw new RuntimeException(s"cannot get commitment secret for txnumber=$txnumber"))
       val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
 
       val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remotePerCommitmentPoint)
@@ -214,7 +214,7 @@ object Helpers {
       // let's punish remote by stealing its main output
       val mainDelayedRevokedTx = {
         // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.toPoint, localPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
+        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.publicKey, localPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
         val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
         Transactions.addSigs(txinfo, sig)
       }

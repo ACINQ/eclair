@@ -1,5 +1,6 @@
 package fr.acinq.eclair.blockchain
 
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
@@ -92,7 +93,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(tx2Hex(tx))
 
-  def makeAnchorTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+  def makeAnchorTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val anchorOutputScript = write(pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub)))
     val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
     val future = for {
@@ -104,8 +105,8 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     future
   }
 
-  def makeAnchorTx(fundingPriv: BinaryData, ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
-    val pub = Crypto.publicKeyFromPrivateKey(fundingPriv)
+  def makeAnchorTx(fundingPriv: PrivateKey, ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+    val pub = fundingPriv.publicKey
     val script = write(pay2sh(pay2wpkh(pub)))
     val address = Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, script)
     val future = for {

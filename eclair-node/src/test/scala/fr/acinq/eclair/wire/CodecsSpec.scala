@@ -2,7 +2,7 @@ package fr.acinq.eclair.wire
 
 import java.net.InetAddress
 
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.wire.Codecs.{ipv6, lightningMessageCodec, rgb, zeropaddedstring}
 import org.junit.runner.RunWith
@@ -25,7 +25,7 @@ class CodecsSpec extends FunSuite {
     val data = new Array[Byte](50)
     Random.nextBytes(priv)
     Random.nextBytes(data)
-    val (r, s) = Crypto.sign(data, Scalar(priv))
+    val (r, s) = Crypto.sign(data, PrivateKey(priv, true))
     Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte
   }
 

@@ -1,5 +1,6 @@
 package fr.acinq.eclair.transactions
 
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Scripts._
 import org.junit.runner.RunWith
@@ -10,10 +11,10 @@ import org.scalatest.junit.JUnitRunner
 class ClaimSentHtlcSpec extends FunSuite {
 
   object Alice {
-    val (_, commitKey) = Base58Check.decode("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g")
-    val (_, finalKey) = Base58Check.decode("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA")
-    val commitPubKey = Crypto.publicKeyFromPrivateKey(commitKey)
-    val finalPubKey = Crypto.publicKeyFromPrivateKey(finalKey)
+    val commitKey = PrivateKey.fromBase58("cVuzKWCszfvjkoJyUasvsrRdECriz8hSd1BDinRNzytwnXmX7m1g", Base58.Prefix.SecretKeyTestnet)
+    val finalKey = PrivateKey.fromBase58("cRUfvpbRtMSqCFD1ADdvgPn5HfRLYuHCFYAr2noWnaRDNger2AoA", Base58.Prefix.SecretKeyTestnet)
+    val commitPubKey = commitKey.publicKey
+    val finalPubKey = finalKey.publicKey
     val R: BinaryData = Crypto.sha256("this is Alice's R".getBytes("UTF-8"))
     val Rhash: BinaryData = Crypto.sha256(R)
     val H = Crypto.hash160(Rhash)
@@ -23,10 +24,10 @@ class ClaimSentHtlcSpec extends FunSuite {
   }
 
   object Bob {
-    val (_, commitKey) = Base58Check.decode("cSupnaiBh6jgTcQf9QANCB5fZtXojxkJQczq5kwfSBeULjNd5Ypo")
-    val (_, finalKey) = Base58Check.decode("cQLk5fMydgVwJjygt9ta8GcUU4GXLumNiXJCQviibs2LE5vyMXey")
-    val commitPubKey = Crypto.publicKeyFromPrivateKey(commitKey)
-    val finalPubKey = Crypto.publicKeyFromPrivateKey(finalKey)
+    val commitKey = PrivateKey.fromBase58("cSupnaiBh6jgTcQf9QANCB5fZtXojxkJQczq5kwfSBeULjNd5Ypo", Base58.Prefix.SecretKeyTestnet)
+    val finalKey = PrivateKey.fromBase58("cQLk5fMydgVwJjygt9ta8GcUU4GXLumNiXJCQviibs2LE5vyMXey", Base58.Prefix.SecretKeyTestnet)
+    val commitPubKey = commitKey.publicKey
+    val finalPubKey = finalKey.publicKey
     val R: BinaryData = Crypto.sha256("this is Bob's R".getBytes("UTF-8"))
     val Rhash: BinaryData = Crypto.sha256(R)
     val H = Crypto.hash160(Rhash)

@@ -187,7 +187,7 @@ object Commitments {
     // TODO: should we have optional sig? (original comment: this tx will NOT be signed if our output is empty)
 
     // no need to compute htlc sigs if commit sig doesn't check out
-    val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivKey.toPoint, remoteParams.fundingPubKey, sig, commit.signature)
+    val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, sig, commit.signature)
     if (Transactions.checkSpendable(signedCommitTx).isFailure) throw new RuntimeException("invalid sig")
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
@@ -220,7 +220,7 @@ object Commitments {
     val revocation = RevokeAndAck(
       channelId = commitments.channelId,
       perCommitmentSecret = localPerCommitmentSecret.toBin.take(32),
-      nextPerCommitmentPoint = localNextPerCommitmentPoint,
+      nextPerCommitmentPoint = localNextPerCommitmentPoint.toBin(true),
       htlcTimeoutSignatures = timeoutHtlcSigs.toList
     )
 
@@ -237,7 +237,7 @@ object Commitments {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
-      case Left(_) if Scalar(revocation.perCommitmentSecret :+ 1.toByte).toPoint != remoteCommit.remotePerCommitmentPoint =>
+      case Left(_) if Scalar(revocation.perCommitmentSecret).toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig
@@ -260,7 +260,7 @@ object Commitments {
         commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteCommit = theirNextCommit,
-          remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+          remoteNextCommitInfo = Right(Point(revocation.nextPerCommitmentPoint)),
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFFFFFL - commitments.remoteCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected RevokeAndAck message")

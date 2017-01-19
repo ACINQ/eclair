@@ -30,8 +30,8 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "A"))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "0B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       awaitCond(alice.stateName == NORMAL)
@@ -718,7 +718,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       // actual test begins
-      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.toPoint))))
+      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.publicKey))))
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[Publish]
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -734,7 +734,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sign(bob, alice, bob2alice, alice2bob)
 
       // actual test begins
-      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.toPoint))))
+      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.publicKey))))
       bob2alice.expectMsgType[Shutdown]
       awaitCond(bob.stateName == SHUTDOWN)
     }

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.crypto
 
 import java.math.BigInteger
+import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
 import grizzled.slf4j.Logging
@@ -80,7 +81,7 @@ object Noise {
     override val name = "ChaChaPoly"
 
     // as specified in BOLT #8
-    def nonce(n: Long): BinaryData = BinaryData("00000000") ++ Protocol.writeUInt64(n)
+    def nonce(n: Long): BinaryData = BinaryData("00000000") ++ Protocol.writeUInt64(n, ByteOrder.LITTLE_ENDIAN)
 
     //Encrypts plaintext using the cipher key k of 32 bytes and an 8-byte unsigned integer nonce n which must be unique
     override def encrypt(k: BinaryData, n: Long, ad: BinaryData, plaintext: BinaryData): BinaryData = {

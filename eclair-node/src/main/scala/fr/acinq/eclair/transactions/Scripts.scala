@@ -60,17 +60,17 @@ object Scripts {
       txIn = TxIn(outPoint = OutPoint(previousTx, outputIndex), signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
       txOut = TxOut(Satoshi(amount), publicKeyScript = pay2wsh(multiSig2of2(pubkey1, pubkey2))) :: Nil,
       lockTime = 0)
-    val pub: BinaryData = key.toPoint
-    val pkh = OP_0 :: OP_PUSHDATA(Crypto.hash160(pub)) :: Nil
+    val pub = key.publicKey
+    val pkh = OP_0 :: OP_PUSHDATA(pub.hash160) :: Nil
     val p2sh: BinaryData = Script.write(pay2sh(pkh))
 
     require(p2sh == previousTx.txOut(outputIndex).publicKeyScript)
 
-    val pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Crypto.hash160(pub)) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+    val pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pub.hash160) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
     val hash = Transaction.hashForSigning(tx, 0, pubKeyScript, SIGHASH_ALL, tx.txOut(0).amount, signatureVersion = 1)
     val sig = Crypto.encodeSignature(Crypto.sign(hash, key)) :+ SIGHASH_ALL.toByte
     val witness = ScriptWitness(Seq(sig, pub))
-    val script = Script.write(OP_0 :: OP_PUSHDATA(Crypto.hash160(pub)) :: Nil)
+    val script = Script.write(OP_0 :: OP_PUSHDATA(pub.hash160) :: Nil)
     val signedTx = tx.updateSigScript(0, OP_PUSHDATA(script) :: Nil).updateWitness(0, witness)
 
     // we don't permute outputs because by convention the multisig output has index = 0
@@ -79,7 +79,7 @@ object Scripts {
 
   def encodeNumber(n: Long): BinaryData = {
     // TODO: added for compatibility with lightningd => check (it's either a bug in lighningd or bitcoin-lib)
-    if (n < 0xff) Protocol.writeUInt8(n.toInt) else Script.encodeNumber(n)
+    if (n < 0xff) Seq(n.toByte) else Script.encodeNumber(n)
   }
 
   def redeemSecretOrDelay(delayedKey: BinaryData, reltimeout: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
@@ -199,7 +199,7 @@ object Scripts {
     else tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
   }
 
-  def toLocal(revocationPubkey: BinaryData, toSelfDelay: Int, localDelayedPubkey: BinaryData) = {
+  def toLocal(revocationPubkey: PublicKey, toSelfDelay: Int, localDelayedPubkey: PublicKey) = {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
@@ -211,9 +211,9 @@ object Scripts {
     // @formatter:on
   }
 
-  def toRemote(remoteKey: BinaryData) = remoteKey
+  def toRemote(remoteKey: PublicKey) = remoteKey
 
-  def htlcOffered(localPubkey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData) = {
+  def htlcOffered(localPubkey: PublicKey, remotePubkey: PublicKey, paymentHash: BinaryData) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
