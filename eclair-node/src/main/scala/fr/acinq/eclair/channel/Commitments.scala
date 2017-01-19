@@ -219,8 +219,8 @@ object Commitments {
     val localNextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index + 2)
     val revocation = RevokeAndAck(
       channelId = commitments.channelId,
-      perCommitmentSecret = localPerCommitmentSecret.toBin.take(32),
-      nextPerCommitmentPoint = localNextPerCommitmentPoint.toBin(true),
+      perCommitmentSecret = localPerCommitmentSecret,
+      nextPerCommitmentPoint = localNextPerCommitmentPoint,
       htlcTimeoutSignatures = timeoutHtlcSigs.toList
     )
 
@@ -237,7 +237,7 @@ object Commitments {
     import commitments._
     // we receive a revocation because we just sent them a sig for their next commit tx
     remoteNextCommitInfo match {
-      case Left(_) if Scalar(revocation.perCommitmentSecret).toPoint != remoteCommit.remotePerCommitmentPoint =>
+      case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
       case Left(theirNextCommit) =>
         // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig

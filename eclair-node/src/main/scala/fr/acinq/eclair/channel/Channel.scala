@@ -81,10 +81,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPrivKey.publicKey,
-        revocationBasepoint = localParams.revocationSecret.toPoint.toBin(compressed = true),
-        paymentBasepoint = localParams.paymentKey.toPoint.toBin(compressed = true),
-        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint.toBin(compressed = true),
-        firstPerCommitmentPoint = firstPerCommitmentPoint.toBin(compressed = true))
+        revocationBasepoint = localParams.revocationSecret.toPoint,
+        paymentBasepoint = localParams.paymentKey.toPoint,
+        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
+        firstPerCommitmentPoint = firstPerCommitmentPoint)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = fundingSatoshis, pushMsat = pushMsat, autoSignInterval = autoSignInterval)
 
     case Event(INPUT_INIT_FUNDEE(), Nothing) if !localParams.isFunder =>
@@ -107,10 +107,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPrivKey.publicKey,
-        revocationBasepoint = localParams.revocationSecret.toPoint.toBin(compressed = true),
-        paymentBasepoint = localParams.paymentKey.toPoint.toBin(compressed = true),
-        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint.toBin(compressed = true),
-        firstPerCommitmentPoint = firstPerCommitmentPoint.toBin(compressed = true))
+        revocationBasepoint = localParams.revocationSecret.toPoint,
+        paymentBasepoint = localParams.paymentKey.toPoint,
+        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
+        firstPerCommitmentPoint = firstPerCommitmentPoint)
       val remoteParams = RemoteParams(
         dustLimitSatoshis = open.dustLimitSatoshis,
         maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
@@ -165,7 +165,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         autoSignInterval = autoSignInterval)
       val localFundingPubkey = params.localParams.fundingPrivKey.publicKey
       blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubKey, Satoshi(params.fundingSatoshis))
-      goto(WAIT_FOR_FUNDING_CREATED_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, Point(accept.firstPerCommitmentPoint))
+      goto(WAIT_FOR_FUNDING_CREATED_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, accept.firstPerCommitmentPoint)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -180,7 +180,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       log.info(s"funding tx txid=${fundingTx.txid}")
 
       // let's create the first commitment tx that spends the yet uncommitted funding tx
-      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(params, pushMsat, fundingTx.hash, fundingTxOutputIndex, Point(remoteFirstPerCommitmentPoint))
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(params, pushMsat, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
       val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey) // signature of their initial commitment tx that pays them pushMsat
       them ! FundingCreated(
@@ -189,7 +189,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         outputIndex = fundingTxOutputIndex,
         signature = localSigOfRemoteTx
       )
-      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, Point(remoteFirstPerCommitmentPoint)))
+      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint))
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -286,7 +286,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       val channelId = 0L
       blockchain ! WatchLost(self, commitments.anchorId, params.minimumDepth, BITCOIN_FUNDING_LOST)
       val nextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 1)
-      them ! FundingLocked(channelId, 0L, None, None, nextPerCommitmentPoint.toBin(true)) // TODO: routing announcements disabled
+      them ! FundingLocked(channelId, 0L, None, None, nextPerCommitmentPoint) // TODO: routing announcements disabled
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection
       goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(channelId, params, commitments.copy(channelId = channelId), None, Map())
@@ -319,7 +319,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     case Event(FundingLocked(temporaryChannelId, channelId, _, _, nextPerCommitmentPoint), d: DATA_NORMAL) =>
       // TODO: check channelId matches ours
       Register.create_alias(theirNodeId, d.commitments.anchorId)
-      goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(Point(nextPerCommitmentPoint))))
+      goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))
 
     case Event((BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 

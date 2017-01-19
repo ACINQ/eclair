@@ -3,6 +3,7 @@ package fr.acinq.eclair.wire
 import java.math.BigInteger
 import java.net.{Inet4Address, Inet6Address, InetAddress}
 
+import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.wire
@@ -39,6 +40,21 @@ object Codecs {
   def signature: Codec[BinaryData] = Codec[BinaryData](
     (der: BinaryData) => bytes(64).encode(ByteVector(der2wire(der).toArray)),
     (wire: BitVector) => bytes(64).decode(wire).map(_.map(b => wire2der(b.toArray)))
+  )
+
+  def scalar: Codec[Scalar] = Codec[Scalar](
+    (value: Scalar) => bytes(32).encode(ByteVector(value.toBin.toArray)),
+    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => Scalar(b.toArray)))
+  )
+
+  def point: Codec[Point] = Codec[Point](
+    (point: Point) => bytes(33).encode(ByteVector(point.toBin(true).toArray)),
+    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => Point(b.toArray)))
+  )
+
+  def publicKey: Codec[PublicKey] = Codec[PublicKey](
+    (pub: PublicKey) => bytes(33).encode(ByteVector(pub.value.toBin(true).toArray)),
+    (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b.toArray)))
   )
 
   def optionalSignature: Codec[Option[BinaryData]] = Codec[Option[BinaryData]](
@@ -88,11 +104,11 @@ object Codecs {
       ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
-      ("fundingPubkey" | binarydata(33)) ::
-      ("revocationBasepoint" | binarydata(33)) ::
-      ("paymentBasepoint" | binarydata(33)) ::
-      ("delayedPaymentBasepoint" | binarydata(33)) ::
-      ("firstPerCommitmentPoint" | binarydata(33))).as[OpenChannel]
+      ("fundingPubkey" | publicKey) ::
+      ("revocationBasepoint" | point) ::
+      ("paymentBasepoint" | point) ::
+      ("delayedPaymentBasepoint" | point) ::
+      ("firstPerCommitmentPoint" | point)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | int64) ::
@@ -103,11 +119,11 @@ object Codecs {
       ("htlcMinimumMsat" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
-      ("fundingPubkey" | binarydata(33)) ::
-      ("revocationBasepoint" | binarydata(33)) ::
-      ("paymentBasepoint" | binarydata(33)) ::
-      ("delayedPaymentBasepoint" | binarydata(33)) ::
-      ("firstPerCommitmentPoint" | binarydata(33))).as[AcceptChannel]
+      ("fundingPubkey" | publicKey) ::
+      ("revocationBasepoint" | point) ::
+      ("paymentBasepoint" | point) ::
+      ("delayedPaymentBasepoint" | point) ::
+      ("firstPerCommitmentPoint" | point)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | int64) ::
@@ -124,7 +140,7 @@ object Codecs {
       ("channelId" | int64) ::
       ("announcementNodeSignature" | optionalSignature) ::
       ("announcementBitcoinSignature" | optionalSignature) ::
-      ("nextPerCommitmentPoint" | binarydata(33))).as[FundingLocked]
+      ("nextPerCommitmentPoint" | point)).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
     ("channelId" | int64) ::
@@ -160,8 +176,8 @@ object Codecs {
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | int64) ::
-      ("perCommitmentSecret" | binarydata(32)) ::
-      ("nextPerCommitmentPoint" | binarydata(33)) ::
+      ("perCommitmentSecret" | scalar) ::
+      ("nextPerCommitmentPoint" | point) ::
       ("padding" | ignore(3)) ::
       ("htlcTimeoutSignature" | listofsignatures)
     ).as[RevokeAndAck]

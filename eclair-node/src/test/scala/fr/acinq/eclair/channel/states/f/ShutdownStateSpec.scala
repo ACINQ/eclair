@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel.states.f
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestBitcoinClient
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -329,7 +330,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       bob2alice.forward(alice)
       alice2bob.expectMsgType[RevokeAndAck]
       awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-      sender.send(bob, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
+      sender.send(bob, RevokeAndAck(0, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(Publish(tx))
@@ -342,7 +343,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
-      sender.send(alice, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
+      sender.send(alice, RevokeAndAck(0, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))

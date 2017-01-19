@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Crypto.{Point, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
@@ -420,7 +421,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       bob2alice.expectMsgType[RevokeAndAck]
-      sender.send(alice, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
+      sender.send(alice, RevokeAndAck(0, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
@@ -433,7 +434,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
-      sender.send(alice, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
+      sender.send(alice, RevokeAndAck(0, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(Publish(tx))
