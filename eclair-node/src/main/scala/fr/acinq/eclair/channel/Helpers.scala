@@ -84,7 +84,6 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
       val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivKey.publicKey, commitments.remoteParams.fundingPubKey, localClosingSig, remoteClosingSig)
-      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
 
@@ -131,7 +130,7 @@ object Helpers {
       val delayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, commitments.localParams.feeratePerKw)
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, commitments.localParams.feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }
@@ -188,9 +187,15 @@ object Helpers {
     }
 
     /**
-      * In reaction to the counterparty publishing a revoked commitment tx, we punish them by
+      * When an unexpected transaction spending the funding tx is detected:
+      * 1) we find out if the published transaction is one of remote's revoked txs
+      * 2) and then:
+      * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
+      * b) otherwise there is nothing we can do
+      *
+      * @return a list of transactions (one per HTLC that we can claim) if the tx is a revoked commitment, [[None]] otherwise
       */
-    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Try[Seq[TransactionWithInputInfo]] = Try {
+    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Option[Seq[TransactionWithInputInfo]] = {
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
@@ -198,29 +203,31 @@ object Helpers {
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-      val remotePerCommitmentSecret: Scalar = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber).getOrElse(throw new RuntimeException(s"cannot get commitment secret for txnumber=$txnumber"))
-      val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
+      remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber)
+        .map(d => Scalar(d :+ 1.toByte))
+        .map { remotePerCommitmentSecret =>
+          val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
 
-      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remotePerCommitmentPoint)
-      val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-      val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
+          val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+          val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
 
-      // let's punish remote by stealing its main output
-      val mainDelayedRevokedTx = {
-        // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-        val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
-        val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
-        Transactions.addSigs(txinfo, sig)
-      }
+          // let's punish remote by stealing its main output
+          val mainDelayedRevokedTx = {
+            // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
+            val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
+            val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
+            Transactions.addSigs(txinfo, sig)
+          }
 
-      // TODO: we don't claim htlcs outputs yet
+          // TODO: we don't claim htlcs outputs yet
 
-      val txes = mainDelayedRevokedTx :: Nil
+          val txes = mainDelayedRevokedTx :: Nil
 
-      // OPTIONAL: let's check transactions are actually spendable
-      require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
+          // OPTIONAL: let's check transactions are actually spendable
+          require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      txes
+          txes
+        }
     }
 
   }

@@ -1,11 +1,12 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, Scalar, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
+import grizzled.slf4j.Logging
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -43,7 +44,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 }
 
-object Commitments {
+object Commitments extends Logging {
   /**
     * add a change to our proposed change list
     *
@@ -229,6 +230,8 @@ object Commitments {
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
+
+    logger.debug(s"current commit: index=${ourCommit1.index} htlc_in=${ourCommit1.spec.htlcs.filter(_.direction == IN).size} htlc_out=${ourCommit1.spec.htlcs.filter(_.direction == OUT).size} tx=${Transaction.write(ourCommit1.publishableTxs.commitTx.tx)}")
 
     (commitments1, revocation)
   }

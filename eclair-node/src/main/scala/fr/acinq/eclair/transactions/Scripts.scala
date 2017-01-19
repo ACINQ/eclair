@@ -199,7 +199,7 @@ object Scripts {
     else tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
   }
 
-  def toLocal(revocationPubkey: PublicKey, toSelfDelay: Int, localDelayedPubkey: PublicKey) = {
+  def toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: Int, localDelayedPubkey: PublicKey) = {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
@@ -210,6 +210,19 @@ object Scripts {
     OP_CHECKSIG :: Nil
     // @formatter:on
   }
+
+  /**
+    * This witness script spends a [[toLocalDelayed]] output using a local sig after a delay
+    */
+  def witnessToLocalDelayedAfterDelay(localSig: BinaryData, toLocalDelayedScript: BinaryData) =
+    ScriptWitness(localSig :: BinaryData.empty :: toLocalDelayedScript :: Nil)
+
+  /**
+    * This witness script spends (steals) a [[toLocalDelayed]] output using a revocation key as a punishment
+    * for having published a revoked transaction
+    */
+  def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
+    ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
 
   def toRemote(remoteKey: PublicKey) = remoteKey
 
@@ -225,14 +238,6 @@ object Scripts {
     OP_ENDIF :: Nil
     // @formatter:on
   }
-
-
-  /**
-    * This witness script spends (steals) a toLocal output using a revocation key as a punishment
-    * for having published a revoked transaction
-    */
-  def witnessToLocalFromRevokedCommitTx(revocationSig: BinaryData, toLocalScript: BinaryData) =
-    ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
 
   /**
     * This is the witness script of the 2nd-stage HTLC Success transaction (consumes htlcOffered script from commit tx)
@@ -273,18 +278,4 @@ object Scripts {
   def witnessClaimHtlcTimeoutFromCommitTx(localSig: BinaryData, htlcReceivedScript: BinaryData) =
     ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
 
-  def htlcSuccessOrTimeout(revocationPubkey: BinaryData, toSelfDelay: Long, localDelayedPubkey: BinaryData) = {
-    // @formatter:off
-    OP_IF ::
-      OP_PUSHDATA(revocationPubkey) ::
-    OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(toSelfDelay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-      OP_PUSHDATA(localDelayedPubkey) ::
-    OP_ENDIF ::
-    OP_CHECKSIG :: Nil
-    // @formatter:on
-  }
-
-  def witnessHtlcDelayed(localSig: BinaryData, htlcDelayedScript: BinaryData) =
-    ScriptWitness(localSig :: BinaryData.empty :: htlcDelayedScript :: Nil)
 }
