@@ -43,7 +43,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       val root = loader.load[VBox]
 
       channelPaneController.nodeId.setText(s"$theirNodeId")
-      channelPaneController.funder.setText("(deprecated)")
+      channelPaneController.funder.setText(if (params.isFunder) "Yes" else "No")
       channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent): Unit = channel ! CMD_CLOSE(None)
       })
@@ -65,7 +65,6 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
           channelPane.funder.getText match {
             case "Yes" => channelPane.amountUs.setText(s"${satoshi2millibtc(capacity).amount}")
             case "No" => channelPane.amountUs.setText("0")
-            case _ => ()
           }
         }
       })
