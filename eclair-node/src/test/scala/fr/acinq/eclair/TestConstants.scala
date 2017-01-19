@@ -45,7 +45,7 @@ object TestConstants {
       paymentKey = Scalar(Array.fill[Byte](32)(13) :+ 1.toByte),
       delayedPaymentKey = Scalar(Array.fill[Byte](32)(14) :+ 1.toByte),
       defaultFinalScriptPubKey = Script.pay2wpkh(Scalar(Array.fill[Byte](32)(15) :+ 1.toByte).toPoint),
-      shaSeed = Crypto.sha256("alice-seed".getBytes()),
+      shaSeed = Crypto.sha256("bob-seed".getBytes()),
       isFunder = false
     )
   }
