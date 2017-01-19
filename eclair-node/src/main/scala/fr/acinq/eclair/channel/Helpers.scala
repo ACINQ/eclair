@@ -84,7 +84,6 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
       val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivKey.toPoint, commitments.remoteParams.fundingPubKey, localClosingSig, remoteClosingSig)
-      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
 
@@ -200,8 +199,7 @@ object Helpers {
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
       val remotePerCommitmentSecret = remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber).map(d => Scalar(d :+ 1.toByte)).getOrElse(throw new RuntimeException(s"cannot get commitment secret for txnumber=$txnumber"))
       val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
-
-      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remotePerCommitmentPoint)
+      
       val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
       val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
 
