@@ -747,14 +747,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         downstream ! CMD_FULFILL_HTLC(origin.htlc_id, fulfill.paymentPreimage)
         downstream ! CMD_SIGN
       case (None, Left(fail)) =>
-        log.info(s"we were the origin payer for htlc #${
-          htlc.id
-        }")
+        log.info(s"we were the origin payer for htlc #${htlc.id}")
         context.system.eventStream.publish(PaymentFailed(self, htlc.paymentHash, fail.reason.toStringUtf8))
       case (None, Right(fulfill)) =>
-        log.info(s"we were the origin payer for htlc #${
-          htlc.id
-        }")
+        log.info(s"we were the origin payer for htlc #${htlc.id}")
         context.system.eventStream.publish(PaymentSent(self, htlc.paymentHash))
     }
   }
