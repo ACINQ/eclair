@@ -839,7 +839,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(d.commitments, tx) match {
-      case Success(claimTxs) =>
+      case Some(claimTxs) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
         them ! Error(0, "Funding tx has been spent".getBytes)
 
@@ -861,9 +861,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
           case _ => DATA_CLOSING(d.commitments, revokedCommitPublished = remoteCommitPublished :: Nil)
         }
         goto(CLOSING) using nextData
-      case Failure(t) =>
+      case None =>
         // the published tx was neither their current commitment nor a revoked one
-        log.error(t, s"couldn't identify txid=${tx.txid}")
+        log.error(s"couldn't identify txid=${tx.txid}, something very bad is going on!!!")
         goto(ERR_INFORMATION_LEAK)
     }
   }
