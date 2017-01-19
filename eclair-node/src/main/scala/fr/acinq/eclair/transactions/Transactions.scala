@@ -209,7 +209,7 @@ object Transactions {
     (htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeClaimHtlcSuccessTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, finalLocalPubkey: PublicKey, htlc: UpdateAddHtlc): ClaimHtlcSuccessTx = {
+  def makeClaimHtlcSuccessTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], htlc: UpdateAddHtlc): ClaimHtlcSuccessTx = {
     val redeemScript = htlcOffered(remotePubkey, localPubkey, ripemd160(htlc.paymentHash))
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
@@ -219,11 +219,11 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
       // the fee was pre-computed at the upper stage: fee = input.txOut.amount - htlc.amountMsat
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), localFinalScriptPubKey) :: Nil,
       lockTime = 0))
   }
 
-  def makeClaimHtlcTimeoutTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, finalLocalPubkey: PublicKey, htlc: UpdateAddHtlc): ClaimHtlcTimeoutTx = {
+  def makeClaimHtlcTimeoutTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], htlc: UpdateAddHtlc): ClaimHtlcTimeoutTx = {
     val redeemScript = htlcReceived(remotePubkey, localPubkey, ripemd160(htlc.paymentHash), htlc.expiry)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
@@ -233,11 +233,11 @@ object Transactions {
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
       // the fee was pre-computed at the upper stage: fee = input.txOut.amount - htlc.amountMsat
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat), pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(MilliSatoshi(htlc.amountMsat), localFinalScriptPubKey) :: Nil,
       lockTime = htlc.expiry))
   }
 
-  def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPubkey: PublicKey, finalLocalPubkey: PublicKey, feeRatePerKw: Long): ClaimHtlcDelayedTx = {
+  def makeClaimHtlcDelayed(htlcSuccessOrTimeoutTx: Transaction, localRevocationPubkey: PublicKey, toLocalDelay: Int, localDelayedPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimHtlcDelayedTx = {
     val fee = weight2fee(feeRatePerKw, claimHtlcDelayedWeight)
     val redeemScript = htlcSuccessOrTimeout(localRevocationPubkey, toLocalDelay, localDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
@@ -247,11 +247,11 @@ object Transactions {
     ClaimHtlcDelayedTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, toLocalDelay) :: Nil,
-      txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
       lockTime = 0))
   }
 
-  def makeMainPunishmentTx(commitTx: Transaction, remoteRevocationPubkey: PublicKey, finalLocalPubkey: PublicKey, toRemoteDelay: Int, remoteDelayedPubkey: PublicKey, feeRatePerKw: Long): MainPunishmentTx = {
+  def makeMainPunishmentTx(commitTx: Transaction, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], toRemoteDelay: Int, remoteDelayedPubkey: PublicKey, feeRatePerKw: Long): MainPunishmentTx = {
     val fee = weight2fee(feeRatePerKw, mainPunishmentWeight)
     val redeemScript = toLocal(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
@@ -261,7 +261,7 @@ object Transactions {
     MainPunishmentTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      txOut = TxOut(input.txOut.amount - fee, pay2wpkh(finalLocalPubkey)) :: Nil,
+      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
       lockTime = 0))
   }
 

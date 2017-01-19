@@ -7,7 +7,7 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
+import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_0, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
@@ -18,6 +18,7 @@ import fr.acinq.eclair.io.{Client, Server}
 import fr.acinq.eclair.payment.{LocalPaymentHandler, NoopPaymentHandler, PaymentInitiator}
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
+import org.json4s.JsonAST.JString
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Promise}
@@ -59,6 +60,12 @@ class Setup() extends Logging {
   val (chain, blockCount) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
+  // we use it as final payment address, so that funds are moved to the bitcoind wallet upon channel termination
+  val JString(finalAddress) = Await.result(bitcoin_client.client.invoke("getnewaddress"), 10 seconds)
+  logger.info(s"finaladdress=$finalAddress")
+  // TODO: we should use p2wpkh instead of p2pkh as soon as bitcoind supports it
+  //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
+  val finalScriptPubKey = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil
 
   val fatalEventPromise = Promise[FatalEvent]()
   system.actorOf(Props(new Actor {
@@ -77,7 +84,7 @@ class Setup() extends Logging {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
-  val register = system.actorOf(Register.props(watcher, paymentHandler), name = "register")
+  val register = system.actorOf(Register.props(watcher, paymentHandler, finalScriptPubKey), name = "register")
   val selector = system.actorOf(Props[ChannelSelector], name = "selector")
   val router = system.actorOf(Props[Router], name = "router")
   val ircWatcher = system.actorOf(Props[IRCWatcher], "irc")

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
+import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
@@ -163,7 +163,7 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              revocationSecret: Scalar,
                              paymentKey: PrivateKey,
                              delayedPaymentKey: Scalar,
-                             finalPrivKey: PrivateKey,
+                             defaultFinalScriptPubKey: Seq[ScriptElt],
                              shaSeed: BinaryData,
                              isFunder: Boolean)
 

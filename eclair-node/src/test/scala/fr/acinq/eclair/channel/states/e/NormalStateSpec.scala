@@ -719,7 +719,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       // actual test begins
-      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.publicKey))))
+      sender.send(bob, Shutdown(0, Script.write(TestConstants.Alice.channelParams.defaultFinalScriptPubKey)))
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[Publish]
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -735,7 +735,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sign(bob, alice, bob2alice, alice2bob)
 
       // actual test begins
-      sender.send(bob, Shutdown(0, Script.write(Script.pay2wpkh(TestConstants.Alice.channelParams.finalPrivKey.publicKey))))
+      sender.send(bob, Shutdown(0, Script.write(TestConstants.Alice.channelParams.defaultFinalScriptPubKey)))
       bob2alice.expectMsgType[Shutdown]
       awaitCond(bob.stateName == SHUTDOWN)
     }
