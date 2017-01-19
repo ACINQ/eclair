@@ -709,7 +709,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
    */
 
   def propagateUpstream(add: UpdateAddHtlc, anchorId: BinaryData) = {
-    /*val r = route.parseFrom(add.route.info.toByteArray)
+    // TODO: relaying of payments is disabled
+    /*val r = route.parseFrom(add.onionRoutingPacket)
     r.steps match {
       case route_step(amountMsat, Next.Bitcoin(nextNodeId)) +: rest =>
         log.debug(s"propagating htlc #${add.id} to $nextNodeId")
@@ -721,22 +722,23 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
               log.info(s"forwarding htlc #${add.id} to upstream=$upstream")
               val upstream_route = route(rest)
               // TODO: we should decrement expiry !!
-              upstream ! CMD_ADD_HTLC(amountMsat, add.rHash, add.expiry, upstream_route, Some(Origin(anchorId, add.id)))
+              upstream ! CMD_ADD_HTLC(amountMsat, add.paymentHash, add.expiry, upstream_route, Some(Origin(anchorId, add.id)))
               upstream ! CMD_SIGN
             case Failure(t: Throwable) =>
               // TODO: send "fail route error"
               log.warning(s"couldn't resolve upstream node, htlc #${add.id} will timeout", t)
           }
-      case route_step(amount, Next.End(true)) +: rest =>
-        log.info(s"we are the final recipient of htlc #${add.id}")
-        context.system.eventStream.publish(PaymentReceived(self, add.rHash))
-        paymentHandler ! add
-    }*/
+      case route_step(amount, Next.End(true)) +: rest =>*/
+    log.info(s"we are the final recipient of htlc #${add.id}")
+    context.system.eventStream.publish(PaymentReceived(self, add.paymentHash))
+    paymentHandler ! add
+    //}
   }
 
   def propagateDownstream(htlc: UpdateAddHtlc, fail_or_fulfill: Either[UpdateFailHtlc, UpdateFulfillHtlc], origin_opt: Option[Origin]) = {
     (origin_opt, fail_or_fulfill) match {
-      case (Some(origin), Left(fail)) =>
+      // TODO: relaying of payments is disabled
+      /*case (Some(origin), Left(fail)) =>
         val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))
         downstream ! CMD_SIGN
         downstream ! CMD_FAIL_HTLC(origin.htlc_id, fail.reason.toStringUtf8)
@@ -745,7 +747,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))
         downstream ! CMD_SIGN
         downstream ! CMD_FULFILL_HTLC(origin.htlc_id, fulfill.paymentPreimage)
-        downstream ! CMD_SIGN
+        downstream ! CMD_SIGN*/
       case (None, Left(fail)) =>
         log.info(s"we were the origin payer for htlc #${htlc.id}")
         context.system.eventStream.publish(PaymentFailed(self, htlc.paymentHash, fail.reason.toStringUtf8))

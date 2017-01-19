@@ -59,7 +59,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScrip
       )
 
       def makeChannel(conn: ActorRef, publicKey: BinaryData): ActorRef = {
-        val channel = context.actorOf(Channel.props(conn, blockchain, paymentHandler, localParams, publicKey.toString()), s"channel-$counter")
+        val channel = context.actorOf(Channel.props(conn, blockchain, paymentHandler, localParams, publicKey.toString(), Some(Globals.autosign_interval)), s"channel-$counter")
         amount_opt match {
           case Some(amount) => channel ! INPUT_INIT_FUNDER(amount.amount, 0)
           case None => channel ! INPUT_INIT_FUNDEE()
