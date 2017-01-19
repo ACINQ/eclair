@@ -130,7 +130,7 @@ object Helpers {
       val delayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimHtlcDelayed(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localParams.defaultFinalScriptPubKey, commitments.localParams.feeratePerKw)
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.toPoint, localParams.defaultFinalScriptPubKey, commitments.localParams.feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }

@@ -801,7 +801,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
       commitTx = tx,
       htlcSuccessTxs = claimTxs.collect { case c: HtlcSuccessTx => c.tx },
       htlcTimeoutTxs = claimTxs.collect { case c: HtlcTimeoutTx => c.tx },
-      claimHtlcDelayedTx = claimTxs.collect { case c: ClaimHtlcDelayedTx => c.tx })
+      claimHtlcDelayedTx = claimTxs.collect { case c: ClaimDelayedOutputTx => c.tx })
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
