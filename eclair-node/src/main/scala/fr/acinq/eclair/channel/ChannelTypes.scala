@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.{Point, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
@@ -127,8 +127,8 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: BinaryData) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit) extends Data
 final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
 final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
@@ -159,9 +159,9 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              feeratePerKw: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             fundingPrivKey: Scalar,
+                             fundingPrivKey: PrivateKey,
                              revocationSecret: Scalar,
-                             paymentKey: Scalar,
+                             paymentKey: PrivateKey,
                              delayedPaymentKey: Scalar,
                              defaultFinalScriptPubKey: Seq[ScriptElt],
                              shaSeed: BinaryData,
@@ -174,7 +174,7 @@ final case class RemoteParams(dustLimitSatoshis: Long,
                               feeratePerKw: Long,
                               toSelfDelay: Int,
                               maxAcceptedHtlcs: Int,
-                              fundingPubKey: Point,
+                              fundingPubKey: PublicKey,
                               revocationBasepoint: Point,
                               paymentBasepoint: Point,
                               delayedPaymentBasepoint: Point)

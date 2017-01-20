@@ -1,7 +1,7 @@
 package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Base58Check, Crypto, OP_0, OP_PUSHDATA, Script}
-import fr.acinq.bitcoin.Crypto.Scalar
+import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Scripts
 
@@ -21,11 +21,11 @@ object TestConstants {
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
-      fundingPrivKey = Scalar(Array.fill[Byte](32)(1) :+ 1.toByte),
-      revocationSecret = Scalar(Array.fill[Byte](32)(2) :+ 1.toByte),
-      paymentKey = Scalar(Array.fill[Byte](32)(3) :+ 1.toByte),
-      delayedPaymentKey = Scalar(Array.fill[Byte](32)(4) :+ 1.toByte),
-      defaultFinalScriptPubKey = Script.pay2wpkh(Scalar(Array.fill[Byte](32)(5) :+ 1.toByte).toPoint),
+      fundingPrivKey = PrivateKey(Array.fill[Byte](32)(1), compressed = true),
+      revocationSecret = PrivateKey(Array.fill[Byte](32)(2), compressed = true),
+      paymentKey = PrivateKey(Array.fill[Byte](32)(3), compressed = true),
+      delayedPaymentKey = PrivateKey(Array.fill[Byte](32)(4), compressed = true),
+      defaultFinalScriptPubKey = Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey),
       shaSeed = Crypto.sha256("alice-seed".getBytes()),
       isFunder = true
     )
@@ -40,12 +40,12 @@ object TestConstants {
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 100,
-      fundingPrivKey = Scalar(Array.fill[Byte](32)(11) :+ 1.toByte),
-      revocationSecret = Scalar(Array.fill[Byte](32)(12) :+ 1.toByte),
-      paymentKey = Scalar(Array.fill[Byte](32)(13) :+ 1.toByte),
-      delayedPaymentKey = Scalar(Array.fill[Byte](32)(14) :+ 1.toByte),
-      defaultFinalScriptPubKey = Script.pay2wpkh(Scalar(Array.fill[Byte](32)(15) :+ 1.toByte).toPoint),
-      shaSeed = Crypto.sha256("bob-seed".getBytes()),
+      fundingPrivKey = PrivateKey(Array.fill[Byte](32)(11), compressed = true),
+      revocationSecret = PrivateKey(Array.fill[Byte](32)(12), compressed = true),
+      paymentKey = PrivateKey(Array.fill[Byte](32)(13), compressed = true),
+      delayedPaymentKey = PrivateKey(Array.fill[Byte](32)(14), compressed = true),
+      defaultFinalScriptPubKey = Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(15), compressed = true).publicKey),
+      shaSeed = Crypto.sha256("alice-seed".getBytes()),
       isFunder = false
     )
   }

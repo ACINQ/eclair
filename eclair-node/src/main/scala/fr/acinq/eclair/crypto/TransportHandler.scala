@@ -1,5 +1,7 @@
 package fr.acinq.eclair.crypto
 
+import java.nio.ByteOrder
+
 import akka.actor.{Actor, ActorRef, LoggingFSM, Terminated}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
@@ -101,7 +103,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], th
       val (ciphertext, remainder) = buffer.splitAt(18)
       log.debug(s"trying to decrypt ciphertext length ${BinaryData(ciphertext)}")
       val (dec1, plaintext) = dec.decryptWithAd(BinaryData.empty, ciphertext)
-      val length = Protocol.uint16BigEndian(plaintext).toInt
+      val length = Protocol.uint16(plaintext, ByteOrder.BIG_ENDIAN)
       stay using WaitingForCyphertextData(enc, dec1, Some(length), remainder, listener)
 
     case Event('ping, WaitingForCyphertextData(_, _, Some(length), buffer, _)) if buffer.length < length + 16 => stay
@@ -190,7 +192,7 @@ object TransportHandler {
     * @return a (cipherstate, ciphertext) tuple where ciphertext is encrypted according to BOLT #8
     */
   def encrypt(enc: CipherState, plaintext: BinaryData): (CipherState, BinaryData) = {
-    val (enc1, ciphertext1) = enc.encryptWithAd(BinaryData.empty, Protocol.writeUInt16BigEndian(plaintext.length))
+    val (enc1, ciphertext1) = enc.encryptWithAd(BinaryData.empty, Protocol.writeUInt16(plaintext.length, ByteOrder.BIG_ENDIAN))
     val (enc2, ciphertext2) = enc1.encryptWithAd(BinaryData.empty, plaintext)
     (enc2, ciphertext1 ++ ciphertext2)
   }

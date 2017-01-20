@@ -1,5 +1,6 @@
 package fr.acinq.protos
 
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.transactions.Scripts
 
@@ -12,9 +13,9 @@ object Bolt3 extends App {
 
   def weight(tx: Transaction) = 3 * baseSize(tx) + totalSize(tx)
 
-  def fundingScript(pubKey1: BinaryData, pubKey2: BinaryData) = Scripts.multiSig2of2(pubKey1, pubKey2)
+  def fundingScript(pubKey1: PublicKey, pubKey2: PublicKey) = Scripts.multiSig2of2(pubKey1, pubKey2)
 
-  def toLocal(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
+  def toLocal(revocationPubKey: PublicKey, toSelfDelay: Long, localDelayedKey: PublicKey) = {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubKey) ::
@@ -26,9 +27,9 @@ object Bolt3 extends App {
     // @formatter:on
   }
 
-  def toRemote(remoteKey: BinaryData) = remoteKey
+  def toRemote(remoteKey: PublicKey) = remoteKey
 
-  def htlcOffered(localKey: BinaryData, remoteKey: BinaryData, paymentHash: BinaryData) = {
+  def htlcOffered(localKey: PublicKey, remoteKey: PublicKey, paymentHash: BinaryData) = {
     // @formatter:off
     OP_PUSHDATA(remoteKey) :: OP_SWAP ::
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
@@ -41,7 +42,7 @@ object Bolt3 extends App {
     // @formatter:on
   }
 
-  def htlcReceived(localKey: BinaryData, remoteKey: BinaryData, paymentHash: BinaryData, lockTime: Long) = {
+  def htlcReceived(localKey: PublicKey, remoteKey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
     OP_PUSHDATA(remoteKey) :: OP_SWAP ::
     OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
@@ -54,7 +55,7 @@ object Bolt3 extends App {
     // @formatter:on
   }
 
-  def htlcSuccessOrTimeout(revocationPubKey: BinaryData, toSelfDelay: Long, localDelayedKey: BinaryData) = {
+  def htlcSuccessOrTimeout(revocationPubKey: PublicKey, toSelfDelay: Long, localDelayedKey: PublicKey) = {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubKey) ::

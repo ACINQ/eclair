@@ -4,6 +4,7 @@ import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.{ActorSystem, Props, Status}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import org.junit.runner.RunWith
@@ -28,9 +29,9 @@ class PaymentFSMSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with
 
     // network: aaaa -> bbbbbbb -> cccc
     val node_a = Globals.Node.publicKey
-    val node_b = BinaryData("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
-    val node_c = BinaryData("ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")
-    val node_d = BinaryData("ddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd")
+    val node_b = PrivateKey(BinaryData("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"), compressed = true).publicKey
+    val node_c = PrivateKey(BinaryData("cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"), compressed = true).publicKey
+    val node_d = PrivateKey(BinaryData("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"), compressed = true).publicKey
 
     // no route b -> c
     router ! ChannelDiscovered(ChannelDesc("01", node_a, node_b))

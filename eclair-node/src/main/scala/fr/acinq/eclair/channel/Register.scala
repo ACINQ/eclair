@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Props, _}
 import akka.util.Timeout
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi, ScriptElt}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -39,7 +40,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScrip
 
   def main(counter: Long): Receive = {
     case CreateChannel(connection, pubkey, amount_opt) =>
-      def generateKey(index: Long): BinaryData = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
+      def generateKey(index: Long): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
 
       val localParams = LocalParams(
         dustLimitSatoshis = 542,

@@ -1,5 +1,7 @@
 package fr.acinq.eclair.crypto
 
+import java.nio.ByteOrder
+
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.engines.{ChaCha7539Engine, ChaChaEngine}
@@ -85,7 +87,7 @@ object ChaCha20Poly1305 extends Logging {
   def encrypt(key: BinaryData, nonce: BinaryData, plaintext: BinaryData, aad: BinaryData): (BinaryData, BinaryData) = {
     val polykey: BinaryData = ChaCha20.encrypt(new Array[Byte](32), key, nonce)
     val ciphertext = ChaCha20.encrypt(plaintext, key, nonce, 1)
-    val data = aad ++ pad16(aad) ++ ciphertext ++ pad16(ciphertext) ++ Protocol.writeUInt64(aad.length) ++ Protocol.writeUInt64(ciphertext.length)
+    val data = aad ++ pad16(aad) ++ ciphertext ++ pad16(ciphertext) ++ Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN) ++ Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN)
     val tag = Poly1305.mac(polykey, data)
     logger.debug(s"encrypt($key, $nonce, $aad, $plaintext) = ($ciphertext, $tag)")
     (ciphertext, tag)
@@ -103,7 +105,7 @@ object ChaCha20Poly1305 extends Logging {
     */
   def decrypt(key: BinaryData, nonce: BinaryData, ciphertext: BinaryData, aad: BinaryData, mac: BinaryData): BinaryData = {
     val polykey: BinaryData = ChaCha20.encrypt(new Array[Byte](32), key, nonce)
-    val data = aad ++ pad16(aad) ++ ciphertext ++ pad16(ciphertext) ++ Protocol.writeUInt64(aad.length) ++ Protocol.writeUInt64(ciphertext.length)
+    val data = aad ++ pad16(aad) ++ ciphertext ++ pad16(ciphertext) ++ Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN) ++ Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN)
     val tag = Poly1305.mac(polykey, data)
     assert(tag == mac, "invalid mac")
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
@@ -164,14 +166,14 @@ object Chacha20Poly1305Legacy {
   def encrypt(key: BinaryData, nonce: BinaryData, plaintext: BinaryData, aad: BinaryData): (BinaryData, BinaryData) = {
     val polykey: BinaryData = ChaCha20Legacy.encrypt(new Array[Byte](32), key, nonce)
     val ciphertext = ChaCha20Legacy.encrypt(plaintext, key, nonce, 1)
-    val data = aad ++ Protocol.writeUInt64(aad.length) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length)
+    val data = aad ++ Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN)
     val tag = Poly1305.mac(polykey, data)
     (ciphertext, tag)
   }
 
   def decrypt(key: BinaryData, nonce: BinaryData, ciphertext: BinaryData, aad: BinaryData, mac: BinaryData): BinaryData = {
     val polykey: BinaryData = ChaCha20Legacy.encrypt(new Array[Byte](32), key, nonce)
-    val data = aad ++ Protocol.writeUInt64(aad.length) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length)
+    val data = aad ++ Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN)
     val tag = Poly1305.mac(polykey, data)
     assert(tag == mac, "invalid mac")
     val plaintext = ChaCha20Legacy.decrypt(ciphertext, key, nonce, 1)

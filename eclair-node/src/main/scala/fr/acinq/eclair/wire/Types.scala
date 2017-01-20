@@ -3,6 +3,7 @@ package fr.acinq.eclair.wire
 import java.net.InetAddress
 
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 
 /**
   * Created by PM on 15/11/2016.
@@ -33,11 +34,11 @@ case class OpenChannel(temporaryChannelId: Long,
                        feeratePerKw: Long,
                        toSelfDelay: Int,
                        maxAcceptedHtlcs: Int,
-                       fundingPubkey: BinaryData,
-                       revocationBasepoint: BinaryData,
-                       paymentBasepoint: BinaryData,
-                       delayedPaymentBasepoint: BinaryData,
-                       firstPerCommitmentPoint: BinaryData) extends ChannelMessage
+                       fundingPubkey: PublicKey,
+                       revocationBasepoint: Point,
+                       paymentBasepoint: Point,
+                       delayedPaymentBasepoint: Point,
+                       firstPerCommitmentPoint: Point) extends ChannelMessage
 
 case class AcceptChannel(temporaryChannelId: Long,
                          dustLimitSatoshis: Long,
@@ -47,11 +48,11 @@ case class AcceptChannel(temporaryChannelId: Long,
                          htlcMinimumMsat: Long,
                          toSelfDelay: Int,
                          maxAcceptedHtlcs: Int,
-                         fundingPubkey: BinaryData,
-                         revocationBasepoint: BinaryData,
-                         paymentBasepoint: BinaryData,
-                         delayedPaymentBasepoint: BinaryData,
-                         firstPerCommitmentPoint: BinaryData) extends ChannelMessage
+                         fundingPubkey: PublicKey,
+                         revocationBasepoint: Point,
+                         paymentBasepoint: Point,
+                         delayedPaymentBasepoint: Point,
+                         firstPerCommitmentPoint: Point) extends ChannelMessage
 
 case class FundingCreated(temporaryChannelId: Long,
                           txid: BinaryData,
@@ -65,7 +66,7 @@ case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
                          announcementNodeSignature: Option[BinaryData],
                          announcementBitcoinSignature: Option[BinaryData],
-                         nextPerCommitmentPoint: BinaryData) extends ChannelMessage
+                         nextPerCommitmentPoint: Point) extends ChannelMessage
 
 case class Shutdown(channelId: Long,
                     scriptPubKey: BinaryData) extends ChannelMessage
@@ -94,8 +95,8 @@ case class CommitSig(channelId: Long,
                      htlcSignatures: List[BinaryData]) extends HtlcMessage
 
 case class RevokeAndAck(channelId: Long,
-                        perCommitmentSecret: BinaryData,
-                        nextPerCommitmentPoint: BinaryData,
+                        perCommitmentSecret: Scalar,
+                        nextPerCommitmentPoint: Point,
                         htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage
 
 case class UpdateFee(channelId: Long,

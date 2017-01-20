@@ -1,6 +1,6 @@
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -15,23 +15,22 @@ class SphinxSpec extends FunSuite {
   import Sphinx._
 
   val privKeys = Seq(
-    BinaryData("0x4141414141414141414141414141414141414141414141414141414141414141"),
-    BinaryData("0x4242424242424242424242424242424242424242424242424242424242424242"),
-    BinaryData("0x4343434343434343434343434343434343434343434343434343434343434343"),
-    BinaryData("0x4444444444444444444444444444444444444444444444444444444444444444"),
-    BinaryData("0x4545454545454545454545454545454545454545454545454545454545454545")
-  ).map(p => Scalar(p).copy(compressed = true))
-
-  val publicKeys = privKeys.map(_.toPoint)
+    PrivateKey(BinaryData("0x4141414141414141414141414141414141414141414141414141414141414141"), compressed = true),
+    PrivateKey(BinaryData("0x4242424242424242424242424242424242424242424242424242424242424242"), compressed = true),
+    PrivateKey(BinaryData("0x4343434343434343434343434343434343434343434343434343434343434343"), compressed = true),
+    PrivateKey(BinaryData("0x4444444444444444444444444444444444444444444444444444444444444444"), compressed = true),
+    PrivateKey(BinaryData("0x4545454545454545454545454545454545454545454545454545454545454545"), compressed = true)
+  )
+  val publicKeys = privKeys.map(_.publicKey)
   assert(publicKeys == Seq(
-    Point(BinaryData("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")),
-    Point(BinaryData("0x0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")),
-    Point(BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")),
-    Point(BinaryData("0x032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")),
-    Point(BinaryData("0x02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145"))
+    PublicKey(BinaryData("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")),
+    PublicKey(BinaryData("0x0324653eac434488002cc06bbfb7f10fe18991e35f9fe4302dbea6d2353dc0ab1c")),
+    PublicKey(BinaryData("0x027f31ebc5462c1fdce1b737ecff52d37d75dea43ce11c74d25aa297165faa2007")),
+    PublicKey(BinaryData("0x032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991")),
+    PublicKey(BinaryData("0x02edabbd16b41c8371b92ef2f04c1185b4f03b6dcd52ba9b78d9d7c89c8f221145"))
   ))
 
-  val sessionKey: PrivateKey = Scalar("0x4141414141414141414141414141414141414141414141414141414141414141").copy(compressed = true)
+  val sessionKey: PrivateKey = PrivateKey(BinaryData("0x4141414141414141414141414141414141414141414141414141414141414141"), compressed = true)
   val payloads = Seq(
     BinaryData("0x4141414141414141414141414141414141414141"),
     BinaryData("0x4141414141414141414141414141414141414141"),
@@ -63,20 +62,20 @@ class SphinxSpec extends FunSuite {
   hop_ephemeral_pubkey[4] = 0x03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4
   */
   test("generate ephemereal keys and secrets") {
-    val ephemerealPublicKey0 = blind(Crypto.curve.getG, sessionKey)
+    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
 
     val (ephkeys, sharedsecrets) = computeEphemerealPublicKeys(sessionKey, publicKeys.tail, Seq(ephemerealPublicKey0), Seq(blindingFactor0), Seq(secret0))
-    assert(ephkeys(0) == Point(BinaryData("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
+    assert(ephkeys(0) == PublicKey(BinaryData("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
     assert(sharedsecrets(0) == BinaryData("0x53eb63ea8a3fec3b3cd433b85cd62a4b145e1dda09391b348c4e1cd36a03ea66"))
-    assert(ephkeys(1) == Point(BinaryData("0x028f9438bfbf7feac2e108d677e3a82da596be706cc1cf342b75c7b7e22bf4e6e2")))
+    assert(ephkeys(1) == PublicKey(BinaryData("0x028f9438bfbf7feac2e108d677e3a82da596be706cc1cf342b75c7b7e22bf4e6e2")))
     assert(sharedsecrets(1) == BinaryData("0xa6519e98832a0b179f62123b3567c106db99ee37bef036e783263602f3488fae"))
-    assert(ephkeys(2) == Point(BinaryData("0x03bfd8225241ea71cd0843db7709f4c222f62ff2d4516fd38b39914ab6b83e0da0")))
+    assert(ephkeys(2) == PublicKey(BinaryData("0x03bfd8225241ea71cd0843db7709f4c222f62ff2d4516fd38b39914ab6b83e0da0")))
     assert(sharedsecrets(2) == BinaryData("0x3a6b412548762f0dbccce5c7ae7bb8147d1caf9b5471c34120b30bc9c04891cc"))
-    assert(ephkeys(3) == Point(BinaryData("0x031dde6926381289671300239ea8e57ffaf9bebd05b9a5b95beaf07af05cd43595")))
+    assert(ephkeys(3) == PublicKey(BinaryData("0x031dde6926381289671300239ea8e57ffaf9bebd05b9a5b95beaf07af05cd43595")))
     assert(sharedsecrets(3) == BinaryData("0x21e13c2d7cfe7e18836df50872466117a295783ab8aab0e7ecc8c725503ad02d"))
-    assert(ephkeys(4) == Point(BinaryData("0x03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4")))
+    assert(ephkeys(4) == PublicKey(BinaryData("0x03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4")))
     assert(sharedsecrets(4) == BinaryData("0xb5756b9b542727dbafc6765a49488b023a725d631af688fc031217e90770c328"))
   }
 
@@ -85,7 +84,7 @@ class SphinxSpec extends FunSuite {
   hop_filler = 0x2e86897a3ae52daba4a5940cfc305ae15e9a0f8a8ac1033a15d8a14819acab6503c9df44cdaaf30629283e3458844a44a5c4bfdebdcb15fd3edb8e286124d7b47fa7a56bcc5655d2ad9809f108f238e5
    */
   test("generate filler") {
-    val ephemerealPublicKey0 = blind(Crypto.curve.getG, sessionKey)
+    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
 
@@ -107,11 +106,11 @@ class SphinxSpec extends FunSuite {
     val (payload4, address4, packet5) = parsePacket(privKeys(4), associatedData, packet4)
 
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
-    assert(Seq(address0, address1, address2, address3, address4) == Seq(publicKeys(1).hash, publicKeys(2).hash, publicKeys(3).hash, publicKeys(4).hash, zeroes(20)))
+    assert(Seq(address0, address1, address2, address3, address4) == Seq(publicKeys(1).hash160, publicKeys(2).hash160, publicKeys(3).hash160, publicKeys(4).hash160, zeroes(20)))
   }
 
   test("generate last packet") {
-    val ephemerealPublicKey0 = blind(Crypto.curve.getG, sessionKey)
+    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
     val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
 
@@ -120,10 +119,10 @@ class SphinxSpec extends FunSuite {
     val hopFiller = generateFiller("gamma", sharedsecrets.dropRight(1), 20, 20)
 
     val nextPacket = makeNextPacket(zeroes(20), payloads(4), associatedData, ephemerealPublicKeys(4), sharedsecrets(4), 1.toByte +: zeroes(1253), filler, hopFiller)
-    val nextPacket1 = makeNextPacket(publicKeys(4).hash, payloads(3), associatedData, ephemerealPublicKeys(3), sharedsecrets(3), nextPacket)
-    val nextPacket2 = makeNextPacket(publicKeys(3).hash, payloads(2), associatedData, ephemerealPublicKeys(2), sharedsecrets(2), nextPacket1)
-    val nextPacket3 = makeNextPacket(publicKeys(2).hash, payloads(1), associatedData, ephemerealPublicKeys(1), sharedsecrets(1), nextPacket2)
-    val nextPacket4 = makeNextPacket(publicKeys(1).hash, payloads(0), associatedData, ephemerealPublicKeys(0), sharedsecrets(0), nextPacket3)
+    val nextPacket1 = makeNextPacket(publicKeys(4).hash160, payloads(3), associatedData, ephemerealPublicKeys(3), sharedsecrets(3), nextPacket)
+    val nextPacket2 = makeNextPacket(publicKeys(3).hash160, payloads(2), associatedData, ephemerealPublicKeys(2), sharedsecrets(2), nextPacket1)
+    val nextPacket3 = makeNextPacket(publicKeys(2).hash160, payloads(1), associatedData, ephemerealPublicKeys(1), sharedsecrets(1), nextPacket2)
+    val nextPacket4 = makeNextPacket(publicKeys(1).hash160, payloads(0), associatedData, ephemerealPublicKeys(0), sharedsecrets(0), nextPacket3)
     assert(nextPacket4 == BinaryData("0x0102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866195fcf66568cad9ad9d61c8b05ffeb2ef00bf32dbff12a026817cd410d83bd65c4fc27db8a75033c527e678028eb2b95f58d04baa9986e83030fb5577e0543f62394cca6d995cf368aface565d15e778db79b7ff43a21abbd556d1e1b33753959a62e6bcb5220cda916d603c2702554c4dc17a8896af5d54c7815efcd093a0f6bad14a4d7622df88ee7cd1fe512882beb43b81f7cf3e7e633262538a7eca5f76f8434bd2215c7dda800d49ef34caf74bb4f1064f72e28fa39de96ff993cf51e26512faa0e98fa387f517c3bc4a65f6d8ca27af1d81025a85edf9e3ea7f580854c5d3ce537b955ff216c7a88dfc0bb795bfdf053300c70a1f6f23126c83b3c96a806e0cda3c3bb5cf1c57e77e25aafd117f2c559c914797cdd27440d7d033ef987178e337a899b597a34cd6f471ce40ca44b234fa0730603b1d4ad215bce719d02b98882268551912ce1f14a3a8c968649b09fb9acf69f48046e2464536d734f705e2d4a996c176786ec437b5d0f62731b251c56f67ae4169167fab24673af60d88d3252bf38f8c1ebd85986bbe25f7f0a4399d947d5b15b7ad9050b3a4f67b0720e372a56fa2da6468ec436ca7425bfedccb4186dbbc28663941a2b5473ff853dbfce8327ffb1209940d5b3c9f8d6643d11238da66e35715b5d5410b93bb5c9ed25e7695c3d2a8073e7e5373dcbdab46c50aba3d238573b333b68bdf1c209933e75e27960fc78880e8429a88c24878c2abd541a0afd0e0c364517e0e8064a94ff1cde8885b19d60d30304c5f7bbc7afa64befbdd2095b47730fdcc6aacd6cf927b6c981efad29de9c575c8663b545dc57e7dbc1b7a09bf6584d5c5b1e748c0300903d09b8b33adf548b0f4a9198c7b0f5c4b4c0e3af9fcc9af4860a23aec993996e36aefff3157259147f0536ea64d23329178f3dd95e37e0019e5ab4654325b59544bf3caa891617b59978b3d21785d36166721358a99c90bd2b8364c475b7f8058219269e561303dfd1d84042543e85d954bcd5eeb4ff897aeb2988ed3d905b3c73377be03ef8817d8595f2596e7afa6a0aa121b176738fd578be920b9cf778bd92808e5bd3d8d0decd00bdc2560a22921f138af042f38c923693494237844c13c85b4d0235c462af39d519d4fbb0309805fff51a51d2a1675eb1be407e116535f455d966fc5a33d05d1b7b7aa4cee07f1bfff801a9bd08a9c6e730771a4bf6a646c2f9e2a90bda866a6fecb3e79981f0048309aac743972adda805075163ed26a5af81bc8fe32606fc23d362dd240c5b601b78cfb31fc350de0cacc356fd62dbf6d6fcdaed073647490573c6eca5432b566cde10369f984b036310991b8965d71c85a667ee5b1d2d043aa4e4d239fda39474626a7840708cb9b7a5311d6f187f8f485ec91e5768007db224e38ff189dd809b1604cf067fa3fd54fee9c9176396cef8664557e2550f89858071da37a96c17c2a5c1e73feeab9b09d32ba7efbc6b18f9b1c4d85abb2dfb4648e0e6b12a3dd9fe96e6e5317ffe32c7b4b3796e8599b7a4caf4ad1b980350b8e7c8544871d7702f3e8c0a265bd658389fde9850570877856e66e29e16bdd9f2a6f6106e454e531d8b7062d3086b8c61f88677bfdb5e0b8bb6654e206e2123edb48d2b18c4316ab393ae41e570e144af52a7e5d3515260b387750e205596828940376ae31e55476b7fa3d5d4abf2ab586ece8acf42c4b2ca0c4"))
 
     val packet = makePacket(sessionKey, publicKeys, payloads, associatedData)
