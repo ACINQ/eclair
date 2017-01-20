@@ -447,22 +447,25 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
 
     case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) if d.localShutdown.isDefined =>
       handleCommandError(sender, new RuntimeException("closing already in progress"))
-      stay
 
     case Event(c@CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) if Commitments.localHasChanges(d.commitments) =>
       // TODO: simplistic behavior, we could maybe sign+close
       handleCommandError(sender, new RuntimeException("cannot close when there are pending changes"))
-      stay
 
     case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) =>
-      val localShutdown = Shutdown(d.channelId, Script.write(d.params.localParams.defaultFinalScriptPubKey))
-      handleCommandSuccess(sender, localShutdown, d.copy(localShutdown = Some(localShutdown)))
+      ourScriptPubKey_opt.getOrElse(Script.write(d.params.localParams.defaultFinalScriptPubKey)) match {
+        case finalScriptPubKey if Closing.isValidFinalScriptPubkey(finalScriptPubKey) =>
+          val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
+          handleCommandSuccess(sender, localShutdown, d.copy(localShutdown = Some(localShutdown)))
+        case _ => handleCommandError(sender, new RuntimeException("invalid final script"))
+      }
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(channelId, params, commitments, ourShutdownOpt, downstreams)) if commitments.remoteChanges.proposed.size > 0 =>
       handleLocalError(new RuntimeException("it is illegal to send a shutdown while having unsigned changes"), d)
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(channelId, params, commitments, ourShutdownOpt, downstreams)) =>
       Try(ourShutdownOpt.map(s => (s, commitments)).getOrElse {
+        require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(commitments)) {
           val (commitments1, commit) = Commitments.sendCommit(d.commitments)

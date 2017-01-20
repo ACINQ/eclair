@@ -9,7 +9,7 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
 
-import scala.util.Try
+import scala.util.{Success, Try}
 
 /**
   * Created by PM on 20/05/2016.
@@ -55,6 +55,16 @@ object Helpers {
 
   object Closing {
 
+    def isValidFinalScriptPubkey(scriptPubKey: BinaryData): Boolean = {
+      Try(Script.parse(scriptPubKey)) match {
+        case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
+        case Success(OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil) if scriptHash.size == 20 => true
+        case Success(OP_0 :: OP_PUSHDATA(pubkeyHash, _) :: Nil) if pubkeyHash.size == 20 => true
+        case Success(OP_0 :: OP_PUSHDATA(scriptHash, _) :: Nil) if scriptHash.size == 32 => true
+        case _ => false
+      }
+    }
+
     def makeFirstClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
       import commitments._
       val closingFee = {
@@ -69,6 +79,8 @@ object Helpers {
 
     def makeClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi): (ClosingTx, ClosingSigned) = {
       import commitments._
+      require(isValidFinalScriptPubkey(localScriptPubkey), "invalid localScriptPubkey")
+      require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)

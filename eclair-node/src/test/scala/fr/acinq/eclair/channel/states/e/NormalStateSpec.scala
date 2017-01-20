@@ -648,6 +648,14 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_CLOSE (with invalid final script)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(Some(BinaryData("00112233445566778899"))))
+      sender.expectMsg("invalid final script")
+    }
+  }
+
   test("recv CMD_CLOSE (with signed sent htlcs)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -693,7 +701,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, Shutdown(0, "00" * 25))
+      sender.send(alice, Shutdown(0, Script.write(Bob.channelParams.defaultFinalScriptPubKey)))
       alice2bob.expectMsgType[Shutdown]
       alice2bob.expectMsgType[ClosingSigned]
       awaitCond(alice.stateName == NEGOTIATING)
@@ -720,6 +728,17 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       // actual test begins
       sender.send(bob, Shutdown(0, Script.write(TestConstants.Alice.channelParams.defaultFinalScriptPubKey)))
+      bob2alice.expectMsgType[Error]
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(bob.stateName == CLOSING)
+    }
+  }
+
+  test("recv Shutdown (with invalid final script)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(bob, Shutdown(0, BinaryData("00112233445566778899")))
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
