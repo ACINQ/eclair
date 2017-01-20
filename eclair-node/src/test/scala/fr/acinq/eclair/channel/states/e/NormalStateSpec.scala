@@ -118,7 +118,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob, htlc)
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -131,7 +131,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob, UpdateAddHtlc(0, 44, 500000000, 144, "33" * 32, ""))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -144,7 +144,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob, UpdateAddHtlc(0, 44, 500000000, 144, "33" * 32, ""))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -164,7 +164,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
-      sender.expectNoMsg() // just ignored
+      sender.expectNoMsg(1 second) // just ignored
       //sender.expectMsg("cannot sign when there are no changes")
     }
   }
@@ -304,7 +304,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(bob, CommitSig(0, "00" * 64, Nil))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -319,7 +319,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(bob, CommitSig(0, "00" * 64, Nil))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -424,7 +424,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(alice, RevokeAndAck(0, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -437,7 +437,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(alice, RevokeAndAck(0, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -528,7 +528,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -544,7 +544,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -622,7 +622,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       sender.send(alice, UpdateFailHtlc(0, 42, "some reason".getBytes()))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -721,7 +721,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // actual test begins
       sender.send(bob, Shutdown(0, Script.write(TestConstants.Alice.channelParams.defaultFinalScriptPubKey)))
       bob2alice.expectMsgType[Error]
-      bob2blockchain.expectMsgType[Publish]
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(bob.stateName == CLOSING)
     }
@@ -788,15 +788,17 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
-      // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-      val amountClaimed = (for (i <- 0 until 3) yield {
+      // in addition to its main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+      val amountClaimed = (for (i <- 0 until 4) yield {
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
         assert(claimHtlcTx.txOut.size == 1)
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
-      assert(amountClaimed == Satoshi(400000))
+      alice2blockchain.expectNoMsg(1 second)
+      // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850000 (because fees)
+      assert(amountClaimed == Satoshi(831944))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -832,17 +834,23 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       //  a->b =  10 000
       //  a->b =  10 000
       //  a->b =  10 000
+      // two main outputs + 4 htlc
+      assert(revokedTx.txOut.size == 6)
       alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      val punishTx = alice2blockchain.expectMsgType[Publish].tx
+
+      val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      alice2blockchain.expectNoMsg(1 second)
+
+      Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      // two main outputs + 4 htlc
-      assert(revokedTx.txOut.size == 6)
-      // TODO: for now the punishment tx only consumes bob's main delayed output
-      assert(punishTx.txIn.size == 1)
-      assert(punishTx.txOut.size == 1)
+
+      // two main outputs are 760 000 and 200 000
+      assert(mainTx.txOut(0).amount == Satoshi(746983))
       assert(punishTx.txOut(0).amount == Satoshi(195284))
+
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
 
@@ -874,24 +882,31 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes())
-      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
 
       // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
-      val claimTxs = for (i <- 0 until 6) yield alice2blockchain.expectMsgType[PublishAsap].tx
-      alice2blockchain.expectNoMsg()
+      // so we expect 7 transactions:
+      // - 1 tx to claim the main delayed output
+      // - 3 txes for each htlc
+      // - 3 txes for each delayed output of the claimed htlc
+      val claimTxs = for (i <- 0 until 7) yield alice2blockchain.expectMsgType[PublishAsap].tx
+      alice2blockchain.expectNoMsg(1 second)
+
+      // the main delayed output spends the commitment transaction
+      Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // 2nd stage transactions spend the commitment transaction
-      Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(1), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(2), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(3), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // 3rd stage transactions spend their respective HTLC-Success/HTLC-Timeout transactions
-      Transaction.correctlySpends(claimTxs(3), claimTxs(0) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(4), claimTxs(1) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(5), claimTxs(2) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(6), claimTxs(3) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)

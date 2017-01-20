@@ -182,13 +182,24 @@ object Scripts {
     } map (_._2)
 
   /**
+    * This function interprets the locktime for the given transaction, and returns the block height before which this tx cannot be published.
+    * By convention in bitcoin, depending of the value of locktime it might be a number of blocks or a number of seconds since epoch.
+    * This function does not support the case when the locktime is a number of seconds that is not way in the past.
+    * NB: We use this property in lightning to store data in this field.
     *
-    * @param tx
-    * @return the block height before which this tx cannot be published
+    * @return the block height before which this tx cannot be published.
     */
   def cltvTimeout(tx: Transaction): Long = {
-    require(tx.lockTime <= LockTimeThreshold)
-    tx.lockTime
+    if (tx.lockTime <= LockTimeThreshold) {
+      // locktime is a number of blocks
+      tx.lockTime
+    }
+    else {
+      // locktime is a unix epoch timestamp
+      require(tx.lockTime <= 0x20FFFFFF, "locktime should be lesser than 0x20FFFFFF")
+      // since locktime is very well in the past (0x20FFFFFF is in 1987), it is equivalent to no locktime at all
+      0
+    }
   }
 
   /**
@@ -234,8 +245,6 @@ object Scripts {
   def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
     ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
 
-  def toRemote(remoteKey: PublicKey) = remoteKey
-
   def htlcOffered(localPubkey: PublicKey, remotePubkey: PublicKey, paymentHash: BinaryData) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
@@ -262,7 +271,7 @@ object Scripts {
   def witnessClaimHtlcSuccessFromCommitTx(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
     ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
 
-  def htlcReceived(localKey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData, lockTime: Long) = {
+  def htlcReceived(localKey: PublicKey, remotePubkey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
     OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::

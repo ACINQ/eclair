@@ -102,9 +102,21 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimCurrentLocalCommitTxOutputs(commitments: Commitments, tx: Transaction): Seq[TransactionWithInputInfo] = {
+    def claimCurrentLocalCommitTxOutputs(commitments: Commitments, tx: Transaction): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
+
+      val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
+      val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
+      val localDelayedPrivkey = Generators.derivePrivKey(localParams.delayedPaymentKey, localPerCommitmentPoint)
+
+      // first we will claim our main output as soon as the delay is over
+      // TODO: it is possible that there is no main output, but it should probably be handled more nicely than with a Try
+      val mainDelayedTx = Try {
+        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+        val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
+        Transactions.addSigs(claimDelayed, sig)
+      }.toOption
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
@@ -122,25 +134,25 @@ object Helpers {
           Transactions.addSigs(txinfo, localSig, remoteSig)
       }
 
-      val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
-      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, localPerCommitmentPoint)
-      val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-      val localDelayedPrivkey = Generators.derivePrivKey(localParams.delayedPaymentKey, localPerCommitmentPoint)
-
-      val delayedTxes = htlcTxes.map {
+      // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
+      val htlcDelayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, commitments.localParams.feeratePerKw)
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localParams.feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }
 
-      val txes = htlcTxes ++ delayedTxes
-
       // OPTIONAL: let's check transactions are actually spendable
-      require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
+      //val txes = mainDelayedTx +: (htlcTxes ++ htlcDelayedTxes)
+      //require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      txes
+      LocalCommitPublished(
+        commitTx = tx,
+        claimMainDelayedOutputTx = mainDelayedTx.map(_.tx),
+        htlcSuccessTxs = htlcTxes.collect { case c: HtlcSuccessTx => c.tx },
+        htlcTimeoutTxs = htlcTxes.collect { case c: HtlcTimeoutTx => c.tx },
+        claimHtlcDelayedTx = htlcDelayedTxes.map(_.tx))
     }
 
     /**
@@ -150,40 +162,52 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimCurrentRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Seq[TransactionWithInputInfo] = {
+    def claimCurrentRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): RemoteCommitPublished = {
       import commitments._
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
-      val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, remoteCommit.remotePerCommitmentPoint)
       val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
       val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
+
+      // first we will claim our main output right away
+      // TODO: it is possible that there is no main output, but it should probably be handled more nicely than with a Try
+      val mainTx = Try {
+        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+        val sig = Transactions.sign(claimMain, localPrivkey)
+        Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
+      }.toOption
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
 
-      // TODO: we currently don't handle dust!!!!
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
       val txes = commitments.remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
         case Htlc(OUT, add: UpdateAddHtlc, _) if preimages.exists(r => sha256(r) == add.paymentHash) =>
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPrivkey.publicKey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) =>
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPubkey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig)
-      }
+      }.toSeq
 
       // OPTIONAL: let's check transactions are actually spendable
-      require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
+      //require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      txes.toSeq
+      RemoteCommitPublished(
+        commitTx = tx,
+        claimMainOutputTx = mainTx.map(_.tx),
+        claimHtlcSuccessTxs = txes.collect { case c: ClaimHtlcSuccessTx => c.tx },
+        claimHtlcTimeoutTxs = txes.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+      )
+
     }
 
     /**
@@ -195,7 +219,7 @@ object Helpers {
       *
       * @return a list of transactions (one per HTLC that we can claim) if the tx is a revoked commitment, [[None]] otherwise
       */
-    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Option[Seq[TransactionWithInputInfo]] = {
+    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Option[RevokedCommitPublished] = {
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
@@ -210,23 +234,39 @@ object Helpers {
 
           val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
           val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
+          val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remotePerCommitmentPoint)
 
-          // let's punish remote by stealing its main output
-          val mainDelayedRevokedTx = {
+          // first we will claim our main output right away
+          // TODO: it is possible that there is no main output, but it should probably be handled more nicely than with a Try
+          val mainTx = Try {
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+            val sig = Transactions.sign(claimMain, localPrivkey)
+            Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
+          }.toOption
+
+          // then we punish them by stealing their main output
+          // TODO: it is possible that there is no main output, but it should probably be handled more nicely than with a Try
+          val mainPunishmentTx = Try {
             // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
             val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
             val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
             Transactions.addSigs(txinfo, sig)
-          }
+          }.toOption
 
           // TODO: we don't claim htlcs outputs yet
 
-          val txes = mainDelayedRevokedTx :: Nil
-
           // OPTIONAL: let's check transactions are actually spendable
-          require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
+          //val txes = mainDelayedRevokedTx :: Nil
+          //require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-          txes
+          RevokedCommitPublished(
+            commitTx = tx,
+            claimMainOutputTx = mainTx.map(_.tx),
+            mainPunishmentTx = mainPunishmentTx.map(_.tx),
+            claimHtlcTimeoutTxs = Nil,
+            htlcTimeoutTxs = Nil,
+            htlcPunishmentTxs = Nil
+          )
         }
     }
 

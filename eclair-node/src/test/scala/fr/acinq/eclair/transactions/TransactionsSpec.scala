@@ -2,12 +2,12 @@ package fr.acinq.eclair.transactions
 
 import java.nio.{ByteBuffer, ByteOrder}
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar, sha256}
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
+import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
 import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.toLocalDelayed
-import fr.acinq.eclair.transactions.Transactions._
+import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -51,6 +51,17 @@ class TransactionsSpec extends FunSuite {
     val finalPubKeyScript = Script.pay2wpkh(PrivateKey(BinaryData("ff" * 32), compressed = true).publicKey)
     val toLocalDelay = 144
     val feeRatePerKw = 1000
+
+    {
+      // ClaimP2WPKHOutputTx
+      // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
+      val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey))
+      val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localPaymentPriv.publicKey, finalPubKeyScript, feeRatePerKw)
+      // we use dummy signatures to compute the weight
+      val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, "bb" * 71).tx)
+      assert(claimP2WPKHOutputWeight == weight)
+    }
 
     {
       // ClaimHtlcDelayedTx
@@ -163,6 +174,14 @@ class TransactionsSpec extends FunSuite {
       val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcSuccessTx.tx, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeRatePerKw)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
+      assert(checkSpendable(signedTx).isSuccess)
+    }
+
+    {
+      // remote spends main output
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx.tx, remotePaymentPriv.publicKey, finalPubKeyScript, feeRatePerKw)
+      val localSig = sign(claimP2WPKHOutputTx, remotePaymentPriv)
+      val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
 
