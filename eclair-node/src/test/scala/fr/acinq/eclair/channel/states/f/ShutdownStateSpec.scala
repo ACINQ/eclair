@@ -202,7 +202,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
-      sender.expectNoMsg() // just ignored
+      sender.expectNoMsg(1 second) // just ignored
       //sender.expectMsg("cannot sign when there are no changes")
     }
   }
@@ -366,7 +366,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
-      alice2blockchain.expectNoMsg()
+      alice2blockchain.expectNoMsg(1 second)
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
       assert(amountClaimed == Satoshi(785304))
 
@@ -397,7 +397,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
       val mainTx = alice2blockchain.expectMsgType[Publish].tx
       val punishTx = alice2blockchain.expectMsgType[Publish].tx
-      alice2blockchain.expectNoMsg()
+      alice2blockchain.expectNoMsg(1 second)
 
       Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -426,7 +426,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       // - 2 txes for each htlc
       // - 2 txes for each delayed output of the claimed htlc
       val claimTxs = for (i <- 0 until 5) yield alice2blockchain.expectMsgType[PublishAsap].tx
-      alice2blockchain.expectNoMsg()
+      alice2blockchain.expectNoMsg(1 second)
 
       // the main delayed output spends the commitment transaction
       Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)

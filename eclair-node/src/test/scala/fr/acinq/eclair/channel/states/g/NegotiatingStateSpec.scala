@@ -92,7 +92,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
       val mutualCloseTx = bob2blockchain.expectMsgType[Publish].tx
       bob2blockchain.expectMsgType[WatchConfirmed]
       alice ! (BITCOIN_FUNDING_SPENT, mutualCloseTx)
-      alice2blockchain.expectNoMsg()
+      alice2blockchain.expectNoMsg(1 second)
       assert(alice.stateName == NEGOTIATING)
     }
   }
