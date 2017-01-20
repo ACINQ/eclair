@@ -263,7 +263,7 @@ object Commitments extends Logging {
         commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteCommit = theirNextCommit,
-          remoteNextCommitInfo = Right(Point(revocation.nextPerCommitmentPoint)),
+          remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFFFFFL - commitments.remoteCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected RevokeAndAck message")

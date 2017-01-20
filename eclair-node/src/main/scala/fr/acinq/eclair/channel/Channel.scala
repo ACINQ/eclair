@@ -119,10 +119,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         feeratePerKw = open.feeratePerKw,
         toSelfDelay = open.toSelfDelay,
         maxAcceptedHtlcs = open.maxAcceptedHtlcs,
-        fundingPubKey = PublicKey(open.fundingPubkey),
-        revocationBasepoint = Point(open.revocationBasepoint),
-        paymentBasepoint = Point(open.paymentBasepoint),
-        delayedPaymentBasepoint = Point(open.delayedPaymentBasepoint))
+        fundingPubKey = open.fundingPubkey,
+        revocationBasepoint = open.revocationBasepoint,
+        paymentBasepoint = open.paymentBasepoint,
+        delayedPaymentBasepoint = open.delayedPaymentBasepoint)
       log.debug(s"remote params: $remoteParams")
       val params = ChannelParams(
         localParams = localParams.copy(feeratePerKw = open.feeratePerKw), // funder gets to choose the first feerate
@@ -151,10 +151,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         feeratePerKw = localParams.feeratePerKw, // funder gets to choose the first feerate
         toSelfDelay = accept.toSelfDelay,
         maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
-        fundingPubKey = PublicKey(accept.fundingPubkey),
-        revocationBasepoint = Point(accept.revocationBasepoint),
-        paymentBasepoint = Point(accept.paymentBasepoint),
-        delayedPaymentBasepoint = Point(accept.delayedPaymentBasepoint)
+        fundingPubKey = accept.fundingPubkey,
+        revocationBasepoint = accept.revocationBasepoint,
+        paymentBasepoint = accept.paymentBasepoint,
+        delayedPaymentBasepoint = accept.delayedPaymentBasepoint
       )
       log.debug(s"remote params: $remoteParams")
       val params = ChannelParams(
