@@ -54,7 +54,7 @@ class WaitForFundingSignedStateSpec extends StateSpecBaseClass {
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.expectMsgType[PublishAsap]
     }
   }
 

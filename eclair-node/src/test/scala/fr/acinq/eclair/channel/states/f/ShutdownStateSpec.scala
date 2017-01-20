@@ -119,7 +119,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(alice, fulfill)
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -131,7 +131,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(alice, UpdateFulfillHtlc(0, 42, "00" * 32))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -174,7 +174,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(alice, UpdateFailHtlc(0, 42, "some reason".getBytes()))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -244,7 +244,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(bob, CommitSig(0, "00" * 64, Nil))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -256,7 +256,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(bob, CommitSig(0, "00" * 64, Nil))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -332,7 +332,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(bob, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
-      bob2blockchain.expectMsg(Publish(tx))
+      bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -345,7 +345,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       sender.send(alice, RevokeAndAck(0, "11" * 32, "22" * 32, Nil))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -395,8 +395,8 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
 
-      val mainTx = alice2blockchain.expectMsgType[Publish].tx
-      val punishTx = alice2blockchain.expectMsgType[Publish].tx
+      val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
       alice2blockchain.expectNoMsg(1 second)
 
       Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -415,7 +415,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     within(30 seconds) {
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
-      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid

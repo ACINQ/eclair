@@ -37,7 +37,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
     alice2blockchain.forward(blockchainA)
-    alice2blockchain.expectMsgType[Publish]
+    alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.forward(blockchainA)
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]

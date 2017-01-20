@@ -65,9 +65,9 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
         bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
         bob2alice.forward(alice)
       } while (aliceCloseFee != bobCloseFee)
-      alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      bob2blockchain.expectMsgType[Publish]
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
       awaitCond(bob.stateName == CLOSING)
@@ -89,7 +89,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
       // bob publishes the mutual close and alice is notified that the funding tx has been spent
       // actual test starts here
       assert(alice.stateName == NEGOTIATING)
-      val mutualCloseTx = bob2blockchain.expectMsgType[Publish].tx
+      val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
       bob2blockchain.expectMsgType[WatchConfirmed]
       alice ! (BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg(1 second)
@@ -102,7 +102,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
       val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes())
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }

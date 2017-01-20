@@ -54,7 +54,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
-      toPublish.values.flatten.map(tx => self ! Publish(tx))
+      toPublish.values.flatten.map(publish)
       context.become(watching(watches, block2tx -- toPublish.keys, count))
     }
 
@@ -65,19 +65,13 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       context.watch(w.channel)
       context.become(watching(watches + w, block2tx, currentBlockCount))
 
-    case Publish(tx) =>
-      log.info(s"publishing tx $tx")
-      client.publishTransaction(tx).onFailure {
-        case t: Throwable => log.error(t, s"cannot publish tx ${BinaryData(Transaction.write(tx))}")
-      }
-
     case PublishAsap(tx) =>
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
       // absolute timeout in blocks
       val timeout = Math.max(cltvTimeout, csvTimeout)
       if (timeout <= currentBlockCount) {
-        self ! Publish(tx)
+        publish(tx)
       } else {
         log.info(s"delaying publication of tx $tx until block=$timeout (curblock=$currentBlockCount)")
         val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
@@ -92,6 +86,10 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       val deprecatedWatches = watches.filter(_.channel == channel)
       context.become(watching(watches -- deprecatedWatches, block2tx, currentBlockCount))
 
+  }
+
+  def publish(tx: Transaction) = client.publishTransaction(tx).onFailure {
+    case t: Throwable => log.error(t, s"cannot publish tx ${BinaryData(Transaction.write(tx))}")
   }
 }
 

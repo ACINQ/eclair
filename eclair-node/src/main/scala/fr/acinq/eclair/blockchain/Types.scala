@@ -18,7 +18,9 @@ final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: In
 // notify me if confirmation number gets below minDepth
 final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 
-final case class Publish(tx: Transaction)
+/**
+  * Publish the provided tx as soon as possible depending on locktime and csv
+  */
 final case class PublishAsap(tx: Transaction)
 final case class MakeFundingTx(ourCommitPub: BinaryData, theirCommitPub: BinaryData, amount: Satoshi)
 

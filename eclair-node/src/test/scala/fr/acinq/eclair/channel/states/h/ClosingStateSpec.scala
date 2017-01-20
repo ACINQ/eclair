@@ -82,9 +82,9 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
       bob2alice.forward(alice)
     } while (aliceCloseFee != bobCloseFee)
-    alice2blockchain.expectMsgType[Publish]
+    alice2blockchain.expectMsgType[PublishAsap]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    bob2blockchain.expectMsgType[Publish]
+    bob2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchConfirmed]
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
@@ -106,7 +106,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
-      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -124,7 +124,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes())
-      alice2blockchain.expectMsg(Publish(aliceCommitTx))
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
@@ -180,7 +180,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
 
       // alice publishes and watches the punishment tx
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.expectMsgType[PublishAsap]
 
       awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].copy(revokedCommitPublished = Nil) == initialState)
@@ -195,8 +195,8 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
         alice ! (BITCOIN_FUNDING_SPENT, bobRevokedTx)
         // alice publishes and watches the punishment tx
         alice2blockchain.expectMsgType[WatchConfirmed]
-        alice2blockchain.expectMsgType[Publish]
-        alice2blockchain.expectMsgType[Publish]
+        alice2blockchain.expectMsgType[PublishAsap]
+        alice2blockchain.expectMsgType[PublishAsap]
       }
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == bobCommitTxes.size - 1)
     }
@@ -211,7 +211,7 @@ class ClosingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       alice ! (BITCOIN_FUNDING_SPENT, bobRevokedTx)
       // alice publishes and watches the punishment tx
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.expectMsgType[PublishAsap]
       // TODO
       // awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
 

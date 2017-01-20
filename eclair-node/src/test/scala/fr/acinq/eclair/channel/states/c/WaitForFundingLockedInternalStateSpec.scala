@@ -45,7 +45,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[Publish]
+      alice2blockchain.expectMsgType[PublishAsap]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
     }
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, blockchainA))
@@ -94,7 +94,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! (BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[Error]
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
     }
   }
@@ -104,7 +104,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -114,7 +114,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(Publish(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
