@@ -121,9 +121,9 @@ trait HasCommitments extends Data {
   def commitments: Commitments
 }
 
-case class LocalCommitPublished(commitTx: Transaction, htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
-case class RemoteCommitPublished(commitTx: Transaction, claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
-case class RevokedCommitPublished(commitTx: Transaction, mainPunishmentTx: Transaction, claimHtlcTimeoutTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], htlcPunishmentTxs: Seq[Transaction])
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
+case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPunishmentTx: Option[Transaction], claimHtlcTimeoutTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], htlcPunishmentTxs: Seq[Transaction])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data

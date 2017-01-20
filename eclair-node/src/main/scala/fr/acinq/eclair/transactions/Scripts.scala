@@ -224,8 +224,6 @@ object Scripts {
   def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
     ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
 
-  def toRemote(remoteKey: BinaryData) = remoteKey
-
   def htlcOffered(localPubkey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::

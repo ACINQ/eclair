@@ -3,7 +3,7 @@ package fr.acinq.eclair.transactions
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut, millisatoshi2satoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -26,6 +26,7 @@ object Transactions {
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimDelayedOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class MainPunishmentTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class HtlcPunishmentTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -41,10 +42,12 @@ object Transactions {
     *     - [[ClaimDelayedOutputTx]] spends [[HtlcTimeoutTx]] after a delay
     *
     * When *remote* *current* [[CommitTx]] is published:
+    *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
     *   - [[ClaimHtlcSuccessTx]] spends htlc-received outputs of [[CommitTx]] for which we have the preimage
     *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
     *
     * When *remote* *revoked* [[CommitTx]] is published:
+    *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
     *   - [[MainPunishmentTx]] spends remote main output using the per-commitment secret
     *   - [[HtlcSuccessTx]] spends htlc-sent outputs of [[CommitTx]] for which they have the preimage (published by remote)
     *     - [[HtlcPunishmentTx]] spends [[HtlcSuccessTx]] using the per-commitment secret
@@ -56,6 +59,7 @@ object Transactions {
   val commitWeight = 724
   val htlcTimeoutWeight = 634
   val htlcSuccessWeight = 671
+  val claimP2WPKHOutputWeight = 437
   val claimHtlcDelayedWeight = 482
   val mainPunishmentWeight = 483
 
@@ -140,7 +144,7 @@ object Transactions {
       case (local, remote) if !localIsFunder && remote.compare(commitFee) > 0 => (millisatoshi2satoshi(local), remote - commitFee)
     }
     val toLocalDelayedOutput_opt = if (toLocalAmount.compare(localDustLimit) > 0) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)))) else None
-    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) > 0) Some(TxOut(toRemoteAmount, pay2wpkh(toRemote(remotePubkey)))) else None
+    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) > 0) Some(TxOut(toRemoteAmount, pay2wpkh(remotePubkey))) else None
 
     val htlcTimeoutFee = weight2fee(spec.feeRatePerKw, htlcTimeoutWeight)
     val htlcSuccessFee = weight2fee(spec.feeRatePerKw, htlcSuccessWeight)
@@ -236,6 +240,20 @@ object Transactions {
       lockTime = htlc.expiry))
   }
 
+  def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localPubkey: BinaryData, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimP2WPKHOutputTx = {
+    val fee = weight2fee(feeRatePerKw, claimP2WPKHOutputWeight)
+    val redeemScript = Script.pay2pkh(localPubkey)
+    val pubkeyScript = write(pay2wpkh(localPubkey))
+    val outputIndex = findPubKeyScriptIndex(delayedOutputTx, pubkeyScript)
+    require(outputIndex >= 0, "output not found")
+    val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
+    ClaimP2WPKHOutputTx(input, Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
+      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
+      lockTime = 0))
+  }
+
   def makeClaimDelayedOutputTx(delayedOutputTx: Transaction, localRevocationPubkey: BinaryData, toLocalDelay: Int, localDelayedPubkey: BinaryData, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimDelayedOutputTx = {
     val fee = weight2fee(feeRatePerKw, claimHtlcDelayedWeight)
     val redeemScript = toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)
@@ -328,6 +346,11 @@ object Transactions {
   def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: BinaryData): ClaimHtlcTimeoutTx = {
     val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
+  }
+
+  def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPubkey: BinaryData, localSig: BinaryData): ClaimP2WPKHOutputTx = {
+    val witness = ScriptWitness(Seq(localSig, localPubkey))
+    claimP2WPKHOutputTx.copy(tx = claimP2WPKHOutputTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(claimHtlcDelayed: ClaimDelayedOutputTx, localSig: BinaryData): ClaimDelayedOutputTx = {

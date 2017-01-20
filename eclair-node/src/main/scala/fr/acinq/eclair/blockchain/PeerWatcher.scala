@@ -74,9 +74,15 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
     case PublishAsap(tx) =>
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
+      // absolute timeout in blocks
       val timeout = Math.max(cltvTimeout, csvTimeout)
-      val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
-      context.become(watching(watches, block2tx1, currentBlockCount))
+      if (timeout <= currentBlockCount) {
+        self ! Publish(tx)
+      } else {
+        log.info(s"delaying publication of tx $tx until block=$timeout (curblock=$currentBlockCount)")
+        val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
+        context.become(watching(watches, block2tx1, currentBlockCount))
+      }
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
       client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)

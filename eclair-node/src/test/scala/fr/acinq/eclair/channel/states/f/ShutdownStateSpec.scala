@@ -359,14 +359,16 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
-      val amountClaimed = (for (i <- 0 until 2) yield {
+      val amountClaimed = (for (i <- 0 until 3) yield {
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
         assert(claimHtlcTx.txIn.size == 1)
         assert(claimHtlcTx.txOut.size == 1)
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
-      assert(amountClaimed == Satoshi(500000))
+      alice2blockchain.expectNoMsg()
+      // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
+      assert(amountClaimed == Satoshi(785304))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -378,6 +380,8 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
   test("recv BITCOIN_FUNDING_SPENT (revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      // two main outputs + 2 htlc
+      assert(revokedTx.txOut.size == 4)
 
       // bob fulfills one of the pending htlc (just so that he can have a new sig)
       fulfillHtlc(1, "11" * 32, bob, alice, bob2alice, alice2bob)
@@ -390,17 +394,18 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
+
+      val mainTx = alice2blockchain.expectMsgType[Publish].tx
       val punishTx = alice2blockchain.expectMsgType[Publish].tx
-      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectNoMsg()
+
+      Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      // two main outputs + 2 htlc
-      assert(revokedTx.txOut.size == 4)
-      // the punishment tx consumes all output but ours (which already goes to our final key)
-      // TODO: for now the punishment tx only consumes bob's main delayed output
-      assert(punishTx.txIn.size == 1)
-      assert(punishTx.txOut.size == 1)
-      // TODO: should be updated when fees are implemented
+
+      // two main outputs are 300 000 and 200 000
+      assert(mainTx.txOut(0).amount == Satoshi(285304))
       assert(punishTx.txOut(0).amount == Satoshi(195284))
+
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
     }
@@ -416,16 +421,23 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
 
       // alice can claim both htlc after a timeout
-      val claimTxs = for (i <- 0 until 4) yield alice2blockchain.expectMsgType[PublishAsap].tx
+      // so we expect 5 transactions:
+      // - 1 tx to claim the main delayed output
+      // - 2 txes for each htlc
+      // - 2 txes for each delayed output of the claimed htlc
+      val claimTxs = for (i <- 0 until 5) yield alice2blockchain.expectMsgType[PublishAsap].tx
       alice2blockchain.expectNoMsg()
 
-      // 2nd stage transactions spend the commitment transaction
+      // the main delayed output spends the commitment transaction
       Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+      // 2nd stage transactions spend the commitment transaction
       Transaction.correctlySpends(claimTxs(1), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(2), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // 3rd stage transactions spend their respective HTLC-Timeout transactions
-      Transaction.correctlySpends(claimTxs(2), claimTxs(0) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(3), claimTxs(1) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(claimTxs(4), claimTxs(2) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
