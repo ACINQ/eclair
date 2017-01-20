@@ -2,7 +2,7 @@ package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_2, OP_2DROP, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, LockTimeThreshold, OP_0, OP_1, OP_1NEGATE, OP_2, OP_2DROP, OP_5, OP_ADD, OP_CHECKLOCKTIMEVERIFY, OP_CHECKMULTISIG, OP_CHECKSEQUENCEVERIFY, OP_CHECKSIG, OP_DROP, OP_DUP, OP_ELSE, OP_ENDIF, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_IF, OP_NOTIF, OP_PUSHDATA, OP_SIZE, OP_SWAP, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptWitness, Transaction, TxIn, TxOut}
 
 /**
   * Created by PM on 02/12/2016.
@@ -77,18 +77,28 @@ object Scripts {
     (signedTx, 0)
   }
 
-  def encodeNumber(n: Long): BinaryData = {
-    // TODO: added for compatibility with lightningd => check (it's either a bug in lighningd or bitcoin-lib)
-    if (n < 0xff) Seq(n.toByte) else Script.encodeNumber(n)
+  /**
+    * minimal encoding of a number into a script element:
+    * - OP_0 to OP_16 if 0 <= n <= 16
+    * - OP_PUSHDATA(encodeNumber(n)) otherwise
+    *
+    * @param n input number
+    * @return a script element that represents n
+    */
+  def encodeNumber(n: Long): ScriptElt = n match {
+    case 0 => OP_0
+    case -1 => OP_1NEGATE
+    case x if x >= 1 && x <= 16 => ScriptElt.code2elt((ScriptElt.elt2code(OP_1) + x - 1).toInt)
+    case _ => OP_PUSHDATA(Script.encodeNumber(n))
   }
 
   def redeemSecretOrDelay(delayedKey: BinaryData, reltimeout: Long, keyIfSecretKnown: BinaryData, hashOfSecret: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     OP_HASH160 :: OP_PUSHDATA(ripemd160(hashOfSecret)) :: OP_EQUAL ::
     OP_IF ::
-    OP_PUSHDATA(keyIfSecretKnown) ::
+      OP_PUSHDATA(keyIfSecretKnown) ::
     OP_ELSE ::
-    OP_PUSHDATA(encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
+      encodeNumber(reltimeout):: OP_CHECKSEQUENCEVERIFY :: OP_DROP :: OP_PUSHDATA(delayedKey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -98,14 +108,14 @@ object Scripts {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
     assert(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
-    OP_SIZE :: OP_PUSHDATA(encodeNumber(32)) :: OP_EQUALVERIFY ::
+    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::
     OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
     OP_SWAP :: OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL :: OP_ADD ::
     OP_IF ::
-    OP_PUSHDATA(theirkey) ::
+      OP_PUSHDATA(theirkey) ::
     OP_ELSE ::
-    OP_PUSHDATA(encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_PUSHDATA(encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+      encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: encodeNumber(reltimeout) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -115,19 +125,19 @@ object Scripts {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
     assert(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
-    OP_SIZE :: OP_PUSHDATA(encodeNumber(32)) :: OP_EQUALVERIFY ::
-      OP_HASH160 :: OP_DUP ::
-      OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
-      OP_IF ::
-      OP_PUSHDATA(encodeNumber(reltimeout)) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
-      OP_ELSE ::
+    OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
+    OP_HASH160 :: OP_DUP ::
+    OP_PUSHDATA(ripemd160(rhash)) :: OP_EQUAL ::
+    OP_IF ::
+      encodeNumber(reltimeout) :: OP_CHECKSEQUENCEVERIFY :: OP_2DROP :: OP_PUSHDATA(ourkey) ::
+    OP_ELSE ::
       OP_PUSHDATA(ripemd160(commit_revoke)) :: OP_EQUAL ::
       OP_NOTIF ::
-      OP_PUSHDATA(encodeNumber(abstimeout)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+        encodeNumber(abstimeout) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
       OP_ENDIF ::
       OP_PUSHDATA(theirkey) ::
-      OP_ENDIF ::
-      OP_CHECKSIG :: Nil
+    OP_ENDIF ::
+    OP_CHECKSIG :: Nil
     // @formatter:on
   }
 
@@ -204,7 +214,7 @@ object Scripts {
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
     OP_ELSE ::
-      OP_PUSHDATA(Script.encodeNumber(toSelfDelay)) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
+      encodeNumber(toSelfDelay) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
       OP_PUSHDATA(localDelayedPubkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
@@ -229,7 +239,7 @@ object Scripts {
   def htlcOffered(localPubkey: PublicKey, remotePubkey: PublicKey, paymentHash: BinaryData) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
-    OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
+    OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
     OP_NOTIF ::
       OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
     OP_ELSE ::
@@ -255,12 +265,12 @@ object Scripts {
   def htlcReceived(localKey: BinaryData, remotePubkey: BinaryData, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
     OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
-    OP_SIZE :: OP_PUSHDATA(Script.encodeNumber(32)) :: OP_EQUAL ::
+    OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
     OP_IF ::
       OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
       OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
     OP_ELSE ::
-      OP_DROP :: OP_PUSHDATA(Script.encodeNumber(lockTime)) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP :: OP_CHECKSIG ::
+      OP_DROP :: encodeNumber(lockTime) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP :: OP_CHECKSIG ::
     OP_ENDIF :: Nil
     // @formatter:on
   }

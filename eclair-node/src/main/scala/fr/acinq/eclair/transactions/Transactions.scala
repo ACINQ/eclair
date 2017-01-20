@@ -5,7 +5,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut, millisatoshi2satoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, Transaction, TxIn, TxOut, millisatoshi2satoshi}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -18,6 +18,10 @@ object Transactions {
 
   // @formatter:off
   case class InputInfo(outPoint: OutPoint, txOut: TxOut, redeemScript: BinaryData)
+  object InputInfo {
+    def apply(outPoint: OutPoint, txOut: TxOut, redeemScript: Seq[ScriptElt]) = new InputInfo(outPoint, txOut, Script.write(redeemScript))
+  }
+
   sealed trait TransactionWithInputInfo {
     def input: InputInfo
     def tx: Transaction
