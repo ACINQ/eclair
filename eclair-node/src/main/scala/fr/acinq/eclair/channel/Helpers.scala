@@ -56,34 +56,31 @@ object Helpers {
   object Closing {
 
     def makeFirstClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
-      // TODO: check that
-      val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
-      // TODO 500 is arbitratry value, replace ASAP
-      val closingKw = 800
-      val closingFee = Transactions.weight2fee(params.localParams.feeratePerKw, closingKw)
-      // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
-      val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
-      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
-      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
+      import commitments._
+      val closingFee = {
+        // this is just to estimate the weight
+        val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
+        val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
+        Transactions.weight2fee(params.localParams.feeratePerKw, closingWeight)
+      }
+      val (_, closingSigned) = makeClosingTx(params, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
       closingSigned
     }
 
     def makeClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi): (ClosingTx, ClosingSigned) = {
+      import commitments._
       // TODO: check that
-      val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
-      // TODO: check commitments.localCommit.spec == commitments.remoteCommit.spec
-      val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
+      val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
+      val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
-      val closingSigned = ClosingSigned(commitments.channelId, closingFee.amount, localClosingSig)
+      val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
       (closingTx, closingSigned)
     }
 
     def checkClosingSignature(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
-      // TODO: check that
-      val dustLimitSatoshis = Satoshi(Math.max(commitments.localParams.dustLimitSatoshis, commitments.remoteParams.dustLimitSatoshis))
-      val closingTx = Transactions.makeClosingTx(commitments.commitInput, localScriptPubkey, remoteScriptPubkey, commitments.localParams.isFunder, dustLimitSatoshis, closingFee, commitments.localCommit.spec)
-      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
-      val signedClosingTx = Transactions.addSigs(closingTx, commitments.localParams.fundingPrivKey.publicKey, commitments.remoteParams.fundingPubKey, localClosingSig, remoteClosingSig)
+      import commitments._
+      val (closingTx, closingSigned) = makeClosingTx(params, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      val signedClosingTx = Transactions.addSigs(closingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
 
