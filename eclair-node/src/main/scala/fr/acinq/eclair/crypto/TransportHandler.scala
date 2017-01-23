@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.channel.{CMD_CLOSE, Command}
 import fr.acinq.eclair.crypto.Noise._
 
+import scala.annotation.tailrec
 import scala.reflect.ClassTag
 
 /**
@@ -92,29 +93,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], th
       context.stop(self)
       stay()
 
-    case Event(Received(data), WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
-      self ! 'ping
-      stay using WaitingForCyphertextData(enc, dec, length, buffer ++ data, listener)
-
-    case Event('ping, WaitingForCyphertextData(_, _, None, buffer, _)) if buffer.length < 18 => stay
-
-    case Event('ping, WaitingForCyphertextData(enc, dec, None, buffer, listener)) =>
-      self ! 'ping
-      val (ciphertext, remainder) = buffer.splitAt(18)
-      log.debug(s"trying to decrypt ciphertext length ${BinaryData(ciphertext)}")
-      val (dec1, plaintext) = dec.decryptWithAd(BinaryData.empty, ciphertext)
-      val length = Protocol.uint16(plaintext, ByteOrder.BIG_ENDIAN)
-      stay using WaitingForCyphertextData(enc, dec1, Some(length), remainder, listener)
-
-    case Event('ping, WaitingForCyphertextData(_, _, Some(length), buffer, _)) if buffer.length < length + 16 => stay
-
-    case Event('ping, WaitingForCyphertextData(enc, dec, Some(length), buffer, listener)) =>
-      self ! 'ping
-      val (ciphertext, remainder) = buffer.splitAt(length + 16)
-      val (dec1, plaintext) = dec.decryptWithAd(BinaryData.empty, ciphertext)
-      val msg = serializer.deserialize(plaintext)
-      listener ! msg
-      stay using WaitingForCyphertextData(enc, dec1, None, remainder, listener)
+    case Event(Received(data), currentStateData@WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
+      val (nextStateData, plaintextMessages) = WaitingForCyphertextData.decrypt(currentStateData.copy(buffer = buffer ++ data))
+      plaintextMessages.map(plaintext => {
+        val message = serializer.deserialize(plaintext)
+        listener ! message
+      })
+      stay using nextStateData
 
     case Event(plaintext: BinaryData, WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
       val (enc1, ciphertext) = TransportHandler.encrypt(enc, plaintext)
@@ -254,6 +239,25 @@ object TransportHandler {
   }
 
   case class WaitingForCyphertextData(enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef) extends Data
+
+  object WaitingForCyphertextData {
+    @tailrec
+    def decrypt(state: WaitingForCyphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCyphertextData, Seq[BinaryData]) = {
+      (state.ciphertextLength, state.buffer.length) match {
+        case (None, length) if length < 18 => (state, acc)
+        case (None, _) =>
+          val (ciphertext, remainder) = state.buffer.splitAt(18)
+          val (dec1, plaintext) = state.dec.decryptWithAd(BinaryData.empty, ciphertext)
+          val length = Protocol.uint16(plaintext, ByteOrder.BIG_ENDIAN)
+          decrypt(state.copy(dec = dec1, ciphertextLength = Some(length), buffer = remainder), acc)
+        case (Some(expectedLength), length) if length < expectedLength + 16 => (state, acc)
+        case (Some(expectedLength), _) =>
+          val (ciphertext, remainder) = state.buffer.splitAt(expectedLength + 16)
+          val (dec1, plaintext) = state.dec.decryptWithAd(BinaryData.empty, ciphertext)
+          decrypt(state.copy(dec = dec1, ciphertextLength = None, buffer = remainder), acc :+ plaintext)
+      }
+    }
+  }
 
   trait Serializer[T] {
     def serialize(t: T): BinaryData
