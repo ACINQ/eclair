@@ -1,10 +1,10 @@
 package fr.acinq.eclair.transactions
 
-import java.nio.{ByteBuffer, ByteOrder}
+import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.toLocalDelayed
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
@@ -122,7 +122,7 @@ class TransactionsSpec extends FunSuite {
     {
       assert(getCommitTxNumber(commitTx.tx, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
       val hash: Array[Byte] = Crypto.sha256(localPaymentPriv.publicKey.toBin ++ remotePaymentPriv.publicKey.toBin)
-      val num = ByteBuffer.wrap(hash.takeRight(8)).order(ByteOrder.BIG_ENDIAN).getLong & 0xffffffffffffL
+      val num = Protocol.uint64(hash.takeRight(8), ByteOrder.BIG_ENDIAN) & 0xffffffffffffL
       val check = ((commitTx.tx.txIn(0).sequence & 0xffffff) << 24) | (commitTx.tx.lockTime)
       assert((check ^ num) == commitTxNumber)
     }

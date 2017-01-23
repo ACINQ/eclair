@@ -129,7 +129,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, paymentHandler: Acto
         fundingSatoshis = open.fundingSatoshis,
         minimumDepth = minimumDepth,
         autoSignInterval = autoSignInterval)
-      goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, params, open.pushMsat, Point(open.firstPerCommitmentPoint))
+      goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, params, open.pushMsat, open.firstPerCommitmentPoint)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
