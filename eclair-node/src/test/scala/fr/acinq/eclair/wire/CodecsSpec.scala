@@ -1,10 +1,10 @@
 package fr.acinq.eclair.wire
 
-import java.net.InetAddress
+import java.net.{InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.wire.Codecs.{ipv6, lightningMessageCodec, rgb, zeropaddedstring}
+import fr.acinq.eclair.wire.Codecs.{socketaddress, lightningMessageCodec, rgb, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -47,20 +47,22 @@ class CodecsSpec extends FunSuite {
     assert(color === color2)
   }
 
-  test("encode/decode with ipv6 codec") {
+  test("encode/decode with socketaddress codec") {
     {
       val ipv4addr = InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte))
-      val bin = ipv6.encode(ipv4addr).toOption.get
-      assert(bin === hex"00 00 00 00 00 00 00 00 00 00 FF FF C0 A8 01 2A".toBitVector)
-      val ipv4addr2 = ipv6.decode(bin).toOption.get.value
-      assert(ipv4addr === ipv4addr2)
+      val isa = new InetSocketAddress(ipv4addr, 4231)
+      val bin = socketaddress.encode(isa).toOption.get
+      assert(bin === hex"01 C0 A8 01 2A 10 87".toBitVector)
+      val isa2 = socketaddress.decode(bin).toOption.get.value
+      assert(isa === isa2)
     }
     {
       val ipv6addr = InetAddress.getByAddress(hex"2001 0db8 0000 85a3 0000 0000 ac1f 8001".toArray)
-      val bin = ipv6.encode(ipv6addr).toOption.get
-      assert(bin === hex"2001 0db8 0000 85a3 0000 0000 ac1f 8001".toBitVector)
-      val ipv6addr2 = ipv6.decode(bin).toOption.get.value
-      assert(ipv6addr === ipv6addr2)
+      val isa = new InetSocketAddress(ipv6addr, 4231)
+      val bin = socketaddress.encode(isa).toOption.get
+      assert(bin === hex"02 2001 0db8 0000 85a3 0000 0000 ac1f 8001 1087".toBitVector)
+      val isa2 = socketaddress.decode(bin).toOption.get.value
+      assert(isa === isa2)
     }
   }
 
@@ -149,7 +151,7 @@ class CodecsSpec extends FunSuite {
     val commit_sig = CommitSig(1, randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
     val revoke_and_ack = RevokeAndAck(1, scalar(0), point(1), randomSignature :: randomSignature :: randomSignature :: randomSignature :: randomSignature :: Nil)
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, 1, randomSignature, randomSignature, bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
-    val node_announcement = NodeAnnouncement(randomSignature, 1, InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 2, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias")
+    val node_announcement = NodeAnnouncement(randomSignature, 1, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias", bin(0, 0), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val channel_update = ChannelUpdate(randomSignature, 1, 2, bin(2, 2), 3, 4, 5, 6)
 
     val msgs: List[LightningMessage] =

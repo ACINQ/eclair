@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire
 
-import java.net.InetAddress
+import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
@@ -114,11 +114,11 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
 
 case class NodeAnnouncement(signature: BinaryData,
                             timestamp: Long,
-                            ip: InetAddress,
-                            port: Int,
                             nodeId: BinaryData,
                             rgbColor: (Byte, Byte, Byte),
-                            alias: String) extends RoutingMessage
+                            alias: String,
+                            features: BinaryData,
+                            addresses: List[InetSocketAddress]) extends RoutingMessage
 
 case class ChannelUpdate(signature: BinaryData,
                          channelId: Long,
