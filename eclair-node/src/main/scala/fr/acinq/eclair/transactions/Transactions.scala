@@ -69,7 +69,7 @@ object Transactions {
   val claimHtlcDelayedWeight = 482
   val mainPunishmentWeight = 483
 
-  def weight2fee(feeRatePerKw: Long, weight: Int) = Satoshi((feeRatePerKw * weight) / 1024)
+  def weight2fee(feeRatePerKw: Long, weight: Int) = Satoshi((feeRatePerKw * weight) / 1000)
 
   def commitTxFee(feeRatePerKw: Long, dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
 
