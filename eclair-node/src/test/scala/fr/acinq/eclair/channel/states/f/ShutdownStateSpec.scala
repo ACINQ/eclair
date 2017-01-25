@@ -369,7 +369,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       }).sum
       alice2blockchain.expectNoMsg(1 second)
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
-      assert(amountClaimed == Satoshi(785304))
+      assert(amountClaimed == Satoshi(781680))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -404,8 +404,8 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // two main outputs are 300 000 and 200 000
-      assert(mainTx.txOut(0).amount == Satoshi(285304))
-      assert(punishTx.txOut(0).amount == Satoshi(195284))
+      assert(mainTx.txOut(0).amount == Satoshi(281680))
+      assert(punishTx.txOut(0).amount == Satoshi(195170))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)

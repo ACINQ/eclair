@@ -183,7 +183,7 @@ object Helpers {
       // first we will claim our main output right away
       // TODO: it is possible that there is no main output, but it should probably be handled more nicely than with a Try
       val mainTx = Try {
-        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+        val claimMain = Transactions.makeClaimP2PKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
         val sig = Transactions.sign(claimMain, localPrivkey)
         Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
       }.toOption
@@ -248,7 +248,7 @@ object Helpers {
           // first we will claim our main output right away
           // TODO: it is possible that there is no main output, but it should probably be handled more nicely than with a Try
           val mainTx = Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+            val claimMain = Transactions.makeClaimP2PKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
             val sig = Transactions.sign(claimMain, localPrivkey)
             Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
           }.toOption
