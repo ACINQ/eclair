@@ -150,7 +150,7 @@ object Transactions {
       case (local, remote) if !localIsFunder && remote.compare(commitFee) > 0 => (millisatoshi2satoshi(local), remote - commitFee)
     }
     val toLocalDelayedOutput_opt = if (toLocalAmount.compare(localDustLimit) > 0) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)))) else None
-    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) > 0) Some(TxOut(toRemoteAmount, pay2wpkh(remotePubkey))) else None
+    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) > 0) Some(TxOut(toRemoteAmount, pay2pkh(remotePubkey))) else None
 
     val htlcTimeoutFee = weight2fee(spec.feeRatePerKw, htlcTimeoutWeight)
     val htlcSuccessFee = weight2fee(spec.feeRatePerKw, htlcSuccessWeight)
