@@ -4,8 +4,8 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
-import fr.acinq.bitcoin.SigVersion.SIGVERSION_WITNESS_V0
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
+import fr.acinq.bitcoin.SigVersion._
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OP_PUSHDATA, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -32,6 +32,7 @@ object Transactions {
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class ClaimP2PKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimDelayedOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class MainPunishmentTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -65,6 +66,7 @@ object Transactions {
   val commitWeight = 724
   val htlcTimeoutWeight = 634
   val htlcSuccessWeight = 671
+  val claimP2PKHOutputWeight = 764
   val claimP2WPKHOutputWeight = 437
   val claimHtlcDelayedWeight = 482
   val mainPunishmentWeight = 483
@@ -246,6 +248,19 @@ object Transactions {
       lockTime = htlc.expiry))
   }
 
+  def makeClaimP2PKHOutputTx(delayedOutputTx: Transaction, localPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimP2PKHOutputTx = {
+    val fee = weight2fee(feeRatePerKw, claimP2PKHOutputWeight)
+    val redeemScript = Script.pay2pkh(localPubkey)
+    val outputIndex = findPubKeyScriptIndex(delayedOutputTx, redeemScript)
+    require(outputIndex >= 0, "output not found")
+    val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
+    ClaimP2PKHOutputTx(input, Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
+      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
+      lockTime = 0))
+  }
+
   def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimP2WPKHOutputTx = {
     val fee = weight2fee(feeRatePerKw, claimP2WPKHOutputWeight)
     val redeemScript = Script.pay2pkh(localPubkey)
@@ -319,9 +334,22 @@ object Transactions {
     Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
   }
 
+  // when the amount is not specified, we used the legacy (pre-segwit) signature scheme
+  // this is only used to spend the to-remote output of a commit tx, which is the only non-segwit output
+  // that we use
+  // TODO: change this if the decide to use P2WPKH in the to-remote output
+  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, key: PrivateKey): BinaryData = {
+    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, Satoshi(0), SIGVERSION_BASE, key)
+  }
+
   def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): BinaryData = {
     require(txinfo.tx.txIn.size == 1, "only one input allowed")
     sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
+  }
+
+  def sign(txinfo: ClaimP2PKHOutputTx, key: PrivateKey): BinaryData = {
+    require(txinfo.tx.txIn.size == 1, "only one input allowed")
+    sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, key)
   }
 
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx = {
@@ -352,6 +380,10 @@ object Transactions {
   def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: BinaryData): ClaimHtlcTimeoutTx = {
     val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
+  }
+
+  def addSigs(claimP2PKHOutputTx: ClaimP2PKHOutputTx, localPubkey: BinaryData, localSig: BinaryData): ClaimP2PKHOutputTx = {
+    claimP2PKHOutputTx.copy(tx = claimP2PKHOutputTx.tx.updateSigScript(0, OP_PUSHDATA(localSig) :: OP_PUSHDATA(localPubkey) :: Nil))
   }
 
   def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPubkey: BinaryData, localSig: BinaryData): ClaimP2WPKHOutputTx = {
