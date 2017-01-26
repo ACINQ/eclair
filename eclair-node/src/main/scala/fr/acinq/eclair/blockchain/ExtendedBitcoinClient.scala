@@ -31,6 +31,13 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
+  def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
+    client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
+      .map(json => Some((json \ "blockhash").extract[String]))
+      .recover {
+        case t: JsonRPCError if t.error.code == -5 => None
+      }
+
   /**
     * *used in interop test*
     * tell bitcoind to sent bitcoins from a specific local account
@@ -58,6 +65,35 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] =
     getRawTransaction(txId).map(raw => Transaction.read(raw))
+
+  def getTransaction(height: Int, index: Int)(implicit ec: ExecutionContext): Future[Transaction] =
+    for {
+      hash <- client.invoke("getblockhash", height).map(json => json.extract[String])
+      json <- client.invoke("getblock", hash)
+      JArray(txs) = json \ "tx"
+      txid = txs(index).extract[String]
+      tx <- getTransaction(txid)
+    } yield tx
+
+  /**
+    *
+    * @param txId transaction id
+    * @param ec
+    * @return a Future[height, index] where height is the height of the block where this transaction was published, and index is
+    *         the index of the transaction in that block
+    */
+  def getTransactionShortId(txId: String)(implicit ec: ExecutionContext): Future[(Int, Int)] = {
+    val future = for {
+      Some(blockHash) <- getTxBlockHash(txId)
+      json <- client.invoke("getblock", blockHash)
+      JInt(height) = json \ "height"
+      JString(hash) = json \ "hash"
+      JArray(txs) = json \ "tx"
+      index = txs.indexOf(JString(txId))
+    } yield (height.toInt, index)
+
+    future
+  }
 
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
