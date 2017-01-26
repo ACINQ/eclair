@@ -17,10 +17,10 @@ class Handlers(setup: Setup) extends Logging {
 
   import setup._
 
-  def open(hostPort: String, pubkey: String, amount: Satoshi) = {
-    val regex = "([a-zA-Z0-9\\.\\-_]+):([0-9]+)".r
+  def open(hostPort: String, amount: Satoshi) = {
+    val regex = "([a-fA-F0-9]+)@([a-zA-Z0-9\\.\\-_]+):([0-9]+)".r
     hostPort match {
-      case regex(host, port) =>
+      case regex(pubkey, host, port) =>
         logger.info(s"connecting to $host:$port")
         system.actorOf(Client.props(host, port.toInt, pubkey, amount, register))
       case _ => {}

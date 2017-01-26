@@ -18,8 +18,6 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
 
   @FXML var host: TextField = _
   @FXML var hostError: Label = _
-  @FXML var pubkey: TextField = _
-  @FXML var pubkeyError: Label = _
   @FXML var amount: TextField = _
   @FXML var amountError: Label = _
   @FXML var unit: ComboBox[String] = _
@@ -31,15 +29,14 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
 
   @FXML def handleOpen(event: ActionEvent): Unit = {
     if (GUIValidators.validate(host.getText, hostError, GUIValidators.hostRegex)
-      && GUIValidators.validate(amount.getText, amountError, GUIValidators.amountRegex)
-      && GUIValidators.validate(pubkey.getText, pubkeyError, GUIValidators.hexRegex)) {
+      && GUIValidators.validate(amount.getText, amountError, GUIValidators.amountRegex)) {
       val raw = amount.getText.toLong
       val smartAmount = unit.getValue match {
         case "milliBTC" => Satoshi(raw * 100000L)
         case "Satoshi" => Satoshi(raw)
         case "milliSatoshi" => Satoshi(raw / 1000L)
       }
-      handlers.open(host.getText, pubkey.getText, smartAmount)
+      handlers.open(host.getText, smartAmount)
       stage.close()
     }
   }

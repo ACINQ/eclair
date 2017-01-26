@@ -11,6 +11,7 @@ import fr.acinq.eclair.crypto.Noise._
 
 import scala.annotation.tailrec
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success, Try}
 
 /**
   * see BOLT #8
@@ -96,8 +97,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], th
     case Event(Received(data), currentStateData@WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
       val (nextStateData, plaintextMessages) = WaitingForCyphertextData.decrypt(currentStateData.copy(buffer = buffer ++ data))
       plaintextMessages.map(plaintext => {
-        val message = serializer.deserialize(plaintext)
-        listener ! message
+        Try(serializer.deserialize(plaintext)) match {
+          case Success(message) => listener ! message
+          case Failure(t) =>
+            log.error(t, s"cannot deserialize $plaintext")
+          //context.stop(listener)
+          //context.stop(self)
+        }
       })
       stay using nextStateData
 

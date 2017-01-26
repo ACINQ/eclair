@@ -9,7 +9,7 @@ import scala.util.matching.Regex
   */
 object GUIValidators {
 
-  val hostRegex = """[a-zA-Z0-9.]+:[0-9]{1,5}""".r
+  val hostRegex = """[0-9a-fA-F]+@[a-zA-Z0-9.]+:[0-9]{1,5}""".r
   val amountRegex = """[0-9]+""".r
   val paymentRequestRegex = """[a-zA-Z0-9]+:[a-zA-Z0-9]+:[a-zA-Z0-9]+""".r
   val hexRegex = """[0-9a-fA-F]+""".r
