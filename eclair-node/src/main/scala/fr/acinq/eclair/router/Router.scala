@@ -6,7 +6,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering}
 import fr.acinq.eclair.Globals
-import fr.acinq.eclair.channel.{ChannelChangedState, DATA_NORMAL, NORMAL, Register}
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
@@ -38,7 +38,13 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
             updates: Map[(Long, BinaryData), ChannelUpdate],
             rebroadcast: Seq[RoutingMessage]): Receive = {
 
-    case ChannelChangedState(channel, transport, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
+    case ChannelChangedState(_, transport, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
+      // we send all known announcements to the new peer as soon as the connection is opened
+      channels.values.foreach(transport ! _)
+      nodes.values.foreach(transport ! _)
+      updates.values.foreach(transport ! _)
+
+    case ChannelChangedState(_, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
       val (c, u) = if (LexicographicalOrdering.isLessThan(myself.nodeId, remoteNodeId)) {
         (
           makeChannelAnnouncement(d.commitments.channelId, myself.nodeId, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey.toBin, d.params.remoteParams.fundingPubKey.toBin),
@@ -50,13 +56,6 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
           makeChannelUpdate(Globals.Node.privateKey, d.commitments.channelId, false, Platform.currentTime / 1000)
         )
       }
-      // we send all known announcements to the new peer
-      channels.values.foreach(transport ! _)
-      nodes.values.foreach(transport ! _)
-      updates.values.foreach(transport ! _)
-      // and we queue the new announcements for everybody
-      log.debug(s"queueing channel announcement $c")
-      log.debug(s"queueing node announcement $myself")
       // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
       self ! 'tick_broadcast
       context become main(myself, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c :+ myself :+ u)
