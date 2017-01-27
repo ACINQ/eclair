@@ -101,7 +101,6 @@ object ChaCha20Poly1305 extends Logging {
     * @param aad        additional authentication data. can be empty
     * @param mac        authentication mac
     * @return the decrypted plaintext if the mac is valid.
-    * @throws AssertionError error if the mac is invalid
     */
   def decrypt(key: BinaryData, nonce: BinaryData, ciphertext: BinaryData, aad: BinaryData, mac: BinaryData): BinaryData = {
     val polykey: BinaryData = ChaCha20.encrypt(new Array[Byte](32), key, nonce)
