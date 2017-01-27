@@ -26,13 +26,13 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
 
   @FXML def handleChannelIdContext(event: ContextMenuEvent): Unit = {
     if (contextMenu != null) contextMenu.hide()
-    contextMenu = ContextMenuUtils.buildCopyContext(channelIdValue)
+    contextMenu = ContextMenuUtils.buildCopyContext(channelIdValue, "Copy Channel Id")
     contextMenu.show(channelId, event.getScreenX, event.getScreenY)
   }
 
   @FXML def handleTheirNodeIdContext(event: ContextMenuEvent): Unit = {
     if (contextMenu != null) contextMenu.hide()
-    contextMenu = ContextMenuUtils.buildCopyContext(theirNodeIdValue)
+    contextMenu = ContextMenuUtils.buildCopyContext(theirNodeIdValue, "Copy Node Pubkey")
     contextMenu.show(nodeId, event.getScreenX, event.getScreenY)
   }
 }

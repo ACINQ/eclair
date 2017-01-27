@@ -49,7 +49,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
     bitcoinChain.getStyleClass.add(setup.chain)
 
     graphTab.setContent(swingNode)
-    contextMenu = ContextMenuUtils.buildCopyContext(Globals.Node.id)
+    contextMenu = ContextMenuUtils.buildCopyContext(Globals.Node.id, "Copy Pubkey")
 
     if (channelBox.getChildren.size() > 0) {
       channelInfo.setScaleY(0)

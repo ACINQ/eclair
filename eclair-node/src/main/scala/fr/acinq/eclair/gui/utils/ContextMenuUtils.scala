@@ -14,11 +14,12 @@ object ContextMenuUtils {
     * Builds a Context Menu with a single Copy action.
     *
     * @param valueToCopy the value to copy to clipboard
+    * @param labelOfContextAction the label of the action in the context menu
     * @return javafx context menu
     */
-  def buildCopyContext(valueToCopy: String): ContextMenu = {
+  def buildCopyContext(valueToCopy: String, labelOfContextAction: String = "Copy Value"): ContextMenu = {
     val context = new ContextMenu()
-    val copyItem = new MenuItem("Copy Value")
+    val copyItem = new MenuItem(labelOfContextAction)
     copyItem.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent): Unit = {
         val clipContent = new ClipboardContent
