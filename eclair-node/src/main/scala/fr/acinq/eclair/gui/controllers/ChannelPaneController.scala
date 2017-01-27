@@ -4,7 +4,7 @@ import javafx.fxml.FXML
 import javafx.scene.control.{Button, ContextMenu, Label, ProgressBar}
 import javafx.scene.input.ContextMenuEvent
 
-import fr.acinq.eclair.gui.utils.ContextMenuUtils
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import grizzled.slf4j.Logging
 
 /**
@@ -26,13 +26,13 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
 
   @FXML def handleChannelIdContext(event: ContextMenuEvent): Unit = {
     if (contextMenu != null) contextMenu.hide()
-    contextMenu = ContextMenuUtils.buildCopyContext(channelIdValue, "Copy Channel Id")
+    contextMenu = ContextMenuUtils.buildCopyContext(List(new CopyAction("Copy Channel Id", channelIdValue)))
     contextMenu.show(channelId, event.getScreenX, event.getScreenY)
   }
 
   @FXML def handleTheirNodeIdContext(event: ContextMenuEvent): Unit = {
     if (contextMenu != null) contextMenu.hide()
-    contextMenu = ContextMenuUtils.buildCopyContext(theirNodeIdValue, "Copy Node Pubkey")
+    contextMenu = ContextMenuUtils.buildCopyContext(List(new CopyAction("Copy Node Pubkey", theirNodeIdValue)))
     contextMenu.show(nodeId, event.getScreenX, event.getScreenY)
   }
 }

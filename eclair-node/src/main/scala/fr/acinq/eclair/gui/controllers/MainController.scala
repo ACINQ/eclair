@@ -11,7 +11,7 @@ import javafx.stage.Stage
 import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages.{AboutStage, OpenChannelStage, ReceivePaymentStage, SendPaymentStage}
-import fr.acinq.eclair.gui.utils.ContextMenuUtils
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
 
@@ -49,7 +49,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
     bitcoinChain.getStyleClass.add(setup.chain)
 
     graphTab.setContent(swingNode)
-    contextMenu = ContextMenuUtils.buildCopyContext(Globals.Node.id, "Copy Pubkey")
+    contextMenu = ContextMenuUtils.buildCopyContext(List(new CopyAction("Copy Pubkey", Globals.Node.id)))
 
     if (channelBox.getChildren.size() > 0) {
       channelInfo.setScaleY(0)
