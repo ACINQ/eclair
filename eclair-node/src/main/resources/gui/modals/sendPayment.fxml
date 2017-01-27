@@ -5,7 +5,7 @@
 <?import java.lang.String?>
 <?import java.net.URL?>
 <GridPane fx:id="nodeId" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
-          prefWidth="395.0" xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1">
+          prefWidth="395.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="150.0"/>
         <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" maxWidth="292.0" minWidth="10.0" prefWidth="241.0"/>
