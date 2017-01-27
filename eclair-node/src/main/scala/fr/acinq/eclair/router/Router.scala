@@ -66,6 +66,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
           makeChannelUpdate(Globals.Node.privateKey, d.commitments.channelId, false, Platform.currentTime / 1000)
         )
       }
+      log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1})")
       // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
       self ! 'tick_broadcast
       context become main(local, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c :+ local :+ u)
