@@ -3,18 +3,28 @@ package fr.acinq.eclair.router
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, LexicographicalOrdering}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
-import org.jgrapht.alg.DijkstraShortestPath
-import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
+import org.jgrapht.alg.shortestpath.DijkstraShortestPath
+import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+
+// @formatter:off
+
+case class ChannelDesc(id: Long, a: BinaryData, b: BinaryData)
+case class Hop(nodeId: BinaryData, nextNodeId: BinaryData, lastUpdate: ChannelUpdate)
+case class RouteRequest(source: BinaryData, target: BinaryData)
+case class RouteResponse(hops: Seq[Hop]) { require(hops.size > 0, "route cannot be empty") }
+
+// @formatter:on
 
 /**
   * Created by PM on 24/05/2016.
@@ -29,13 +39,13 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
   context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
-  def receive: Receive = main(myself = announcement, nodes = Map(announcement.nodeId -> announcement), channels = Map(), updates = Map(), rebroadcast = Nil)
+  def receive: Receive = main(local = announcement, nodes = Map(announcement.nodeId -> announcement), channels = Map(), updates = Map(), rebroadcast = Nil)
 
   def main(
-            myself: NodeAnnouncement,
+            local: NodeAnnouncement,
             nodes: Map[BinaryData, NodeAnnouncement],
             channels: Map[Long, ChannelAnnouncement],
-            updates: Map[(Long, BinaryData), ChannelUpdate],
+            updates: Map[ChannelDesc, ChannelUpdate],
             rebroadcast: Seq[RoutingMessage]): Receive = {
 
     case ChannelChangedState(_, transport, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
@@ -45,23 +55,23 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       updates.values.foreach(transport ! _)
 
     case ChannelChangedState(_, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
-      val (c, u) = if (LexicographicalOrdering.isLessThan(myself.nodeId, remoteNodeId)) {
+      val (c, u) = if (LexicographicalOrdering.isLessThan(local.nodeId, remoteNodeId)) {
         (
-          makeChannelAnnouncement(d.commitments.channelId, myself.nodeId, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey.toBin, d.params.remoteParams.fundingPubKey.toBin),
+          makeChannelAnnouncement(d.commitments.channelId, local.nodeId, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey.toBin, d.params.remoteParams.fundingPubKey.toBin),
           makeChannelUpdate(Globals.Node.privateKey, d.commitments.channelId, true, Platform.currentTime / 1000)
         )
       } else {
         (
-          makeChannelAnnouncement(d.commitments.channelId, remoteNodeId, myself.nodeId, d.params.remoteParams.fundingPubKey.toBin, d.params.localParams.fundingPrivKey.publicKey.toBin),
+          makeChannelAnnouncement(d.commitments.channelId, remoteNodeId, local.nodeId, d.params.remoteParams.fundingPubKey.toBin, d.params.localParams.fundingPrivKey.publicKey.toBin),
           makeChannelUpdate(Globals.Node.privateKey, d.commitments.channelId, false, Platform.currentTime / 1000)
         )
       }
       // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
       self ! 'tick_broadcast
-      context become main(myself, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c :+ myself :+ u)
+      context become main(local, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c :+ local :+ u)
 
     case s: ChannelChangedState =>
-      // other channel changed state messages are ignored
+    // other channel changed state messages are ignored
 
     case c: ChannelAnnouncement if channels.containsKey(c.channelId) =>
       log.debug(s"ignoring $c (duplicate)")
@@ -74,7 +84,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       // TODO: forget channel once funding tx spent (add watch)
       //watcher ! WatchSpent(self, txId: BinaryData, outputIndex: Int, minDepth: Int, event: BitcoinEvent)
       log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1})")
-      context become main(myself, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c)
+      context become main(local, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c)
 
     case n: NodeAnnouncement if !checkSig(n) =>
     // TODO: fail connection (should probably be done in the auth handler or channel)
@@ -87,36 +97,36 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
 
     case n: NodeAnnouncement =>
       log.info(s"added/replaced node nodeId=${n.nodeId} (nodes=${nodes.size + 1} channels=${channels.size})")
-      context become main(myself, nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
+      context become main(local, nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
 
     case u: ChannelUpdate if !channels.contains(u.channelId) =>
       log.debug(s"ignoring $u (no related channel found)")
 
-    case u: ChannelUpdate if !checkSig(u, getNodeId(u, channels(u.channelId))) =>
+    case u: ChannelUpdate if !checkSig(u, getDesc(u, channels(u.channelId)).a) =>
     // TODO: fail connection (should probably be done in the auth handler or channel)
 
     case u: ChannelUpdate =>
       val channel = channels(u.channelId)
-      val nodeId = getNodeId(u, channel)
-      if (updates.contains((u.channelId, nodeId)) && updates((u.channelId, nodeId)).timestamp >= u.timestamp) {
+      val desc = getDesc(u, channel)
+      if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
         log.debug(s"ignoring $u (old timestamp or duplicate)")
       } else {
-        context become main(myself, nodes, channels, updates + ((u.channelId, nodeId) -> u), rebroadcast :+ u)
+        context become main(local, nodes, channels, updates + (desc -> u), rebroadcast :+ u)
       }
 
-    case 'tick_broadcast if rebroadcast.size ==0 =>
-      // no-op
+    case 'tick_broadcast if rebroadcast.size == 0 =>
+    // no-op
 
     case 'tick_broadcast =>
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
       rebroadcast.foreach(context.actorSelection(Register.actorPathToTransportHandlers) ! _)
-      context become main(myself, nodes, channels, updates, Nil)
+      context become main(local, nodes, channels, updates, Nil)
 
     case 'network => sender ! channels.values
 
-    case other => log.warning(s"unhandled message $other")
+    case RouteRequest(start, end) => findRoute(start, end, updates) pipeTo sender
 
-    //case RouteRequest(start, end) => findRoute(start, end, channels) map (RouteResponse(_)) pipeTo sender
+    case other => log.warning(s"unhandled message $other")
   }
 }
 
@@ -178,51 +188,45 @@ object Router {
     unsigned.copy(signature = sig)*/
   }
 
-  def checkSig(ann: NodeAnnouncement): Boolean = true /*{
-    val bin = Codecs.nodeAnnouncementCodec.encode(ann).toOption.map(_.toByteArray).getOrElse(throw new RuntimeException(s"cannot encode $ann"))
-    val hash = sha256(sha256(bin.drop(64)))
-    verifySignature(hash, ann.signature, PublicKey(ann.nodeId))
-  }*/
+  def checkSig(ann: NodeAnnouncement): Boolean = true
 
-  def checkSig(ann: ChannelUpdate, nodeId: BinaryData): Boolean = true /*{
-    val bin = Codecs.channelUpdateCodec.encode(ann).toOption.map(_.toByteArray).getOrElse(throw new RuntimeException(s"cannot encode $ann"))
-    val hash = sha256(sha256(bin.drop(64)))
-    verifySignature(hash, ann.signature, PublicKey(nodeId))
-  }*/
+  /*{
+     val bin = Codecs.nodeAnnouncementCodec.encode(ann).toOption.map(_.toByteArray).getOrElse(throw new RuntimeException(s"cannot encode $ann"))
+     val hash = sha256(sha256(bin.drop(64)))
+     verifySignature(hash, ann.signature, PublicKey(ann.nodeId))
+   }*/
 
-  def getNodeId(u: ChannelUpdate, channel: ChannelAnnouncement): BinaryData = {
+  def checkSig(ann: ChannelUpdate, nodeId: BinaryData): Boolean = true
+
+  /*{
+     val bin = Codecs.channelUpdateCodec.encode(ann).toOption.map(_.toByteArray).getOrElse(throw new RuntimeException(s"cannot encode $ann"))
+     val hash = sha256(sha256(bin.drop(64)))
+     verifySignature(hash, ann.signature, PublicKey(nodeId))
+   }*/
+
+  def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")
     // the least significant bit tells us if it is node1 or node2
-    if (u.flags.data(1) % 2 == 0) channel.nodeId1 else channel.nodeId2
+    if (u.flags.data(1) % 2 == 0) ChannelDesc(u.channelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.channelId, channel.nodeId2, channel.nodeId1)
   }
 
-  def findRouteDijkstra(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc]): Seq[BinaryData] = {
-    class NamedEdge(val id: BinaryData) extends DefaultEdge
-    val g = new SimpleGraph[BinaryData, NamedEdge](classOf[NamedEdge])
-    channels.values.foreach(x => {
-      g.addVertex(x.a)
-      g.addVertex(x.b)
-      g.addEdge(x.a, x.b, new NamedEdge(x.id))
+  def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
+    require(localNodeId != targetNodeId, "cannot route to self")
+    case class DescEdge(desc: ChannelDesc) extends DefaultEdge
+    val g = new DefaultDirectedGraph[BinaryData, DescEdge](classOf[DescEdge])
+    channels.foreach(d => {
+      g.addVertex(d.a)
+      g.addVertex(d.b)
+      g.addEdge(d.a, d.b, new DescEdge(d))
     })
-    Option(new DijkstraShortestPath(g, myNodeId, targetNodeId).getPath) match {
-      case Some(path) => {
-        val vertices = path.getEdgeList.foldLeft(List(path.getStartVertex)) {
-          case (rest :+ v, edge) if g.getEdgeSource(edge) == v => rest :+ v :+ g.getEdgeTarget(edge)
-          case (rest :+ v, edge) if g.getEdgeTarget(edge) == v => rest :+ v :+ g.getEdgeSource(edge)
-        }
-        vertices
-      }
+    Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId)) match {
+      case Some(path) => path.getEdgeList.map(_.desc)
       case None => throw new RuntimeException("route not found")
     }
   }
 
-  def findRoute(myNodeId: BinaryData, targetNodeId: BinaryData, channels: Map[BinaryData, ChannelDesc])(implicit ec: ExecutionContext): Future[Seq[BinaryData]] = Future {
-    findRouteDijkstra(myNodeId, targetNodeId, channels)
+  def findRoute(localNodeId: BinaryData, targetNodeId: BinaryData, updates: Map[ChannelDesc, ChannelUpdate])(implicit ec: ExecutionContext): Future[Seq[Hop]] = Future {
+    findRouteDijkstra(localNodeId, targetNodeId, updates.keys)
+      .map(desc => Hop(desc.a, desc.b, updates(desc)))
   }
 }
-
-case class ChannelDesc(id: BinaryData, a: BinaryData, b: BinaryData)
-
-case class RouteRequest(source: BinaryData, target: BinaryData)
-
-case class RouteResponse(route: Seq[BinaryData])

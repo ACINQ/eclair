@@ -1,12 +1,7 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.payment
 
-import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.actor.{ActorSystem, Props, Status}
-import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.BinaryData
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router._
+import akka.actor.ActorSystem
+import akka.testkit.TestKit
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
