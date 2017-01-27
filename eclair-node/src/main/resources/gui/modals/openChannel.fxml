@@ -38,7 +38,7 @@
             </items>
         </ComboBox>
         <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect" GridPane.columnIndex="1" GridPane.rowIndex="4" GridPane.valignment="BOTTOM" />
-        <Label text="Target Node URL" GridPane.rowIndex="1" />
+        <Label text="Target Node URI" GridPane.rowIndex="1" />
         <Label text="Amount" GridPane.rowIndex="3" />
         <Label fx:id="hostError" opacity="0.0" styleClass="text-error" text="Please use a valid url (pubkey@host:port)" GridPane.columnIndex="1" GridPane.columnSpan="2" />
         <Label fx:id="amountError" opacity="0.0" styleClass="text-error" text="Please use a valid amount" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2" />
