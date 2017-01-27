@@ -126,11 +126,6 @@
         </dependency>
         <!-- OTHER -->
         <dependency>
-            <groupId>org.kitteh.irc</groupId>
-            <artifactId>client-lib</artifactId>
-            <version>2.2.0</version>
-        </dependency>
-        <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-core</artifactId>
             <version>0.9.2</version>
