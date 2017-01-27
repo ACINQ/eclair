@@ -11,10 +11,11 @@
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.RowConstraints?>
 
-<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="216.0" prefWidth="982.0" styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefWidth="528.0"
+          styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
-        <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="358.0" minWidth="10.0" prefWidth="137.0" />
-        <ColumnConstraints hgrow="SOMETIMES" maxWidth="618.0" minWidth="10.0" prefWidth="618.0" />
+        <ColumnConstraints hgrow="SOMETIMES" maxWidth="258.0" minWidth="10.0" prefWidth="157.0" halignment="RIGHT" />
+        <ColumnConstraints hgrow="SOMETIMES" maxWidth="263.0" minWidth="10.0" prefWidth="176.0" />
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="171.0" minWidth="10.0" prefWidth="145.0" />
     </columnConstraints>
     <rowConstraints>
@@ -25,8 +26,8 @@
         <RowConstraints minHeight="10.0" prefHeight="50.0" vgrow="SOMETIMES" />
     </rowConstraints>
     <children>
-        <TextField fx:id="host" prefHeight="38.0" prefWidth="742.0" promptText="pubkey@host:port1" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-        <TextField fx:id="amount" prefHeight="31.0" prefWidth="123.0" GridPane.columnIndex="1" GridPane.rowIndex="3" />
+        <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port1" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
+        <TextField fx:id="amount" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="3" />
         <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="3">
             <items>
                 <FXCollections fx:factory="observableArrayList">
