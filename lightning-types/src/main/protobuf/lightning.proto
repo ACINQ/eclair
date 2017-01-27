@@ -2,26 +2,6 @@ syntax = "proto2";
 
 import "scalapb/scalapb.proto";
 
-// The outer layer handles encryption, authentication and message
-// boundaries.
-
-//
-// Helper Types
-//
-
-// Protobufs don't have fixed-length fields, so these are a hack.
-message signature {
-  option (scalapb.message).extends = "lightning.SignatureToString";
-  required fixed64 r1 = 1;
-  required fixed64 r2 = 2;
-  required fixed64 r3 = 3;
-  required fixed64 r4 = 4;
-  required fixed64 s1 = 5;
-  required fixed64 s2 = 6;
-  required fixed64 s3 = 7;
-  required fixed64 s4 = 8;
-}
-
 // Pubkey for commitment transaction input.
 message bitcoin_pubkey {
   option (scalapb.message).extends = "lightning.PubkeyToString";
@@ -49,24 +29,4 @@ message route {
 
 message routing {
   required bytes info = 1;
-}
-
-//
-// Packet Types
-//
-
-// Set channel params.
-message authenticate {
-  // Which node this is.
-  required bitcoin_pubkey node_id = 1;
-  // Signature of your session key. */
-  required signature session_sig = 2;
-};
-
-// This is the union which defines all of them
-message pkt {
-  oneof pkt {
-    // Start of connection
-    authenticate auth = 50;
-  }
 }
