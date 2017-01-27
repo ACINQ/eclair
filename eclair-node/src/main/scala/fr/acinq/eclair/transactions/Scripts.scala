@@ -106,7 +106,7 @@ object Scripts {
 
   def scriptPubKeyHtlcSend(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
-    assert(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
+    require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
     OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::
@@ -123,7 +123,7 @@ object Scripts {
 
   def scriptPubKeyHtlcReceive(ourkey: BinaryData, theirkey: BinaryData, abstimeout: Long, reltimeout: Long, rhash: BinaryData, commit_revoke: BinaryData): Seq[ScriptElt] = {
     // values lesser than 16 should be encoded using OP_0..OP_16 instead of OP_PUSHDATA
-    assert(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
+    require(abstimeout > 16, s"abstimeout=$abstimeout must be greater than 16")
     // @formatter:off
     OP_SIZE :: encodeNumber(32) :: OP_EQUALVERIFY ::
     OP_HASH160 :: OP_DUP ::

@@ -203,11 +203,11 @@ object Commitments extends Logging {
       .map(e => (e._1._1, e._1._2, e._2)) // this is a list of (tx, localSig, remoteSig)
       .collect {
       case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
-        assert(Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isSuccess, "bad sig")
+        require(Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isSuccess, "bad sig")
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
       case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-        assert(Transactions.checkSig(htlcTx, remoteSig, remotePaymentPubkey), "bad sig")
+        require(Transactions.checkSig(htlcTx, remoteSig, remotePaymentPubkey), "bad sig")
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
     }
 

@@ -119,7 +119,7 @@ object Sphinx {
     val sharedSecret = computeSharedSecret(PublicKey(header.publicKey), privateKey)
     val mu = generateKey("mu", sharedSecret)
     val check: BinaryData = hmac256(mu, header.routingInfo ++ perHopPayload ++ associatedData).take(20)
-    assert(check == header.hmac)
+    require(check == header.hmac, "invalid header mac")
 
     val rho = generateKey("rho", sharedSecret)
     val bin = xor(header.routingInfo ++ zeroes(40), generateStream(rho, 840))
@@ -128,7 +128,6 @@ object Sphinx {
     val nextRoutinfo = bin.drop(40)
 
     val nextPubKey = blind(PublicKey(header.publicKey), computeblindingFactor(PublicKey(header.publicKey), sharedSecret))
-    println(s"next pubkey@: $nextPubKey")
 
     val gamma = generateKey("gamma", sharedSecret)
     val bin1 = xor(perHopPayload ++ zeroes(20), generateStream(gamma, 420))

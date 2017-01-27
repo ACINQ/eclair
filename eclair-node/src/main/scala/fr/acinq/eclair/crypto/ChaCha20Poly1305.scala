@@ -47,7 +47,7 @@ object ChaCha20 {
       case _ => throw new RuntimeException(s"chacha20 counter must be 0 or 1")
     }
     val len = engine.processBytes(plaintext.toArray, 0, plaintext.length, ciphertext, 0)
-    assert(len == plaintext.length)
+    require(len == plaintext.length, "ChaCha20 encryption failed")
     ciphertext
   }
 
@@ -64,7 +64,7 @@ object ChaCha20 {
       case _ => throw new RuntimeException(s"chacha20 counter must be 0 or 1")
     }
     val len = engine.processBytes(ciphertext.toArray, 0, ciphertext.length, plaintext, 0)
-    assert(len == ciphertext.length)
+    require(len == ciphertext.length, "ChaCha20 decryption failed")
     plaintext
   }
 }
@@ -101,13 +101,13 @@ object ChaCha20Poly1305 extends Logging {
     * @param aad        additional authentication data. can be empty
     * @param mac        authentication mac
     * @return the decrypted plaintext if the mac is valid.
-    * @throws AssertionError error if the mac is invalid
+    * @throws IllegalArgumentException error if the mac is invalid
     */
   def decrypt(key: BinaryData, nonce: BinaryData, ciphertext: BinaryData, aad: BinaryData, mac: BinaryData): BinaryData = {
     val polykey: BinaryData = ChaCha20.encrypt(new Array[Byte](32), key, nonce)
     val data = aad ++ pad16(aad) ++ ciphertext ++ pad16(ciphertext) ++ Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN) ++ Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN)
     val tag = Poly1305.mac(polykey, data)
-    assert(tag == mac, "invalid mac")
+    require(tag == mac, "invalid mac")
     val plaintext = ChaCha20.decrypt(ciphertext, key, nonce, 1)
     logger.debug(s"decrypt($key, $nonce, $aad, $ciphertext, $mac) = $plaintext")
     plaintext
@@ -134,7 +134,7 @@ object ChaCha20Legacy {
       case _ => throw new RuntimeException(s"chacha20 counter must be 0 or 1")
     }
     val len = engine.processBytes(plaintext.toArray, 0, plaintext.length, ciphertext, 0)
-    assert(len == plaintext.length)
+    require(len == plaintext.length, "ChaCha20Legacy encryption failed")
     ciphertext
   }
 
@@ -151,7 +151,7 @@ object ChaCha20Legacy {
       case _ => throw new RuntimeException(s"chacha20 counter must be 0 or 1")
     }
     val len = engine.processBytes(ciphertext.toArray, 0, ciphertext.length, plaintext, 0)
-    assert(len == ciphertext.length)
+    require(len == ciphertext.length, "ChaCha20Legacy decryption failed")
     plaintext
   }
 }
@@ -175,7 +175,7 @@ object Chacha20Poly1305Legacy {
     val polykey: BinaryData = ChaCha20Legacy.encrypt(new Array[Byte](32), key, nonce)
     val data = aad ++ Protocol.writeUInt64(aad.length, ByteOrder.LITTLE_ENDIAN) ++ ciphertext ++ Protocol.writeUInt64(ciphertext.length, ByteOrder.LITTLE_ENDIAN)
     val tag = Poly1305.mac(polykey, data)
-    assert(tag == mac, "invalid mac")
+    require(tag == mac, "invalid mac")
     val plaintext = ChaCha20Legacy.decrypt(ciphertext, key, nonce, 1)
     plaintext
   }
