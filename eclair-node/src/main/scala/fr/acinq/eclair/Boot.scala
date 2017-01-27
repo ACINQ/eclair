@@ -1,5 +1,6 @@
 package fr.acinq.eclair
 
+import java.net.InetSocketAddress
 import javafx.application.{Application, Platform}
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -42,7 +43,7 @@ object Boot extends App with Logging {
 class Setup() extends Logging {
 
   logger.info(s"hello!")
-  logger.info(s"nodeid=${Globals.Node.publicKey.toBin}")
+  logger.info(s"nodeid=${Globals.Node.publicKey.toBin} alias=${Globals.Node.alias}")
   val config = ConfigFactory.load()
 
   implicit lazy val system = ActorSystem()
@@ -66,6 +67,7 @@ class Setup() extends Logging {
   // TODO: we should use p2wpkh instead of p2pkh as soon as bitcoind supports it
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil
+  val socket = new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))
 
   val fatalEventPromise = Promise[FatalEvent]()
   system.actorOf(Props(new Actor {
@@ -84,11 +86,10 @@ class Setup() extends Logging {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
-  val register = system.actorOf(Register.props(watcher, paymentHandler, finalScriptPubKey), name = "register")
   val selector = system.actorOf(Props[ChannelSelector], name = "selector")
-  val router = system.actorOf(Props[Router], name = "router")
-  val ircWatcher = system.actorOf(Props[IRCWatcher], "irc")
+  val router = system.actorOf(Router.props(watcher, Globals.Node.announcement), name = "router")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(router, selector, blockCount), "payment-spawner")
+  val register = system.actorOf(Register.props(watcher, router, paymentHandler, finalScriptPubKey), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
 
   val _setup = this

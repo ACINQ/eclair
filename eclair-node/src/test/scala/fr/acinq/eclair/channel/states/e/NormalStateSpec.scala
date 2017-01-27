@@ -31,8 +31,9 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, paymentHandler.ref, Alice.channelParams, "0B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, paymentHandler.ref, Bob.channelParams, "0A"))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       awaitCond(alice.stateName == NORMAL)
@@ -803,7 +804,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       // bob publishes his current commit tx
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
-      alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
@@ -855,7 +856,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       //  a->b =  10 000
       // two main outputs + 4 htlc
       assert(revokedTx.txOut.size == 6)
-      alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
 

@@ -1,8 +1,12 @@
 package fr.acinq.eclair
 
+import java.net.InetSocketAddress
+
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
+import fr.acinq.eclair.router.Router
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 
@@ -20,13 +24,20 @@ object Globals {
     val extendedPublicKey = DeterministicWallet.publicKey(extendedPrivateKey)
     val publicKey = extendedPublicKey.publicKey
     val id = publicKey.toBin.toString()
+    val alias = config.getString("node.alias").take(32)
+    val color: (Byte, Byte, Byte) = (config.getInt("node.color.r").toByte, config.getInt("node.color.g").toByte, config.getInt("node.color.b").toByte)
+    val address = new InetSocketAddress(config.getString("server.host"), config.getInt("server.port"))
+    val announcement = Router.makeNodeAnnouncement(privateKey, alias, color, address :: Nil, Platform.currentTime / 1000)
   }
 
-  val default_delay_blocks = config.getInt("delay-blocks")
-  val default_mindepth_blocks = config.getInt("mindepth-blocks")
-  val default_feeratePerKw = 10000
-  val base_fee = config.getInt("base-fee")
-  val proportional_fee = config.getInt("proportional-fee")
+  val expiry_delta_blocks = config.getInt("expiry-delta-blocks")
+  val htlc_minimum_msat = config.getInt("htlc-minimum-msat")
+  val delay_blocks = config.getInt("delay-blocks")
+  val mindepth_blocks = config.getInt("mindepth-blocks")
+  val feeratePerKw = 10000
+  val fee_base_msat = config.getInt("fee-base-msat")
+  val fee_proportional_msat = config.getInt("fee-proportional-msat")
+
   val default_anchor_amount = 1000000
   val autosign_interval = 300 milliseconds
 }

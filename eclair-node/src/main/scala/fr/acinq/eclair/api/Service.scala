@@ -84,14 +84,14 @@ trait Service extends Logging {
                   (paymentInitiator ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
-                case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
+                case JsonRPCBody(_, _, "sign", JInt(channel) :: Nil) =>
+                  (register ? SendCommand(channel.toLong, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "info: display basic node information",

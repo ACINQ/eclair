@@ -17,7 +17,7 @@ class ChannelSelector extends Actor with ActorLogging {
 
   def main(node2channels: Map[BinaryData, Set[ActorRef]], channel2balance: Map[ActorRef, Long]): Receive = {
 
-    case ChannelChangedState(channel, theirNodeId, _, NORMAL, d: DATA_NORMAL) =>
+    case ChannelChangedState(channel, _, theirNodeId, _, NORMAL, d: DATA_NORMAL) =>
       val bal = d.commitments.remoteCommit.spec.toRemoteMsat
       log.info(s"new channel to $theirNodeId with availableMsat=$bal")
       val channels = node2channels.get(theirNodeId).getOrElse(Set()) + channel

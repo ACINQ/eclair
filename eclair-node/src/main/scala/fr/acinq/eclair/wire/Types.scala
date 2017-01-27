@@ -118,13 +118,14 @@ case class NodeAnnouncement(signature: BinaryData,
                             rgbColor: (Byte, Byte, Byte),
                             alias: String,
                             features: BinaryData,
+                            // TODO: check address order + support padding data (type 0)
                             addresses: List[InetSocketAddress]) extends RoutingMessage
 
 case class ChannelUpdate(signature: BinaryData,
                          channelId: Long,
                          timestamp: Long,
                          flags: BinaryData,
-                         expiry: Int,
+                         cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage

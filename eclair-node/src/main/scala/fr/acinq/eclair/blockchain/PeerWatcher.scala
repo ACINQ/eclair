@@ -28,7 +28,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       val triggeredWatches = watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, minDepth, event)
           if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          channel ! (BITCOIN_FUNDING_SPENT, tx)
+          channel ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
           w
       }
       context.become(watching(watches -- triggeredWatches, block2tx, currentBlockCount))
@@ -38,19 +38,23 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       // TODO: beware of the herd effect
       watches.collect {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
-          client.getTxConfirmations(txId.toString).collect {
-            // TODO: this is a workaround to not have WatchConfirmed triggered multiple times in testing
-            // the reason is that we cannot fo a become(watches - w, ...) because it happens in the future callback
-            case Some(confirmations) if confirmations >= minDepth => self ! ('trigger, w)
+          client.getTxConfirmations(txId.toString).map {
+            case Some(confirmations) if confirmations >= minDepth =>
+              client.getTransactionShortId(txId.toString).map {
+                // TODO: this is a workaround to not have WatchConfirmed triggered multiple times in testing
+                // the reason is that we cannot do a become(watches - w, ...) because it happens in the future callback
+                case (height, index) => self ! ('trigger, w, WatchEventConfirmed(w.event, height, index))
+              }
+
           }
       }
 
-    case ('trigger, w: WatchConfirmed) if watches.contains(w) =>
+    case ('trigger, w: WatchConfirmed, e: WatchEvent) if watches.contains(w) =>
       log.info(s"triggering $w")
-      w.channel ! w.event
+      w.channel ! e
       context.become(watching(watches - w, block2tx, currentBlockCount))
 
-    case ('trigger, w: WatchConfirmed) if !watches.contains(w) => {}
+    case ('trigger, w: WatchConfirmed, e: WatchEvent) if !watches.contains(w) => {}
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)

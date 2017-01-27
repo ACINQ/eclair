@@ -1,6 +1,7 @@
 package fr.acinq.eclair
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.{ChannelDesc, Router}
 import lightning.route_step
@@ -86,7 +87,7 @@ class RouterSpec extends FunSuite {
     assert(route.steps.length == 4 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
     assert(route.steps(2).amount == amountMsat)
     assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
-    assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.base_fee, Globals.proportional_fee, route.steps(1).amount))
+    assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.fee_base_msat, Globals.fee_proportional_msat, route.steps(1).amount))
   }
 
   test("route to neighbor") {
@@ -103,7 +104,15 @@ class RouterSpec extends FunSuite {
     assert(route.steps.length == 3 && route.steps.last == route_step(0, next = route_step.Next.End(true)))
     assert(route.steps(1).amount == amountMsat)
     assert(route.steps.dropRight(1).map(_.next.bitcoin.get.key).map(bytestring2bin) == nodeIds)
-    assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.base_fee, Globals.proportional_fee, route.steps(1).amount))
+    assert(route.steps(0).amount - route.steps(1).amount == nodeFee(Globals.fee_base_msat, Globals.fee_proportional_msat, route.steps(1).amount))
+  }
+
+  test("compute example sig") {
+    val data = BinaryData("00" * 32)
+    val key = PrivateKey(BinaryData("11" * 32))
+    val sig = Crypto.encodeSignature(Crypto.sign(data, key))
+    assert(Crypto.isDERSignature(sig :+ 1.toByte))
+
   }
 
 }

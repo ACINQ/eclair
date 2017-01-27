@@ -4,13 +4,14 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>${HOSTNAME} %d %-5level %logger{36} %X{akkaSource} - %msg%ex{12}%n</pattern>
+            <pattern>${HOSTNAME} %d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n</pattern>
         </encoder>
     </appender>
 
     <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
     <logger name="fr.acinq.eclair.channel.Register" level="DEBUG"/>
     <logger name="fr.acinq.eclair.crypto.TransportHandler" level="INFO"/>
+    <logger name="fr.acinq.eclair.router" level="DEBUG"/>
 
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>

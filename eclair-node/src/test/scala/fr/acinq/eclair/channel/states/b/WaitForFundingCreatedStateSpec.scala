@@ -27,8 +27,9 @@ class WaitForFundingCreatedStateSpec extends StateSpecBaseClass {
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, router.ref, paymentHandler.ref, Alice.channelParams, "0B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, paymentHandler.ref, Bob.channelParams, "0A"))
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {

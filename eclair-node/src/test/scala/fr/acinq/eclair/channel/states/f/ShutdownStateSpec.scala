@@ -30,8 +30,9 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, paymentHandler.ref, Alice.channelParams, "0B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, paymentHandler.ref, Bob.channelParams, "0A"))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
@@ -356,7 +357,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       // bob publishes his current commit tx, which contains two pending htlcs alice->bob
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       assert(bobCommitTx.txOut.size == 4) // two main outputs and 2 pending htlcs
-      alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
@@ -392,7 +393,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       // bob now has a new commitment tx
 
       // bob published the revoked tx
-      alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
 

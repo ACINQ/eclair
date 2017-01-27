@@ -29,8 +29,9 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
     val bob2blockchain = TestProbe()
     val paymentHandler = TestProbe()
     // note that alice.initialFeeRate != bob.initialFeeRate
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, paymentHandler.ref, Alice.channelParams, "0B"))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, paymentHandler.ref, Bob.channelParams, "0A"))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
@@ -91,7 +92,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
       assert(alice.stateName == NEGOTIATING)
       val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
       bob2blockchain.expectMsgType[WatchConfirmed]
-      alice ! (BITCOIN_FUNDING_SPENT, mutualCloseTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg(1 second)
       assert(alice.stateName == NEGOTIATING)
     }

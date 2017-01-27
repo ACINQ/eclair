@@ -119,6 +119,7 @@ case object Nothing extends Data
 
 trait HasCommitments extends Data {
   def commitments: Commitments
+  def channelId = commitments.channelId
 }
 
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
@@ -131,11 +132,11 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit) extends Data
 final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
-final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,
+final case class DATA_NORMAL(params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(params: ChannelParams, commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown,
                                downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_NEGOTIATING(channelId: Long, params: ChannelParams, commitments: Commitments,
+final case class DATA_NEGOTIATING(params: ChannelParams, commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,

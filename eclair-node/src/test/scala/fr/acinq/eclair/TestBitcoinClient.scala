@@ -44,4 +44,6 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 
   override def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = ???
 
+  override def getTransactionShortId(txId: String)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((42000, 42))
+
 }

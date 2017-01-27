@@ -51,13 +51,14 @@ class ThroughputSpec extends FunSuite {
           context.become(run(h2r - htlc.paymentHash))
       }
     }), "payment-handler")
-    val alice = system.actorOf(Channel.props(pipe, blockchain, paymentHandler, Alice.channelParams, "B"), "a")
-    val bob = system.actorOf(Channel.props(pipe, blockchain, paymentHandler, Bob.channelParams, "A"), "b")
+    val router: ActorRef = ???
+    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, paymentHandler, Alice.channelParams, "0B"), "a")
+    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, paymentHandler, Bob.channelParams, "0A"), "b")
 
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {
       override def receive: Receive = {
-        case ChannelChangedState(_, _, _, NORMAL, _) => latch.countDown()
+        case ChannelChangedState(_, _, _, _, NORMAL, _) => latch.countDown()
       }
     }), "listener")
     system.eventStream.subscribe(listener, classOf[ChannelEvent])
