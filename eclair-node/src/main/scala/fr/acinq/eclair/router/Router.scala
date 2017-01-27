@@ -74,7 +74,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       // TODO: check feature bit set
       // TODO: forget channel once funding tx spent (add watch)
       //watcher ! WatchSpent(self, txId: BinaryData, outputIndex: Int, minDepth: Int, event: BitcoinEvent)
-      log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1}")
+      log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1})")
       context become main(myself, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c)
 
     case n: NodeAnnouncement if !checkSig(n) =>
@@ -87,7 +87,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
 
     case n: NodeAnnouncement =>
-      log.info(s"added/replaced node nodeId=${n.nodeId} (nodes=${nodes.size + 1} channels=${channels.size}")
+      log.info(s"added/replaced node nodeId=${n.nodeId} (nodes=${nodes.size + 1} channels=${channels.size})")
       context become main(myself, nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
 
     case u: ChannelUpdate if !channels.contains(u.channelId) =>
