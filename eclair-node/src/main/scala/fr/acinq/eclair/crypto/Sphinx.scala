@@ -107,7 +107,7 @@ object Sphinx {
     * @param associatedData associated data
     * @param packet         packet received by this node
     * @return a (payload, address, packet) tuple where:
-    *         - payload is the teh per-hop payload for this node
+    *         - payload is the per-hop payload for this node
     *         - address is the next destination. 0x0000000000000000000000000000000000000000 means this node was the final
     *         destination
     *         - packet is the next packet, to be forwarded to address

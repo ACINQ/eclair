@@ -92,7 +92,7 @@ final case class Origin(channelId: BinaryData, htlc_id: Long)
 /**
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command

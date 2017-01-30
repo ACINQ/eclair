@@ -167,4 +167,12 @@ class CodecsSpec extends FunSuite {
       }
     }
   }
+
+  test("encode/decode per-hop payload") {
+    val payload = PerHopPayload(amt_to_forward = 142000, outgoing_cltv_value = 500000)
+    val bin = Codecs.perHopPayloadCodec.encode(payload).toOption.get
+    assert(bin.toByteVector.size === 20)
+    val payload1 = Codecs.perHopPayloadCodec.decode(bin).toOption.get.value
+    assert(payload === payload1)
+  }
 }

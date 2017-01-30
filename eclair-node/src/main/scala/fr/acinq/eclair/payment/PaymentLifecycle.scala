@@ -1,16 +1,21 @@
 package fr.acinq.eclair.payment
 
-import akka.actor.Status.Failure
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, PaymentFailed, PaymentSent, Register}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.wire.{Codecs, PerHopPayload}
+import scodec.Attempt.{Successful, Failure}
+
+import scala.util.Random
 
 // @formatter:off
 
-case class CreatePayment(amountMsat: Int, h: BinaryData, targetNodeId: BinaryData)
+case class CreatePayment(amountMsat: Int, paymentHash: BinaryData, targetNodeId: BinaryData)
 
 sealed trait Data
 case class WaitingForRequest(currentBlockCount: Long) extends Data
@@ -41,11 +46,13 @@ class PaymentLifecycle(router: ActorRef, currentBlockCount: Long) extends Loggin
 
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(hops), WaitingForRoute(s, c, currentBlockCount)) =>
-      val cmd = buildCommand(c.amountMsat, hops, currentBlockCount)
+      val firstHop = hops.head
+      val nextHops = hops.drop(1)
+      val cmd = buildCommand(c.amountMsat, c.paymentHash, nextHops, currentBlockCount.toInt)
       context.system.eventStream.subscribe(self, classOf[PaymentSent])
       context.system.eventStream.subscribe(self, classOf[PaymentFailed])
       context.system.eventStream.unsubscribe(self, classOf[CurrentBlockCount])
-      context.actorSelection(Register.actorPathToChannelId(hops.head.lastUpdate.channelId)) ! cmd
+      context.actorSelection(Register.actorPathToChannelId(firstHop.lastUpdate.channelId)) ! cmd
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
     case Event(f@Failure(t), WaitingForRoute(s, _, _)) =>
@@ -71,20 +78,62 @@ object PaymentLifecycle {
 
   def props(router: ActorRef, initialBlockCount: Long) = Props(classOf[PaymentLifecycle], router, initialBlockCount)
 
-  def buildRoute(finalAmountMsat: Int, hops: Seq[Hop]): lightning.route = ???/*{
+  /**
+    *
+    * @param baseMsat     fixed fee
+    * @param proportional proportional fee
+    * @param msat         amount in millisatoshi
+    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
+    */
+  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
 
-    // TODO: use actual fee parameters that are specific to each node
-    def fee(amountMsat: Int) = nodeFee(Globals.fee_base_msat, Globals.fee_proportional_msat, amountMsat).toInt
+  def buildOnion(nodes: Seq[BinaryData], payloads: Seq[PerHopPayload]): BinaryData = {
+    require(nodes.size == payloads.size, s"size mistmatch: nodes=${nodes.size} payloads=${payloads.size}")
 
-    var amountMsat = finalAmountMsat
-    val steps = nodeIds.reverse.map(nodeId => {
-      val step = route_step(amountMsat, next = Next.Bitcoin(nodeId))
-      amountMsat = amountMsat + fee(amountMsat)
-      step
-    })
-    lightning.route(steps.reverse :+ route_step(0, next = route_step.Next.End(true)))
-  }*/
+    val pubkeys = nodes.map(PublicKey(_))
 
-  def buildCommand(finalAmountMsat: Int, hops: Seq[Hop], currentBlockCount: Long): CMD_ADD_HTLC = ???
-  // CMD_ADD_HTLC(route.steps(0).amount, c.h, currentBlockCount.toInt + 100 + route.steps.size - 2, route.copy(steps = route.steps.tail), commit = true)
+    val sessionKey = PrivateKey({
+      val bin = Array.fill[Byte](32)(0)
+      // TODO: use secure random
+      Random.nextBytes(bin)
+      bin
+    }, compressed = true)
+
+    val payloadsbin: Seq[BinaryData] = payloads
+      .map(Codecs.perHopPayloadCodec.encode(_))
+        .map {
+          case Successful(bitVector) => BinaryData(bitVector.toByteArray)
+          case Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
+        }
+
+    Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, BinaryData(""))
+  }
+
+  /**
+    *
+    * @param finalAmountMsat the final htlc amount in millisatoshis
+    * @param hops the hops as computed by the router
+    * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
+    *         - firstAmountMsat is the amount for the first htlc in the route
+    *         - firstExpiry is the cltv expiry for the first htlc in the route
+    *         - a sequence of payloads that will be used to build the onion
+    */
+  def buildRoute(finalAmountMsat: Long, hops: Seq[Hop], currentBlockCount: Int): (Long, Int, Seq[PerHopPayload]) =
+    hops.reverse.foldLeft((finalAmountMsat, currentBlockCount + defaultHtlcExpiry, Seq.empty[PerHopPayload])) {
+      case ((msat, expiry, payloads), hop) =>
+        val feeMsat = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
+        val expiryDelta = hop.lastUpdate.cltvExpiryDelta
+        (msat + feeMsat, expiry + expiryDelta, PerHopPayload(msat, expiry) +: payloads)
+    }
+
+  // TODO: set correct initial expiry
+  val defaultHtlcExpiry = 10
+
+  def buildCommand(finalAmountMsat: Long, paymentHash: BinaryData, hops: Seq[Hop], currentBlockCount: Int): CMD_ADD_HTLC = {
+    val (firstAmountMsat, firstExpiry, payloads) = buildRoute(finalAmountMsat, hops, currentBlockCount)
+    val nodes = hops.map(_.nextNodeId)
+    val onion = buildOnion(nodes, payloads)
+    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion, commit = true)
+  }
+
 }

@@ -180,7 +180,7 @@ object Codecs {
     ("channelId" | int64) ::
       ("perCommitmentSecret" | scalar) ::
       ("nextPerCommitmentPoint" | point) ::
-      ("padding" | ignore(3)) ::
+      ("padding" | ignore(8 * 3)) ::
       ("htlcTimeoutSignature" | listofsignatures)
     ).as[RevokeAndAck]
 
@@ -237,5 +237,11 @@ object Codecs {
     .typecase(256, channelAnnouncementCodec)
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
+
+  val perHopPayloadCodec: Codec[PerHopPayload] = (
+    ("realm" | ignore(8 * 1)) ::
+      ("amt_to_forward" | uint64) ::
+      ("outgoing_cltv_value" | int32) :: // we use a signed int32, it is enough to store cltv for 40 000 years
+      ("unused_with_v0_version_on_header" | ignore(8 * 7))).as[PerHopPayload]
 
 }

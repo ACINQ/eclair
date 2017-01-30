@@ -129,3 +129,6 @@ case class ChannelUpdate(signature: BinaryData,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
+
+case class PerHopPayload(amt_to_forward: Long,
+                         outgoing_cltv_value: Int)
