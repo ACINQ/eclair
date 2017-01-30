@@ -3,7 +3,8 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import java.net.URL?>
-<VBox styleClass="channel" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<VBox styleClass="channel" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+      onContextMenuRequested="#openChannelContext" onMouseClicked="#closeChannelContext">
     <children>
         <GridPane maxWidth="1.7976931348623157E308" styleClass="grid">
             <columnConstraints>
@@ -27,13 +28,13 @@
                 <Label styleClass="text-muted" text="State" GridPane.columnIndex="2" GridPane.rowIndex="4"/>
                 <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"
                         GridPane.columnIndex="4" GridPane.halignment="RIGHT"/>
-                <Label fx:id="nodeId" onContextMenuRequested="#handleTheirNodeIdContext" text="N/A"
+                <Label fx:id="nodeId" text="N/A"
                        GridPane.columnIndex="1" GridPane.columnSpan="4" GridPane.rowIndex="2"/>
                 <Label fx:id="capacity" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
                 <Label fx:id="funder" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="2"
                        GridPane.rowIndex="3"/>
                 <Label fx:id="state" text="N/A" GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="4"/>
-                <Label fx:id="channelId" onContextMenuRequested="#handleChannelIdContext" styleClass="text-strong"
+                <Label fx:id="channelId" styleClass="text-strong"
                        text="N/A" GridPane.columnSpan="4"/>
                 <Label fx:id="amountUs" prefWidth="100.0" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
                 <ProgressBar fx:id="balanceBar" maxWidth="1.7976931348623157E308" minHeight="5.0" prefHeight="8.0"
