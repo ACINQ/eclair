@@ -179,9 +179,9 @@ class TransactionsSpec extends FunSuite {
 
     {
       // remote spends main output
-      val claimP2PKHOutputTx = makeClaimP2PKHOutputTx(commitTx.tx, remotePaymentPriv.publicKey, finalPubKeyScript, feeRatePerKw)
-      val localSig = sign(claimP2PKHOutputTx, remotePaymentPriv)
-      val signedTx = addSigs(claimP2PKHOutputTx, remotePaymentPriv.publicKey, localSig)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx.tx, remotePaymentPriv.publicKey, finalPubKeyScript, feeRatePerKw)
+      val localSig = sign(claimP2WPKHOutputTx, remotePaymentPriv)
+      val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
     }
 

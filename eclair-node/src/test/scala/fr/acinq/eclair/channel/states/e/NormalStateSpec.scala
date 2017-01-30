@@ -817,7 +817,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       }).sum
       alice2blockchain.expectNoMsg(1 second)
       // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850000 (because fees)
-      assert(amountClaimed == Satoshi(828240))
+      assert(amountClaimed == Satoshi(831510))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -867,7 +867,7 @@ class NormalStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
       Transaction.correctlySpends(punishTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // two main outputs are 760 000 and 200 000
-      assert(mainTx.txOut(0).amount == Satoshi(743400))
+      assert(mainTx.txOut(0).amount == Satoshi(746670))
       assert(punishTx.txOut(0).amount == Satoshi(195170))
 
       awaitCond(alice.stateName == CLOSING)

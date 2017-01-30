@@ -32,7 +32,6 @@ object Transactions {
   case class HtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcSuccessTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
-  case class ClaimP2PKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimDelayedOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class MainPunishmentTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
@@ -66,7 +65,6 @@ object Transactions {
   val commitWeight = 724
   val htlcTimeoutWeight = 634
   val htlcSuccessWeight = 671
-  val claimP2PKHOutputWeight = 764
   val claimP2WPKHOutputWeight = 437
   val claimHtlcDelayedWeight = 482
   val mainPunishmentWeight = 483
@@ -152,7 +150,7 @@ object Transactions {
       case (local, remote) if !localIsFunder && remote.compare(commitFee) > 0 => (millisatoshi2satoshi(local), remote - commitFee)
     }
     val toLocalDelayedOutput_opt = if (toLocalAmount.compare(localDustLimit) > 0) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)))) else None
-    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) > 0) Some(TxOut(toRemoteAmount, pay2pkh(remotePubkey))) else None
+    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) > 0) Some(TxOut(toRemoteAmount, pay2wpkh(remotePubkey))) else None
 
     val htlcTimeoutFee = weight2fee(spec.feeRatePerKw, htlcTimeoutWeight)
     val htlcSuccessFee = weight2fee(spec.feeRatePerKw, htlcSuccessWeight)
@@ -248,19 +246,6 @@ object Transactions {
       lockTime = htlc.expiry))
   }
 
-  def makeClaimP2PKHOutputTx(delayedOutputTx: Transaction, localPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimP2PKHOutputTx = {
-    val fee = weight2fee(feeRatePerKw, claimP2PKHOutputWeight)
-    val redeemScript = Script.pay2pkh(localPubkey)
-    val outputIndex = findPubKeyScriptIndex(delayedOutputTx, redeemScript)
-    require(outputIndex >= 0, "output not found")
-    val input = InputInfo(OutPoint(delayedOutputTx, outputIndex), delayedOutputTx.txOut(outputIndex), write(redeemScript))
-    ClaimP2PKHOutputTx(input, Transaction(
-      version = 2,
-      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
-      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
-      lockTime = 0))
-  }
-
   def makeClaimP2WPKHOutputTx(delayedOutputTx: Transaction, localPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], feeRatePerKw: Long): ClaimP2WPKHOutputTx = {
     val fee = weight2fee(feeRatePerKw, claimP2WPKHOutputWeight)
     val redeemScript = Script.pay2pkh(localPubkey)
@@ -347,11 +332,6 @@ object Transactions {
     sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
   }
 
-  def sign(txinfo: ClaimP2PKHOutputTx, key: PrivateKey): BinaryData = {
-    require(txinfo.tx.txIn.size == 1, "only one input allowed")
-    sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, key)
-  }
-
   def addSigs(commitTx: CommitTx, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, localSig: BinaryData, remoteSig: BinaryData): CommitTx = {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     commitTx.copy(tx = commitTx.tx.updateWitness(0, witness))
@@ -380,10 +360,6 @@ object Transactions {
   def addSigs(claimHtlcTimeoutTx: ClaimHtlcTimeoutTx, localSig: BinaryData): ClaimHtlcTimeoutTx = {
     val witness = witnessClaimHtlcTimeoutFromCommitTx(localSig, claimHtlcTimeoutTx.input.redeemScript)
     claimHtlcTimeoutTx.copy(tx = claimHtlcTimeoutTx.tx.updateWitness(0, witness))
-  }
-
-  def addSigs(claimP2PKHOutputTx: ClaimP2PKHOutputTx, localPubkey: BinaryData, localSig: BinaryData): ClaimP2PKHOutputTx = {
-    claimP2PKHOutputTx.copy(tx = claimP2PKHOutputTx.tx.updateSigScript(0, OP_PUSHDATA(localSig) :: OP_PUSHDATA(localPubkey) :: Nil))
   }
 
   def addSigs(claimP2WPKHOutputTx: ClaimP2WPKHOutputTx, localPubkey: BinaryData, localSig: BinaryData): ClaimP2WPKHOutputTx = {
