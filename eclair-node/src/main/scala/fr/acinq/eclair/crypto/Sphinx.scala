@@ -113,7 +113,7 @@ object Sphinx {
     *         - packet is the next packet, to be forwarded to address
     */
   def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, packet: BinaryData): (BinaryData, BinaryData, BinaryData) = {
-    require(packet.length == 1254, "onion packet length should be 1854")
+    require(packet.length == 1254, "onion packet length should be 1254")
     val header = Header.read(packet)
     val perHopPayload = packet.drop(854)
     val sharedSecret = computeSharedSecret(PublicKey(header.publicKey), privateKey)
