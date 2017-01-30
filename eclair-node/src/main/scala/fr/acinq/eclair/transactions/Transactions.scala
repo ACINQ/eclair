@@ -122,7 +122,7 @@ object Transactions {
     */
   def getCommitTxNumber(commitTx: Transaction, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
     val blind = obscuredCommitTxNumber(0, localPaymentBasePoint, remotePaymentBasePoint)
-    val obscured = commitTx.lockTime | ((commitTx.txIn(0).sequence & 0xffffff) << 24)
+    val obscured = decodeTxNumber(commitTx.txIn(0).sequence, commitTx.lockTime)
     obscured ^ blind
   }
 
