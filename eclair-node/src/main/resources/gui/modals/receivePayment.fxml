@@ -22,7 +22,7 @@
         <Label text="Amount (mSat)" GridPane.rowIndex="1"/>
         <TextField fx:id="amount" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1"/>
         <Button defaultButton="true" mnemonicParsing="false" onAction="#handleGenerate" prefHeight="29.0"
-                prefWidth="89.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                prefWidth="95.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
         <TextArea fx:id="paymentRequest" editable="false" prefHeight="150.0" prefWidth="275.0" styleClass="ta"
                   wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="4"/>
         <Separator prefHeight="1.0" GridPane.columnSpan="3" GridPane.rowIndex="3"/>

@@ -21,13 +21,17 @@
 	-fx-background-radius: 0;
 	-fx-background-color: rgb(63,179,234);
 	-fx-cursor: hand;
+	-fx-border-color: rgb(63,179,234);
+    -fx-border-width: 1px;
 }
 .button:hover,
 .button:focused {
 	-fx-background-color: rgb(24,158,222);
+	-fx-border-color: rgb(24,158,222);
 }
 .button:pressed {
 	-fx-background-color: rgb(0,131,195);
+	-fx-border-color: rgb(0,131,195);
 }
 .button .text {
 	-fx-fill: white;
@@ -57,10 +61,12 @@
 }
 .button.grey {
     -fx-background-color: rgb(230,230,230);
+    -fx-border-color: rgb(230,230,230);
 }
 .button.grey:hover,
 .button.grey:pressed {
     -fx-background-color: rgb(220,220,220);
+    -fx-border-color: rgb(220,220,220);
 }
 .button.grey .text {
     -fx-fill: rgb(95,95,95);
