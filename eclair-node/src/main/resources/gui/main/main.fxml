@@ -6,11 +6,11 @@
 <?import javafx.scene.layout.*?>    
 <?import java.lang.String?>
 <?import java.net.URL?>
-<BorderPane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
+<BorderPane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minWidth="-Infinity"
             prefHeight="400.0" prefWidth="650.0" xmlns="http://javafx.com/javafx/8"
             xmlns:fx="http://javafx.com/fxml/1">
     <center>
-        <TabPane prefHeight="250.0" tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
+        <TabPane tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
             <tabs>
                 <Tab fx:id="channelsTab" closable="false" text="Channels">
                     <content>
