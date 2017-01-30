@@ -51,7 +51,7 @@
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
             </rowConstraints>
             <children>
-                <HBox alignment="CENTER_LEFT">
+                <HBox alignment="CENTER_LEFT" onContextMenuRequested="#openNodeIdContext" onMouseClicked="#closeNodeIdContext">
                     <children>
                         <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true"
                                    preserveRatio="true">
@@ -59,7 +59,7 @@
                                 <Image url="@../commons/images/eclair-shape.png"/>
                             </image>
                         </ImageView>
-                        <Label fx:id="labelNodeId" onContextMenuRequested="#handleNodeIdContext" text="N/A"/>
+                        <Label fx:id="labelNodeId" text="N/A"/>
                     </children>
                 </HBox>
                 <HBox alignment="CENTER_RIGHT" GridPane.columnIndex="1">

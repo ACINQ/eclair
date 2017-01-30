@@ -4,7 +4,7 @@ import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.embed.swing.SwingNode
 import javafx.fxml.FXML
 import javafx.scene.control.{ContextMenu, Label, MenuItem, Tab}
-import javafx.scene.input.ContextMenuEvent
+import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, TilePane, VBox}
 import javafx.stage.Stage
 
@@ -114,8 +114,12 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
     }
   }
 
-  @FXML def handleNodeIdContext(event: ContextMenuEvent): Unit = {
+  @FXML def openNodeIdContext(event: ContextMenuEvent): Unit = {
     contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
+  }
+
+  @FXML def closeNodeIdContext(event: MouseEvent): Unit = {
+    contextMenu.hide()
   }
 
   def positionAtCenter(childStage: Stage): Unit = {

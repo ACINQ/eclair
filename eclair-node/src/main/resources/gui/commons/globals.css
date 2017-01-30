@@ -82,3 +82,13 @@
     -fx-text-fill: rgb(156,159,161);
     -fx-font-size: 10px;
 }
+
+.context-menu {
+    -fx-padding: 4px;
+}
+.context-menu .menu-item:focused {
+   -fx-background-color: rgb(63,179,234);
+}
+.context-menu .menu-item:focused .label {
+   -fx-text-fill: white;
+ }
