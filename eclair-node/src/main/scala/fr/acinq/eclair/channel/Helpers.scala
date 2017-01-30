@@ -117,6 +117,7 @@ object Helpers {
 
       val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
       val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
+      val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, localPerCommitmentPoint)
       val localDelayedPrivkey = Generators.derivePrivKey(localParams.delayedPaymentKey, localPerCommitmentPoint)
 
       // first we will claim our main output as soon as the delay is over
@@ -147,8 +148,8 @@ object Helpers {
       val htlcDelayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo =>
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localParams.feeratePerKw)
-          val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localParams.feeratePerKw)
+          val sig = Transactions.sign(claimDelayed, localPrivkey)
           Transactions.addSigs(claimDelayed, sig)
       }
 
@@ -177,7 +178,7 @@ object Helpers {
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
-      val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remoteCommit.remotePerCommitmentPoint)
+      val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, remoteCommit.remotePerCommitmentPoint)
       val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
 
       // first we will claim our main output right away
@@ -196,13 +197,13 @@ object Helpers {
         // incoming htlc for which we have the preimage: we spend it directly
         case Htlc(OUT, add: UpdateAddHtlc, _) if preimages.exists(r => sha256(r) == add.paymentHash) =>
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPrivkey.publicKey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, localParams.defaultFinalScriptPubKey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) =>
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remoteDelayedPubkey, localParams.defaultFinalScriptPubKey, add)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, localParams.defaultFinalScriptPubKey, add)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig)
       }.toSeq
@@ -236,7 +237,7 @@ object Helpers {
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
-      remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFFFFFL - txnumber)
+      remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
         .map(d => Scalar(d))
         .map { remotePerCommitmentSecret =>
           val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
