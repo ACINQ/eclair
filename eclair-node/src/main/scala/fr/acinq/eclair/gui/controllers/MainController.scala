@@ -33,6 +33,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
   @FXML var channelInfo: VBox = _
   @FXML var channelBox: VBox = _
   @FXML var tilePane: TilePane = _
+  @FXML var channelsTab: Tab = _
   @FXML var graphTab: Tab = _
 
   val swingNode: SwingNode = new SwingNode()
@@ -63,7 +64,11 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
         if (channelBox.getChildren.size() > 0) {
           channelInfo.setScaleY(0)
           channelInfo.setOpacity(0)
+        } else {
+          channelInfo.setScaleY(1)
+          channelInfo.setOpacity(1)
         }
+        channelsTab.setText(s"Channels (${channelBox.getChildren.size})")
       }
     })
   }

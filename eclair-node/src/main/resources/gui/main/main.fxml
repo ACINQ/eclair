@@ -3,7 +3,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.*?>
+<?import javafx.scene.layout.*?>    
 <?import java.lang.String?>
 <?import java.net.URL?>
 <BorderPane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
@@ -12,7 +12,7 @@
     <center>
         <TabPane prefHeight="250.0" tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
             <tabs>
-                <Tab closable="false" text="Channels">
+                <Tab fx:id="channelsTab" closable="false" text="Channels">
                     <content>
                         <StackPane>
                             <children>
