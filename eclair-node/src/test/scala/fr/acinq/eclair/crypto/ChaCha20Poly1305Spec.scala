@@ -38,7 +38,7 @@ class ChaCha20Poly1305Spec extends FunSuite {
     val check = ChaCha20Poly1305.decrypt(key, nonce, ciphertext, aad, mac)
     assert(check == plaintext)
 
-    intercept[AssertionError] {
+    intercept[IllegalArgumentException] {
       val mac1 = mac
       mac1(0) = 0xff.toByte
       ChaCha20Poly1305.decrypt(key, nonce, ciphertext, aad, mac1)
@@ -364,7 +364,7 @@ class ChaCha20Poly1305Spec extends FunSuite {
     val check = Chacha20Poly1305Legacy.decrypt(key, nonce, ciphertext, aad, mac)
     assert(check == plaintext)
 
-    intercept[AssertionError] {
+    intercept[IllegalArgumentException] {
       val mac1 = mac
       mac1(0) = 0xff.toByte
       Chacha20Poly1305Legacy.decrypt(key, nonce, ciphertext, aad, mac1)

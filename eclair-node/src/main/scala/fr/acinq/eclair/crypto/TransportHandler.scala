@@ -3,6 +3,7 @@ package fr.acinq.eclair.crypto
 import java.nio.ByteOrder
 
 import akka.actor.{Actor, ActorContext, ActorRef, LoggingFSM, Terminated}
+import akka.actor.{Actor, ActorRef, LoggingFSM, OneForOneStrategy, SupervisorStrategy, Terminated}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
 import fr.acinq.bitcoin.{BinaryData, Protocol}

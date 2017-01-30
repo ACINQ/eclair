@@ -53,7 +53,7 @@ object ShaChain {
         val parentIndex = index.dropRight(1)
         // hashes are supposed to be received in reverse order so we already have parent :+ true
         // which we should be able to recompute (it's a left node so its hash is the same as its parent's hash)
-        assert(getHash(receiver, parentIndex :+ true) == Some(derive(Node(hash, parentIndex.length, None), true).value))
+        require(getHash(receiver, parentIndex :+ true) == Some(derive(Node(hash, parentIndex.length, None), true).value), "invalid hash")
         val nodes1 = receiver.knownHashes - (parentIndex :+ false) - (parentIndex :+ true)
         addHash(receiver.copy(knownHashes = nodes1), hash, parentIndex)
     }

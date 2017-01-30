@@ -1,6 +1,6 @@
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite

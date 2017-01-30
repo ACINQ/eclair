@@ -113,13 +113,13 @@ object Sphinx {
     *         - packet is the next packet, to be forwarded to address
     */
   def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, packet: BinaryData): (BinaryData, BinaryData, BinaryData) = {
-    require(packet.length == 1254, "onion packet length should be 1854")
+    require(packet.length == 1254, "onion packet length should be 1254")
     val header = Header.read(packet)
     val perHopPayload = packet.drop(854)
     val sharedSecret = computeSharedSecret(PublicKey(header.publicKey), privateKey)
     val mu = generateKey("mu", sharedSecret)
     val check: BinaryData = hmac256(mu, header.routingInfo ++ perHopPayload ++ associatedData).take(20)
-    assert(check == header.hmac)
+    require(check == header.hmac, "invalid header mac")
 
     val rho = generateKey("rho", sharedSecret)
     val bin = xor(header.routingInfo ++ zeroes(40), generateStream(rho, 840))
@@ -128,7 +128,6 @@ object Sphinx {
     val nextRoutinfo = bin.drop(40)
 
     val nextPubKey = blind(PublicKey(header.publicKey), computeblindingFactor(PublicKey(header.publicKey), sharedSecret))
-    println(s"next pubkey@: $nextPubKey")
 
     val gamma = generateKey("gamma", sharedSecret)
     val bin1 = xor(perHopPayload ++ zeroes(20), generateStream(gamma, 420))
