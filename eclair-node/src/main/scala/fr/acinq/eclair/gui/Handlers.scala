@@ -4,7 +4,7 @@ package fr.acinq.eclair.gui
 import javafx.application.Platform
 import javafx.scene.control.{TextArea, TextField}
 
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Client
 import fr.acinq.eclair.payment.CreatePayment
@@ -17,12 +17,12 @@ class Handlers(setup: Setup) extends Logging {
 
   import setup._
 
-  def open(hostPort: String, amount: Satoshi) = {
+  def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
     val regex = "([a-fA-F0-9]+)@([a-zA-Z0-9\\.\\-_]+):([0-9]+)".r
     hostPort match {
       case regex(pubkey, host, port) =>
         logger.info(s"connecting to $host:$port")
-        system.actorOf(Client.props(host, port.toInt, pubkey, amount, register))
+        system.actorOf(Client.props(host, port.toInt, pubkey, fundingSatoshis, pushMsat, register))
       case _ => {}
     }
   }

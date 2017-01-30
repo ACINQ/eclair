@@ -28,7 +28,7 @@ class Server(address: InetSocketAddress, register: ActorRef) extends Actor with 
     case c@Connected(remote, local) =>
       log.info(s"connected to $remote")
       val connection = sender()
-      register ! CreateChannel(connection, None, None)
+      register ! CreateChannel(connection, None, None, None)
   }
 }
 

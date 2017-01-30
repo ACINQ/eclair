@@ -17,8 +17,8 @@ class OpenChannelStage(handlers: Handlers, setup: Setup) extends Stage() {
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair02.png", false))
   setTitle("Open a new channel")
-  setWidth(500)
-  setHeight(250)
+  setWidth(550)
+  setHeight(350)
   setResizable(false)
 
   // get fxml/controller

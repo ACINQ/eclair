@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{Props, _}
 import akka.util.Timeout
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi, ScriptElt}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Satoshi, ScriptElt}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
@@ -39,7 +39,7 @@ class Register(watcher: ActorRef, router: ActorRef, paymentHandler: ActorRef, de
   def receive: Receive = main(0L)
 
   def main(counter: Long): Receive = {
-    case CreateChannel(connection, pubkey, amount_opt) =>
+    case CreateChannel(connection, pubkey, funding_opt, pushmsat_opt) =>
       def generateKey(index: Long): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
 
       val localParams = LocalParams(
@@ -56,14 +56,17 @@ class Register(watcher: ActorRef, router: ActorRef, paymentHandler: ActorRef, de
         delayedPaymentKey = generateKey(3),
         defaultFinalScriptPubKey = defaultFinalScriptPubKey,
         shaSeed = Globals.Node.seed,
-        isFunder = amount_opt.isDefined
+        isFunder = funding_opt.isDefined
       )
 
       def makeChannel(conn: ActorRef, publicKey: BinaryData, ctx: ActorContext): ActorRef = {
         // note that we use transport's context and not register's context
         val channel = ctx.actorOf(Channel.props(conn, watcher, router, paymentHandler, localParams, publicKey.toString(), Some(Globals.autosign_interval)), s"channel-$counter")
-        amount_opt match {
-          case Some(amount) => channel ! INPUT_INIT_FUNDER(amount.amount, 0)
+        funding_opt match {
+          case Some(funding) => pushmsat_opt match {
+            case Some(pushmsat) => channel ! INPUT_INIT_FUNDER(funding.amount, pushmsat.amount)
+            case None => channel ! INPUT_INIT_FUNDER(funding.amount, 0)
+          }
           case None => channel ! INPUT_INIT_FUNDEE()
         }
         channel
@@ -73,7 +76,7 @@ class Register(watcher: ActorRef, router: ActorRef, paymentHandler: ActorRef, de
         new TransportHandler[LightningMessage](
           KeyPair(Globals.Node.publicKey.toBin, Globals.Node.privateKey.toBin),
           pubkey,
-          isWriter = amount_opt.isDefined,
+          isWriter = funding_opt.isDefined,
           them = connection,
           listenerFactory = makeChannel,
           serializer = LightningMessageSerializer)),
@@ -99,7 +102,7 @@ object Register {
   def props(blockchain: ActorRef, router: ActorRef, paymentHandler: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) = Props(classOf[Register], blockchain, router, paymentHandler, defaultFinalScriptPubKey)
 
   // @formatter:off
-  case class CreateChannel(connection: ActorRef, pubkey: Option[BinaryData], anchorAmount: Option[Satoshi])
+  case class CreateChannel(connection: ActorRef, pubkey: Option[BinaryData], fundingSatoshis: Option[Satoshi], pushMsat: Option[MilliSatoshi])
 
   case class ListChannels()
 

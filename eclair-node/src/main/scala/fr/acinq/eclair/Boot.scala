@@ -8,7 +8,7 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi}
+import fr.acinq.bitcoin.{Base58Check, BinaryData, MilliSatoshi, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
@@ -98,7 +98,7 @@ class Setup() extends Logging {
     override val paymentHandler: ActorRef = _setup.paymentHandler
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
 
-    override def connect(host: String, port: Int, pubkey: BinaryData, amount: Satoshi): Unit = system.actorOf(Client.props(host, port, pubkey, amount, register))
+    override def connect(host: String, port: Int, pubkey: BinaryData, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): Unit = system.actorOf(Client.props(host, port, pubkey, fundingSatoshis, pushMsat, register))
   }
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port")) onFailure {
     case t: Throwable => system.eventStream.publish(HTTPBindError)

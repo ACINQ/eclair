@@ -77,3 +77,8 @@
 .text-error.text-error-upward {
 	-fx-translate-y: -6px;
 }
+
+.label-description {
+    -fx-text-fill: rgb(156,159,161);
+    -fx-font-size: 10px;
+}
