@@ -19,7 +19,12 @@
         <RowConstraints minHeight="10.0" valignment="TOP" vgrow="ALWAYS"/>
     </rowConstraints>
     <children>
-        <Label text="Amount (mSat)" GridPane.rowIndex="1"/>
+        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="1">
+            <children>
+                <Label styleClass="text-strong" text="Amount (mSat)" />
+                <Label styleClass="label-description" text="Amount to send, in milli satoshi" />
+            </children>
+        </VBox>
         <TextField fx:id="amount" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1"/>
         <Button defaultButton="true" mnemonicParsing="false" onAction="#handleGenerate" prefHeight="29.0"
                 prefWidth="95.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
@@ -27,7 +32,7 @@
                   wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="4"/>
         <Separator prefHeight="1.0" GridPane.columnSpan="3" GridPane.rowIndex="3"/>
         <Text strokeType="OUTSIDE" strokeWidth="0.0"
-              text="Copy the generated Payment Request and send it to the person owing you the amount above"
+              text="Send this Payment Request to the person owing you the amount above"
               textAlignment="RIGHT" wrappingWidth="188.9560546875" GridPane.rowIndex="4"/>
         <Label fx:id="amountError" opacity="0.0" styleClass="text-error" text="Please use a valid payment request"
                GridPane.columnIndex="1"/>
