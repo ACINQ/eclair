@@ -30,23 +30,27 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
   }
 
   @FXML def handleOpen(event: ActionEvent): Unit = {
-    if (GUIValidators.validate(host.getText, hostError, GUIValidators.hostRegex)
-      && GUIValidators.validate(fundingSatoshis.getText, fundingSatoshisError, GUIValidators.amountRegex)) {
+    if (GUIValidators.validate(host.getText, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)
+      & GUIValidators.validate(fundingSatoshis.getText, fundingSatoshisError, "Funding must be numeric", GUIValidators.amountRegex)
+      && GUIValidators.validate(fundingSatoshisError, "Funding must be greater than 0", fundingSatoshis.getText.toLong > 0)) {
       val rawFunding = fundingSatoshis.getText.toLong
       val smartFunding = unit.getValue match {
         case "milliBTC" => Satoshi(rawFunding * 100000L)
         case "Satoshi" => Satoshi(rawFunding)
         case "milliSatoshi" => Satoshi(rawFunding / 1000L)
       }
-      if (!pushMsat.getText.isEmpty) {
-        // pushMsat is optional, so we validate field only if it isn't empty
-        if (GUIValidators.validate(pushMsat.getText, pushMsatError, GUIValidators.amountRegex)) {
-          handlers.open(host.getText, smartFunding, MilliSatoshi(pushMsat.getText.toLong))
+
+      if (GUIValidators.validate(fundingSatoshisError, "Funding must be 0.1 BTC or less", smartFunding.toLong <= 10000000)) {
+        if (!pushMsat.getText.isEmpty) {
+          // pushMsat is optional, so we validate field only if it isn't empty
+          if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push mSat must be numeric", GUIValidators.amountRegex)) {
+            handlers.open(host.getText, smartFunding, MilliSatoshi(pushMsat.getText.toLong))
+            stage.close()
+          }
+        } else {
+          handlers.open(host.getText, smartFunding, Satoshi(0))
           stage.close()
         }
-      } else {
-        handlers.open(host.getText, smartFunding, Satoshi(0))
-        stage.close()
       }
     }
   }

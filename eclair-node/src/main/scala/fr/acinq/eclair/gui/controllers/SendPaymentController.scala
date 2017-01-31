@@ -27,7 +27,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
 
     paymentRequest.textProperty().addListener(new ChangeListener[String] {
       def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
-        if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, GUIValidators.paymentRequestRegex)) {
+        if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
           val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
           amountField.setText(amount)
           nodeIdField.setText(nodeId)
@@ -42,13 +42,12 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
   }
 
   @FXML def handleSend(event: ActionEvent): Unit = {
-    if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, GUIValidators.paymentRequestRegex)) {
+    if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
       val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
       handlers.send(nodeId, hash, amount)
       stage.close()
     }
   }
-
 
   @FXML def handleClose(event: ActionEvent): Unit = {
     stage.close()

@@ -24,8 +24,8 @@
         <RowConstraints vgrow="SOMETIMES" />
         <RowConstraints minHeight="1.0" prefHeight="3.0" vgrow="SOMETIMES" />
         <RowConstraints vgrow="SOMETIMES" />
-      <RowConstraints minHeight="1.0" prefHeight="3.0" vgrow="SOMETIMES" />
-      <RowConstraints vgrow="SOMETIMES" />
+        <RowConstraints minHeight="1.0" prefHeight="3.0" vgrow="SOMETIMES" />
+        <RowConstraints vgrow="SOMETIMES" />
         <RowConstraints minHeight="10.0" prefHeight="50.0" vgrow="SOMETIMES" />
     </rowConstraints>
     <children>
@@ -40,30 +40,35 @@
                 </FXCollections>
             </items>
         </ComboBox>
-      <TextField fx:id="pushMsat" layoutX="193.0" layoutY="112.0" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="5" />
-        <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect" GridPane.columnIndex="1" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
-        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel" GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
-      <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="3">
-         <children>
-              <Label styleClass="text-strong" text="Capacity *" />
-            <Label styleClass="label-description" text="Funding capacity of the channel." textAlignment="RIGHT" wrapText="true" />
-         </children>
-      </VBox>
-        <Label fx:id="hostError" opacity="0.0" styleClass="text-error" text="Please use a valid url (pubkey@host:port)" GridPane.columnIndex="1" GridPane.columnSpan="2" />
-        <Label fx:id="fundingSatoshisError" opacity="0.0" styleClass="text-error" text="Please use a valid amount" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2" />
-      <Label fx:id="pushMsatError" layoutX="193.0" layoutY="89.0" opacity="0.0" styleClass="text-error" text="Please use a valid Push Amount" GridPane.columnIndex="1" GridPane.rowIndex="4" />
-      <VBox alignment="CENTER_RIGHT" layoutX="24.0" layoutY="112.0" GridPane.rowIndex="5">
-         <children>
-            <Label styleClass="text-strong" text="Push  Amount" />
-            <Label styleClass="label-description" text="Optional amount in millisatoshi. Sent when opening channel" textAlignment="RIGHT" wrapText="true" />
-         </children>
-      </VBox>
-      <VBox alignment="CENTER_RIGHT" layoutX="24.0" layoutY="112.0" GridPane.rowIndex="1">
-         <children>
-            <Label styleClass="text-strong" text="Target Node URI *" />
-            <Label styleClass="label-description" text="Address of the node" textAlignment="RIGHT" wrapText="true" />
-         </children>
-      </VBox>
+        <TextField fx:id="pushMsat" layoutX="193.0" layoutY="112.0" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="5" />
+        <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect"
+              GridPane.columnIndex="1" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
+        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
+              GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
+        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="3">
+            <children>
+                <Label styleClass="text-strong" text="Capacity *" />
+                <Label styleClass="label-description" text="Funding capacity of the channel." textAlignment="RIGHT" wrapText="true" />
+            </children>
+        </VBox>
+        <Label fx:id="hostError" opacity="0.0" styleClass="text-error" text="Generic Invalid URI"
+               GridPane.columnIndex="1" GridPane.columnSpan="2" />
+        <Label fx:id="fundingSatoshisError" opacity="0.0" styleClass="text-error" text="Generic Invalid Funding"
+               GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2" />
+        <Label fx:id="pushMsatError" layoutX="193.0" layoutY="89.0" opacity="0.0" styleClass="text-error" text="Generic Invalid Push"
+               GridPane.columnIndex="1" GridPane.rowIndex="4" />
+        <VBox alignment="CENTER_RIGHT" layoutX="24.0" layoutY="112.0" GridPane.rowIndex="5">
+            <children>
+                <Label styleClass="text-strong" text="Push Amount" />
+                <Label styleClass="label-description" text="Optional amount in millisatoshi. Sent when opening channel" textAlignment="RIGHT" wrapText="true" />
+            </children>
+        </VBox>
+        <VBox alignment="CENTER_RIGHT" layoutX="24.0" layoutY="112.0" GridPane.rowIndex="1">
+            <children>
+                <Label styleClass="text-strong" text="Target Node URI *" />
+                <Label styleClass="label-description" text="Address of the node" textAlignment="RIGHT" wrapText="true" />
+            </children>
+        </VBox>
     </children>
     <stylesheets>
         <URL value="@modals.css" />

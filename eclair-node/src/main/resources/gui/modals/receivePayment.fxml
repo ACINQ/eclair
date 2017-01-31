@@ -7,8 +7,8 @@
 <GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" styleClass="grid"
           xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
-        <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="274.0" minWidth="10.0" prefWidth="242.0"/>
-        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0"/>
+        <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="210.0" minWidth="10.0" prefWidth="200.0"/>
+        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="100.0" maxWidth="100.0"/>
         <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0"/>
     </columnConstraints>
     <rowConstraints>
@@ -22,7 +22,7 @@
         <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="1">
             <children>
                 <Label styleClass="text-strong" text="Amount (mSat)" />
-                <Label styleClass="label-description" text="Amount to send, in milli satoshi" />
+                <Label styleClass="label-description" text="Amount to send, in milli satoshi." />
             </children>
         </VBox>
         <TextField fx:id="amount" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1"/>
@@ -34,9 +34,9 @@
         <Text strokeType="OUTSIDE" strokeWidth="0.0"
               text="Send this Payment Request to the person owing you the amount above"
               textAlignment="RIGHT" wrappingWidth="188.9560546875" GridPane.rowIndex="4"/>
-        <Label fx:id="amountError" opacity="0.0" styleClass="text-error" text="Please use a valid payment request"
-               GridPane.columnIndex="1"/>
-        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
+        <Label fx:id="amountError" opacity="0.0" styleClass="text-error" text="Generic Invalid Amount"
+               GridPane.columnIndex="1" GridPane.columnSpan="2"/>
+        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Close"
                 GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="2"/>
     </children>
     <stylesheets>

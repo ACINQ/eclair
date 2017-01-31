@@ -27,7 +27,7 @@
                   GridPane.columnSpan="2" GridPane.rowIndex="1" GridPane.vgrow="ALWAYS"/>
         <Button fx:id="handleSend" defaultButton="true" mnemonicParsing="false" onAction="#handleSend" text="Send"
                 GridPane.rowIndex="7"/>
-        <Label fx:id="paymentRequestError" opacity="0.0" text="Please use a valid payment request"
+        <Label fx:id="paymentRequestError" opacity="0.0" text="Generic Invalid Payment Request"
                GridPane.columnSpan="2" GridPane.rowIndex="2">
             <styleClass>
                 <String fx:value="text-error"/>
