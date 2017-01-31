@@ -1,10 +1,9 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.{TestkitBaseClass, TestConstants}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateSpecBaseClass
 import fr.acinq.eclair.wire.{Error, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -15,7 +14,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForOpenChannelStateSpec extends StateSpecBaseClass {
+class WaitForOpenChannelTestkit extends TestkitBaseClass {
 
   type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 

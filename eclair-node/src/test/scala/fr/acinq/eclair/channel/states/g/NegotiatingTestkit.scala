@@ -2,10 +2,10 @@ package fr.acinq.eclair.channel.states.g
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import org.junit.runner.RunWith
@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
+class NegotiatingTestkit extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 

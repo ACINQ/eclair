@@ -1,17 +1,16 @@
 package fr.acinq.eclair.payment
 
+import akka.actor.Status.Failure
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, PaymentFailed, PaymentSent, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.{Codecs, PerHopPayload}
-import scodec.Attempt.{Successful, Failure}
-
-import scala.util.Random
+import scodec.Attempt
 
 // @formatter:off
 
@@ -32,7 +31,7 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(router: ActorRef, currentBlockCount: Long) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef, currentBlockCount: Long) extends LoggingFSM[State, Data] {
 
   import PaymentLifecycle._
 
@@ -40,7 +39,7 @@ class PaymentLifecycle(router: ActorRef, currentBlockCount: Long) extends Loggin
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: CreatePayment, WaitingForRequest(currentBlockCount)) =>
-      router ! RouteRequest(Globals.Node.publicKey, c.targetNodeId)
+      router ! RouteRequest(sourceNodeId, c.targetNodeId)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, currentBlockCount)
   }
 
@@ -76,7 +75,7 @@ class PaymentLifecycle(router: ActorRef, currentBlockCount: Long) extends Loggin
 
 object PaymentLifecycle {
 
-  def props(router: ActorRef, initialBlockCount: Long) = Props(classOf[PaymentLifecycle], router, initialBlockCount)
+  def props(sourceNodeId: BinaryData, router: ActorRef, initialBlockCount: Long) = Props(classOf[PaymentLifecycle], sourceNodeId, router, initialBlockCount)
 
   /**
     *
@@ -92,18 +91,13 @@ object PaymentLifecycle {
 
     val pubkeys = nodes.map(PublicKey(_))
 
-    val sessionKey = PrivateKey({
-      val bin = Array.fill[Byte](32)(0)
-      // TODO: use secure random
-      Random.nextBytes(bin)
-      bin
-    }, compressed = true)
+    val sessionKey = randomKey
 
     val payloadsbin: Seq[BinaryData] = payloads
       .map(Codecs.perHopPayloadCodec.encode(_))
         .map {
-          case Successful(bitVector) => BinaryData(bitVector.toByteArray)
-          case Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
+          case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
+          case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
         }
 
     Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, BinaryData(""))

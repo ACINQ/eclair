@@ -123,9 +123,13 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       rebroadcast.foreach(context.actorSelection(Register.actorPathToTransportHandlers) ! _)
       context become main(local, nodes, channels, updates, Nil)
 
-    case 'network => sender ! channels.values
+    case 'nodes => sender ! nodes.values
 
-    case RouteRequest(start, end) => findRoute(start, end, updates) pipeTo sender
+    case 'channels => sender ! channels.values
+
+    case 'updates => sender ! updates.values
+
+    case RouteRequest(start, end) => findRoute(start, end, updates).map(RouteResponse(_)) pipeTo sender
 
     case other => log.warning(s"unhandled message $other")
   }

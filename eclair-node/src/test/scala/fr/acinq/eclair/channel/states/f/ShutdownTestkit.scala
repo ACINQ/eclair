@@ -4,10 +4,10 @@ import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
@@ -19,7 +19,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
+class ShutdownTestkit extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 

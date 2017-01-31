@@ -1,13 +1,12 @@
-package fr.acinq.eclair.channel.states.b
+package fr.acinq.eclair.channel.states.a
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.{MakeFundingTx, PeerWatcher}
-import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateSpecBaseClass
-import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, OpenChannel}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.blockchain.PeerWatcher
+import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_CREATED_INTERNAL, _}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, OpenChannel}
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -17,7 +16,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForFundingCreatedInternalStateSpec extends StateSpecBaseClass {
+class WaitForAcceptChannelTestkit extends TestkitBaseClass {
 
   type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
 
@@ -36,21 +35,29 @@ class WaitForFundingCreatedInternalStateSpec extends StateSpecBaseClass {
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[AcceptChannel]
-      bob2alice.forward(alice)
-      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+      awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv funding transaction") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
+  test("recv AcceptChannel") { case (alice, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
+      bob2alice.expectMsgType[AcceptChannel]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CREATED_INTERNAL)
+    }
+  }
+
+  /*test("recv funding tx") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
+    within(30 seconds) {
+      bob2alice.expectMsgType[OpenChannel]
+      bob2alice.forward(alice)
       alice2blockchain.expectMsgType[MakeFundingTx]
       alice2blockchain.forward(blockchain)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
-      alice2bob.expectMsgType[FundingCreated]
+      alice2bob.expectMsgType[OpenChannel]
     }
-  }
+  }*/
 
   test("recv Error") { case (bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {

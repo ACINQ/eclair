@@ -1,8 +1,11 @@
 package fr.acinq
 
 import com.google.protobuf.ByteString
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import lightning.bitcoin_pubkey
+
+import scala.util.Random
 
 package object eclair {
 
@@ -21,5 +24,12 @@ package object eclair {
 
   def fromShortId(id: Long): (Int, Int, Int) =
     (((id >> 40) & 0xFFFFFF).toInt, ((id >> 16) & 0xFFFFFF).toInt, (id & 0xFFFF).toInt)
+
+  def randomKey: PrivateKey = PrivateKey({
+    val bin = Array.fill[Byte](32)(0)
+    // TODO: use secure random
+    Random.nextBytes(bin)
+    bin
+  }, compressed = true)
 
 }

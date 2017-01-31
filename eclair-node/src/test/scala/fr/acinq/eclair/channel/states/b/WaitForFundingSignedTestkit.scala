@@ -6,9 +6,8 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateSpecBaseClass
 import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, OpenChannel}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -18,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForFundingSignedStateSpec extends StateSpecBaseClass {
+class WaitForFundingSignedTestkit extends TestkitBaseClass {
 
   type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
 

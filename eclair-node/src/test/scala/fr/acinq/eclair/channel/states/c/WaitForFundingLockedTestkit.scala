@@ -5,9 +5,8 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.channel.states.StateSpecBaseClass
-import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingLocked, FundingSigned, OpenChannel}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -17,7 +16,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
+class WaitForFundingLockedTestkit extends TestkitBaseClass {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
 
@@ -46,44 +45,45 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.forward(blockchainA)
       alice2blockchain.expectMsgType[PublishAsap]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
+      alice2blockchain.forward(blockchainA)
+      bob2blockchain.expectMsgType[WatchSpent]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
+      alice2blockchain.expectMsgType[WatchLost]
+      bob2blockchain.expectMsgType[WatchLost]
+      alice2bob.expectMsgType[FundingLocked]
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
+      awaitCond(bob.stateName == WAIT_FOR_FUNDING_LOCKED)
     }
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv FundingLocked") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingLocked") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      // make bob send a FundingLocked msg
-      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
-      val msg = bob2alice.expectMsgType[FundingLocked]
+      bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].deferred == Some(msg))
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
+      awaitCond(alice.stateName == NORMAL)
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEPTHOK") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingLocked (channel id mismatch") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
-      alice2blockchain.expectMsgType[WatchLost]
-      alice2bob.expectMsgType[FundingLocked]
-    }
-  }
-
-  test("recv BITCOIN_FUNDING_TIMEOUT") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
-    within(30 seconds) {
-      alice ! BITCOIN_FUNDING_TIMEOUT
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val fundingLocked = bob2alice.expectMsgType[FundingLocked]
+      alice ! fundingLocked.copy(channelId = 42)
       alice2bob.expectMsgType[Error]
-      awaitCond(alice.stateName == CLOSED)
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       // bob publishes his commitment tx
-      val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
@@ -92,7 +92,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
 
   test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(PublishAsap(tx))
@@ -102,7 +102,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
 
   test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
@@ -112,7 +112,7 @@ class WaitForFundingLockedInternalStateSpec extends StateSpecBaseClass {
 
   test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
