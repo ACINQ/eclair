@@ -18,10 +18,10 @@
 	-fx-background-color: white;
 	-fx-background-image: url("../commons/images/close.png");
 	-fx-background-repeat: no-repeat;
-	-fx-background-size: .7em .7em;
-    -fx-background-position: 1em center;
+	-fx-background-size: 5px;
+    -fx-background-position: 8px center;
     -fx-border-color: transparent;
-	-fx-padding: .5em 1em .5em 2.2em;
+	-fx-padding: 0px 5px 0px 17px;
 }
 .button.close-channel:hover {
 	-fx-background-color: rgb(249,243,243);
