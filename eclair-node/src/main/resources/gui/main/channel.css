@@ -20,10 +20,12 @@
 	-fx-background-repeat: no-repeat;
 	-fx-background-size: .7em .7em;
     -fx-background-position: 1em center;
+    -fx-border-color: transparent;
 	-fx-padding: .5em 1em .5em 2.2em;
 }
 .button.close-channel:hover {
 	-fx-background-color: rgb(249,243,243);
+	-fx-border-color: rgb(249,243,243);
 }
 
 .button.close-channel .text {

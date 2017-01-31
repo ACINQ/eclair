@@ -74,5 +74,5 @@
 }
 .tab-content-area {
 	-fx-background-color: white;
-	-fx-padding: .5em 1em;
+	-fx-padding: .5em 1em 0;
 }

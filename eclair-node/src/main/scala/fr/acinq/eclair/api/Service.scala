@@ -11,7 +11,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Register.{ListChannels, SendCommand}
 import fr.acinq.eclair.channel._
@@ -47,7 +47,7 @@ trait Service extends Logging {
 
   import Json4sSupport.{json4sMarshaller, json4sUnmarshaller}
 
-  def connect(host: String, port: Int, pubkey: BinaryData, amount: Satoshi): Unit
+  def connect(host: String, port: Int, pubkey: BinaryData, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): Unit
 
   def register: ActorRef
 
@@ -71,7 +71,7 @@ trait Service extends Logging {
             req =>
               val f_res: Future[AnyRef] = req match {
                 case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(anchor_amount) :: Nil) =>
-                  connect(host, port.toInt, BinaryData(pubkey), Satoshi(anchor_amount.toLong))
+                  connect(host, port.toInt, BinaryData(pubkey), Satoshi(anchor_amount.toLong), MilliSatoshi(0))
                   Future.successful("ok")
                 case JsonRPCBody(_, _, "info", _) =>
                   Future.successful(Status(Globals.Node.id))

@@ -4,7 +4,7 @@ import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.embed.swing.SwingNode
 import javafx.fxml.FXML
 import javafx.scene.control.{ContextMenu, Label, MenuItem, Tab}
-import javafx.scene.input.ContextMenuEvent
+import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, TilePane, VBox}
 import javafx.stage.Stage
 
@@ -33,6 +33,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
   @FXML var channelInfo: VBox = _
   @FXML var channelBox: VBox = _
   @FXML var tilePane: TilePane = _
+  @FXML var channelsTab: Tab = _
   @FXML var graphTab: Tab = _
 
   val swingNode: SwingNode = new SwingNode()
@@ -63,7 +64,11 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
         if (channelBox.getChildren.size() > 0) {
           channelInfo.setScaleY(0)
           channelInfo.setOpacity(0)
+        } else {
+          channelInfo.setScaleY(1)
+          channelInfo.setOpacity(1)
         }
+        channelsTab.setText(s"Channels (${channelBox.getChildren.size})")
       }
     })
   }
@@ -109,8 +114,12 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
     }
   }
 
-  @FXML def handleNodeIdContext(event: ContextMenuEvent): Unit = {
+  @FXML def openNodeIdContext(event: ContextMenuEvent): Unit = {
     contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
+  }
+
+  @FXML def closeNodeIdContext(event: MouseEvent): Unit = {
+    contextMenu.hide()
   }
 
   def positionAtCenter(childStage: Stage): Unit = {
