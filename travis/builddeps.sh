@@ -1,16 +1,4 @@
 pushd .
-# protobuf 2.6.1
-cd
-wget https://github.com/google/protobuf/releases/download/v2.6.1/protobuf-2.6.1.tar.bz2
-tar xjvf protobuf-2.6.1.tar.bz2
-cd protobuf-2.6.1
-./autogen.sh && ./configure && make && sudo make install
-# protobuf-c
-cd
-export LD_LIBRARY_PATH=/usr/local/lib/
-git clone https://github.com/protobuf-c/protobuf-c.git
-cd protobuf-c
-./autogen.sh && ./configure && make && sudo make install
 # lightning deps
 sudo add-apt-repository -y ppa:chris-lea/libsodium
 sudo apt-get update

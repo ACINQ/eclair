@@ -762,7 +762,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
         downstream ! CMD_SIGN*/
       case (None, Left(fail)) =>
         log.info(s"we were the origin payer for htlc #${htlc.id}")
-        context.system.eventStream.publish(PaymentFailed(self, htlc.paymentHash, fail.reason.toStringUtf8))
+        context.system.eventStream.publish(PaymentFailed(self, htlc.paymentHash, new String(fail.reason)))
       case (None, Right(fulfill)) =>
         log.info(s"we were the origin payer for htlc #${htlc.id}")
         context.system.eventStream.publish(PaymentSent(self, htlc.paymentHash))

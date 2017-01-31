@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
-import lightning.{route, route_step}
 
 import scala.concurrent.duration.FiniteDuration
 
