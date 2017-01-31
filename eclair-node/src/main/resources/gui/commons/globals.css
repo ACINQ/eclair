@@ -98,4 +98,7 @@
 }
 .context-menu .menu-item:focused .label {
    -fx-text-fill: white;
- }
+}
+.context-menu .separator {
+    -fx-padding: 2px 0;
+}
