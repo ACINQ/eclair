@@ -16,7 +16,7 @@ import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.io.{Client, Server}
-import fr.acinq.eclair.payment.{LocalPaymentHandler, NoopPaymentHandler, PaymentInitiator}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JString
@@ -86,9 +86,10 @@ class Setup() extends Logging {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
+  val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "propagator")
   val router = system.actorOf(Router.props(watcher, Globals.Node.announcement), name = "router")
-  val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router, blockCount), "payment-spawner")
-  val register = system.actorOf(Register.props(watcher, router, paymentHandler, finalScriptPubKey), name = "register")
+  val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router, blockCount), "payment-initiator")
+  val register = system.actorOf(Register.props(watcher, router, relayer, finalScriptPubKey), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
 
   val _setup = this

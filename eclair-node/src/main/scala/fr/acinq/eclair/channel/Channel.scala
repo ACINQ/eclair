@@ -1,11 +1,13 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.payment.Binding
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -20,10 +22,10 @@ import scala.util.{Failure, Success, Try}
   */
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, router: ActorRef, paymentHandler: ActorRef, localParams: LocalParams, theirNodeId: String, autoSignInterval: Option[FiniteDuration] = None) = Props(new Channel(them, blockchain, router, paymentHandler, localParams, theirNodeId, autoSignInterval))
+  def props(them: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, localParams: LocalParams, theirNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None) = Props(new Channel(them, blockchain, router, relayer, localParams, theirNodeId, autoSignInterval))
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, paymentHandler: ActorRef, val localParams: LocalParams, theirNodeId: String, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, val localParams: LocalParams, theirNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
   context.system.eventStream.publish(ChannelCreated(self, localParams, theirNodeId))
 
@@ -286,7 +288,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
       them ! FundingLocked(temporaryChannelId, channelId, None, None, nextPerCommitmentPoint) // TODO: routing announcements disabled
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection
-      goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(params, commitments.copy(channelId = channelId), None, Map())
+      goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(params, commitments.copy(channelId = channelId), None)
 
     // TODO: not implemented, maybe should be done with a state timer and not a blockchain watch?
     case Event(BITCOIN_FUNDING_TIMEOUT, _) =>
@@ -321,7 +323,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
 
     case Event(FundingLocked(_, remoteChannelId, _, _, nextPerCommitmentPoint), d: DATA_NORMAL) =>
       log.info(s"channel ready with channelId=${java.lang.Long.toUnsignedString(d.channelId)}")
-      Register.create_alias(theirNodeId, d.channelId)
+      Register.createAlias(theirNodeId.hash160, d.channelId)
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -356,15 +358,16 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined =>
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
 
-    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin, id_opt, do_commit), d@DATA_NORMAL(params, commitments, _, downstreams)) =>
+    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin_opt, id_opt, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success((commitments1, add)) =>
+          origin_opt.map(origin => relayer ! Binding(origin, add))
           if (do_commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, add, d.copy(commitments = commitments1, downstreams = downstreams + (add.id -> origin)))
+          handleCommandSuccess(sender, add, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(add: UpdateAddHtlc, d@DATA_NORMAL(params, commitments, _, _)) =>
+    case Event(add: UpdateAddHtlc, d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
         case Success(commitments1) =>
           import scala.concurrent.ExecutionContext.Implicits.global
@@ -381,13 +384,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fulfill@UpdateFulfillHtlc(_, id, r), d@DATA_NORMAL(params, commitments, _, downstreams)) =>
+    case Event(fulfill@UpdateFulfillHtlc(_, id, r), d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Right(fulfill), downstreams(id))
+          relayer ! (htlc, fulfill)
           import scala.concurrent.ExecutionContext.Implicits.global
           params.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
-          stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -399,13 +402,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(params, commitments, _, downstreams)) =>
+    case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Left(fail), downstreams(id))
+          relayer ! (htlc, fail)
           import scala.concurrent.ExecutionContext.Implicits.global
           params.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
-          stay using d.copy(commitments = commitments1, downstreams = downstreams - id)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -433,7 +436,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
           // now that we have their sig, we should propagate the htlcs newly received
           (commitments1.localCommit.spec.htlcs -- d.commitments.localCommit.spec.htlcs)
             .filter(_.direction == IN)
-            .foreach(htlc => propagateUpstream(htlc.add, d.commitments.anchorId))
+            .foreach(htlc => relayer ! htlc.add)
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
@@ -463,10 +466,10 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
         case _ => handleCommandError(sender, new RuntimeException("invalid final script"))
       }
 
-    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(params, commitments, ourShutdownOpt, downstreams)) if commitments.remoteChanges.proposed.size > 0 =>
+    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(params, commitments, ourShutdownOpt)) if commitments.remoteChanges.proposed.size > 0 =>
       handleLocalError(new RuntimeException("it is illegal to send a shutdown while having unsigned changes"), d)
 
-    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(params, commitments, ourShutdownOpt, downstreams)) =>
+    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(params, commitments, ourShutdownOpt)) =>
       Try(ourShutdownOpt.map(s => (s, commitments)).getOrElse {
         require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
         // first if we have pending changes, we need to commit them
@@ -486,7 +489,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
           them ! closingSigned
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments3, localShutdown, remoteShutdown, closingSigned)
         case Success((localShutdown, commitments3)) =>
-          goto(SHUTDOWN) using DATA_SHUTDOWN(params, commitments3, localShutdown, remoteShutdown, downstreams)
+          goto(SHUTDOWN) using DATA_SHUTDOWN(params, commitments3, localShutdown, remoteShutdown)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -519,8 +522,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
     case Event(fulfill@UpdateFulfillHtlc(_, id, r), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Right(fulfill), d.downstreams(id))
-          stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
+          relayer ! (htlc, fulfill)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -533,8 +536,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
     case Event(fail@UpdateFailHtlc(_, id, reason), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success((commitments1, htlc)) =>
-          propagateDownstream(htlc, Left(fail), d.downstreams(id))
-          stay using d.copy(commitments = commitments1, downstreams = d.downstreams - id)
+          relayer ! (htlc, fail)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -555,7 +558,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown, _)) =>
+    case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown)) =>
       // TODO: we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
@@ -569,7 +572,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
         case Failure(cause) => handleLocalError(cause, d)
       }
 
-    case Event(msg: RevokeAndAck, d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown, _)) =>
+    case Event(msg: RevokeAndAck, d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown)) =>
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
@@ -719,55 +722,6 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, pa
           888    888  d8888888888 888   Y8888 888  .d88P 888      888        888  T88b  Y88b  d88P
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
-
-  def propagateUpstream(add: UpdateAddHtlc, anchorId: BinaryData) = {
-    // TODO: relaying of payments is disabled
-    /*val r = route.parseFrom(add.onionRoutingPacket)
-    r.steps match {
-      case route_step(amountMsat, Next.Bitcoin(nextNodeId)) +: rest =>
-        log.debug(s"propagating htlc #${add.id} to $nextNodeId")
-        import ExecutionContext.Implicits.global
-        context.system.actorSelection(Register.actorPathToNodeId(nextNodeId))
-          .resolveOne(3 seconds)
-          .onComplete {
-            case Success(upstream) =>
-              log.info(s"forwarding htlc #${add.id} to upstream=$upstream")
-              val upstream_route = route(rest)
-              // TODO: we should decrement expiry !!
-              upstream ! CMD_ADD_HTLC(amountMsat, add.paymentHash, add.expiry, upstream_route, Some(Origin(anchorId, add.id)))
-              upstream ! CMD_SIGN
-            case Failure(t: Throwable) =>
-              // TODO: send "fail route error"
-              log.warning(s"couldn't resolve upstream node, htlc #${add.id} will timeout", t)
-          }
-      case route_step(amount, Next.End(true)) +: rest =>*/
-    log.info(s"we are the final recipient of htlc #${add.id}")
-    context.system.eventStream.publish(PaymentReceived(self, add.paymentHash))
-    paymentHandler ! add
-    //}
-  }
-
-  def propagateDownstream(htlc: UpdateAddHtlc, fail_or_fulfill: Either[UpdateFailHtlc, UpdateFulfillHtlc], origin_opt: Option[Origin]) = {
-    (origin_opt, fail_or_fulfill) match {
-      // TODO: relaying of payments is disabled
-      /*case (Some(origin), Left(fail)) =>
-        val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))
-        downstream ! CMD_SIGN
-        downstream ! CMD_FAIL_HTLC(origin.htlc_id, fail.reason.toStringUtf8)
-        downstream ! CMD_SIGN
-      case (Some(origin), Right(fulfill)) =>
-        val downstream = context.system.actorSelection(Register.actorPathToChannelId(origin.channelId))
-        downstream ! CMD_SIGN
-        downstream ! CMD_FULFILL_HTLC(origin.htlc_id, fulfill.paymentPreimage)
-        downstream ! CMD_SIGN*/
-      case (None, Left(fail)) =>
-        log.info(s"we were the origin payer for htlc #${htlc.id}")
-        context.system.eventStream.publish(PaymentFailed(self, htlc.paymentHash, new String(fail.reason)))
-      case (None, Right(fulfill)) =>
-        log.info(s"we were the origin payer for htlc #${htlc.id}")
-        context.system.eventStream.publish(PaymentSent(self, htlc.paymentHash))
-    }
-  }
 
   def handleCommandSuccess(sender: ActorRef, msg: LightningMessage, newData: Data) = {
     them ! msg

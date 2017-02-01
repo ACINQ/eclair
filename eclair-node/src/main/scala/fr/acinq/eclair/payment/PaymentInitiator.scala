@@ -14,7 +14,7 @@ class PaymentInitiator(sourceNodeId: BinaryData, router: ActorRef, initialBlockC
   override def receive: Receive = main(initialBlockCount)
 
   def main(currentBlockCount: Long): Receive = {
-    case CurrentBlockCount(count) => context.become(main(currentBlockCount))
+    case CurrentBlockCount(count) => context.become(main(count))
     case c: CreatePayment =>
       val payFsm = context.actorOf(PaymentLifecycle.props(sourceNodeId, router, initialBlockCount))
       payFsm forward c

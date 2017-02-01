@@ -34,7 +34,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       log.info(s"new channel: $channel")
 
       val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
-      val channelPaneController = new ChannelPaneController(theirNodeId)
+      val channelPaneController = new ChannelPaneController(theirNodeId.toBin.toString())
       loader.setController(channelPaneController)
       val root = loader.load[VBox]
 

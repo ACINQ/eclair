@@ -67,8 +67,7 @@ object Commitments extends Logging {
       throw new RuntimeException(s"insufficient funds (available=$available msat)")
     } else {
       val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
-      // TODO: fix routing
-      val add: UpdateAddHtlc = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, "" /*routing(ByteString.copyFrom(cmd.payment_route.toByteArray))*/)
+      val add = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
       val commitments1 = addLocalProposal(commitments, add).copy(localCurrentHtlcId = id)
       (commitments1, add)
     }

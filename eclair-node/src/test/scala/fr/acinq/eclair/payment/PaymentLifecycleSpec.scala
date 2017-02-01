@@ -3,7 +3,6 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.eclair.channel.{PaymentFailed, PaymentSent}
 import fr.acinq.eclair.router.BaseRouterSpec
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner

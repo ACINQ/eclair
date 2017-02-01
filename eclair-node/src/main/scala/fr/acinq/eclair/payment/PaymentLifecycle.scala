@@ -5,8 +5,7 @@ import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, PaymentFailed, PaymentSent, Register}
+import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.{Codecs, PerHopPayload}
@@ -46,11 +45,8 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef, currentBlockC
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(hops), WaitingForRoute(s, c, currentBlockCount)) =>
       val firstHop = hops.head
-      val nextHops = hops.drop(1)
-      val cmd = buildCommand(c.amountMsat, c.paymentHash, nextHops, currentBlockCount.toInt)
-      context.system.eventStream.subscribe(self, classOf[PaymentSent])
-      context.system.eventStream.subscribe(self, classOf[PaymentFailed])
-      context.system.eventStream.unsubscribe(self, classOf[CurrentBlockCount])
+      val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, currentBlockCount.toInt)
+      context.system.eventStream.subscribe(self, classOf[PaymentEvent])
       context.actorSelection(Register.actorPathToChannelId(firstHop.lastUpdate.channelId)) ! cmd
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
@@ -86,8 +82,8 @@ object PaymentLifecycle {
     */
   def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
 
-  def buildOnion(nodes: Seq[BinaryData], payloads: Seq[PerHopPayload]): BinaryData = {
-    require(nodes.size == payloads.size, s"size mistmatch: nodes=${nodes.size} payloads=${payloads.size}")
+  def buildOnion(nodes: Seq[BinaryData], payloads: Seq[PerHopPayload], associatedData: BinaryData): BinaryData = {
+    require(nodes.size == payloads.size + 1, s"count mismatch: there should be one less payload than nodes (nodes=${nodes.size} payloads=${payloads.size})")
 
     val pubkeys = nodes.map(PublicKey(_))
 
@@ -98,9 +94,9 @@ object PaymentLifecycle {
         .map {
           case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
           case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
-        }
+        } :+ BinaryData("00" * 20)
 
-    Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, BinaryData(""))
+    Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, associatedData)
   }
 
   /**
@@ -124,9 +120,10 @@ object PaymentLifecycle {
   val defaultHtlcExpiry = 10
 
   def buildCommand(finalAmountMsat: Long, paymentHash: BinaryData, hops: Seq[Hop], currentBlockCount: Int): CMD_ADD_HTLC = {
-    val (firstAmountMsat, firstExpiry, payloads) = buildRoute(finalAmountMsat, hops, currentBlockCount)
+    val (firstAmountMsat, firstExpiry, payloads) = buildRoute(finalAmountMsat, hops.drop(1), currentBlockCount)
     val nodes = hops.map(_.nextNodeId)
-    val onion = buildOnion(nodes, payloads)
+    // BOLT 2 requires that associatedData == paymentHash
+    val onion = buildOnion(nodes, payloads, paymentHash)
     CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion, commit = true)
   }
 

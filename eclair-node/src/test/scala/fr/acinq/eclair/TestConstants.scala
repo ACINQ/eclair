@@ -13,6 +13,7 @@ object TestConstants {
   val pushMsat = 200000000L
 
   object Alice {
+    val id = randomKey.publicKey
     val channelParams = LocalParams(
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,
@@ -32,6 +33,7 @@ object TestConstants {
   }
 
   object Bob {
+    val id = randomKey.publicKey
     val channelParams = LocalParams(
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,

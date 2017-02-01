@@ -29,10 +29,10 @@ class ShutdownTestkit extends TestkitBaseClass with StateTestsHelperMethods {
     val alice2blockchain = TestProbe()
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
-    val paymentHandler = TestProbe()
+    val relayer = TestProbe()
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, Alice.channelParams, Bob.id))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, Bob.channelParams, Alice.id))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()

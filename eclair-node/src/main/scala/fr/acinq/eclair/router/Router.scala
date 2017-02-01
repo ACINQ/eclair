@@ -55,7 +55,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       updates.values.foreach(transport ! _)
 
     case ChannelChangedState(_, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
-      val (c, u) = if (LexicographicalOrdering.isLessThan(local.nodeId, remoteNodeId)) {
+      val (c, u) = if (LexicographicalOrdering.isLessThan(local.nodeId, remoteNodeId.toBin)) {
         (
           makeChannelAnnouncement(d.commitments.channelId, local.nodeId, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey.toBin, d.params.remoteParams.fundingPubKey.toBin),
           makeChannelUpdate(Globals.Node.privateKey, d.commitments.channelId, true, Platform.currentTime / 1000)
