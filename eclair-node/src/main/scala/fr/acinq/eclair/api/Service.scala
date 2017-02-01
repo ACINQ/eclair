@@ -11,7 +11,7 @@ import akka.pattern.ask
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.Register.{ListChannels, SendCommand}
 import fr.acinq.eclair.channel._
@@ -47,7 +47,7 @@ trait Service extends Logging {
 
   import Json4sSupport.{json4sMarshaller, json4sUnmarshaller}
 
-  def connect(host: String, port: Int, pubkey: BinaryData, amount: Satoshi): Unit
+  def connect(host: String, port: Int, pubkey: BinaryData, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): Unit
 
   def register: ActorRef
 
@@ -71,7 +71,7 @@ trait Service extends Logging {
             req =>
               val f_res: Future[AnyRef] = req match {
                 case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(anchor_amount) :: Nil) =>
-                  connect(host, port.toInt, BinaryData(pubkey), Satoshi(anchor_amount.toLong))
+                  connect(host, port.toInt, BinaryData(pubkey), Satoshi(anchor_amount.toLong), MilliSatoshi(0))
                   Future.successful("ok")
                 case JsonRPCBody(_, _, "info", _) =>
                   Future.successful(Status(Globals.Node.id))
@@ -79,19 +79,19 @@ trait Service extends Logging {
                   (register ? ListChannels).mapTo[Iterable[ActorRef]]
                     .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
                 case JsonRPCBody(_, _, "network", _) =>
-                  (router ? 'network).mapTo[Iterable[ChannelDesc]]
+                  (router ? 'channels).mapTo[Iterable[ChannelDesc]]
                 case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
-                case JsonRPCBody(_, _, "sign", JString(channel) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
+                case JsonRPCBody(_, _, "sign", JInt(channel) :: Nil) =>
+                  (register ? SendCommand(channel.toLong, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                  (register ? SendCommand(channel, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "info: display basic node information",

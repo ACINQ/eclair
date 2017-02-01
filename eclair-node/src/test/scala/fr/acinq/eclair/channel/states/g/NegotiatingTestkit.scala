@@ -2,10 +2,10 @@ package fr.acinq.eclair.channel.states.g
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import org.junit.runner.RunWith
@@ -17,7 +17,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
+class NegotiatingTestkit extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -27,10 +27,11 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
     val alice2blockchain = TestProbe()
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
-    val paymentHandler = TestProbe()
+    val relayer = TestProbe()
     // note that alice.initialFeeRate != bob.initialFeeRate
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, Alice.channelParams, Bob.id))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, Bob.channelParams, Alice.id))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
@@ -91,7 +92,7 @@ class NegotiatingStateSpec extends StateSpecBaseClass with StateTestsHelperMetho
       assert(alice.stateName == NEGOTIATING)
       val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
       bob2blockchain.expectMsgType[WatchConfirmed]
-      alice ! (BITCOIN_FUNDING_SPENT, mutualCloseTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg(1 second)
       assert(alice.stateName == NEGOTIATING)
     }

@@ -83,26 +83,6 @@
         </dependency>
         <!-- SERIALIZATION -->
         <dependency>
-            <groupId>fr.acinq.eclair</groupId>
-            <artifactId>lightning-types_${scala.version.short}</artifactId>
-            <version>${project.parent.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.google.protobuf</groupId>
-            <artifactId>protobuf-java</artifactId>
-            <version>2.6.1</version>
-        </dependency>
-        <dependency>
-            <groupId>com.trueaccord.scalapb</groupId>
-            <artifactId>scalapb-runtime_${scala.version.short}</artifactId>
-            <version>${scalapb.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.trueaccord.lenses</groupId>
-            <artifactId>lenses_${scala.version.short}</artifactId>
-            <version>0.4</version>
-        </dependency>
-        <dependency>
             <groupId>org.scodec</groupId>
             <artifactId>scodec-core_${scala.version.short}</artifactId>
             <version>1.10.3</version>
@@ -126,19 +106,14 @@
         </dependency>
         <!-- OTHER -->
         <dependency>
-            <groupId>org.kitteh.irc</groupId>
-            <artifactId>client-lib</artifactId>
-            <version>2.2.0</version>
-        </dependency>
-        <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-core</artifactId>
-            <version>0.9.2</version>
+            <version>1.0.1</version>
         </dependency>
         <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-ext</artifactId>
-            <version>0.9.2</version>
+            <version>1.0.1</version>
         </dependency>
         <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->

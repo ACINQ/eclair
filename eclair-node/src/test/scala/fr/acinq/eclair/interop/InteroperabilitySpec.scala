@@ -90,7 +90,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
     super.afterAll()
   }
 
-  def sendCommand(channelId: String, cmd: Command): Future[String] = {
+  def sendCommand(channelId: Long, cmd: Command): Future[String] = {
     system.actorSelection(Register.actorPathToChannelId(system, channelId)).resolveOne().map(actor => {
       actor ! cmd
       "ok"
@@ -145,7 +145,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
     def now: Int = (System.currentTimeMillis() / 1000).toInt
 
     val future = for {
-      channelId <- listChannels.map(_.head).map(_.channelId.toString)
+      channelId <- listChannels.map(_.head).map(_.channelId)
       peer = lncli.getPeers.head
       // lightningd sends us a htlc
       blockcount <- btccli.getBlockCount

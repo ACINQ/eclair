@@ -5,10 +5,10 @@
 <?import java.lang.String?>
 <?import java.net.URL?>
 <GridPane fx:id="nodeId" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
-          prefWidth="395.0" xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1">
+          prefWidth="395.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
-        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="150.0"/>
-        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" maxWidth="292.0" minWidth="10.0" prefWidth="241.0"/>
+        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="110.0"/>
+        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="250.0"/>
     </columnConstraints>
     <rowConstraints>
         <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
@@ -27,7 +27,7 @@
                   GridPane.columnSpan="2" GridPane.rowIndex="1" GridPane.vgrow="ALWAYS"/>
         <Button fx:id="handleSend" defaultButton="true" mnemonicParsing="false" onAction="#handleSend" text="Send"
                 GridPane.rowIndex="7"/>
-        <Label fx:id="paymentRequestError" opacity="0.0" text="Please use a valid payment request"
+        <Label fx:id="paymentRequestError" opacity="0.0" text="Generic Invalid Payment Request"
                GridPane.columnSpan="2" GridPane.rowIndex="2">
             <styleClass>
                 <String fx:value="text-error"/>
@@ -37,10 +37,10 @@
         <Label styleClass="text-muted" text="Amount (mSat)" GridPane.halignment="RIGHT" GridPane.rowIndex="3"/>
         <Separator GridPane.columnSpan="2" GridPane.rowIndex="6"/>
         <Label styleClass="text-muted" text="Node Id" GridPane.halignment="RIGHT" GridPane.rowIndex="4"/>
-        <Label fx:id="amountLabel" text="0" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
-        <Label fx:id="nodeIdLabel" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+        <TextField fx:id="amountField" editable="false" styleClass="noteditable" text="0" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+        <TextField fx:id="nodeIdField" editable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+        <TextField fx:id="hashField" editable="false" styleClass="noteditable" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
         <Label styleClass="text-muted" text="hash" GridPane.halignment="RIGHT" GridPane.rowIndex="5"/>
-        <Label fx:id="hashLabel" text="N/A" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
         <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
                 GridPane.columnIndex="1" GridPane.halignment="RIGHT" GridPane.rowIndex="7"/>
     </children>

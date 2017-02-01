@@ -10,11 +10,13 @@
 <?import javafx.scene.layout.ColumnConstraints?>
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.RowConstraints?>
+<?import javafx.scene.layout.VBox?>
 
-<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefHeight="216.0" prefWidth="982.0" styleClass="grid" xmlns="http://javafx.com/javafx/8.0.121" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefWidth="528.0"
+          styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
-        <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="358.0" minWidth="10.0" prefWidth="137.0" />
-        <ColumnConstraints hgrow="SOMETIMES" maxWidth="618.0" minWidth="10.0" prefWidth="618.0" />
+        <ColumnConstraints hgrow="SOMETIMES" maxWidth="258.0" minWidth="10.0" prefWidth="157.0" halignment="RIGHT" />
+        <ColumnConstraints hgrow="SOMETIMES" maxWidth="263.0" minWidth="10.0" prefWidth="176.0" />
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="171.0" minWidth="10.0" prefWidth="145.0" />
     </columnConstraints>
     <rowConstraints>
@@ -22,11 +24,13 @@
         <RowConstraints vgrow="SOMETIMES" />
         <RowConstraints minHeight="1.0" prefHeight="3.0" vgrow="SOMETIMES" />
         <RowConstraints vgrow="SOMETIMES" />
+        <RowConstraints minHeight="1.0" prefHeight="3.0" vgrow="SOMETIMES" />
+        <RowConstraints vgrow="SOMETIMES" />
         <RowConstraints minHeight="10.0" prefHeight="50.0" vgrow="SOMETIMES" />
     </rowConstraints>
     <children>
-        <TextField fx:id="host" prefHeight="38.0" prefWidth="742.0" promptText="pubkey@host:port1" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-        <TextField fx:id="amount" prefHeight="31.0" prefWidth="123.0" GridPane.columnIndex="1" GridPane.rowIndex="3" />
+        <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port1" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
+        <TextField fx:id="fundingSatoshis" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="3" />
         <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="3">
             <items>
                 <FXCollections fx:factory="observableArrayList">
@@ -36,12 +40,35 @@
                 </FXCollections>
             </items>
         </ComboBox>
-        <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect" GridPane.columnIndex="1" GridPane.rowIndex="4" GridPane.valignment="BOTTOM" />
-        <Label text="Target Node URL" GridPane.rowIndex="1" />
-        <Label text="Amount" GridPane.rowIndex="3" />
-        <Label fx:id="hostError" opacity="0.0" styleClass="text-error" text="Please use a valid url (pubkey@host:port)" GridPane.columnIndex="1" GridPane.columnSpan="2" />
-        <Label fx:id="amountError" opacity="0.0" styleClass="text-error" text="Please use a valid amount" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2" />
-        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel" GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="4" GridPane.valignment="BOTTOM" />
+        <TextField fx:id="pushMsat" layoutX="193.0" layoutY="112.0" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="5" />
+        <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect"
+              GridPane.columnIndex="1" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
+        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
+              GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
+        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="3">
+            <children>
+                <Label styleClass="text-strong" text="Capacity *" />
+                <Label styleClass="label-description" text="Funding capacity of the channel." textAlignment="RIGHT" wrapText="true" />
+            </children>
+        </VBox>
+        <Label fx:id="hostError" opacity="0.0" styleClass="text-error" text="Generic Invalid URI"
+               GridPane.columnIndex="1" GridPane.columnSpan="2" />
+        <Label fx:id="fundingSatoshisError" opacity="0.0" styleClass="text-error" text="Generic Invalid Funding"
+               GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2" />
+        <Label fx:id="pushMsatError" layoutX="193.0" layoutY="89.0" opacity="0.0" styleClass="text-error" text="Generic Invalid Push"
+               GridPane.columnIndex="1" GridPane.rowIndex="4" />
+        <VBox alignment="CENTER_RIGHT" layoutX="24.0" layoutY="112.0" GridPane.rowIndex="5">
+            <children>
+                <Label styleClass="text-strong" text="Push Amount" />
+                <Label styleClass="label-description" text="Optional amount in millisatoshi. Sent when opening channel" textAlignment="RIGHT" wrapText="true" />
+            </children>
+        </VBox>
+        <VBox alignment="CENTER_RIGHT" layoutX="24.0" layoutY="112.0" GridPane.rowIndex="1">
+            <children>
+                <Label styleClass="text-strong" text="Target Node URI *" />
+                <Label styleClass="label-description" text="Address of the node" textAlignment="RIGHT" wrapText="true" />
+            </children>
+        </VBox>
     </children>
     <stylesheets>
         <URL value="@modals.css" />

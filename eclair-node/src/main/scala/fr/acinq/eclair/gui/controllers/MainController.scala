@@ -4,14 +4,14 @@ import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.embed.swing.SwingNode
 import javafx.fxml.FXML
 import javafx.scene.control.{ContextMenu, Label, MenuItem, Tab}
-import javafx.scene.input.ContextMenuEvent
+import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, TilePane, VBox}
 import javafx.stage.Stage
 
 import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages.{AboutStage, OpenChannelStage, ReceivePaymentStage, SendPaymentStage}
-import fr.acinq.eclair.gui.utils.ContextMenuUtils
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
 
@@ -33,6 +33,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
   @FXML var channelInfo: VBox = _
   @FXML var channelBox: VBox = _
   @FXML var tilePane: TilePane = _
+  @FXML var channelsTab: Tab = _
   @FXML var graphTab: Tab = _
 
   val swingNode: SwingNode = new SwingNode()
@@ -49,7 +50,9 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
     bitcoinChain.getStyleClass.add(setup.chain)
 
     graphTab.setContent(swingNode)
-    contextMenu = ContextMenuUtils.buildCopyContext(Globals.Node.id)
+    contextMenu = ContextMenuUtils.buildCopyContext(List(
+      new CopyAction("Copy Pubkey", Globals.Node.id),
+      new CopyAction("Copy URI", s"${Globals.Node.id}@${Globals.Node.address.getHostString}:${Globals.Node.address.getPort}" )))
 
     if (channelBox.getChildren.size() > 0) {
       channelInfo.setScaleY(0)
@@ -61,7 +64,11 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
         if (channelBox.getChildren.size() > 0) {
           channelInfo.setScaleY(0)
           channelInfo.setOpacity(0)
+        } else {
+          channelInfo.setScaleY(1)
+          channelInfo.setOpacity(1)
         }
+        channelsTab.setText(s"Channels (${channelBox.getChildren.size})")
       }
     })
   }
@@ -107,8 +114,12 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
     }
   }
 
-  @FXML def handleNodeIdContext(event: ContextMenuEvent): Unit = {
+  @FXML def openNodeIdContext(event: ContextMenuEvent): Unit = {
     contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
+  }
+
+  @FXML def closeNodeIdContext(event: MouseEvent): Unit = {
+    contextMenu.hide()
   }
 
   def positionAtCenter(childStage: Stage): Unit = {

@@ -41,7 +41,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2blockchain.forward(blockchainA)
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
-    bob ! BITCOIN_FUNDING_DEPTHOK
+    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
     alice2blockchain.expectMsgType[WatchLost]
     bob2blockchain.expectMsgType[WatchLost]
     alice2bob.expectMsgType[FundingLocked]

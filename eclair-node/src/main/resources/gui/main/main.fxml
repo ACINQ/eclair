@@ -3,16 +3,16 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.*?>
+<?import javafx.scene.layout.*?>    
 <?import java.lang.String?>
 <?import java.net.URL?>
-<BorderPane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
-            prefHeight="346.0" prefWidth="650.0" xmlns="http://javafx.com/javafx/8.0.60"
+<BorderPane fx:id="root" maxHeight="-Infinity" maxWidth="-Infinity" minWidth="-Infinity"
+            prefHeight="400.0" prefWidth="600.0" xmlns="http://javafx.com/javafx/8"
             xmlns:fx="http://javafx.com/fxml/1">
     <center>
-        <TabPane prefHeight="250.0" tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
+        <TabPane tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
             <tabs>
-                <Tab closable="false" text="Channels">
+                <Tab fx:id="channelsTab" closable="false" text="Channels">
                     <content>
                         <StackPane>
                             <children>
@@ -51,7 +51,7 @@
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
             </rowConstraints>
             <children>
-                <HBox alignment="CENTER_LEFT">
+                <HBox alignment="CENTER_LEFT" onContextMenuRequested="#openNodeIdContext" onMouseClicked="#closeNodeIdContext">
                     <children>
                         <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true"
                                    preserveRatio="true">
@@ -59,7 +59,7 @@
                                 <Image url="@../commons/images/eclair-shape.png"/>
                             </image>
                         </ImageView>
-                        <Label fx:id="labelNodeId" onContextMenuRequested="#handleNodeIdContext" text="N/A"/>
+                        <Label fx:id="labelNodeId" text="N/A"/>
                     </children>
                 </HBox>
                 <HBox alignment="CENTER_RIGHT" GridPane.columnIndex="1">

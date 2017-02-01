@@ -4,11 +4,11 @@ import java.io.File
 import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
-import akka.testkit.{TestFSMRef, TestKit}
+import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.NoopPaymentHandler
+import fr.acinq.eclair.payment.{NoopPaymentHandler, Relayer}
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -31,8 +31,11 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val blockchainB = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, paymentHandler, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, paymentHandler, Bob.channelParams, "0A"))
+    // we just bypass the relayer for this test
+    val relayer = paymentHandler
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, router.ref, relayer, Alice.channelParams, Bob.id))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, router.ref, relayer, Bob.channelParams, Alice.id))
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, 0)
     bob ! INPUT_INIT_FUNDEE()
     pipe ! (alice, bob)

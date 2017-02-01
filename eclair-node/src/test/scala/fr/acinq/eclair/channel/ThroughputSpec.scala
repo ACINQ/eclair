@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.payment.Relayer
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -51,13 +52,15 @@ class ThroughputSpec extends FunSuite {
           context.become(run(h2r - htlc.paymentHash))
       }
     }), "payment-handler")
-    val alice = system.actorOf(Channel.props(pipe, blockchain, paymentHandler, Alice.channelParams, "B"), "a")
-    val bob = system.actorOf(Channel.props(pipe, blockchain, paymentHandler, Bob.channelParams, "A"), "b")
+    val router: ActorRef = ???
+    val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler))
+    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, relayer, Alice.channelParams, Bob.id), "a")
+    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, relayer, Bob.channelParams, Alice.id), "b")
 
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {
       override def receive: Receive = {
-        case ChannelChangedState(_, _, _, NORMAL, _) => latch.countDown()
+        case ChannelChangedState(_, _, _, _, NORMAL, _) => latch.countDown()
       }
     }), "listener")
     system.eventStream.subscribe(listener, classOf[ChannelEvent])

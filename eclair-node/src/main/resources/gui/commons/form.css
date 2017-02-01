@@ -4,6 +4,8 @@
 	-fx-padding: 1em;
 }
 
+/* ------------- TEXT FIELD ------------- */
+
 .text-field, .text-area	{
 	-fx-padding: .6em;
 	-fx-background-insets: 0;
@@ -12,16 +14,33 @@
 	-fx-background-radius: 0;
 	-fx-background-color: rgb(249,249,249);
 }
+.text-field:focused {
+	-fx-border-color: rgb(63,179,234);
+}
+
+/* ------------- TEXT AREA ------------- */
+
 .ta.text-area {
 	-fx-border-width: 1px;
 	-fx-padding: .4em .2em;
 	-fx-font-family: "Consolas", "Lucida Console", Monaco, monospace;
 }
+
 .ta.text-area *.scroll-pane > *.viewport,
 .ta.text-area *.scroll-pane > *.viewport *.content {
 	-fx-background-color: transparent;
 }
 
-.text-field:focused {
-	-fx-border-color: rgb(63,179,234);
+/* ------------- NOT EDITABLE ------------- */
+/* Java FX text can only be selected if in a TextField or TextArea */
+/* Make it look like a standard label with the editable = false prop and a special styling */
+.text-area.noteditable,
+.text-field.noteditable,
+.text-field.noteditable:hover,
+.text-field.noteditable:focused,
+.noteditable {
+    -fx-background-color: transparent;
+    -fx-border-width: 0;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
 }

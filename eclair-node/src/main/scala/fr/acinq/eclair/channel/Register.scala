@@ -2,8 +2,8 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Props, _}
 import akka.util.Timeout
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Satoshi, ScriptElt}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Satoshi, ScriptElt}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
@@ -32,14 +32,14 @@ import scala.concurrent.duration._
   * ├── client (0..m, transient)
   * └── api
   */
-class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) extends Actor with ActorLogging {
+class Register(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) extends Actor with ActorLogging {
 
   import Register._
 
   def receive: Receive = main(0L)
 
   def main(counter: Long): Receive = {
-    case CreateChannel(connection, pubkey, amount_opt) =>
+    case CreateChannel(connection, pubkey, funding_opt, pushmsat_opt) =>
       def generateKey(index: Long): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, index :: counter :: Nil).privateKey
 
       val localParams = LocalParams(
@@ -47,8 +47,8 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScrip
         maxHtlcValueInFlightMsat = Long.MaxValue,
         channelReserveSatoshis = 0,
         htlcMinimumMsat = 0,
-        feeratePerKw = Globals.default_feeratePerKw,
-        toSelfDelay = Globals.default_delay_blocks,
+        feeratePerKw = Globals.feeratePerKw,
+        toSelfDelay = Globals.delay_blocks,
         maxAcceptedHtlcs = 100,
         fundingPrivKey = generateKey(0),
         revocationSecret = generateKey(1),
@@ -56,13 +56,17 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScrip
         delayedPaymentKey = generateKey(3),
         defaultFinalScriptPubKey = defaultFinalScriptPubKey,
         shaSeed = Globals.Node.seed,
-        isFunder = amount_opt.isDefined
+        isFunder = funding_opt.isDefined
       )
 
-      def makeChannel(conn: ActorRef, publicKey: BinaryData): ActorRef = {
-        val channel = context.actorOf(Channel.props(conn, blockchain, paymentHandler, localParams, publicKey.toString(), Some(Globals.autosign_interval)), s"channel-$counter")
-        amount_opt match {
-          case Some(amount) => channel ! INPUT_INIT_FUNDER(amount.amount, 0)
+      def makeChannel(conn: ActorRef, publicKey: PublicKey, ctx: ActorContext): ActorRef = {
+        // note that we use transport's context and not register's context
+        val channel = ctx.actorOf(Channel.props(conn, watcher, router, relayer, localParams, publicKey, Some(Globals.autosign_interval)), "channel")
+        funding_opt match {
+          case Some(funding) => pushmsat_opt match {
+            case Some(pushmsat) => channel ! INPUT_INIT_FUNDER(funding.amount, pushmsat.amount)
+            case None => channel ! INPUT_INIT_FUNDER(funding.amount, 0)
+          }
           case None => channel ! INPUT_INIT_FUNDEE()
         }
         channel
@@ -72,7 +76,7 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScrip
         new TransportHandler[LightningMessage](
           KeyPair(Globals.Node.publicKey.toBin, Globals.Node.privateKey.toBin),
           pubkey,
-          isWriter = amount_opt.isDefined,
+          isWriter = funding_opt.isDefined,
           them = connection,
           listenerFactory = makeChannel,
           serializer = LightningMessageSerializer)),
@@ -95,14 +99,14 @@ class Register(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScrip
 
 object Register {
 
-  def props(blockchain: ActorRef, paymentHandler: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) = Props(classOf[Register], blockchain, paymentHandler, defaultFinalScriptPubKey)
+  def props(blockchain: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) = Props(classOf[Register], blockchain, router, relayer, defaultFinalScriptPubKey)
 
   // @formatter:off
-  case class CreateChannel(connection: ActorRef, pubkey: Option[BinaryData], anchorAmount: Option[Satoshi])
+  case class CreateChannel(connection: ActorRef, pubkey: Option[BinaryData], fundingSatoshis: Option[Satoshi], pushMsat: Option[MilliSatoshi])
 
   case class ListChannels()
 
-  case class SendCommand(channelId: String, cmd: Command)
+  case class SendCommand(channelId: Long, cmd: Command)
 
   // @formatter:on
 
@@ -110,22 +114,22 @@ object Register {
     * Once it reaches NORMAL state, channel creates a [[fr.acinq.eclair.channel.AliasActor]]
     * which name is counterparty_id-anchor_id
     */
-  def create_alias(node_id: BinaryData, anchor_id: BinaryData)(implicit context: ActorContext) =
-    context.actorOf(Props(new AliasActor(context.self)), name = s"$node_id-$anchor_id")
+  def createAlias(nodeAddress: BinaryData, channelId: Long)(implicit context: ActorContext) =
+    context.actorOf(Props(new AliasActor(context.self)), name = s"$nodeAddress-${java.lang.Long.toUnsignedString(channelId)}")
 
-  def actorPathToNodeId(system: ActorSystem, nodeId: BinaryData): ActorPath =
-    system / "register" / "auth-handler-*" / "channel" / s"${nodeId}-*"
+  def actorPathToNodeAddress(system: ActorSystem, nodeAddress: BinaryData): ActorPath =
+    system / "register" / "transport-handler-*" / "channel" / s"$nodeAddress-*"
 
-  def actorPathToNodeId(nodeId: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToNodeId(context.system, nodeId)
+  def actorPathToNodeAddress(nodeAddress: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToNodeAddress(context.system, nodeAddress)
 
-  def actorPathToChannelId(system: ActorSystem, channelId: BinaryData): ActorPath =
-    system / "register" / "auth-handler-*" / "channel" / s"*-${channelId}"
+  def actorPathToChannelId(system: ActorSystem, channelId: Long): ActorPath =
+    system / "register" / "transport-handler-*" / "channel" / s"*-${channelId}"
 
-  def actorPathToChannelId(channelId: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToChannelId(context.system, channelId)
+  def actorPathToChannelId(channelId: Long)(implicit context: ActorContext): ActorPath = actorPathToChannelId(context.system, channelId)
 
   def actorPathToChannels()(implicit context: ActorContext): ActorPath =
-    context.system / "register" / "auth-handler-*" / "channel"
+    context.system / "register" / "transport-handler-*" / "channel"
 
-  def actorPathToHandlers()(implicit context: ActorContext): ActorPath =
-    context.system / "register" / "auth-handler-*"
+  def actorPathToTransportHandlers()(implicit context: ActorContext): ActorPath =
+    context.system / "register" / "transport-handler-*"
 }

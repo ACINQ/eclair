@@ -4,29 +4,43 @@ import javafx.event.{ActionEvent, EventHandler}
 import javafx.scene.control.{ContextMenu, MenuItem}
 import javafx.scene.input.{Clipboard, ClipboardContent}
 
+import scala.collection.immutable.List
+
 /**
   * Created by DPA on 28/09/2016.
   */
+
+/**
+  * Action to copy a value
+  *
+  * @param label label of the copy action in the context menu, defaults to copy value
+  * @param value the value to copy
+  */
+case class CopyAction(label: String = "Copy Value", value: String)
+
 object ContextMenuUtils {
   val clip = Clipboard.getSystemClipboard
 
   /**
-    * Builds a Context Menu with a single Copy action.
+    * Builds a Context Menu containing a list of copy actions.
     *
-    * @param valueToCopy the value to copy to clipboard
+    * @param actions list of copy action (label + value)
     * @return javafx context menu
     */
-  def buildCopyContext(valueToCopy: String): ContextMenu = {
+  def buildCopyContext (actions: List[CopyAction]): ContextMenu = {
     val context = new ContextMenu()
-    val copyItem = new MenuItem("Copy Value")
-    copyItem.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent): Unit = {
-        val clipContent = new ClipboardContent
-        clipContent.putString(valueToCopy)
-        clip.setContent(clipContent)
-      }
-    })
-    context.getItems.addAll(copyItem)
-    return context
+    for (action <- actions ) {
+      val copyItem = new MenuItem(action.label)
+      copyItem.setOnAction(new EventHandler[ActionEvent] {
+        override def handle(event: ActionEvent): Unit = {
+          val clipContent = new ClipboardContent
+          clipContent.putString(action.value)
+          clip.setContent(clipContent)
+        }
+      })
+      context.getItems.addAll(copyItem)
+    }
+    context
   }
+
 }

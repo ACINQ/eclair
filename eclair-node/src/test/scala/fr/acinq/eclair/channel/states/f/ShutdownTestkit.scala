@@ -4,10 +4,10 @@ import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestBitcoinClient
+import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.states.{StateSpecBaseClass, StateTestsHelperMethods}
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
@@ -19,7 +19,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods {
+class ShutdownTestkit extends TestkitBaseClass with StateTestsHelperMethods {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
@@ -29,9 +29,10 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
     val alice2blockchain = TestProbe()
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
     val bob2blockchain = TestProbe()
-    val paymentHandler = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, paymentHandler.ref, Alice.channelParams, "0B"))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, paymentHandler.ref, Bob.channelParams, "0A"))
+    val relayer = TestProbe()
+    val router = TestProbe()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, Alice.channelParams, Bob.id))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, Bob.channelParams, Alice.id))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
@@ -356,7 +357,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       // bob publishes his current commit tx, which contains two pending htlcs alice->bob
       val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       assert(bobCommitTx.txOut.size == 4) // two main outputs and 2 pending htlcs
-      alice ! (BITCOIN_FUNDING_SPENT, bobCommitTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
 
@@ -392,7 +393,7 @@ class ShutdownStateSpec extends StateSpecBaseClass with StateTestsHelperMethods 
       // bob now has a new commitment tx
 
       // bob published the revoked tx
-      alice ! (BITCOIN_FUNDING_SPENT, revokedTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsgType[WatchConfirmed]
 

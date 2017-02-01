@@ -8,7 +8,6 @@
     <packaging>pom</packaging>
 
     <modules>
-        <module>lightning-types</module>
         <module>eclair-node</module>
     </modules>
 
@@ -49,7 +48,6 @@
         <acinqtools.version>1.2</acinqtools.version>
         <akka.version>2.4.12</akka.version>
         <bitcoinlib.version>0.9.9</bitcoinlib.version>
-        <scalapb.version>0.4.21</scalapb.version>
     </properties>
 
     <build>

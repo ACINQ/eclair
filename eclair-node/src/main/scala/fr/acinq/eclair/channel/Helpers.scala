@@ -224,10 +224,10 @@ object Helpers {
       * When an unexpected transaction spending the funding tx is detected:
       * 1) we find out if the published transaction is one of remote's revoked txs
       * 2) and then:
-      * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
-      * b) otherwise there is nothing we can do
+      *   a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
+      *   b) otherwise there is nothing we can do
       *
-      * @return a list of transactions (one per HTLC that we can claim) if the tx is a revoked commitment, [[None]] otherwise
+      * @return a [[RevokedCommitPublished]] object containing punishment transactions if the tx is a revoked commitment
       */
     def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Option[RevokedCommitPublished] = {
       import commitments._

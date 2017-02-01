@@ -2,9 +2,11 @@ package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
 
+import akka.actor.{Actor, ActorContext, ActorRef, LoggingFSM, Terminated}
 import akka.actor.{Actor, ActorRef, LoggingFSM, OneForOneStrategy, SupervisorStrategy, Terminated}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.channel.{CMD_CLOSE, Command}
 import fr.acinq.eclair.crypto.Noise._
@@ -29,7 +31,7 @@ import scala.util.{Failure, Success, Try}
   * @param listenerFactory factory that will be used to create the listener that will receive decrypted messages once the
   *                        handshake phase as been completed. Its parameters are a tuple (transport handler, remote public key)
   */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], them: ActorRef, isWriter: Boolean, listenerFactory: (ActorRef, BinaryData) => ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with LoggingFSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], them: ActorRef, isWriter: Boolean, listenerFactory: (ActorRef, PublicKey, ActorContext) => ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with LoggingFSM[TransportHandler.State, TransportHandler.Data] {
 
   import TransportHandler._
 
@@ -70,7 +72,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], th
 
         reader.read(payload) match {
           case (writer, _, Some((dec, enc, ck))) =>
-            val listener = listenerFactory(self, writer.rs)
+            val listener = listenerFactory(self, PublicKey(writer.rs), context)
             context.watch(listener)
             val (nextStateData, plaintextMessages) = WaitingForCyphertextData(ExtendedCipherState(enc, ck), ExtendedCipherState(dec, ck), None, remainder, listener).decrypt
             sendToListener(listener, plaintextMessages)
@@ -87,7 +89,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], th
               }
               case (_, message, Some((enc, dec, ck))) => {
                 them ! Write(TransportHandler.prefix +: message)
-                val listener = listenerFactory(self, writer.rs)
+                val listener = listenerFactory(self, PublicKey(writer.rs), context)
                 context.watch(listener)
                 val (nextStateData, plaintextMessages) = WaitingForCyphertextData(ExtendedCipherState(enc, ck), ExtendedCipherState(dec, ck), None, remainder, listener).decrypt
                 sendToListener(listener, plaintextMessages)

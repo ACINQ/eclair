@@ -4,8 +4,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown}
-import lightning.{route, route_step}
+import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown, UpdateAddHtlc}
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -85,14 +84,10 @@ case object BITCOIN_CLOSE_DONE extends BitcoinEvent
 
 sealed trait Command
 
-/*
-  Used when relaying payments
- */
-final case class Origin(channelId: BinaryData, htlc_id: Long)
 /**
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, payment_route: route = route(route_step(0, next = route_step.Next.End(true)) :: Nil), origin: Option[Origin] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), origin: Option[UpdateAddHtlc] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
@@ -119,6 +114,7 @@ case object Nothing extends Data
 
 trait HasCommitments extends Data {
   def commitments: Commitments
+  def channelId = commitments.channelId
 }
 
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
@@ -131,11 +127,10 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit) extends Data
 final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
-final case class DATA_NORMAL(channelId: Long, params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown], downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(channelId: Long, params: ChannelParams, commitments: Commitments,
-                               localShutdown: Shutdown, remoteShutdown: Shutdown,
-                               downstreams: Map[Long, Option[Origin]]) extends Data with HasCommitments
-final case class DATA_NEGOTIATING(channelId: Long, params: ChannelParams, commitments: Commitments,
+final case class DATA_NORMAL(params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(params: ChannelParams, commitments: Commitments,
+                               localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
+final case class DATA_NEGOTIATING(params: ChannelParams, commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,

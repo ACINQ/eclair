@@ -17,22 +17,34 @@ object GUIValidators {
   /**
     * Validate a field against a regex. If field does not match regex, validatorLabel is shown.
     *
-    * @param field          String content of the field to validate
-    * @param validatorLabel JFX label associated to the field
-    * @param regex          Scala regex that the field must match
-    * @return true if field is valid, false otherwise
+    * @param field            String content of the field to validate
+    * @param validatorLabel   JFX label associated to the field.
+    * @param validatorMessage Message displayed if the field is invalid. It should describe the cause of
+    *                         the validation failure
+    * @param regex            Scala regex that the field must match
+    * @return                 true if field is valid, false otherwise
     */
-  def validate(field: String, validatorLabel: Label, regex: Regex): Boolean = {
-
+  def validate(field: String, validatorLabel: Label, validatorMessage: String, regex: Regex): Boolean = {
     return field match {
       case regex() => {
-        validatorLabel.setOpacity(0)
-        return true
+        return validate(validatorLabel, validatorMessage, true)
       }
       case _ => {
-        validatorLabel.setOpacity(1)
-        return false
+        return validate(validatorLabel, validatorMessage, false)
       }
     }
+  }
+
+  /**
+    * Displays a label with an error message.
+    *
+    * @param errorLabel       JFX label containing an error messsage
+    * @param validCondition   if true the label is hidden, else it is shown
+    * @return                 true if field is valid, false otherwise
+    */
+  def validate(errorLabel: Label, errorMessage: String, validCondition: Boolean): Boolean = {
+    errorLabel.setOpacity( if (validCondition) 0 else 1 )
+    errorLabel.setText(errorMessage)
+    validCondition
   }
 }
