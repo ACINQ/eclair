@@ -1,7 +1,6 @@
 .about-text {
 	-fx-padding: .5em 0;
 	-fx-line-spacing: .35em;
-	-fx-fill: rgb(80,80,80);
 }
 
 .grid.about.modal {

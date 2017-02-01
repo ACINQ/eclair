@@ -50,8 +50,5 @@
     </children>
     <stylesheets>
         <URL value="@../commons/globals.css"/>
-        <URL value="@../commons/form.css"/>
-        <URL value="@../commons/progressbar.css"/>
-        <URL value="@channel.css"/>
     </stylesheets>
 </VBox>

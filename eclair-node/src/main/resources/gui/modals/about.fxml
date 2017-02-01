@@ -59,7 +59,6 @@
         <String fx:value="about"/>
     </styleClass>
     <stylesheets>
-        <URL value="@../commons/form.css"/>
         <URL value="@../commons/globals.css"/>
         <URL value="@modals.css"/>
     </stylesheets>

@@ -1,0 +1,185 @@
+/* ---------- Global ---------- */
+.root {
+    -fx-font-size: 14px;
+    -fx-font-family: "Open Sans", "Arial", "sans-serif";
+    -fx-base: rgb(255, 255, 255);
+	-fx-background: rgb(255, 255, 255);
+    -fx-text-fill: rgb(80, 82, 84);
+}
+
+.label {
+	-fx-text-fill: rgb(80, 82, 84);
+}
+.label.text-muted {
+	-fx-text-fill: rgb(156,159,161);
+}
+
+/* ---------- Buttons ---------- */
+
+.button {
+	-fx-padding: .5em 1em;
+	-fx-border-insets: 0;
+	-fx-border-width: 0;
+	-fx-background-insets: 0;
+	-fx-background-radius: 0;
+	-fx-background-color: rgb(63,179,234);
+	-fx-cursor: hand;
+	-fx-border-color: rgb(63,179,234);
+    -fx-border-width: 1px;
+}
+.button .text {
+	-fx-fill: white;
+}
+.button:hover,
+.button:focused {
+	-fx-background-color: rgb(24,158,222);
+	-fx-border-color: rgb(24,158,222);
+}
+.button:pressed {
+	-fx-background-color: rgb(0,131,195);
+	-fx-border-color: rgb(0,131,195);
+}
+
+.button.close {
+	-fx-background-color: rgb(232,65,90);
+}
+
+.button.cancel {
+	-fx-background-color: white;
+	-fx-border-color: rgb(233,190,198);
+	-fx-border-width: 1px;
+}
+.button.cancel:hover,
+.button.cancel:focused,
+.button.cancel:pressed {
+	-fx-border-color: rgb(217,144,158);
+}
+.button.cancel .text {
+	-fx-fill: rgb(212,125,140);
+}
+.button.cancel:hover .text,
+.button.cancel:focused .text,
+.button.cancel:pressed .text {
+	-fx-fill: rgb(191,68,92);
+}
+
+.button.grey {
+    -fx-background-color: rgb(230,230,230);
+    -fx-border-color: rgb(230,230,230);
+}
+.button.grey:hover,
+.button.grey:pressed {
+    -fx-background-color: rgb(220,220,220);
+    -fx-border-color: rgb(220,220,220);
+}
+.button.grey .text {
+    -fx-fill: rgb(95,95,95);
+}
+
+.button.close-channel {
+	-fx-background-color: white;
+	-fx-background-image: url("../commons/images/close.png");
+	-fx-background-repeat: no-repeat;
+	-fx-background-size: 5px;
+    -fx-background-position: 8px center;
+    -fx-border-color: transparent;
+	-fx-padding: 0px 5px 0px 17px;
+}
+
+.button.close-channel:hover {
+	-fx-background-color: rgb(249,243,243);
+	-fx-border-color: rgb(249,243,243);
+}
+
+.button.close-channel .text {
+	-fx-fill: rgb(232,65,90);
+	-fx-font-size: 12px;
+}
+
+/* ------------- TEXT FIELD ------------- */
+
+.text-field, .text-area	{
+	-fx-padding: .6em;
+	-fx-background-insets: 0;
+	-fx-border-color: rgb(220,220,220);
+	-fx-border-width: 1px;
+	-fx-background-radius: 0;
+	-fx-background-color: rgb(249,249,249);
+}
+.text-field:focused {
+	-fx-border-color: rgb(63,179,234);
+}
+
+/* ------------- TEXT AREA ------------- */
+
+.ta.text-area {
+	-fx-border-width: 1px;
+	-fx-padding: .4em .2em;
+	-fx-font-family: "Consolas", "Lucida Console", Monaco, monospace;
+}
+
+.ta.text-area *.scroll-pane > *.viewport,
+.ta.text-area *.scroll-pane > *.viewport *.content {
+	-fx-background-color: transparent;
+}
+
+/* ------------- Status Bar ------------- */
+
+.status-bar {
+	-fx-background-color: rgb(240,245,246);
+}
+.status-bar .separator:vertical .line {
+	-fx-background-color: rgb(226,227,229);
+}
+
+/* ------------- About modal ------------- */
+
+.about-text {
+    -fx-fill: rgb(80,80,80);
+}
+
+/* ------------- Splash Error Box ------------- */
+
+.error-box {
+    -fx-background-color: rgb(255,255,255);
+	-fx-text-fill: white;
+    -fx-border-color: rgb(180,180,180);
+}
+
+/* ------------- Menu ------------- */
+
+.menu-bar .menu-button:hover,
+.menu-bar .menu-button:focused,
+.menu-bar .menu-button:showing,
+.menu-bar .menu-item:hover,
+.menu-bar .menu-item:focused {
+	-fx-background-color: rgb(109,197,239);
+}
+
+/* ------------- Tabs ------------- */
+
+.tab-pane > *.tab-header-area {
+	-fx-padding: .7em 1em 0;
+}
+
+.tab-pane > *.tab-header-area > *.tab-header-background {
+	-fx-base: rgb(25,170,240);
+	-fx-background-color: rgb(228,235,238);
+}
+
+.tab:top {
+	-fx-padding: 0.25em 1em;
+	-fx-background-color: rgba(255,255,255, .5);
+	-fx-background-radius: 0;
+	-fx-focus-color: transparent;
+	-fx-faint-focus-color: transparent;
+	-fx-background-insets: 0 0 0 0;
+}
+
+.tab:top:selected {
+	-fx-background-color: white;
+	-fx-base: rgb(25,170,240);
+}
+.tab-content-area {
+	-fx-background-color: white;
+}
