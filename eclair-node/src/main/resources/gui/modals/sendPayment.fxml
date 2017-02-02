@@ -50,6 +50,5 @@
     </styleClass>
     <stylesheets>
         <URL value="@../commons/globals.css"/>
-        <URL value="@modals.css"/>
     </stylesheets>
 </GridPane>

@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui.stages
 
+import javafx.application.HostServices
 import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
@@ -10,7 +11,7 @@ import fr.acinq.eclair.gui.controllers.AboutController
 /**
   * Created by DPA on 28/09/2016.
   */
-class AboutStage extends Stage() {
+class AboutStage(hostServices: HostServices) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair02.png", false))
@@ -19,7 +20,7 @@ class AboutStage extends Stage() {
 
   // get fxml/controller
   val openFXML = new FXMLLoader(getClass.getResource("/gui/modals/about.fxml"))
-  openFXML.setController(new AboutController)
+  openFXML.setController(new AboutController(hostServices))
   val root = openFXML.load[Parent]
 
   // create scene

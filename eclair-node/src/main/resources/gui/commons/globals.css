@@ -19,6 +19,15 @@
     -fx-font-size: 10px;
 }
 
+.link {
+    -fx-fill: rgb(63,179,234);
+    -fx-underline: true;
+    -fx-cursor: hand;
+}
+.link:hover {
+    -fx-fill: rgb(93,199,254);
+}
+
 /* ---------- Context Menu ---------- */
 
 .context-menu {

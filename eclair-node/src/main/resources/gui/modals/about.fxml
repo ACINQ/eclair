@@ -1,65 +1,62 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
+<?import java.lang.String?>
+<?import java.net.URL?>
 <?import javafx.scene.image.Image?>
 <?import javafx.scene.image.ImageView?>
-<?import javafx.scene.layout.*?>
-<?import javafx.scene.text.*?>
-<?import java.lang.*?>
-<?import java.net.URL?>
-<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
+<?import javafx.scene.layout.ColumnConstraints?>
+<?import javafx.scene.layout.GridPane?>
+<?import javafx.scene.layout.VBox?>
+<?import javafx.scene.text.Text?>
+<?import javafx.scene.text.TextFlow?>
+
+<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefWidth="450.0"
           xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
-        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0"/>
-        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0"/>
-        <ColumnConstraints/>
+        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" maxWidth="120.0" />
+        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="180.0" />
     </columnConstraints>
-    <rowConstraints>
-        <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
-    </rowConstraints>
     <children>
-        <VBox fillWidth="false" styleClass="about-content" GridPane.columnIndex="1" GridPane.columnSpan="2">
+        <ImageView fitHeight="120.0" fitWidth="120.0" pickOnBounds="true" preserveRatio="true" GridPane.halignment="CENTER">
+            <image>
+                <Image url="@../commons/images/eclair02.png" />
+            </image>
+        </ImageView>
+        <VBox spacing="10.0" styleClass="about-content" GridPane.columnIndex="1">
             <children>
-                <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Eclair">
-                    <styleClass>
-                        <String fx:value="about-text"/>
-                        <String fx:value="text-strong"/>
-                    </styleClass>
-                </Text>
-                <TextFlow/>
                 <TextFlow>
                     <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text"
-                              text="This software is brought to you by ACINQ :-)"/>
-                    </children>
-                </TextFlow>
-                <TextFlow>
-                    <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text"
-                              text="The source code is available on GitHub (https://github.com/ACINQ/eclair)"/>
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Eclair v0.0.2" />
                     </children>
                 </TextFlow>
                 <TextFlow layoutX="10.0" layoutY="90.0">
                     <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text"
-                              text="This software is released under the Apache 2 License (http://www.apache.org/licenses/)"/>
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="This software is released under " />
+                        <Text onMouseClicked="#openApacheLicencePage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="the Apache 2 License" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". It follows the LN specifications and as such is compatible with other Lightning Network implementations." />
+                    </children>
+                </TextFlow>
+                <TextFlow layoutX="10.0" layoutY="10.0">
+                    <children>
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="The source code is available from " />
+                        <Text onMouseClicked="#openGithubPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="https://github.com/ACINQ/eclair" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". If you encounter technical issues, please open a ticket here." />
+                    </children>
+                </TextFlow>
+                <TextFlow layoutX="10.0" layoutY="90.0">
+                    <children>
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="This software is brought to you by " />
+                        <Text onMouseClicked="#openACINQPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="ACINQ" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". Contact us at hello@acinq.co." />
                     </children>
                 </TextFlow>
             </children>
         </VBox>
-        <ImageView fitHeight="120.0" fitWidth="120.0" pickOnBounds="true" preserveRatio="true"
-                   GridPane.halignment="CENTER">
-            <image>
-                <Image url="@../commons/images/eclair02.png"/>
-            </image>
-        </ImageView>
     </children>
     <styleClass>
-        <String fx:value="grid"/>
-        <String fx:value="modal"/>
-        <String fx:value="about"/>
+        <String fx:value="grid" />
     </styleClass>
     <stylesheets>
-        <URL value="@../commons/globals.css"/>
-        <URL value="@modals.css"/>
+        <URL value="@../commons/globals.css" />
     </stylesheets>
 </GridPane>

@@ -71,7 +71,6 @@
         </VBox>
     </children>
     <stylesheets>
-        <URL value="@modals.css" />
         <URL value="@../commons/globals.css" />
     </stylesheets>
 </GridPane>
