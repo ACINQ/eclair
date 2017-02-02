@@ -353,7 +353,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
           888       888 d88P     888 8888888 888    Y888      88888888 "Y88888P"   "Y88888P"  888
    */
 
-  when(NORMAL) {
+  when(NORMAL) (handleExceptions {
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined =>
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
@@ -499,7 +499,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
 
-  }
+  })
 
   /*
            .d8888b.  888      .d88888b.   .d8888b. 8888888 888b    888  .d8888b.
@@ -512,7 +512,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
            "Y8888P"  88888888 "Y88888P"   "Y8888P" 8888888 888    Y888  "Y8888P88
    */
 
-  when(SHUTDOWN) {
+  when(SHUTDOWN) (handleExceptions {
+
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
@@ -590,9 +591,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) => handleRemoteSpentOther(tx, d)
 
     case Event(e: Error, d: DATA_SHUTDOWN) => handleRemoteError(e, d)
-  }
 
-  when(NEGOTIATING) {
+  })
+
+  when(NEGOTIATING) (handleExceptions {
+
     case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) if remoteClosingFee == d.localClosingSigned.feeSatoshis =>
       Closing.checkClosingSignature(d.params, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
         case Success(signedClosingTx) =>
@@ -630,7 +633,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
     case Event(e: Error, d: DATA_NEGOTIATING) => handleRemoteError(e, d)
 
-  }
+  })
 
   when(CLOSING) {
 
