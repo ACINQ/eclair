@@ -44,8 +44,12 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
   @FXML def handleSend(event: ActionEvent): Unit = {
     if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
       val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
-      handlers.send(nodeId, hash, amount)
-      stage.close()
+      if (GUIValidators.validate(amount, paymentRequestError, "Amount must be numeric", GUIValidators.amountRegex)
+        && GUIValidators.validate(paymentRequestError, "Amount must be greater than 0", amount.toLong > 0)
+        && GUIValidators.validate(paymentRequestError, "Amount must be less than 4 294 967 295 mSat (~0.042 BTC)", amount.toLong < 4294967295L)) {
+        handlers.send(nodeId, hash, amount)
+        stage.close()
+      }
     }
   }
 
