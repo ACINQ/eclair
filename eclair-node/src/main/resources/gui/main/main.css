@@ -1,9 +1,13 @@
+/* ---------- Status Bar ---------- */
+
 .status-bar {
 	-fx-padding: .5em 1em;
-	-fx-background-color: rgb(230,230,230);
+	-fx-background-color: rgb(221,221,221);
+	-fx-border-width: 1px 0 0 0;
+	-fx-border-color: rgb(181,181,181);
 }
 .status-bar .separator:vertical {
-	-fx-padding: -.5em 1em;
+	-fx-padding: 0 1em;
 }
 
 .status-bar .separator:vertical .line {
@@ -66,4 +70,9 @@
 }
 .tab-content-area {
 	-fx-padding: .5em 1em 0;
+}
+
+.tab:top:selected {
+	-fx-focus-color: transparent;
+	-fx-faint-focus-color: transparent;
 }
