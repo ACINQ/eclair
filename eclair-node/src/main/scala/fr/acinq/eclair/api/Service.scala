@@ -81,7 +81,7 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "network", _) =>
                   (router ? 'channels).mapTo[Iterable[ChannelDesc]]
                 case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
-                  (paymentInitiator ? CreatePayment(amount.toInt, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
+                  (paymentInitiator ? CreatePayment(amount.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
                 case JsonRPCBody(_, _, "sign", JInt(channel) :: Nil) =>

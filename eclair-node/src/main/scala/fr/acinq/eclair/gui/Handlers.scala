@@ -29,7 +29,7 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: String, rhash: String, amountMsat: String) = {
     logger.info(s"sending $amountMsat to $rhash @ $nodeId")
-    paymentInitiator ! CreatePayment(amountMsat.toInt, BinaryData(rhash), BinaryData(nodeId))
+    paymentInitiator ! CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))
   }
 
   def getH(textField: TextField): Unit = {
