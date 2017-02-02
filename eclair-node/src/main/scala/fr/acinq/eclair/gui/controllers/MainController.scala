@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui.controllers
 
+import javafx.application.HostServices
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.embed.swing.SwingNode
 import javafx.fxml.FXML
@@ -18,7 +19,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 22/09/2016.
   */
-class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends BaseController with Logging {
+class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup, val hostServices: HostServices) extends BaseController with Logging {
 
   @FXML var root: BorderPane = _
   @FXML var menuOpen: MenuItem = _
@@ -99,7 +100,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup)
   }
 
   @FXML def handleOpenAbout: Unit = {
-    val aboutStage = new AboutStage()
+    val aboutStage = new AboutStage(hostServices)
     aboutStage.initOwner(stage)
     aboutStage.show()
   }

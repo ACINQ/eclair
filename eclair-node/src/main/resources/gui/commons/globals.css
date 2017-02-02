@@ -6,7 +6,7 @@
 
 .text-error {
 	-fx-text-fill: rgb(216,31,74);
-	-fx-font-size: 10px;
+	-fx-font-size: 11px;
 	-fx-translate-y: 6px;
 }
 
@@ -15,8 +15,17 @@
 }
 
 .label-description {
-    -fx-text-fill: rgb(156,159,161);
-    -fx-font-size: 10px;
+    -fx-text-fill: rgb(146,149,151);
+    -fx-font-size: 11px;
+}
+
+.link {
+    -fx-fill: rgb(63,179,234);
+    -fx-underline: true;
+    -fx-cursor: hand;
+}
+.link:hover {
+    -fx-fill: rgb(93,199,254);
 }
 
 /* ---------- Context Menu ---------- */

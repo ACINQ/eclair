@@ -36,7 +36,7 @@ class FxApp extends Application with Logging {
         try {
           val setup = new Setup()
           val handlers = new Handlers(setup)
-          val controller = new MainController(handlers, primaryStage, setup)
+          val controller = new MainController(handlers, primaryStage, setup, getHostServices)
           val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
 

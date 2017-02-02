@@ -13,7 +13,7 @@ import scodec.Attempt
 
 // @formatter:off
 
-case class CreatePayment(amountMsat: Int, paymentHash: BinaryData, targetNodeId: BinaryData)
+case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: BinaryData)
 
 sealed trait Data
 case class WaitingForRequest(currentBlockCount: Long) extends Data
