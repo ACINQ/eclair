@@ -29,7 +29,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
   @FXML def handleGenerate(event: ActionEvent): Unit = {
     if (GUIValidators.validate(amount.getText, amountError, "Amount must be numeric", GUIValidators.amountRegex)
         && GUIValidators.validate(amountError, "Amount must be greater than 0", amount.getText.toLong > 0)
-        && GUIValidators.validate(amountError, "Amount must be 4200000 satoshis or less", amount.getText.toLong <= 4200000)) {
+        && GUIValidators.validate(amountError, "Must be 4 294 967 295 mSat (~0.042 BTC) or less", amount.getText.toLong <= 4294967295L)) {
       Try(amount.getText.toLong) match {
         case Success(amountMsat) => handlers.getPaymentRequest(amount.getText.toLong, paymentRequest)
         case _ => {}
