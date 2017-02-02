@@ -39,6 +39,8 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
   context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
+  context.system.eventStream.publish(NodeDiscovered(announcement))
+
   def receive: Receive = main(local = announcement, nodes = Map(announcement.nodeId -> announcement), channels = Map(), updates = Map(), rebroadcast = Nil)
 
   def main(
@@ -69,6 +71,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1})")
       // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
       self ! 'tick_broadcast
+      context.system.eventStream.publish(ChannelDiscovered(c))
       context become main(local, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c :+ local :+ u)
 
     case s: ChannelChangedState =>
@@ -85,6 +88,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
       // TODO: forget channel once funding tx spent (add watch)
       //watcher ! WatchSpent(self, txId: BinaryData, outputIndex: Int, minDepth: Int, event: BitcoinEvent)
       log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1})")
+      context.system.eventStream.publish(ChannelDiscovered(c))
       context become main(local, nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c)
 
     case n: NodeAnnouncement if !checkSig(n) =>
@@ -98,6 +102,7 @@ class Router(watcher: ActorRef, announcement: NodeAnnouncement) extends Actor wi
 
     case n: NodeAnnouncement =>
       log.info(s"added/replaced node nodeId=${n.nodeId} (nodes=${nodes.size + 1} channels=${channels.size})")
+      context.system.eventStream.publish(NodeDiscovered(n))
       context become main(local, nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
 
     case u: ChannelUpdate if !channels.contains(u.channelId) =>
