@@ -9,4 +9,6 @@
 .error-box {
 	-fx-padding: 2em;
     -fx-border-width: 1px;
+    -fx-background-color: white;
+    -fx-border-color: rgb(80,80,80);
 }
