@@ -1,12 +1,12 @@
 package fr.acinq.eclair.router
 
-import java.io.{ByteArrayOutputStream, OutputStreamWriter}
+import java.io.{BufferedWriter, StringWriter}
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.pattern.pipe
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel._
@@ -209,7 +209,7 @@ object Router {
       .map(desc => Hop(desc.a, desc.b, updates(desc)))
   }
 
-  def graph2dot(nodes: Map[BinaryData, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[BinaryData] = Future {
+  def graph2dot(nodes: Map[BinaryData, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = Future {
     case class DescEdge(channelId: Long) extends DefaultEdge
     val g = new SimpleGraph[BinaryData, DescEdge](classOf[DescEdge])
     channels.foreach(d => {
@@ -218,7 +218,7 @@ object Router {
       g.addEdge(d._2.nodeId1, d._2.nodeId2, new DescEdge(d._1))
     })
     val vertexIDProvider = new ComponentNameProvider[BinaryData]() {
-      override def getName(nodeId: BinaryData): String = "\"" + nodeId.toString() +  "\""
+      override def getName(nodeId: BinaryData): String = "\"" + nodeId.toString() + "\""
     }
     val edgeLabelProvider = new ComponentNameProvider[DescEdge]() {
       override def getName(e: DescEdge): String = e.channelId.toString
@@ -233,14 +233,12 @@ object Router {
         }
     }
     val exporter = new DOTExporter[BinaryData, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
-    val bos = new ByteArrayOutputStream()
-    val writer = new OutputStreamWriter(bos)
+    val writer = new BufferedWriter(new StringWriter())
     try {
       exporter.exportGraph(g, writer)
-      bos.toByteArray
+      writer.toString
     } finally {
       writer.close()
-      bos.close()
     }
 
   }
