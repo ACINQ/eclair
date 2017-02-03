@@ -1,8 +1,10 @@
 package fr.acinq.eclair.gui
 
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File, FileWriter}
 import javafx.application.Platform
 import javafx.scene.control.{TextArea, TextField}
+import javafx.stage.Stage
 
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
@@ -54,4 +56,17 @@ class Handlers(setup: Setup) extends Logging {
     }
   }
 
+  def exportToDot(file: File): Unit = {
+    import akka.pattern.ask
+    (router ? 'dot).mapTo[String].map(dot => printToFile(file)(writer => writer.write(dot)))
+  }
+
+  def printToFile(f: java.io.File)(op: java.io.FileWriter => Unit) {
+    val p = new FileWriter(f)
+    try {
+      op(p)
+    } finally {
+      p.close()
+    }
+  }
 }

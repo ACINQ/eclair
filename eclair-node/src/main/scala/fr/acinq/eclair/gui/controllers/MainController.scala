@@ -10,7 +10,8 @@ import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, VBox}
-import javafx.stage.Stage
+import javafx.stage.FileChooser.ExtensionFilter
+import javafx.stage.{FileChooser, Stage}
 import javafx.util.Callback
 
 import com.mxgraph.swing.mxGraphComponent
@@ -144,6 +145,14 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     allChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue().nodeId2
     })
+  }
+
+  @FXML def handleExportDot() = {
+    val fileChooser = new FileChooser()
+    fileChooser.setTitle("Save as")
+    fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
+    val file = fileChooser.showSaveDialog(stage)
+    if (file != null) handlers.exportToDot(file)
   }
 
   @FXML def handleOpenChannel() = {
