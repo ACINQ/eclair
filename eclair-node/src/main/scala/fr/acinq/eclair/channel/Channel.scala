@@ -176,7 +176,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
   })
 
   when(WAIT_FOR_FUNDING_CREATED_INTERNAL)(handleExceptions {
-    case Event((fundingTx: Transaction, fundingTxOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, remoteFirstPerCommitmentPoint)) =>
+    case Event(MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, remoteFirstPerCommitmentPoint)) =>
       // our wallet provided us with a funding tx
       log.info(s"funding tx txid=${fundingTx.txid}")
 
@@ -223,7 +223,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
           // watch the funding tx transaction
           val commitInput = localCommitTx.input
-          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, minDepth = 0, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth.toInt, BITCOIN_FUNDING_DEPTHOK)
 
           val commitments = Commitments(params.localParams, params.remoteParams,
@@ -256,7 +256,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
           goto(CLOSED)
         case Success(_) =>
           val commitInput = localCommitTx.input
-          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, minDepth = 0, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
           blockchain ! PublishAsap(fundingTx)
           val commitments = Commitments(params.localParams, params.remoteParams,
@@ -337,7 +337,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
           router ! nodeAnn
           router ! channelUpdate
           // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
-          router ! 'tick_broadcast
+          // we give 3 seconds for the router-watcher roundtrip
+          context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
         case _ => log.info(s"channel ${d.channelId} won't be announced")
       }
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))

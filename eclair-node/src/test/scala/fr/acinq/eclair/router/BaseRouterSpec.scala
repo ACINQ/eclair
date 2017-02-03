@@ -2,7 +2,11 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpent}
+import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestkitBaseClass, randomKey}
 import org.junit.runner.RunWith
@@ -23,6 +27,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   def randomPubkey = randomKey.publicKey
 
   val (a, b, c, d, e, f) = (randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey)
+  val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey)
 
   val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
@@ -33,16 +38,21 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val ann_e = NodeAnnouncement(DUMMY_SIG, 0, e, (0, 0, 0), "node-E", "0000", Nil)
   val ann_f = NodeAnnouncement(DUMMY_SIG, 0, f, (0, 0, 0), "node-F", "0000", Nil)
 
-  val chan_ab = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId = 1, a, b, "", "")
-  val chan_bc = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId = 2, b, c, "", "")
-  val chan_cd = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId = 3, c, d, "", "")
-  val chan_ef = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId = 4, e, f, "", "")
+  val channelId_ab = toShortId(420000, 1, 0)
+  val channelId_bc = toShortId(420000, 2, 0)
+  val channelId_cd = toShortId(420000, 3, 0)
+  val channelId_ef = toShortId(420000, 4, 0)
+
+  val chan_ab = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_ab, a, b, funding_a, funding_b)
+  val chan_bc = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_bc, b, c, funding_b, funding_c)
+  val chan_cd = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_cd, c, d, funding_c, funding_d)
+  val chan_ef = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_ef, e, f, funding_e, funding_f)
 
   val defaultChannelUpdate = ChannelUpdate(DUMMY_SIG, 0, 0, "0000", 0, 0, 0, 0)
-  val channelUpdate_ab = ChannelUpdate(DUMMY_SIG, channelId = 1, 0, "0000", cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
-  val channelUpdate_bc = ChannelUpdate(DUMMY_SIG, channelId = 2, 0, "0000", cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
-  val channelUpdate_cd = ChannelUpdate(DUMMY_SIG, channelId = 3, 0, "0000", cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_ef = ChannelUpdate(DUMMY_SIG, channelId = 4, 0, "0000", cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
+  val channelUpdate_ab = ChannelUpdate(DUMMY_SIG, channelId_ab, 0, "0000", cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val channelUpdate_bc = ChannelUpdate(DUMMY_SIG, channelId_bc, 0, "0000", cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
+  val channelUpdate_cd = ChannelUpdate(DUMMY_SIG, channelId_cd, 0, "0000", cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
+  val channelUpdate_ef = ChannelUpdate(DUMMY_SIG, channelId_ef, 0, "0000", cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
 
 
   override def withFixture(test: OneArgTest) = {
@@ -57,6 +67,21 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! chan_bc
       router ! chan_cd
       router ! chan_ef
+      // watcher receives the get tx requests
+      watcher.expectMsg(GetTx(420000, 1, 0, chan_ab))
+      watcher.expectMsg(GetTx(420000, 2, 0, chan_bc))
+      watcher.expectMsg(GetTx(420000, 3, 0, chan_cd))
+      watcher.expectMsg(GetTx(420000, 4, 0, chan_ef))
+      // and answers with valid scripts
+      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), true, chan_ab))
+      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), true, chan_bc))
+      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), true, chan_cd))
+      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), true, chan_ef))
+      // watcher receives watch-spent request
+      watcher.expectMsgType[WatchSpent]
+      watcher.expectMsgType[WatchSpent]
+      watcher.expectMsgType[WatchSpent]
+      watcher.expectMsgType[WatchSpent]
       // then nodes
       router ! ann_a
       router ! ann_b

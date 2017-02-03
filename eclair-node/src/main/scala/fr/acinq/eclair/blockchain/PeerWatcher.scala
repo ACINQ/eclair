@@ -26,9 +26,9 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
 
     case NewTransaction(tx) =>
       val triggeredWatches = watches.collect {
-        case w@WatchSpent(channel, txid, outputIndex, minDepth, event)
+        case w@WatchSpent(channel, txid, outputIndex, event)
           if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          channel ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
+          channel ! WatchEventSpent(event, tx)
           w
       }
       context.become(watching(watches -- triggeredWatches, block2tx, currentBlockCount))
@@ -83,7 +83,13 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       }
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
-      client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).pipeTo(sender)
+      client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
+
+    case GetTx(blockHeight, txIndex, outputIndex, ctx) =>
+      (for {
+        tx <- client.getTransaction(blockHeight, txIndex)
+        spendable <- client.isTransactionOuputSpendable(tx.txid.toString(), outputIndex, true)
+      } yield GetTxResponse(tx, spendable, ctx)).pipeTo(sender)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor

@@ -27,11 +27,11 @@ class RelayerSpec extends TestkitBaseClass {
 
     within(30 seconds) {
       val paymentHandler = TestProbe()
-      val paymentListener = TestProbe()
-      system.eventStream.subscribe(paymentListener.ref, classOf[PaymentEvent])
+      val eventListener = TestProbe()
+      system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
       // we are node B in the route A -> B -> C -> ....
       val relayer = system.actorOf(Relayer.props(priv_b, paymentHandler.ref))
-      test((relayer, paymentHandler, paymentListener))
+      test((relayer, paymentHandler, eventListener))
     }
   }
 
@@ -50,7 +50,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(upstreams === Set(OutgoingChannel(channelId_bc, channel_bc.ref, nodeId_c.hash160)))
   }
 
-  test("remove a channel (mutual close)") { case (relayer, _, paymentListener) =>
+  test("remove a channel (mutual close)") { case (relayer, _, eventListener) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
 
@@ -65,7 +65,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(upstreams2 === Set.empty)
   }
 
-  test("remove a channel (unilateral close)") { case (relayer, _, paymentListener) =>
+  test("remove a channel (unilateral close)") { case (relayer, _, eventListener) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
 
@@ -80,7 +80,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(upstreams2 === Set.empty)
   }
 
-  test("send an event when we receive a payment") { case (relayer, paymentHandler, paymentListener) =>
+  test("send an event when we receive a payment") { case (relayer, paymentHandler, eventListener) =>
     val sender = TestProbe()
 
     val add_ab = {
@@ -92,13 +92,13 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, add_ab)
 
     val add1 = paymentHandler.expectMsgType[UpdateAddHtlc]
-    paymentListener.expectMsgType[PaymentReceived]
+    eventListener.expectMsgType[PaymentReceived]
 
     assert(add1 === add_ab)
 
   }
 
-  test("relay an htlc-add") { case (relayer, paymentHandler, paymentListener) =>
+  test("relay an htlc-add") { case (relayer, paymentHandler, eventListener) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
 
@@ -161,7 +161,7 @@ class RelayerSpec extends TestkitBaseClass {
 
   }
 
-  test("relay an htlc-fulfill") { case (relayer, paymentHandler, paymentListener) =>
+  test("relay an htlc-fulfill") { case (relayer, paymentHandler, eventListener) =>
     val sender = TestProbe()
     val channel_ab = TestProbe()
     val channel_bc = TestProbe()
@@ -185,13 +185,13 @@ class RelayerSpec extends TestkitBaseClass {
     channel_ab.expectMsg(CMD_SIGN)
     val fulfill_ba = channel_ab.expectMsgType[CMD_FULFILL_HTLC]
     channel_ab.expectMsg(CMD_SIGN)
-    paymentListener.expectNoMsg(1 second)
+    eventListener.expectNoMsg(1 second)
 
     assert(fulfill_ba.id === add_ab.id)
 
   }
 
-  test("send an event when we receive an htlc-fulfill and we were the initiator") { case (relayer, paymentHandler, paymentListener) =>
+  test("send an event when we receive an htlc-fulfill and we were the initiator") { case (relayer, paymentHandler, eventListener) =>
     val sender = TestProbe()
     val channel_ab = TestProbe()
     val channel_bc = TestProbe()
@@ -209,11 +209,11 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, (add_ab, fulfill_cb))
 
     channel_ab.expectNoMsg(1 second)
-    paymentListener.expectMsgType[PaymentSent]
+    eventListener.expectMsgType[PaymentSent]
 
   }
 
-  test("relay an htlc-fail") { case (relayer, paymentHandler, paymentListener) =>
+  test("relay an htlc-fail") { case (relayer, paymentHandler, eventListener) =>
     val sender = TestProbe()
     val channel_ab = TestProbe()
     val channel_bc = TestProbe()
@@ -236,13 +236,13 @@ class RelayerSpec extends TestkitBaseClass {
     channel_ab.expectMsg(CMD_SIGN)
     val fulfill_ba = channel_ab.expectMsgType[CMD_FAIL_HTLC]
     channel_ab.expectMsg(CMD_SIGN)
-    paymentListener.expectNoMsg(1 second)
+    eventListener.expectNoMsg(1 second)
 
     assert(fulfill_ba.id === add_ab.id)
 
   }
 
-  test("send an event when we receive an htlc-fail and we were the initiator") { case (relayer, paymentHandler, paymentListener) =>
+  test("send an event when we receive an htlc-fail and we were the initiator") { case (relayer, paymentHandler, eventListener) =>
     val sender = TestProbe()
     val channel_ab = TestProbe()
     val channel_bc = TestProbe()
@@ -259,7 +259,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, (add_ab, fail_cb))
 
     channel_ab.expectNoMsg(1 second)
-    paymentListener.expectMsgType[PaymentFailed]
+    eventListener.expectMsgType[PaymentFailed]
 
   }
 }

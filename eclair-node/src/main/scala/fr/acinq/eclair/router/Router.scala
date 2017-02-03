@@ -2,8 +2,13 @@ package fr.acinq.eclair.router
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.eclair._
+import fr.acinq.bitcoin.{BinaryData, Transaction}
+import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
@@ -34,16 +39,29 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
-  def receive: Receive = main(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil)
+  def receive: Receive = main(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil, awaiting = Set(), stash = Nil)
+
+  def mainWithLog(nodes: Map[BinaryData, NodeAnnouncement],
+                    channels: Map[Long, ChannelAnnouncement],
+                    updates: Map[ChannelDesc, ChannelUpdate],
+                    rebroadcast: Seq[RoutingMessage],
+                    awaiting: Set[ChannelAnnouncement],
+                    stash: Seq[RoutingMessage]) = {
+    log.info(s"current status channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
+    main(nodes, channels, updates, rebroadcast, awaiting, stash)
+  }
 
   def main(
             nodes: Map[BinaryData, NodeAnnouncement],
             channels: Map[Long, ChannelAnnouncement],
             updates: Map[ChannelDesc, ChannelUpdate],
-            rebroadcast: Seq[RoutingMessage]): Receive = {
+            rebroadcast: Seq[RoutingMessage],
+            awaiting: Set[ChannelAnnouncement],
+            stash: Seq[RoutingMessage]): Receive = {
 
-    case ChannelChangedState(_, transport, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
+    case ChannelChangedState(channel, transport, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
       // we send all known announcements to the new peer as soon as the connection is opened
+      log.info(s"info sending all announcements to $channel: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
       channels.values.foreach(transport ! _)
       nodes.values.foreach(transport ! _)
       updates.values.foreach(transport ! _)
@@ -55,18 +73,56 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       log.debug(s"ignoring $c (duplicate)")
 
     case c: ChannelAnnouncement =>
-      // TODO: check channel output = P2WSH(nodeid1, nodeid2)
+      val (blockHeight, txIndex, outputIndex) = fromShortId(c.channelId)
+      log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
+      watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
+      context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
+
+    case GetTxResponse(tx, isSpendable, c: ChannelAnnouncement) if !isSpendable =>
+      log.debug(s"ignoring $c (funding tx spent)")
+
+    case GetTxResponse(tx, _, c: ChannelAnnouncement) =>
       // TODO: check sigs
       // TODO: blacklist if already received same channel id and different node ids
+      val (_, _, outputIndex) = fromShortId(c.channelId)
+      // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2
+      require(tx.txOut.size >= outputIndex + 1, s"tx $tx does not have outputIndex=$outputIndex")
+      val output = tx.txOut(outputIndex)
+      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      require(fundingOutputScript == output.publicKeyScript, s"funding script mismatch: actual=${output.publicKeyScript} expected=${fundingOutputScript}")
+      watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.channelId))
       // TODO: check feature bit set
-      // TODO: forget channel once funding tx spent (add watch)
-      //watcher ! WatchSpent(self, txId: BinaryData, outputIndex: Int, minDepth: Int, event: BitcoinEvent)
-      log.info(s"added channel channelId=${c.channelId} (nodes=${nodes.size} channels=${channels.size + 1})")
+      log.info(s"added channel channelId=${c.channelId}")
       context.system.eventStream.publish(ChannelDiscovered(c))
-      context become main(nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c)
+      val stash1 = if (awaiting == Set(c)) {
+        stash.foreach(self ! _)
+        Nil
+      } else stash
+      context become mainWithLog(nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
 
     //case n: NodeAnnouncement if !checkSig(n) =>
     // TODO: fail connection (should probably be done in the auth handler or channel)
+
+    case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId), tx) if channels.containsKey(channelId) =>
+      val lostChannel = channels(channelId)
+      log.info(s"funding tx of channelId=$channelId has been spent by txid=${tx.txid}")
+      log.info(s"removed channel channelId=$channelId")
+      context.system.eventStream.publish(ChannelLost(channelId))
+
+      def isNodeLost(nodeId: BinaryData): Option[BinaryData] = {
+        // has nodeId still open channels?
+        if ((channels - channelId).values.filter(c => c.nodeId1 == nodeId || c.nodeId2 == nodeId).isEmpty) {
+          context.system.eventStream.publish(NodeLost(nodeId))
+          log.info(s"removed node nodeId=$nodeId")
+          Some(nodeId)
+        } else None
+      }
+
+      val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
+      context become mainWithLog(nodes -- lostNodes, channels - channelId, updates, rebroadcast, awaiting, stash)
+
+    case n: NodeAnnouncement if awaiting.size > 0 =>
+      context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ n)
 
     case n: NodeAnnouncement if !channels.values.exists(c => c.nodeId1 == n.nodeId || c.nodeId2 == n.nodeId) =>
       log.debug(s"ignoring $n (no related channel found)")
@@ -75,9 +131,12 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
 
     case n: NodeAnnouncement =>
-      log.info(s"added/replaced node nodeId=${n.nodeId} (nodes=${nodes.size + 1} channels=${channels.size})")
+      log.info(s"added/replaced node nodeId=${n.nodeId}")
       context.system.eventStream.publish(NodeDiscovered(n))
-      context become main(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
+      context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
+
+    case u: ChannelUpdate if awaiting.size > 0 =>
+      context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ u)
 
     case u: ChannelUpdate if !channels.contains(u.channelId) =>
       log.debug(s"ignoring $u (no related channel found)")
@@ -91,7 +150,7 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
         log.debug(s"ignoring $u (old timestamp or duplicate)")
       } else {
-        context become main(nodes, channels, updates + (desc -> u), rebroadcast :+ u)
+        context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
       }
 
     case 'tick_broadcast if rebroadcast.size == 0 =>
@@ -100,7 +159,7 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
     case 'tick_broadcast =>
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
       rebroadcast.foreach(context.actorSelection(Register.actorPathToTransportHandlers) ! _)
-      context become main(nodes, channels, updates, Nil)
+      context become main(nodes, channels, updates, Nil, awaiting, stash)
 
     case 'nodes => sender ! nodes.values
 
@@ -112,6 +171,7 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
 
     case other => log.warning(s"unhandled message $other")
   }
+
 }
 
 object Router {

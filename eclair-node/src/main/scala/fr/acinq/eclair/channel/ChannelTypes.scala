@@ -71,6 +71,7 @@ case object BITCOIN_SPEND_THEIRS_DONE extends BitcoinEvent
 case object BITCOIN_SPEND_OURS_DONE extends BitcoinEvent
 case object BITCOIN_PUNISHMENT_DONE extends BitcoinEvent
 case object BITCOIN_CLOSE_DONE extends BitcoinEvent
+case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId: Long) extends BitcoinEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
