@@ -73,3 +73,12 @@
 	-fx-focus-color: transparent;
 	-fx-faint-focus-color: transparent;
 }
+
+.table-view {
+    -fx-focus-color: transparent;
+    -fx-faint-focus-color: transparent;
+    -fx-background-insets: 0, 0, 0, 0;
+    -fx-border-insets: 0, 0, 0, 0;
+    -fx-padding: 0;
+    -fx-border-color: rgb(200, 200, 200);
+}

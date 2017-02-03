@@ -1,7 +1,7 @@
 package fr.acinq.eclair.gui.controllers
 
 import javafx.application.HostServices
-import javafx.beans.property.{SimpleStringProperty, StringProperty}
+import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.collections.{FXCollections, ObservableList}
 import javafx.embed.swing.SwingNode
@@ -20,13 +20,14 @@ import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
-
-
-case class PeerNode(id: StringProperty, alias: StringProperty) {
-  def this(na: NodeAnnouncement) = this(new SimpleStringProperty(na.nodeId.toString), new SimpleStringProperty(na.alias))
+//
+case class PeerNode(id: StringProperty, alias: StringProperty, rgbColor: StringProperty) {
+  def this(na: NodeAnnouncement) = this(new SimpleStringProperty(na.nodeId.toString), new SimpleStringProperty(na.alias),
+    new SimpleStringProperty("rgb(" + new Integer(na.rgbColor._1 & 0xFF) + "," + new Integer(na.rgbColor._2 & 0xFF) + "," + new Integer(na.rgbColor._3 & 0xFF) + ")"))
 }
-case class PeerChannel(id: StringProperty) {
-  def this(ca: ChannelAnnouncement) = this(new SimpleStringProperty(ca.channelId.toString))
+
+case class PeerChannel(id: LongProperty, nodeId1: StringProperty, nodeId2: StringProperty) {
+  def this(ca: ChannelAnnouncement) = this(new SimpleLongProperty(ca.channelId), new SimpleStringProperty(ca.nodeId1.toString), new SimpleStringProperty(ca.nodeId2.toString))
 }
 
 /**
@@ -64,12 +65,15 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
   @FXML var allNodesTable: TableView[PeerNode] = _
   @FXML var allNodesIdColumn: TableColumn[PeerNode, String] = _
   @FXML var allNodesAliasColumn: TableColumn[PeerNode, String] = _
+  @FXML var allNodesRGBColumn: TableColumn[PeerNode, String] = _
 
   // all channels
   val allChannelsList:ObservableList[PeerChannel] = FXCollections.observableArrayList[PeerChannel]()
   @FXML var allChannelsTab: Tab = _
   @FXML var allChannelsTable: TableView[PeerChannel] = _
-  @FXML var allChannelsIdColumn: TableColumn[PeerChannel, String] = _
+  @FXML var allChannelsIdColumn: TableColumn[PeerChannel, Number] = _
+  @FXML var allChannelsNode1Column: TableColumn[PeerChannel, String] = _
+  @FXML var allChannelsNode2Column: TableColumn[PeerChannel, String] = _
 
   @FXML def initialize() = {
 
@@ -115,11 +119,30 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     allNodesAliasColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue().alias
     })
+    allNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
+      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue().rgbColor
+    })
+    allNodesRGBColumn.setCellFactory(new Callback[TableColumn[PeerNode, String], TableCell[PeerNode, String]]() {
+      def call(pn: TableColumn[PeerNode, String]) = {
+        new TableCell[PeerNode, String] () {
+          override def updateItem(item: String, empty: Boolean): Unit = {
+            super.updateItem(item, empty)
+            setStyle("-fx-background-color:" + item)
+          }
+        }
+      }
+    })
 
     // init all channels
     allChannelsTable.setItems(allChannelsList)
-    allChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue().id
+    allChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, Number], ObservableValue[Number]]() {
+      def call(pc: CellDataFeatures[PeerChannel, Number]) = pc.getValue().id
+    })
+    allChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue().nodeId1
+    })
+    allChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue().nodeId2
     })
   }
 

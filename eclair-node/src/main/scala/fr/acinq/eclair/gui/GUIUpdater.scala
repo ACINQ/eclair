@@ -86,7 +86,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case NodeDiscovered(nodeAnnouncement) =>
-      log.info(s"Peer Node Discovered ${nodeAnnouncement.nodeId}")
+      log.debug(s"peer node discovered with node id = ${nodeAnnouncement.nodeId}")
       mainController.allNodesList.add(new PeerNode(nodeAnnouncement))
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
@@ -95,9 +95,9 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case NodeLost(nodeId) =>
-      log.info(s"Peer Node Lost ${nodeId}")
+      log.debug(s"peer node lost with node id = ${nodeId}")
       mainController.allNodesList.removeIf(new Predicate[PeerNode] {
-        override def test(pn: PeerNode) = pn.id.toString == nodeId.toString
+        override def test(pn: PeerNode) = nodeId.equals(pn.id)
       })
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
@@ -106,7 +106,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case ChannelDiscovered(channelAnnouncement) =>
-      log.info(s"Peer Channel Discovered ${channelAnnouncement.channelId}")
+      log.debug(s"peer channel discovered with channel id = ${channelAnnouncement.channelId}")
       mainController.allChannelsList.add(new PeerChannel(channelAnnouncement))
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
@@ -115,9 +115,9 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case ChannelLost(channelId) =>
-      log.info(s"Peer Channel Lost ${channelId}")
+      log.debug(s"peer channel lost with channel id = ${channelId}")
       mainController.allChannelsList.removeIf(new Predicate[PeerChannel] {
-        override def test(pc: PeerChannel) = pc.id.toString == channelId.toString
+        override def test(pc: PeerChannel) = pc.id.get == channelId
       })
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
