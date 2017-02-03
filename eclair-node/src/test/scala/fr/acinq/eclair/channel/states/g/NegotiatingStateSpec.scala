@@ -67,9 +67,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
         bob2alice.forward(alice)
       } while (aliceCloseFee != bobCloseFee)
       alice2blockchain.expectMsgType[PublishAsap]
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
       bob2blockchain.expectMsgType[PublishAsap]
-      bob2blockchain.expectMsgType[WatchConfirmed]
+      assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
       awaitCond(alice.stateName == CLOSING)
       awaitCond(bob.stateName == CLOSING)
     }
@@ -91,7 +91,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // actual test starts here
       assert(alice.stateName == NEGOTIATING)
       val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
-      bob2blockchain.expectMsgType[WatchConfirmed]
+      assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg(1 second)
       assert(alice.stateName == NEGOTIATING)
@@ -104,7 +104,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       alice ! Error(0, "oops".getBytes())
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
     }
   }
 

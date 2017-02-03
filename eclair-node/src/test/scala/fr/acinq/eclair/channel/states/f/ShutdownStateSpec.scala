@@ -359,7 +359,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(bobCommitTx.txOut.size == 4) // two main outputs and 2 pending htlcs
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
-      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === bobCommitTx.txid)
+      assert(watch.event === BITCOIN_REMOTECOMMIT_DONE)
 
       val amountClaimed = (for (i <- 0 until 3) yield {
         val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
@@ -395,7 +397,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // bob published the revoked tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
-      alice2blockchain.expectMsgType[WatchConfirmed]
+
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === revokedTx.txid)
+      assert(watch.event === BITCOIN_PUNISHMENT_DONE)
 
       val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
       val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
@@ -420,7 +425,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 
-      alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === aliceCommitTx.txid)
+      assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
 
       // alice can claim both htlc after a timeout
       // so we expect 5 transactions:

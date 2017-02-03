@@ -115,7 +115,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       alice ! Error(0, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
     }
   }
 
@@ -125,7 +125,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
     }
   }
 

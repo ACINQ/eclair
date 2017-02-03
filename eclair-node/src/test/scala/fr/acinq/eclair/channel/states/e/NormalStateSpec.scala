@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states.e
 
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto.{Point, Scalar}
+import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
@@ -820,7 +820,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
-      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === bobCommitTx.txid)
+      assert(watch.event === BITCOIN_REMOTECOMMIT_DONE)
 
       // in addition to its main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
       val amountClaimed = (for (i <- 0 until 4) yield {
@@ -872,7 +874,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(revokedTx.txOut.size == 6)
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
-      alice2blockchain.expectMsgType[WatchConfirmed]
+
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === revokedTx.txid)
+      assert(watch.event === BITCOIN_PUNISHMENT_DONE)
 
       val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
       val punishTx = alice2blockchain.expectMsgType[PublishAsap].tx
@@ -919,7 +924,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
-      alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === aliceCommitTx.txid)
+      assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
 
       // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
       // so we expect 7 transactions:

@@ -120,7 +120,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_SPEND_OURS_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
+  test("recv BITCOIN_LOCALCOMMIT_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
     within(30 seconds) {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -131,7 +131,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
 
       // actual test starts here
-      alice ! WatchEventConfirmed(BITCOIN_SPEND_OURS_DONE, 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_LOCALCOMMIT_DONE, 0, 0)
       awaitCond(alice.stateName == CLOSED)
     }
   }
@@ -152,7 +152,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_SPEND_THEIRS_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
+  test("recv BITCOIN_REMOTECOMMIT_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
@@ -166,7 +166,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
 
       // actual test starts here
-      alice ! WatchEventConfirmed(BITCOIN_SPEND_THEIRS_DONE, 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_REMOTECOMMIT_DONE, 0, 0)
       awaitCond(alice.stateName == CLOSED)
     }
   }
