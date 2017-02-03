@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
 
@@ -135,26 +135,33 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(tx2Hex(tx))
 
-  def makeAnchorTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
-    val anchorOutputScript = write(pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub)))
-    val tx = Transaction(version = 2, txIn = Seq.empty[TxIn], txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
-    val future = for {
-      FundTransactionResponse(tx1, changepos, fee) <- fundTransaction(tx)
-      SignTransactionResponse(anchorTx, true) <- signTransaction(tx1)
-      Some(pos) = Scripts.findPublicKeyScriptIndex(anchorTx, anchorOutputScript)
-    } yield (anchorTx, pos)
-
-    future
+  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+    val (partialTx, pubkeyScript) = Transactions.makePartialFundingTx(amount, localFundingPubkey, remoteFundingPubkey)
+    for {
+      FundTransactionResponse(unsignedTx, changepos, fee) <- fundTransaction(partialTx)
+      SignTransactionResponse(fundingTx, true) <- signTransaction(unsignedTx)
+      pos = Transactions.findPubKeyScriptIndex(fundingTx, pubkeyScript)
+    } yield (fundingTx, pos)
   }
 
-  def makeAnchorTx(fundingPriv: PrivateKey, ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+  /**
+    * *used in interop tests*
+    *
+    * @param fundingPriv
+    * @param ourCommitPub
+    * @param theirCommitPub
+    * @param amount
+    * @param ec
+    * @return
+    */
+  def makeFundingTx(fundingPriv: PrivateKey, ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Btc)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     val pub = fundingPriv.publicKey
     val script = write(pay2sh(pay2wpkh(pub)))
     val address = Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, script)
-    val future = for {
+    for {
       id <- sendFromAccount("", address, amount.amount.toDouble)
       tx <- getTransaction(id)
-      Some(pos) = Scripts.findPublicKeyScriptIndex(tx, script)
+      pos = Transactions.findPubKeyScriptIndex(tx, script)
       output = tx.txOut(pos)
       anchorOutputScript = write(pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub)))
       tx1 = Transaction(version = 2, txIn = TxIn(OutPoint(tx, pos), Nil, 0xffffffffL) :: Nil, txOut = TxOut(amount, anchorOutputScript) :: Nil, lockTime = 0)
@@ -162,10 +169,8 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       sig = Transaction.signInput(tx1, 0, pubKeyScript, SIGHASH_ALL, output.amount, 1, fundingPriv)
       witness = ScriptWitness(Seq(sig, pub))
       tx2 = tx1.updateWitness(0, witness)
-      Some(pos1) = Scripts.findPublicKeyScriptIndex(tx2, anchorOutputScript)
+      pos1 = Transactions.findPubKeyScriptIndex(tx2, anchorOutputScript)
     } yield (tx2, pos1)
-
-    future
   }
 
   /**

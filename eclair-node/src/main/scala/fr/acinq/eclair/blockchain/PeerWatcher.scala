@@ -83,7 +83,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
       }
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
-      client.makeAnchorTx(ourCommitPub, theirCommitPub, amount).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
+      client.makeFundingTx(ourCommitPub, theirCommitPub, amount).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
 
     case GetTx(blockHeight, txIndex, outputIndex, ctx) =>
       (for {

@@ -174,13 +174,6 @@ object Scripts {
       lockTime = 0))
   }
 
-  //def isFunder(o: open_channel): Boolean = o.anch == open_channel.anchor_offer.WILL_CREATE_FUNDING
-
-  def findPublicKeyScriptIndex(tx: Transaction, publicKeyScript: BinaryData): Option[Int] =
-    tx.txOut.zipWithIndex.find {
-      case (TxOut(_, script), _) => script == publicKeyScript
-    } map (_._2)
-
   /**
     * This function interprets the locktime for the given transaction, and returns the block height before which this tx cannot be published.
     * By convention in bitcoin, depending of the value of locktime it might be a number of blocks or a number of seconds since epoch.

@@ -5,7 +5,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, ripemd160}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OP_PUSHDATA, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, MilliSatoshi, OutPoint, Protocol, SIGHASH_ALL, Satoshi, Script, ScriptElt, ScriptFlags, ScriptWitness, Transaction, TxIn, TxOut, millisatoshi2satoshi}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.wire.UpdateAddHtlc
 
@@ -290,9 +290,23 @@ object Transactions {
 
   def makeHtlcPunishmentTx(commitTx: Transaction): HtlcPunishmentTx = ???
 
-  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData): Int = tx.txOut.indexWhere(_.publicKeyScript == pubkeyScript)
-
-  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: Seq[ScriptElt]): Int = findPubKeyScriptIndex(tx, write(pubkeyScript))
+  /**
+    * This generates a partial transaction that will be completed by bitcoind using a 'fundrawtransaction' rpc call.
+    * Since bitcoind may add a change output, we return the pubkeyScript so that we can do a lookup afterwards.
+    *
+    * @param amount
+    * @param localFundingPubkey
+    * @param remoteFundingPubkey
+    * @return (partialTx, pubkeyScript)
+    */
+  def makePartialFundingTx(amount: Satoshi, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey): (Transaction, BinaryData) = {
+    val pubkeyScript = write(pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey)))
+    (Transaction(
+      version = 2,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(amount, pubkeyScript) :: Nil,
+      lockTime = 0), pubkeyScript)
+  }
 
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.size == 0, "there shouldn't be any pending htlcs")
@@ -314,6 +328,10 @@ object Transactions {
       lockTime = 0)
     ClosingTx(commitTxInput, LexicographicalOrdering.sort(tx))
   }
+
+  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: BinaryData): Int = tx.txOut.indexWhere(_.publicKeyScript == pubkeyScript)
+
+  def findPubKeyScriptIndex(tx: Transaction, pubkeyScript: Seq[ScriptElt]): Int = findPubKeyScriptIndex(tx, write(pubkeyScript))
 
   def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, amount: Satoshi, key: PrivateKey): BinaryData = {
     Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
