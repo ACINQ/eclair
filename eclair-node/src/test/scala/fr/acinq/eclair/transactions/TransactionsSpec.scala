@@ -128,7 +128,7 @@ class TransactionsSpec extends FunSuite {
       val check = ((commitTx.tx.txIn(0).sequence & 0xffffff) << 24) | (commitTx.tx.lockTime)
       assert((check ^ num) == commitTxNumber)
     }
-    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, spec)
+    val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, spec)
 
     assert(htlcTimeoutTxs.size == 1)
     assert(htlcSuccessTxs.size == 1)
@@ -345,7 +345,7 @@ class TransactionsSpec extends FunSuite {
       val commitTx = Transactions.makeCommitTx(Local.commitmentInput, Local.commitTxNumber, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint, Local.params.isFunder, Satoshi(Local.params.dustLimitSatoshis), localKey, localRevocationPubkey, Local.params.toSelfDelay, localDelayedPubkey, remotePubkey, spec)
       assert(getCommitTxNumber(commitTx.tx, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint) === Local.commitTxNumber)
 
-      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localDelayedPubkey, remotePubkey, spec)
+      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localKey, localDelayedPubkey, remotePubkey, spec)
       printTx("simple tx with two outputs", commitTx, htlcTimeoutTxs, htlcSuccessTxs)
       println
     }
@@ -363,7 +363,7 @@ class TransactionsSpec extends FunSuite {
       val commitTx = Transactions.makeCommitTx(Local.commitmentInput, Local.commitTxNumber, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint, Local.params.isFunder, Satoshi(Local.params.dustLimitSatoshis), localKey, localRevocationPubkey, Local.params.toSelfDelay, localDelayedPubkey, remotePubkey, spec)
       assert(getCommitTxNumber(commitTx.tx, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint) === Local.commitTxNumber)
 
-      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localDelayedPubkey, remotePubkey, spec)
+      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localKey, localDelayedPubkey, remotePubkey, spec)
       printTx("two outputs with fundee below dust limit", commitTx, htlcTimeoutTxs, htlcSuccessTxs)
       println
     }
@@ -389,7 +389,7 @@ class TransactionsSpec extends FunSuite {
       val commitTx = Transactions.makeCommitTx(Local.commitmentInput, Local.commitTxNumber, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint, Local.params.isFunder, Satoshi(Local.params.dustLimitSatoshis), localPubkey, localRevocationPubkey, Local.params.toSelfDelay, localDelayedPubkey, remotePubkey, spec)
       assert(getCommitTxNumber(commitTx.tx, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint) === Local.commitTxNumber)
 
-      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localPubkey, remotePubkey, spec)
+      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localPubkey, localDelayedPubkey, remotePubkey, spec)
       printTx("with htlcs, all above dust limit", commitTx, htlcTimeoutTxs, htlcSuccessTxs)
       println
     }
@@ -426,7 +426,7 @@ class TransactionsSpec extends FunSuite {
       val commitTx = Transactions.makeCommitTx(Local.commitmentInput, Local.commitTxNumber, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint, Local.params.isFunder, Satoshi(Local.params.dustLimitSatoshis), localPubkey, localRevocationPubkey, Local.params.toSelfDelay, localDelayedPubkey, remotePubkey, spec)
       assert(getCommitTxNumber(commitTx.tx, Local.params.paymentKey.toPoint, Remote.params.paymentKey.toPoint) === Local.commitTxNumber)
 
-      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localPubkey, remotePubkey, spec)
+      val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(Local.params.dustLimitSatoshis), localRevocationPubkey, Local.params.toSelfDelay, localPubkey, localDelayedPubkey, remotePubkey, spec)
       printTx("with htlcs, some below dust limit", commitTx, htlcTimeoutTxs, htlcSuccessTxs)
       println
     }
