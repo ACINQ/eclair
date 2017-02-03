@@ -40,7 +40,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 
   override def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] = ???
 
-  override def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = ???
+  override def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ExtendedBitcoinClient.FundTransactionResponse] = ???
 
   override def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = ???
 

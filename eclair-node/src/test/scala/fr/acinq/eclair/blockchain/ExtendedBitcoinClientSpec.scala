@@ -37,4 +37,11 @@ class ExtendedBitcoinClientSpec extends FunSuite {
     val tx = Await.result(client.getTransaction(150002, 7), 5 seconds)
     assert(tx.txid.toString() == "7b2184f8539af648d51cc11d2a83630dd10fdf2a40a1824777d7f8da8e0d4b9e")
   }
+
+  test("is tx output spendable") {
+    val result = Await.result(client.isTransactionOuputSpendable("48ebfd0c0fe043b76eee09fcd8ea1e9248ffe1553fa30040fb7f7112ba3a202f", 0, true), 5 seconds)
+    assert(result)
+    val result1 = Await.result(client.isTransactionOuputSpendable("48ebfd0c0fe043b76eee09fcd8ea1e9248ffe1553fa30040fb7f7112ba3a202f", 5, true), 5 seconds)
+    assert(!result1)
+  }
 }

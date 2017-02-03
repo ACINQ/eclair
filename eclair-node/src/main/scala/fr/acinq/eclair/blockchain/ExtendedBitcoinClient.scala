@@ -15,6 +15,8 @@ import scala.concurrent.{ExecutionContext, Future}
   */
 class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
+  import ExtendedBitcoinClient._
+
   implicit val formats = org.json4s.DefaultFormats
 
   // TODO: this will probably not be needed once segwit is merged into core
@@ -75,6 +77,12 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       tx <- getTransaction(txid)
     } yield tx
 
+  def isTransactionOuputSpendable(txId: String, ouputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+    for {
+      json <- client.invoke("gettxout", txId, ouputIndex, includeMempool)
+    } yield json != JNull
+
+
   /**
     *
     * @param txId transaction id
@@ -94,8 +102,6 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
     future
   }
-
-  case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
 
   def fundTransaction(hex: String)(implicit ec: ExecutionContext): Future[FundTransactionResponse] = {
     client.invoke("fundrawtransaction", hex /*hex.take(4) + "0000" + hex.drop(4)*/).map(json => {
@@ -173,4 +179,10 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     client.invoke("getblockcount") collect {
       case JInt(count) => count.toLong
     }
+}
+
+object ExtendedBitcoinClient {
+
+  case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
+
 }
