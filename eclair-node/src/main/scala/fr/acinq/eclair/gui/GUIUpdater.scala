@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui
 
+import java.util.function.Predicate
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
@@ -9,7 +10,8 @@ import javafx.stage.Stage
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
+import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, PeerChannel, PeerNode}
+import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.{Globals, Setup}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
@@ -83,7 +85,47 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         }
       })
 
-      // TODO
+    case NodeDiscovered(nodeAnnouncement) =>
+      log.info(s"Peer Node Discovered ${nodeAnnouncement.nodeId}")
+      mainController.allNodesList.add(new PeerNode(nodeAnnouncement))
+      Platform.runLater(new Runnable() {
+        override def run(): Unit = {
+          mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
+        }
+      })
+
+    case NodeLost(nodeId) =>
+      log.info(s"Peer Node Lost ${nodeId}")
+      mainController.allNodesList.removeIf(new Predicate[PeerNode] {
+        override def test(pn: PeerNode) = pn.id.toString == nodeId.toString
+      })
+      Platform.runLater(new Runnable() {
+        override def run(): Unit = {
+          mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
+        }
+      })
+
+    case ChannelDiscovered(channelAnnouncement) =>
+      log.info(s"Peer Channel Discovered ${channelAnnouncement.channelId}")
+      mainController.allChannelsList.add(new PeerChannel(channelAnnouncement))
+      Platform.runLater(new Runnable() {
+        override def run(): Unit = {
+          mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
+        }
+      })
+
+    case ChannelLost(channelId) =>
+      log.info(s"Peer Channel Lost ${channelId}")
+      mainController.allChannelsList.removeIf(new Predicate[PeerChannel] {
+        override def test(pc: PeerChannel) = pc.id.toString == channelId.toString
+      })
+      Platform.runLater(new Runnable() {
+        override def run(): Unit = {
+          mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
+        }
+      })
+
+    // TODO
     /*case ChannelDiscovered(ChannelDesc(id, a, b)) =>
       graph.addVertex(BinaryData(a))
       graph.addVertex(BinaryData(b))

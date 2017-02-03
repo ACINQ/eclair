@@ -66,10 +66,7 @@
 	-fx-padding: 4em 0 0 0;
 }
 .channel-container {
-	-fx-padding: 0 -1em;
-}
-.tab-content-area {
-	-fx-padding: .5em 1em 0;
+	-fx-padding: 0;
 }
 
 .tab:top:selected {

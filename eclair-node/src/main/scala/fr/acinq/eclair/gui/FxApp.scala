@@ -15,6 +15,7 @@ import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.MainController
 import fr.acinq.eclair.gui.stages.SplashStage
+import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 
 /**
@@ -39,6 +40,7 @@ class FxApp extends Application with Logging {
           val controller = new MainController(handlers, primaryStage, setup, getHostServices)
           val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
 
           import scala.concurrent.ExecutionContext.Implicits.global
           setup.fatalEventFuture onSuccess {
