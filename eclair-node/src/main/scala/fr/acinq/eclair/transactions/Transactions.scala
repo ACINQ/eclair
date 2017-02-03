@@ -183,7 +183,7 @@ object Transactions {
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     HtlcTimeoutTx(input, Transaction(
       version = 2,
-      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0) :: Nil,
       txOut = TxOut(MilliSatoshi(htlc.amountMsat) - fee, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localPubKey))) :: Nil,
       lockTime = htlc.expiry))
   }
@@ -197,7 +197,7 @@ object Transactions {
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
     HtlcSuccessTx(input, Transaction(
       version = 2,
-      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0) :: Nil,
       txOut = TxOut(MilliSatoshi(htlc.amountMsat) - fee, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localPubkey))) :: Nil,
       lockTime = 0), htlc.paymentHash)
   }
