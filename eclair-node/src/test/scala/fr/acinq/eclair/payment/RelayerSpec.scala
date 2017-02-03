@@ -115,7 +115,7 @@ class RelayerSpec extends TestkitBaseClass {
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     paymentHandler.expectNoMsg(1 second)
 
-    assert(cmd_bc.origin === Some(add_ab))
+    assert(cmd_bc.origin === Relayed(add_ab))
 
   }
 
@@ -177,7 +177,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, add_ab)
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, Binding(add_ab, add_bc))
+    sender.send(relayer, Binding(add_bc, Relayed(add_ab)))
     // preimage is wrong, does not matter here
     val fulfill_cb = UpdateFulfillHtlc(channelId = add_bc.channelId, id = add_bc.id, paymentPreimage = "00" * 32)
     sender.send(relayer, (add_bc, fulfill_cb))
@@ -203,7 +203,7 @@ class RelayerSpec extends TestkitBaseClass {
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
-
+    sender.send(relayer, Binding(add_ab, Local))
     // preimage is wrong, does not matter here
     val fulfill_cb = UpdateFulfillHtlc(channelId = add_ab.channelId, id = add_ab.id, paymentPreimage = "00" * 32)
     sender.send(relayer, (add_ab, fulfill_cb))
@@ -229,7 +229,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, add_ab)
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, Binding(add_ab, add_bc))
+    sender.send(relayer, Binding(add_bc, Relayed(add_ab)))
     val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = "some reason".getBytes())
     sender.send(relayer, (add_bc, fail_cb))
 
@@ -254,7 +254,7 @@ class RelayerSpec extends TestkitBaseClass {
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
-
+    sender.send(relayer, Binding(add_ab, Local))
     val fail_cb = UpdateFailHtlc(channelId = add_ab.channelId, id = add_ab.id, reason = "some reason".getBytes())
     sender.send(relayer, (add_ab, fail_cb))
 

@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
+import fr.acinq.eclair.payment.{Local, Origin}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{ClosingSigned, FundingLocked, Shutdown, UpdateAddHtlc}
@@ -87,7 +88,7 @@ sealed trait Command
 /**
   * @param id should only be provided in tests otherwise it will be assigned automatically
   */
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), origin: Option[UpdateAddHtlc] = None, id: Option[Long] = None, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), origin: Origin = Local, id: Option[Long] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command

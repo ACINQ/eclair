@@ -87,7 +87,7 @@ class Setup() extends Logging {
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
   val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "propagator")
-  val router = system.actorOf(Router.props(watcher, Globals.Node.announcement), name = "router")
+  val router = system.actorOf(Router.props(watcher), name = "router")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router, blockCount), "payment-initiator")
   val register = system.actorOf(Register.props(watcher, router, relayer, finalScriptPubKey), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")

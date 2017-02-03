@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.Binding
+import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -25,9 +26,9 @@ object Channel {
   def props(them: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, localParams: LocalParams, theirNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None) = Props(new Channel(them, blockchain, router, relayer, localParams, theirNodeId, autoSignInterval))
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, val localParams: LocalParams, theirNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, val localParams: LocalParams, remoteNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
-  context.system.eventStream.publish(ChannelCreated(self, localParams, theirNodeId))
+  context.system.eventStream.publish(ChannelCreated(self, localParams, remoteNodeId))
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -285,7 +286,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       val channelId = toShortId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
       blockchain ! WatchLost(self, commitments.anchorId, params.minimumDepth, BITCOIN_FUNDING_LOST)
       val nextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 1)
-      them ! FundingLocked(temporaryChannelId, channelId, None, None, nextPerCommitmentPoint) // TODO: routing announcements disabled
+      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
+      them ! FundingLocked(temporaryChannelId, channelId, Some(localNodeSig), Some(localBitcoinSig), nextPerCommitmentPoint)
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection
       goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(params, commitments.copy(channelId = channelId), None)
@@ -321,9 +323,23 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       // TODO: channel id mismatch, can happen if minDepth is to low, negotiation not suported yet
       handleLocalError(new RuntimeException(s"channel id mismatch local=${d.channelId} remote=$remoteChannelId"), d)
 
-    case Event(FundingLocked(_, remoteChannelId, _, _, nextPerCommitmentPoint), d: DATA_NORMAL) =>
+    case Event(FundingLocked(_, _, remoteNodeSig_opt, remoteBitcoinSig_opt, nextPerCommitmentPoint), d: DATA_NORMAL) =>
       log.info(s"channel ready with channelId=${java.lang.Long.toUnsignedString(d.channelId)}")
-      Register.createAlias(theirNodeId.hash160, d.channelId)
+      Register.createAlias(remoteNodeId.hash160, d.channelId)
+      (remoteNodeSig_opt, remoteBitcoinSig_opt) match {
+        case (Some(remoteNodeSig), Some(remoteBitcoinSig)) =>
+          log.info(s"announcing channel ${d.channelId} on the network")
+          val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
+          val channelAnn = Announcements.makeChannelAnnouncement(d.channelId, Globals.Node.publicKey, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey, d.params.remoteParams.fundingPubKey, localNodeSig, remoteNodeSig, localBitcoinSig, remoteBitcoinSig)
+          val nodeAnn = Announcements.makeNodeAnnouncement(Globals.Node.privateKey, Globals.Node.alias, Globals.Node.color, Globals.Node.address :: Nil, Platform.currentTime / 1000)
+          val channelUpdate = Announcements.makeChannelUpdate(Globals.Node.privateKey, remoteNodeId, d.commitments.channelId, Globals.expiry_delta_blocks, Globals.htlc_minimum_msat, Globals.fee_base_msat, Globals.fee_proportional_millionth, Platform.currentTime / 1000)
+          router ! channelAnn
+          router ! nodeAnn
+          router ! channelUpdate
+          // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
+          router ! 'tick_broadcast
+        case _ => log.info(s"channel ${d.channelId} won't be announced")
+      }
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -353,15 +369,15 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
           888       888 d88P     888 8888888 888    Y888      88888888 "Y88888P"   "Y88888P"  888
    */
 
-  when(NORMAL) (handleExceptions {
+  when(NORMAL)(handleExceptions {
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined =>
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
 
-    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin_opt, id_opt, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
+    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin, id_opt, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success((commitments1, add)) =>
-          origin_opt.map(origin => relayer ! Binding(origin, add))
+          relayer ! Binding(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, add, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
@@ -512,7 +528,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
            "Y8888P"  88888888 "Y88888P"   "Y8888P" 8888888 888    Y888  "Y8888P88
    */
 
-  when(SHUTDOWN) (handleExceptions {
+  when(SHUTDOWN)(handleExceptions {
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
@@ -594,7 +610,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
   })
 
-  when(NEGOTIATING) (handleExceptions {
+  when(NEGOTIATING)(handleExceptions {
 
     case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) if remoteClosingFee == d.localClosingSigned.feeSatoshis =>
       Closing.checkClosingSignature(d.params, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
@@ -693,7 +709,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       stay
 
     case Event(CMD_GETINFO, _) =>
-      sender ! RES_GETINFO(theirNodeId, stateData match {
+      sender ! RES_GETINFO(remoteNodeId, stateData match {
         // TODO
         case c: DATA_WAIT_FOR_OPEN_CHANNEL => 0L
         case c: DATA_WAIT_FOR_ACCEPT_CHANNEL => c.temporaryChannelId
@@ -712,7 +728,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
   }
 
   onTransition {
-    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, context.parent, theirNodeId, previousState, currentState, stateData))
+    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, context.parent, remoteNodeId, previousState, currentState, stateData))
   }
 
   /*

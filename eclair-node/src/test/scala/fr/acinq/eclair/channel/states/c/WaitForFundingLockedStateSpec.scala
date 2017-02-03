@@ -2,11 +2,13 @@ package fr.acinq.eclair.channel.states.c
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.router.Router
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -18,7 +20,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class WaitForFundingLockedStateSpec extends TestkitBaseClass {
 
-  type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
+  type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val alice2bob = TestProbe()
@@ -57,18 +59,25 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_LOCKED)
     }
-    test((alice, bob, alice2bob, bob2alice, alice2blockchain, blockchainA))
+    test((alice, bob, alice2bob, bob2alice, alice2blockchain, blockchainA, router))
   }
 
-  test("recv FundingLocked") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingLocked") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NORMAL)
+      val channelAnnouncement = router.expectMsgType[ChannelAnnouncement]
+      val nodeAnnouncement = router.expectMsgType[NodeAnnouncement]
+      val channelUpdate = router.expectMsgType[ChannelUpdate]
+      //assert(Router.checkSigs(channelAnnouncement))
+      //assert(Router.checkSig(nodeAnnouncement))
+      // TODO: test should not use global key
+      //assert(Router.checkSig(channelUpdate, TestConstants.Alice.id))
     }
   }
 
-  test("recv FundingLocked (channel id mismatch") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingLocked (channel id mismatch") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val fundingLocked = bob2alice.expectMsgType[FundingLocked]
@@ -80,7 +89,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       // bob publishes his commitment tx
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
@@ -90,7 +99,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
@@ -100,7 +109,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
     }
   }
 
-  test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
@@ -110,7 +119,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! CMD_CLOSE(None)

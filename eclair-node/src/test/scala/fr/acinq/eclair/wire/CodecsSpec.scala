@@ -150,7 +150,7 @@ class CodecsSpec extends FunSuite {
     val update_fail_htlc = UpdateFailHtlc(1, 2, bin(154, 0))
     val commit_sig = CommitSig(1, randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
     val revoke_and_ack = RevokeAndAck(1, scalar(0), point(1), randomSignature :: randomSignature :: randomSignature :: randomSignature :: randomSignature :: Nil)
-    val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, 1, randomSignature, randomSignature, bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
+    val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, 1, bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
     val node_announcement = NodeAnnouncement(randomSignature, 1, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias", bin(0, 0), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val channel_update = ChannelUpdate(randomSignature, 1, 2, bin(2, 2), 3, 4, 5, 6)
 

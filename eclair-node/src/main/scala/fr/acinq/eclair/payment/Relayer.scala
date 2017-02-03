@@ -15,7 +15,12 @@ import scala.util.{Failure, Success, Try}
 // @formatter:off
 
 case class OutgoingChannel(channelId: Long, channel: ActorRef, nodeAddress: BinaryData)
-case class Binding(downstream: UpdateAddHtlc, upstream: UpdateAddHtlc)
+
+sealed trait Origin
+case object Local extends Origin
+case class Relayed(downstream: UpdateAddHtlc) extends Origin
+
+case class Binding(add: UpdateAddHtlc, origin: Origin)
 
 // @formatter:on
 
@@ -29,7 +34,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
   override def receive: Receive = main(Set(), Map())
 
-  def main(upstreams: Set[OutgoingChannel], bindings: Map[UpdateAddHtlc, UpdateAddHtlc]): Receive = {
+  def main(upstreams: Set[OutgoingChannel], bindings: Map[UpdateAddHtlc, Origin]): Receive = {
 
     case ChannelChangedState(channel, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
       import d.commitments.channelId
@@ -60,7 +65,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         case Success((Attempt.Successful(DecodeResult(payload, _)), nextNodeAddress, nextPacket)) if upstreams.exists(_.nodeAddress == nextNodeAddress) =>
           val upstream = upstreams.find(_.nodeAddress == nextNodeAddress).get.channel
           log.info(s"forwarding htlc #${add.id} to upstream=$upstream")
-          upstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, nextPacket, origin = Some(add), commit = true)
+          upstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, nextPacket, origin = Relayed(add), commit = true)
           context become main(upstreams, bindings)
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _)) =>
           log.warning(s"couldn't resolve upstream node address $nextNodeAddress, failing htlc #${add.id}")
@@ -73,38 +78,45 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           sender ! CMD_FAIL_HTLC(add.id, "onion parsing error", commit = true)
       }
 
-    case Binding(downstream: UpdateAddHtlc, upstream: UpdateAddHtlc) =>
-      log.info(s"relayed htlc ${downstream.channelId}/${downstream.id} to ${upstream.channelId}/${upstream.id}")
-      context become main(upstreams, bindings + (upstream -> downstream))
+    case Binding(upstream, origin) =>
+      origin match {
+        case Local => log.info(s"we are the origin of htlc ${upstream.channelId}/${upstream.id}")
+        case Relayed(downstream) => log.info(s"relayed htlc ${downstream.channelId}/${downstream.id} to ${upstream.channelId}/${upstream.id}")
+      }
+      context become main(upstreams, bindings + (upstream -> origin))
 
     case (add: UpdateAddHtlc, fulfill: UpdateFulfillHtlc) =>
       bindings.get(add) match {
-        case Some(origin) if upstreams.exists(_.channelId == origin.channelId) =>
+        case Some(Relayed(origin)) if upstreams.exists(_.channelId == origin.channelId) =>
           val downstream = upstreams.find(_.channelId == origin.channelId).get.channel
           downstream ! CMD_SIGN
           downstream ! CMD_FULFILL_HTLC(origin.id, fulfill.paymentPreimage)
           downstream ! CMD_SIGN
-        case Some(origin) =>
+        case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case None =>
+        case Some(Local) =>
           log.info(s"we were the origin payer for htlc #${fulfill.id}")
           context.system.eventStream.publish(PaymentSent(self, add.paymentHash))
+        case None =>
+          log.warning(s"no origin found for htlc $add")
       }
 
     case (add: UpdateAddHtlc, fail: UpdateFailHtlc) =>
       bindings.get(add) match {
-        case Some(origin) if upstreams.exists(_.channelId == origin.channelId) =>
+        case Some(Relayed(origin)) if upstreams.exists(_.channelId == origin.channelId) =>
           val downstream = upstreams.find(_.channelId == origin.channelId).get.channel
           downstream ! CMD_SIGN
           // TODO: fix new String(fail.reason)
           downstream ! CMD_FAIL_HTLC(origin.id, new String(fail.reason))
           downstream ! CMD_SIGN
-        case Some(origin) =>
+        case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case None =>
+        case Some(Local) =>
           log.info(s"we were the origin payer for htlc #${fail.id}")
           // TODO: fix new String(fail.reason)
           context.system.eventStream.publish(PaymentFailed(self, add.paymentHash, new String(fail.reason)))
+        case None =>
+          log.warning(s"no origin found for htlc $add")
       }
 
     case 'upstreams => sender ! upstreams

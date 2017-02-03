@@ -10,6 +10,7 @@ import fr.acinq.eclair.wire
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
+import shapeless._, ops.hlist._
 
 
 /**
@@ -188,35 +189,44 @@ object Codecs {
     ("channelId" | int64) ::
       ("feeratePerKw" | uint32)).as[UpdateFee]
 
-  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
-    ("nodeSignature1" | signature) ::
-      ("nodeSignature2" | signature) ::
+  val channelAnnouncementWitnessCodec = (
       ("channelId" | int64) ::
-      ("bitcoinSignature1" | signature) ::
-      ("bitcoinSignature2" | signature) ::
       ("nodeId1" | binarydata(33)) ::
       ("nodeId2" | binarydata(33)) ::
       ("bitcoinKey1" | binarydata(33)) ::
-      ("bitcoinKey2" | binarydata(33))).as[ChannelAnnouncement]
+      ("bitcoinKey2" | binarydata(33)))
 
-  val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
-    ("signature" | signature) ::
+  val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
+    ("nodeSignature1" | signature) ::
+      ("nodeSignature2" | signature) ::
+      ("bitcoinSignature1" | signature) ::
+      ("bitcoinSignature2" | signature) ::
+     channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
+
+  val nodeAnnouncementWitnessCodec = (
       ("timestamp" | uint32) ::
       ("nodeId" | binarydata(33)) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
       ("features" | varsizebinarydata) ::
-      ("addresses" | listofsocketaddresses)).as[NodeAnnouncement]
+      ("addresses" | listofsocketaddresses))
 
-  val channelUpdateCodec: Codec[ChannelUpdate] = (
+  val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
     ("signature" | signature) ::
+      nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
+
+  val channelUpdateWitnessCodec = (
       ("channelId" | int64) ::
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::
       ("cltvExpiryDelta" | uint16) ::
       ("htlcMinimumMsat" | uint32) ::
       ("feeBaseMsat" | uint32) ::
-      ("feeProportionalMillionths" | uint32)).as[ChannelUpdate]
+      ("feeProportionalMillionths" | uint32))
+
+  val channelUpdateCodec: Codec[ChannelUpdate] = (
+    ("signature" | signature) ::
+      channelUpdateWitnessCodec).as[ChannelUpdate]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)

@@ -8,7 +8,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.Binding
+import fr.acinq.eclair.payment.{Binding, Local, Relayed}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
@@ -48,13 +48,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
       val h = BinaryData("00112233445566778899aabbccddeeff")
-      sender.send(alice, CMD_ADD_HTLC(50000000, h, 144, origin = None))
+      sender.send(alice, CMD_ADD_HTLC(50000000, h, 144))
       sender.expectMsg("ok")
       val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
       assert(htlc.id == 1 && htlc.paymentHash == h)
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(localCurrentHtlcId = 1, localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil))))
-      relayer.expectNoMsg()
+      relayer.expectMsg(Binding(htlc, origin = Local))
     }
   }
 
@@ -64,15 +64,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val h = BinaryData("00112233445566778899aabbccddeeff")
       val originHtlc = UpdateAddHtlc(channelId = 4298564, id = 5656, amountMsat = 50000000, expiry = 144, paymentHash = h, onionRoutingPacket = "00" * 1254)
-      val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.expiry - 7, origin = Some(originHtlc))
+      val cmd = CMD_ADD_HTLC(originHtlc.amountMsat - 10000, h, originHtlc.expiry - 7, origin = Relayed(originHtlc))
       sender.send(alice, cmd)
       sender.expectMsg("ok")
       val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
       assert(htlc.id == 1 && htlc.paymentHash == h)
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(localCurrentHtlcId = 1, localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil))))
-      val binding = relayer.expectMsgType[Binding]
-      assert(binding === Binding(downstream = originHtlc, upstream = htlc))
+      relayer.expectMsg(Binding(htlc, origin = Relayed(originHtlc)))
     }
   }
 

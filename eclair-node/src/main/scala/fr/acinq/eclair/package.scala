@@ -1,7 +1,9 @@
 package fr.acinq
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.{BinaryData, _}
+import scodec.Attempt
+import scodec.bits.BitVector
 
 import scala.util.Random
 
@@ -19,5 +21,10 @@ package object eclair {
     Random.nextBytes(bin)
     bin
   }, compressed = true)
+
+  def serializationResult(attempt: Attempt[BitVector]): BinaryData = attempt match {
+    case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
+    case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
+  }
 
 }
