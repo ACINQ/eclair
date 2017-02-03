@@ -133,17 +133,18 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], th
 
     case Event(ErrorClosed(cause), WaitingForCyphertextData(_, _, _, _, listener)) =>
       // we transform connection closed events into application error so that it triggers a uniclose
+      log.error(s"tcp connection error: $cause")
       listener ! fr.acinq.eclair.wire.Error(0, cause.getBytes("UTF-8"))
       stay
 
     case Event(PeerClosed, WaitingForCyphertextData(_, _, _, _, listener)) =>
-      listener ! CMD_CLOSE(None)
+      listener ! fr.acinq.eclair.wire.Error(0, "peer closed".getBytes("UTF-8"))
       stay
   }
 
   whenUnhandled {
     case Event(Terminated(actor), _) if actor == them =>
-      context.stop(self)
+      log.warning("peer closed")
       stay()
 
     case Event(message, _) =>
