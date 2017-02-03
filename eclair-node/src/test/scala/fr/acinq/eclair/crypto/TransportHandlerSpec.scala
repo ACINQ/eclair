@@ -117,12 +117,12 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val probe1 = TestProbe()
     val probe2 = TestProbe()
     val supervisor = TestActorRef(Props(new MySupervisor()))
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, true, (conn, _, _) => probe1.ref, TransportHandler.Noop), supervisor)
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, false, (conn, _, _) => probe2.ref, TransportHandler.Noop), supervisor)
-    probe1.watch(initiator)
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, true, (conn, _, _) => probe1.ref, TransportHandler.Noop), supervisor, "ini")
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, false, (conn, _, _) => probe2.ref, TransportHandler.Noop), supervisor, "res")
+    probe1.watch(responder)
     pipe ! (initiator, responder)
 
-    probe1.expectTerminated(initiator, 3 seconds)
+    probe1.expectTerminated(responder, 3 seconds)
   }
 
   test("key rotation") {
