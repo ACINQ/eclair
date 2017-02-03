@@ -233,7 +233,7 @@ object Router {
         }
     }
     val exporter = new DOTExporter[BinaryData, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
-    val writer = new BufferedWriter(new StringWriter())
+    val writer = new StringWriter()
     try {
       exporter.exportGraph(g, writer)
       writer.toString
