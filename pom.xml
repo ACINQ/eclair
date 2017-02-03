@@ -40,13 +40,12 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>1.7</maven.compiler.source>
-        <maven.compiler.target>1.7</maven.compiler.target>
+        <maven.compiler.source>1.8</maven.compiler.source>
+        <maven.compiler.target>1.8</maven.compiler.target>
         <scala.version>2.11.8</scala.version>
         <scala.version.short>2.11</scala.version.short>
-        <akka.version>2.4.9</akka.version>
+        <akka.version>2.4.16</akka.version>
         <acinqtools.version>1.2</acinqtools.version>
-        <akka.version>2.4.12</akka.version>
         <bitcoinlib.version>0.9.9</bitcoinlib.version>
     </properties>
 
