@@ -31,12 +31,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
-  val ann_a = NodeAnnouncement(DUMMY_SIG, 0, a, (0, 0, 0), "node-A", "0000", Nil)
-  val ann_b = NodeAnnouncement(DUMMY_SIG, 0, b, (0, 0, 0), "node-B", "0000", Nil)
-  val ann_c = NodeAnnouncement(DUMMY_SIG, 0, c, (0, 0, 0), "node-C", "0000", Nil)
-  val ann_d = NodeAnnouncement(DUMMY_SIG, 0, d, (0, 0, 0), "node-D", "0000", Nil)
-  val ann_e = NodeAnnouncement(DUMMY_SIG, 0, e, (0, 0, 0), "node-E", "0000", Nil)
-  val ann_f = NodeAnnouncement(DUMMY_SIG, 0, f, (0, 0, 0), "node-F", "0000", Nil)
+  val ann_a = NodeAnnouncement(DUMMY_SIG, 0, a, (15, 10, -70), "node-A", "0000", Nil)
+  val ann_b = NodeAnnouncement(DUMMY_SIG, 0, b, (50, 99, -80), "node-B", "0000", Nil)
+  val ann_c = NodeAnnouncement(DUMMY_SIG, 0, c, (123, 100, -40), "node-C", "0000", Nil)
+  val ann_d = NodeAnnouncement(DUMMY_SIG, 0, d, (-120, -20, 60), "node-D", "0000", Nil)
+  val ann_e = NodeAnnouncement(DUMMY_SIG, 0, e, (-50, 0, 10), "node-E", "0000", Nil)
+  val ann_f = NodeAnnouncement(DUMMY_SIG, 0, f, (30, 10, -50), "node-F", "0000", Nil)
 
   val channelId_ab = toShortId(420000, 1, 0)
   val channelId_bc = toShortId(420000, 2, 0)

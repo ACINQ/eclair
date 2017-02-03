@@ -1,17 +1,20 @@
 package fr.acinq.eclair.router
 
+import java.io.{ByteArrayOutputStream, OutputStreamWriter}
+
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.eclair._
 import fr.acinq.bitcoin.{BinaryData, Transaction}
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
-import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
+import org.jgrapht.ext._
+import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._
@@ -42,11 +45,11 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
   def receive: Receive = main(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil, awaiting = Set(), stash = Nil)
 
   def mainWithLog(nodes: Map[BinaryData, NodeAnnouncement],
-                    channels: Map[Long, ChannelAnnouncement],
-                    updates: Map[ChannelDesc, ChannelUpdate],
-                    rebroadcast: Seq[RoutingMessage],
-                    awaiting: Set[ChannelAnnouncement],
-                    stash: Seq[RoutingMessage]) = {
+                  channels: Map[Long, ChannelAnnouncement],
+                  updates: Map[ChannelDesc, ChannelUpdate],
+                  rebroadcast: Seq[RoutingMessage],
+                  awaiting: Set[ChannelAnnouncement],
+                  stash: Seq[RoutingMessage]) = {
     log.info(s"current status channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
     main(nodes, channels, updates, rebroadcast, awaiting, stash)
   }
@@ -167,6 +170,8 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
 
     case 'updates => sender ! updates.values
 
+    case 'dot => graph2dot(nodes, channels) pipeTo sender
+
     case RouteRequest(start, end) => findRoute(start, end, updates).map(RouteResponse(_)) pipeTo sender
 
     case other => log.warning(s"unhandled message $other")
@@ -202,5 +207,41 @@ object Router {
   def findRoute(localNodeId: BinaryData, targetNodeId: BinaryData, updates: Map[ChannelDesc, ChannelUpdate])(implicit ec: ExecutionContext): Future[Seq[Hop]] = Future {
     findRouteDijkstra(localNodeId, targetNodeId, updates.keys)
       .map(desc => Hop(desc.a, desc.b, updates(desc)))
+  }
+
+  def graph2dot(nodes: Map[BinaryData, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[BinaryData] = Future {
+    case class DescEdge(channelId: Long) extends DefaultEdge
+    val g = new SimpleGraph[BinaryData, DescEdge](classOf[DescEdge])
+    channels.foreach(d => {
+      g.addVertex(d._2.nodeId1)
+      g.addVertex(d._2.nodeId2)
+      g.addEdge(d._2.nodeId1, d._2.nodeId2, new DescEdge(d._1))
+    })
+    val vertexIDProvider = new ComponentNameProvider[BinaryData]() {
+      override def getName(nodeId: BinaryData): String = "\"" + nodeId.toString() +  "\""
+    }
+    val edgeLabelProvider = new ComponentNameProvider[DescEdge]() {
+      override def getName(e: DescEdge): String = e.channelId.toString
+    }
+    val vertexAttributeProvider = new ComponentAttributeProvider[BinaryData]() {
+
+      override def getComponentAttributes(nodeId: BinaryData): java.util.Map[String, String] =
+
+        nodes.get(nodeId) match {
+          case Some(ann) => Map("label" -> ann.alias, "color" -> f"#${ann.rgbColor._1}%02x${ann.rgbColor._2}%02x${ann.rgbColor._3}%02x")
+          case None => Map.empty[String, String]
+        }
+    }
+    val exporter = new DOTExporter[BinaryData, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
+    val bos = new ByteArrayOutputStream()
+    val writer = new OutputStreamWriter(bos)
+    try {
+      exporter.exportGraph(g, writer)
+      bos.toByteArray
+    } finally {
+      writer.close()
+      bos.close()
+    }
+
   }
 }

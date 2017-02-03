@@ -1,9 +1,13 @@
 package fr.acinq.eclair.router
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File}
+import javafx.application.Platform
+
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
+import com.google.common.io.Files
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
 import fr.acinq.eclair.toShortId
@@ -59,7 +63,7 @@ class RouterSpec extends BaseRouterSpec {
 
   }
 
-  test("route not found (unreachable target)") { case (router, watcher) =>
+  test("route not found (unreachable target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(a, f))
@@ -67,7 +71,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.cause.getMessage === "route not found")
   }
 
-  test("route not found (non-existing source)") { case (router, watcher) =>
+  test("route not found (non-existing source)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(randomPubkey, f))
@@ -75,7 +79,7 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.cause.getMessage === "graph must contain the source vertex")
   }
 
-  test("route not found (non-existing target)") { case (router, watcher) =>
+  test("route not found (non-existing target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(a, randomPubkey))
@@ -83,12 +87,26 @@ class RouterSpec extends BaseRouterSpec {
     assert(res.cause.getMessage === "graph must contain the sink vertex")
   }
 
-  test("route found") { case (router, watcher) =>
+  test("route found") { case (router, _) =>
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a.toBin :: b.toBin :: c.toBin :: Nil)
     assert(res.hops.last.nextNodeId === d.toBin)
+  }
+
+  ignore("export graph in dot format") { case (router, _) =>
+    val sender = TestProbe()
+    sender.send(router, 'dot)
+    val dot = sender.expectMsgType[BinaryData]
+    Files.write(dot.toArray, new File("graph.dot"))
+
+    import scala.sys.process._
+    val input = new ByteArrayInputStream(dot.toArray)
+    val output = new ByteArrayOutputStream()
+    "dot -Tpng" #< input #> output !
+    val img = output.toByteArray
+    Files.write(img, new File("graph.png"))
   }
 
 }
