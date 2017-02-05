@@ -1,8 +1,9 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin._
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.eclair.channel.Helpers.Funding
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.scalatest.FunSuite
 
@@ -25,25 +26,62 @@ class TestVectorsSpec extends FunSuite {
     val commitTxNumber = 42
     val toSelfDelay = 144
     val dustLimit = Satoshi(546)
-    val payment_basepoint = Point(BinaryData("034f355bdcb7cc0af728ef3cceb9615d90684bb5b2ca5f859ab0f0b704075871aa"))
+    val payment_basepoint_secret = Scalar(BinaryData("1111111111111111111111111111111111111111111111111111111111111111"))
+    val payment_basepoint = payment_basepoint_secret.toPoint
+    val revocation_basepoint_secret = Scalar(BinaryData("2222222222222222222222222222222222222222222222222222222222222222"))
+    val revocation_basepoint = revocation_basepoint_secret.toPoint
+    val delayed_payment_basepoint_secret = Scalar(BinaryData("3333333333333333333333333333333333333333333333333333333333333333"))
+    val delayed_payment_basepoint = delayed_payment_basepoint_secret.toPoint
     val funding_privkey = PrivateKey(BinaryData("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301"))
     val funding_pubkey = funding_privkey.publicKey
-    val private_key = PrivateKey(BinaryData("bb13b121cdc357cd2e608b0aea294afca36e2b34cf958e2e6451a2f27469449101"))
+
+    val per_commitment_point = Point(BinaryData("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))
+    val private_key = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
     val public_key = private_key.publicKey
-    val delayed_key = PublicKey(BinaryData("03fd5960528dc152014952efdb702a88f71e3c1653b2314431701ec77e57fde83c"))
+    val delayed_private_key = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
+    val delayed_key = delayed_private_key.publicKey
     val revocation_key = PublicKey(BinaryData("0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19"))
     val feerate_per_kw = 15000
   }
+
+  /*
+ <!-- We derive the test vector values as per Key Derivation, though it's not
+    required for this test.  They're included here for completeness and
+  in case someone wants to reproduce the test vectors themselves:
+
+ INTERNAL: remote_funding_privkey: 1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e130101
+ INTERNAL: local_payment_basepoint_secret: 111111111111111111111111111111111111111111111111111111111111111101
+ INTERNAL: local_revocation_basepoint_secret: 222222222222222222222222222222222222222222222222222222222222222201
+ INTERNAL: local_delayed_payment_basepoint_secret: 333333333333333333333333333333333333333333333333333333333333333301
+ INTERNAL: remote_payment_basepoint_secret: 444444444444444444444444444444444444444444444444444444444444444401
+ x_local_per_commitment_secret: 1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010001
+ INTERNAL: remote_per_commit_secret: 444444444444444444444444444444444444444444444444444444444444444401
+ # From local_revocation_basepoint_secret
+ INTERNAL: local_revocation_basepoint: 02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27
+ # From local_delayed_payment_basepoint_secret
+ INTERNAL: local_delayed_payment_basepoint: 023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1
+ INTERNAL: local_per_commitment_point: 025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486
+ INTERNAL: remote_per_commitment_point: 022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325
+ INTERNAL: remote_secretkey: 839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01
+ # From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
+ INTERNAL: local_delayed_secretkey: adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01
+-->
+
+  */
 
   object Remote {
     val commitTxNumber = 42
     val toSelfDelay = 144
     val dustLimit = Satoshi(546)
-    val payment_basepoint = Point(BinaryData("032c0b7cf95324a07d05398b240174dc0c2be444d96b159aa6c7f7b1e668680991"))
-    val funding_privkey = PrivateKey(BinaryData("31ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901"))
+    val payment_basepoint_secret = Scalar(BinaryData("4444444444444444444444444444444444444444444444444444444444444444"))
+    val payment_basepoint = payment_basepoint_secret.toPoint
+    val revocation_basepoint_secret = Scalar(BinaryData("2222222222222222222222222222222222222222222222222222222222222222"))
+    val revocation_basepoint = revocation_basepoint_secret.toPoint
+    val funding_privkey = PrivateKey(BinaryData("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901"))
     val funding_pubkey = funding_privkey.publicKey
     val private_key = PrivateKey(BinaryData("839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01"))
     val public_key = private_key.publicKey
+    val per_commitment_point = Point(BinaryData("022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325"))
   }
 
   val coinbaseTx = Transaction.read("02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0200f2052a010000002321023699c8328fd3b3071558b651fb18c51e2ea93ebd0e507966b912cb1babf3ff97ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000")
@@ -122,68 +160,10 @@ class TestVectorsSpec extends FunSuite {
   }
   println()
 
-  test("simple commitment tx with no HTLCs") {
-    println("name: simple commitment tx with no HTLCs")
-
-    val to_local_msat = 7000000000L millisatoshi
-    val to_remote_msat = 3000000000L millisatoshi
-    val feerate_per_kw = 15000
-
-    println(s"to_local_msat: $to_local_msat")
-    println(s"to_remote_msat: $to_remote_msat")
-    println(s"feerate_per_kw: $feerate_per_kw")
-
-    val spec = CommitmentSpec(
-      htlcs = Set.empty,
-      feeRatePerKw = feerate_per_kw,
-      toLocalMsat = to_local_msat.amount,
-      toRemoteMsat = to_remote_msat.amount)
-
-    val commitTx = Transactions.makeCommitTx(
-      commitmentInput,
-      Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
-      true, Local.dustLimit,
-      Local.public_key, Local.revocation_key, Local.toSelfDelay, Local.delayed_key,
-      Remote.public_key,
-      spec)
-
-    val fee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
-    println(s"# base commitment transaction fee = $fee")
-    commitTx.tx.txOut.map(txOut => {
-      txOut.publicKeyScript.length match {
-        case 22 => println(s"# to-remote amount ${txOut.amount}")
-        case 34 => println(s"# to-local amount ${txOut.amount}")
-      }
-    })
-
-    assert(Transactions.getCommitTxNumber(commitTx.tx, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
-
-    val local_sig = Transactions.sign(commitTx, Local.funding_privkey)
-    println(s"# local_signature = $local_sig")
-    val remote_sig = Transactions.sign(commitTx, Remote.funding_privkey)
-    println(s"# remote_signature = $remote_sig")
-
-    val signedTx = Transactions.addSigs(commitTx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
-    Transaction.correctlySpends(signedTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    println(s"output commit_tx: ${Transaction.write(signedTx.tx)}")
-    println()
-  }
-
-  test("commitment tx with all 5 htlcs untrimmed (minimum feerate") {
-    println("name: commitment tx with all 5 htlcs untrimmed (minimum feerate")
-    val to_local_msat = 6988000000L millisatoshi
-    val to_remote_msat = 3000000000L millisatoshi
-    val feerate_per_kw = 0
-
-    println(s"to_local_msat: $to_local_msat")
-    println(s"to_remote_msat: $to_remote_msat")
-    println(s"feerate_per_kw: $feerate_per_kw")
-
-    val spec = CommitmentSpec(
-      htlcs = htlcs.toSet,
-      feeRatePerKw = feerate_per_kw,
-      toLocalMsat = to_local_msat.amount,
-      toRemoteMsat = to_remote_msat.amount)
+  def run(spec: CommitmentSpec, expectedNumberOfOutputs: Int): Unit = {
+    println(s"to_local_msat: ${spec.toLocalMsat}")
+    println(s"to_remote_msat: ${spec.toRemoteMsat}")
+    println(s"feerate_per_kw: ${spec.feeRatePerKw}")
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
@@ -194,6 +174,7 @@ class TestVectorsSpec extends FunSuite {
         Remote.public_key,
         spec)
 
+      assert(tx.tx.txOut.length == expectedNumberOfOutputs)
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
       println(s"# local_signature = $local_sig")
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
@@ -202,8 +183,10 @@ class TestVectorsSpec extends FunSuite {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val fee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
-    println(s"# base commitment transaction fee = $fee")
+    val baseFee = Transactions.commitTxFee(spec.feeRatePerKw, Local.dustLimit, spec)
+    println(s"# base commitment transaction fee = $baseFee")
+    val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
+    println(s"# actual commitment transaction fee = $actualFee")
     commitTx.tx.txOut.map(txOut => {
       txOut.publicKeyScript.length match {
         case 22 => println(s"# to-remote amount ${txOut.amount}")
@@ -249,5 +232,110 @@ class TestVectorsSpec extends FunSuite {
       println(s"# htlc success tx $i ${Transaction.write(tx1.tx)}")
       tx1
     }
+  }
+
+  test("simple commitment tx with no HTLCs") {
+    println("name: simple commitment tx with no HTLCs")
+    val spec = CommitmentSpec(htlcs = Set.empty, feeRatePerKw = 15000, toLocalMsat = 7000000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 2)
+  }
+
+  test("commitment tx with all 5 htlcs untrimmed (minimum feerate)") {
+    println("name: commitment tx with all 5 htlcs untrimmed (minimum feerate")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 0, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 7)
+  }
+
+  test("commitment tx with 7 outputs untrimmed (maximum feerate)") {
+    println("name: commitment tx with 7 outputs untrimmed (maximum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 678, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 7)
+  }
+
+  test("commitment tx with 6 outputs untrimmed (minimum feerate)") {
+    println("name: commitment tx with 6 outputs untrimmed (minimum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 679, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 6)
+  }
+
+  test("commitment tx with 6 outputs untrimmed (maximum feerate)") {
+    println("name: commitment tx with 6 outputs untrimmed (maximum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2168, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 6)
+  }
+
+  test("commitment tx with 5 outputs untrimmed (minimum feerate)") {
+    println("name: commitment tx with 5 outputs untrimmed (minimum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2169, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 5)
+  }
+
+  test("commitment tx with 5 outputs untrimmed (maximum feerate)") {
+    println("name: commitment tx with 5 outputs untrimmed (maximum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2294, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 5)
+  }
+
+  test("commitment tx with 4 outputs untrimmed (minimum feerate)") {
+    println("name: commitment tx with 4 outputs untrimmed (minimum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2295, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 4)
+  }
+
+  test("commitment tx with 4 outputs untrimmed (maximum feerate)") {
+    println("name: commitment tx with 4 outputs untrimmed (maximum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 3872, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 4)
+  }
+
+  test("commitment tx with 3 outputs untrimmed (minimum feerate)") {
+    println("name: commitment tx with 3 outputs untrimmed (minimum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 3873, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 3)
+  }
+
+  test("commitment tx with 3 outputs untrimmed (maximum feerate)") {
+    println("name: commitment tx with 3 outputs untrimmed (maximum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 5149, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 3)
+  }
+
+  test("commitment tx with 2 outputs untrimmed (minimum feerate)") {
+    println("name: commitment tx with 2 outputs untrimmed (minimum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 5150, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 2)
+  }
+
+  test("commitment tx with 2 outputs untrimmed (maximum feerate)") {
+    println("name: commitment tx with 2 outputs untrimmed (maximum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651180, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 2)
+  }
+
+  test("commitment tx with 1 output untrimmed (minimum feerate)") {
+    println("name: commitment tx with 1 output untrimmed (minimum feerate)")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651181, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 1)
+  }
+
+  test("commitment tx with fee greater than funder amount") {
+    println("name: commitment tx with fee greater than funder amount")
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651936, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+
+    run(spec, 1)
   }
 }
