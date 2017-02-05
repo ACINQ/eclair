@@ -4,7 +4,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, Hash, MilliBtc, MilliSatoshi, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.crypto.Generators
@@ -43,6 +43,19 @@ class TransactionsSpec extends FunSuite {
       val txnumber1 = decodeTxNumber(sequence, locktime)
       assert(txnumber == txnumber1)
     }
+  }
+
+  test("compute fees") {
+    // see BOLT #3 specs
+    val htlcs = Set(
+      Htlc(OUT, UpdateAddHtlc(0, 0, MilliSatoshi(5000000).amount, 552, Hash.Zeroes, BinaryData("")), None),
+      Htlc(OUT, UpdateAddHtlc(0, 0, MilliSatoshi(1000000).amount, 553, Hash.Zeroes, BinaryData("")), None),
+      Htlc(IN, UpdateAddHtlc(0, 0, MilliSatoshi(7000000).amount, 550, Hash.Zeroes, BinaryData("")), None),
+      Htlc(IN, UpdateAddHtlc(0, 0, MilliSatoshi(800000).amount, 551, Hash.Zeroes, BinaryData("")), None)
+    )
+    val spec = CommitmentSpec(htlcs, feeRatePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
+    val fee = Transactions.commitTxFee(5000, Satoshi(546), spec)
+    assert(fee == Satoshi(5340))
   }
 
   test("check pre-computed transaction weights") {
