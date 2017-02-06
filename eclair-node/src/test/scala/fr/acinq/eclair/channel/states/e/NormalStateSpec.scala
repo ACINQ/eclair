@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.{Binding, Local, Relayed}
@@ -788,6 +789,37 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.forward(alice)
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == SHUTDOWN)
+    }
+  }
+
+  test("recv CurrentBlockCount (no htlc timed out)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      sender.send(alice, CurrentBlockCount(1400))
+      awaitCond(alice.stateData == initialState)
+    }
+  }
+
+  test("recv CurrentBlockCount (an htlc timed out)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sign(alice, bob, alice2bob, bob2alice)
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val aliceCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
+      sender.send(alice, CurrentBlockCount(1441))
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
+
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === aliceCommitTx.txid)
+      assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
     }
   }
 
