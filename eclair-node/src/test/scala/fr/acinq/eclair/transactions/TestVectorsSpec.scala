@@ -32,7 +32,7 @@ class TestVectorsSpec extends FunSuite {
     val revocation_basepoint = revocation_basepoint_secret.toPoint
     val delayed_payment_basepoint_secret = Scalar(BinaryData("3333333333333333333333333333333333333333333333333333333333333333"))
     val delayed_payment_basepoint = delayed_payment_basepoint_secret.toPoint
-    val funding_privkey = PrivateKey(BinaryData("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301"))
+    val funding_privkey = PrivateKey(BinaryData("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901"))
     val funding_pubkey = funding_privkey.publicKey
 
     val per_commitment_point = Point(BinaryData("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))
@@ -77,7 +77,7 @@ class TestVectorsSpec extends FunSuite {
     val payment_basepoint = payment_basepoint_secret.toPoint
     val revocation_basepoint_secret = Scalar(BinaryData("2222222222222222222222222222222222222222222222222222222222222222"))
     val revocation_basepoint = revocation_basepoint_secret.toPoint
-    val funding_privkey = PrivateKey(BinaryData("30ff4956bbdd3222d44cc5e8a1261dab1e07957bdac5ae88fe3261ef321f374901"))
+    val funding_privkey = PrivateKey(BinaryData("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301"))
     val funding_pubkey = funding_privkey.publicKey
     val private_key = PrivateKey(BinaryData("839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01"))
     val public_key = private_key.publicKey
@@ -119,6 +119,7 @@ class TestVectorsSpec extends FunSuite {
   println(s"remote_payment_basepoint: ${Remote.payment_basepoint}")
   println(s"local_funding_privkey: ${Local.funding_privkey}")
   println(s"local_funding_pubkey: ${Local.funding_pubkey}")
+  println(s"remote_funding_privkey: ${Remote.funding_privkey}")
   println(s"remote_funding_pubkey: ${Remote.funding_pubkey}")
   println(s"local_secretkey: ${Local.private_key}")
   println(s"localkey: ${Local.public_key}")
