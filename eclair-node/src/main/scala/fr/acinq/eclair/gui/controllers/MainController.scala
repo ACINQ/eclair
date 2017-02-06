@@ -1,10 +1,11 @@
 package fr.acinq.eclair.gui.controllers
 
+import java.net.InetSocketAddress
 import javafx.application.HostServices
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.collections.{FXCollections, ObservableList}
-import javafx.embed.swing.SwingNode
+import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
 import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
@@ -14,7 +15,6 @@ import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage.{FileChooser, Stage}
 import javafx.util.Callback
 
-import com.mxgraph.swing.mxGraphComponent
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages.{AboutStage, OpenChannelStage, ReceivePaymentStage, SendPaymentStage}
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
@@ -22,9 +22,12 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
 //
-case class PeerNode(id: StringProperty, alias: StringProperty, rgbColor: StringProperty) {
-  def this(na: NodeAnnouncement) = this(new SimpleStringProperty(na.nodeId.toString), new SimpleStringProperty(na.alias),
-    new SimpleStringProperty("rgb(" + new Integer(na.rgbColor._1 & 0xFF) + "," + new Integer(na.rgbColor._2 & 0xFF) + "," + new Integer(na.rgbColor._3 & 0xFF) + ")"))
+case class PeerNode(id: StringProperty, alias: StringProperty, rgbColor: StringProperty, addresses: List[InetSocketAddress]) {
+  def this(na: NodeAnnouncement) = {
+    this(new SimpleStringProperty(na.nodeId.toString), new SimpleStringProperty(na.alias),
+      new SimpleStringProperty("rgb(" + new Integer(na.rgbColor._1 & 0xFF) + "," + new Integer(na.rgbColor._2 & 0xFF) + "," + new Integer(na.rgbColor._3 & 0xFF) + ")"),
+      na.addresses)
+  }
 }
 
 case class PeerChannel(id: LongProperty, nodeId1: StringProperty, nodeId2: StringProperty) {
@@ -55,10 +58,6 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
   @FXML var channelInfo: VBox = _
   @FXML var channelBox: VBox = _
   @FXML var channelsTab: Tab = _
-
-  // graph tab
-  @FXML var graphTab: Tab = _
-  val swingNode: SwingNode = new SwingNode()
 
   // all nodes tab
   val allNodesList:ObservableList[PeerNode] = FXCollections.observableArrayList[PeerNode]()
@@ -91,9 +90,6 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
       new CopyAction("Copy Pubkey", Globals.Node.id),
       new CopyAction("Copy URI", s"${Globals.Node.id}@${Globals.Node.address.getHostString}:${Globals.Node.address.getPort}" )))
 
-    // init graph
-    //graphTab.setContent(swingNode)
-
     // init channels tab
     if (channelBox.getChildren.size() > 0) {
       channelInfo.setScaleY(0)
@@ -115,13 +111,13 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     // init all nodes
     allNodesTable.setItems(allNodesList)
     allNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue().id
+      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.id
     })
     allNodesAliasColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue().alias
+      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.alias
     })
     allNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue().rgbColor
+      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.rgbColor
     })
     allNodesRGBColumn.setCellFactory(new Callback[TableColumn[PeerNode, String], TableCell[PeerNode, String]]() {
       def call(pn: TableColumn[PeerNode, String]) = {
@@ -133,79 +129,129 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
         }
       }
     })
+    allNodesTable.setRowFactory(new Callback[TableView[PeerNode], TableRow[PeerNode]]() {
+      override def call(table: TableView[PeerNode]): TableRow[PeerNode] = setupPeerNodeContextMenu
+    })
 
     // init all channels
     allChannelsTable.setItems(allChannelsList)
     allChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, Number], ObservableValue[Number]]() {
-      def call(pc: CellDataFeatures[PeerChannel, Number]) = pc.getValue().id
+      def call(pc: CellDataFeatures[PeerChannel, Number]) = pc.getValue.id
     })
     allChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue().nodeId1
+      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue.nodeId1
     })
     allChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue().nodeId2
+      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue.nodeId2
+    })
+    allChannelsTable.setRowFactory(new Callback[TableView[PeerChannel], TableRow[PeerChannel]]() {
+      override def call(table: TableView[PeerChannel]): TableRow[PeerChannel] = setupPeerChannelContextMenu
     })
   }
 
-  @FXML def handleExportDot() = {
-    val fileChooser = new FileChooser()
+  /**
+    * Create a row for a PeerNode with Copy context actions.
+    * @return TableRow the created row
+    */
+  private def setupPeerNodeContextMenu(): TableRow[PeerNode] = {
+    val row = new TableRow[PeerNode]
+    val rowContextMenu = new ContextMenu
+    val copyPubkey = new MenuItem("Copy Pubkey")
+    copyPubkey.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = Option(row.getItem) match {
+        case Some(pn) => ContextMenuUtils.copyToClipboard(pn.id.getValue)
+        case None =>
+      }
+    })
+    val copyURI = new MenuItem("Copy first known URI")
+    copyURI.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = Option(row.getItem) match {
+        case Some(pn) => ContextMenuUtils.copyToClipboard(
+          if (pn.addresses.nonEmpty) s"${pn.id.getValue}@${pn.addresses.head.getHostString}:${pn.addresses.head.getPort}"
+          else "no URI Known")
+        case None =>
+      }
+    })
+    rowContextMenu.getItems.addAll(copyPubkey, copyURI)
+    row.setContextMenu(rowContextMenu)
+    row
+  }
+
+  /**
+    * Create a row for a PeerChannel with Copy context actions.
+    * @return TableRow the created row
+    */
+  private def setupPeerChannelContextMenu(): TableRow[PeerChannel] = {
+    val row = new TableRow[PeerChannel]
+    val rowContextMenu = new ContextMenu
+    val copyChannelId = new MenuItem("Copy Channel Id")
+    copyChannelId.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = Option(row.getItem) match {
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.id.getValue.toString)
+        case None =>
+      }
+    })
+    val copyNode1 = new MenuItem("Copy Node 1")
+    copyNode1.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = Option(row.getItem) match {
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId1.getValue)
+        case None =>
+      }
+    })
+    val copyNode2 = new MenuItem("Copy Node 2")
+    copyNode2.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = Option(row.getItem) match {
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId2.getValue)
+        case None =>
+      }
+    })
+    rowContextMenu.getItems.addAll(copyChannelId, copyNode1, copyNode2)
+    row.setContextMenu(rowContextMenu)
+    row
+  }
+
+  @FXML def handleExportDot = {
+    val fileChooser = new FileChooser
     fileChooser.setTitle("Save as")
     fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
     val file = fileChooser.showSaveDialog(stage)
     if (file != null) handlers.exportToDot(file)
   }
 
-  @FXML def handleOpenChannel() = {
-    val openChannelStage = new OpenChannelStage(handlers, setup);
+  @FXML def handleOpenChannel = {
+    val openChannelStage = new OpenChannelStage(handlers, setup)
     openChannelStage.initOwner(stage)
     positionAtCenter(openChannelStage)
-    openChannelStage.show()
+    openChannelStage.show
   }
 
-  @FXML def handleSendPayment() = {
+  @FXML def handleSendPayment = {
     val sendPaymentStage = new SendPaymentStage(handlers, setup)
     sendPaymentStage.initOwner(stage)
     positionAtCenter(sendPaymentStage)
-    sendPaymentStage.show()
+    sendPaymentStage.show
   }
 
-  @FXML def handleReceivePayment() = {
+  @FXML def handleReceivePayment = {
     val receiveStage = new ReceivePaymentStage(handlers, setup)
     receiveStage.initOwner(stage)
     positionAtCenter(receiveStage)
-    receiveStage.show()
+    receiveStage.show
   }
 
-  @FXML def handleCloseRequest(): Unit = {
-    stage.close()
-  }
+  @FXML def handleCloseRequest = stage.close
 
-  @FXML def handleOpenAbout: Unit = {
+  @FXML def handleOpenAbout = {
     val aboutStage = new AboutStage(hostServices)
     aboutStage.initOwner(stage)
-    aboutStage.show()
+    aboutStage.show
   }
 
-  def handleRefreshGraph: Unit = {
-    Option(swingNode.getContent) match {
-      case Some(component: mxGraphComponent) =>
-        component.doLayout()
-        component.repaint()
-        component.refresh()
-      case _ => {}
-    }
-  }
+  @FXML def openNodeIdContext(event: ContextMenuEvent) = contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
+  @FXML def closeNodeIdContext(event: MouseEvent) = contextMenu.hide()
 
-  @FXML def openNodeIdContext(event: ContextMenuEvent): Unit = {
-    contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
-  }
-
-  @FXML def closeNodeIdContext(event: MouseEvent): Unit = {
-    contextMenu.hide()
-  }
-
-  def positionAtCenter(childStage: Stage): Unit = {
-    childStage.setX(stage.getX() + stage.getWidth() / 2 - childStage.getWidth() / 2)
-    childStage.setY(stage.getY() + stage.getHeight() / 2 - childStage.getHeight() / 2)
+  def positionAtCenter(childStage: Stage) = {
+    childStage.setX(stage.getX + stage.getWidth / 2 - childStage.getWidth / 2)
+    childStage.setY(stage.getY + stage.getHeight / 2 - childStage.getHeight / 2)
   }
 }

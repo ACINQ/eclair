@@ -67,14 +67,7 @@ class FxApp extends Application with Logging {
               mainFXML.setController(controller)
               val mainRoot = mainFXML.load[Parent]
               val scene = new Scene(mainRoot)
-
               primaryStage.setTitle("Eclair")
-              primaryStage.widthProperty().addListener(new ChangeListener[Number] {
-                override def changed(observable: ObservableValue[_ <: Number], oldValue: Number, newValue: Number): Unit = controller.handleRefreshGraph
-              })
-              primaryStage.heightProperty().addListener(new ChangeListener[Number] {
-                override def changed(observable: ObservableValue[_ <: Number], oldValue: Number, newValue: Number): Unit = controller.handleRefreshGraph
-              })
               primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
                 override def handle(event: WindowEvent): Unit = {
                   System.exit(0)

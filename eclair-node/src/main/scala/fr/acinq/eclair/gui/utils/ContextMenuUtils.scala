@@ -32,15 +32,16 @@ object ContextMenuUtils {
     for (action <- actions ) {
       val copyItem = new MenuItem(action.label)
       copyItem.setOnAction(new EventHandler[ActionEvent] {
-        override def handle(event: ActionEvent): Unit = {
-          val clipContent = new ClipboardContent
-          clipContent.putString(action.value)
-          clip.setContent(clipContent)
-        }
+        override def handle(event: ActionEvent) = copyToClipboard(action.value)
       })
       context.getItems.addAll(copyItem)
     }
     context
   }
 
+  def copyToClipboard (value: String) = {
+    val clipContent = new ClipboardContent
+    clipContent.putString(value)
+    clip.setContent(clipContent)
+  }
 }
