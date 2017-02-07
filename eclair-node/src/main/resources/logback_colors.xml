@@ -4,58 +4,64 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
-        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
-            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
-                <expression>return logger.contains("Channel") || logger.contains("Watcher");</expression>
-            </evaluator>
-            <OnMatch>DENY</OnMatch>
-            <OnMismatch>ACCEPT</OnMismatch>
-        </filter>
         <encoder>
             <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 
-    <appender name="CHANNEL" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="YELLOW" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
-        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
-            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
-                <expression>return logger.contains("Channel");</expression>
-            </evaluator>
-            <OnMismatch>DENY</OnMismatch>
-            <OnMatch>ACCEPT</OnMatch>
-        </filter>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %yellow(%msg) %ex{12}%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <appender name="BLUE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
         <encoder>
             <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %blue(%msg) %ex{12}%n
             </pattern>
         </encoder>
     </appender>
 
-    <appender name="BLOCKCHAIN" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="RED" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
-        <filter class="ch.qos.logback.core.filter.EvaluatorFilter">
-            <evaluator> <!-- defaults to type ch.qos.logback.classic.boolex.JaninoEventEvaluator -->
-                <expression>return logger.contains("Watcher");</expression>
-            </evaluator>
-            <OnMismatch>DENY</OnMismatch>
-            <OnMatch>ACCEPT</OnMatch>
-        </filter>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %boldGreen(%msg)
-                %ex{12}%n
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %red(%msg) %ex{12}%n
             </pattern>
         </encoder>
     </appender>
 
-    <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
-    <logger name="fr.acinq.eclair.router" level="DEBUG"/>
-    <logger name="fr.acinq.eclair.blockchain.peer.PeerClient" level="INFO"/>
+    <appender name="GREEN" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %boldGreen(%msg) %ex{12}%n
+            </pattern>
+        </encoder>
+    </appender>
+
+    <logger name="fr.acinq.eclair.channel" level="DEBUG" additivity="false">
+        <appender-ref ref="BLUE"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.payment" level="DEBUG" additivity="false">
+        <appender-ref ref="GREEN"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.blockchain.PeerWatcher" level="DEBUG" additivity="false">
+        <appender-ref ref="YELLOW"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.router" level="DEBUG" additivity="false">
+        <appender-ref ref="RED"/>
+    </logger>
 
     <root level="INFO">
-        <appender-ref ref="CHANNEL"/>
-        <appender-ref ref="BLOCKCHAIN"/>
         <appender-ref ref="CONSOLE"/>
     </root>
 
