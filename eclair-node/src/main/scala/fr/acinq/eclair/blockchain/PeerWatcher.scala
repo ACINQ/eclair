@@ -100,7 +100,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
   }
 
   def publish(tx: Transaction) = client.publishTransaction(tx).onFailure {
-    case t: Throwable => log.error(t, s"cannot publish tx ${BinaryData(Transaction.write(tx))}")
+    case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} tx=${BinaryData(Transaction.write(tx))}")
   }
 }
 

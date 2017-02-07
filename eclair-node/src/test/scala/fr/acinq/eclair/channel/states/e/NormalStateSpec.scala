@@ -864,9 +864,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
-      alice2blockchain.expectNoMsg(1 second)
       // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850000 (because fees)
       assert(amountClaimed == Satoshi(831510))
+
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -966,7 +969,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // - 3 txes for each htlc
       // - 3 txes for each delayed output of the claimed htlc
       val claimTxs = for (i <- 0 until 7) yield alice2blockchain.expectMsgType[PublishAsap].tx
-      alice2blockchain.expectNoMsg(1 second)
 
       // the main delayed output spends the commitment transaction
       Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -980,6 +982,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Transaction.correctlySpends(claimTxs(4), claimTxs(1) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(5), claimTxs(2) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(6), claimTxs(3) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)

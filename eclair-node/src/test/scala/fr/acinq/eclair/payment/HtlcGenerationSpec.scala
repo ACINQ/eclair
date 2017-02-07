@@ -1,6 +1,6 @@
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.randomKey
@@ -149,7 +149,8 @@ object HtlcGenerationSpec {
       Hop(d, e, channelUpdate_de) :: Nil
 
   val finalAmountMsat = 42000000L
-  val paymentHash = BinaryData("42" * 32)
+  val paymentPreimage = BinaryData("42" * 32)
+  val paymentHash = Crypto.sha256(paymentPreimage)
   val currentBlockCount = 420000
 
   val expiry_de = currentBlockCount + defaultHtlcExpiry

@@ -1,9 +1,9 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
-import fr.acinq.bitcoin.BinaryData
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.eclair.Globals
+import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
+import fr.acinq.bitcoin.{BinaryData, ScriptWitness, Transaction}
+import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire._
@@ -118,6 +118,31 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         case None =>
           log.warning(s"no origin found for htlc $add")
       }
+
+    case WatchEventSpent(BITCOIN_HTLC_SPENT, tx) =>
+      // when a remote or local commitment tx containing outgoing htlcs is published on the network,
+      // we watch it in order to extract payment preimage if funds are pulled by the counterparty
+      // we can then use these preimages to fulfill origin htlcs
+      tx.txIn
+        .map(_.witness)
+        .map {
+          case ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil) =>
+            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)}")
+            Some(paymentPreimage)
+          case ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage :: htlcOfferedScript :: Nil) =>
+            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)}")
+            Some(paymentPreimage)
+          case _ =>
+            None
+        }
+        .flatten
+        .map { preimage =>
+          bindings.collect {
+            case b@(upstream, Relayed(downstream)) if downstream.paymentHash == sha256(preimage) =>
+              log.info(s"found a match between preimage=$preimage and origin htlc for $b")
+              self ! (upstream, UpdateFulfillHtlc(upstream.channelId, upstream.id, preimage))
+          }
+        }
 
     case 'upstreams => sender ! upstreams
   }

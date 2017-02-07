@@ -66,6 +66,7 @@ case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
 case object BITCOIN_FUNDING_LOST extends BitcoinEvent
 case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
 case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
+case object BITCOIN_HTLC_SPENT extends BitcoinEvent
 case object BITCOIN_LOCALCOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_REMOTECOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_PUNISHMENT_DONE extends BitcoinEvent

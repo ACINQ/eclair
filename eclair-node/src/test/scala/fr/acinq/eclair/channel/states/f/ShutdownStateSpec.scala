@@ -394,9 +394,12 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
-      alice2blockchain.expectNoMsg(1 second)
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
       assert(amountClaimed == Satoshi(784950))
+
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
@@ -459,7 +462,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // - 2 txes for each htlc
       // - 2 txes for each delayed output of the claimed htlc
       val claimTxs = for (i <- 0 until 5) yield alice2blockchain.expectMsgType[PublishAsap].tx
-      alice2blockchain.expectNoMsg(1 second)
 
       // the main delayed output spends the commitment transaction
       Transaction.correctlySpends(claimTxs(0), aliceCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -471,6 +473,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // 3rd stage transactions spend their respective HTLC-Timeout transactions
       Transaction.correctlySpends(claimTxs(3), claimTxs(1) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(4), claimTxs(2) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
