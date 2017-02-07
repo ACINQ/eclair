@@ -3,6 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.router.BaseRouterSpec
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -14,9 +15,10 @@ import org.scalatest.junit.JUnitRunner
 class PaymentLifecycleSpec extends BaseRouterSpec {
 
   val initialBlockCount = 420000
+  Globals.blockCount.set(initialBlockCount)
 
   test("payment failed (route not found)") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, initialBlockCount))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -32,7 +34,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (htlc failed)") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, initialBlockCount))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -51,7 +53,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment succeeded") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, initialBlockCount))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
     val monitor = TestProbe()
     val sender = TestProbe()
 

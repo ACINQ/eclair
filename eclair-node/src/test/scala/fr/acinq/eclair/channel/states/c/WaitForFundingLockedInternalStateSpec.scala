@@ -24,7 +24,7 @@ class WaitForFundingLockedInternalStateSpec extends TestkitBaseClass {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()

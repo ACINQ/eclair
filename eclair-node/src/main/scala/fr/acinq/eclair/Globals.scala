@@ -1,6 +1,7 @@
 package fr.acinq.eclair
 
 import java.net.InetSocketAddress
+import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
@@ -39,4 +40,11 @@ object Globals {
 
   val default_anchor_amount = 1000000
   val autosign_interval = 300 milliseconds
+
+  /**
+    * This counter holds the current blockchain height.
+    * It is mainly used to calculate htlc expiries.
+    * The value is updated by the [[fr.acinq.eclair.blockchain.PeerWatcher]] and read by all actors, hence it needs to be thread-safe.
+    */
+  val blockCount = new AtomicLong(0)
 }

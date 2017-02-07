@@ -26,7 +26,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
@@ -52,7 +52,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       alice2blockchain.forward(blockchainA)
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
-      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
+      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
       alice2blockchain.expectMsgType[WatchLost]
       bob2blockchain.expectMsgType[WatchLost]
       alice2bob.expectMsgType[FundingLocked]

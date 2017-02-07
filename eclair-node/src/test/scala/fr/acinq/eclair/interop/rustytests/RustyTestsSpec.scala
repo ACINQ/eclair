@@ -9,7 +9,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.{NoopPaymentHandler, Relayer}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
@@ -26,10 +26,11 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
   type FixtureParam = Tuple2[List[String], List[String]]
 
   override def withFixture(test: OneArgTest) = {
+    Globals.blockCount.set(0)
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
-    val blockchainB = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
+    val blockchainB = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     // we just bypass the relayer for this test
     val relayer = paymentHandler

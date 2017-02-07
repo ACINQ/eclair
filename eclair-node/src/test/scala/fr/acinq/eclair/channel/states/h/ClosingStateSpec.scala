@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel.states.h
 import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Transaction
-import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient}
+import fr.acinq.eclair.{Globals, TestBitcoinClient, TestkitBaseClass}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -26,7 +26,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()

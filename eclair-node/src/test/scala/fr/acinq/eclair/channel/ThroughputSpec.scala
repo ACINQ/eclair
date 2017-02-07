@@ -22,7 +22,7 @@ class ThroughputSpec extends FunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem()
     val pipe = system.actorOf(Props[Pipe], "pipe")
-    val blockchain = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)), "blockchain")
+    val blockchain = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = new Random()
 

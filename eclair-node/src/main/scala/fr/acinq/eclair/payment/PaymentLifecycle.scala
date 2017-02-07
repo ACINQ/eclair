@@ -16,8 +16,8 @@ import scodec.Attempt
 case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: BinaryData)
 
 sealed trait Data
-case class WaitingForRequest(currentBlockCount: Long) extends Data
-case class WaitingForRoute(sender: ActorRef, c: CreatePayment, currentBlockCount: Long) extends Data
+case object WaitingForRequest extends Data
+case class WaitingForRoute(sender: ActorRef, c: CreatePayment) extends Data
 case class WaitingForComplete(sender: ActorRef,c: CMD_ADD_HTLC) extends Data
 
 sealed trait State
@@ -30,27 +30,27 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef, currentBlockCount: Long) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef) extends LoggingFSM[State, Data] {
 
   import PaymentLifecycle._
 
-  startWith(WAITING_FOR_REQUEST, WaitingForRequest(currentBlockCount))
+  startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
-    case Event(c: CreatePayment, WaitingForRequest(currentBlockCount)) =>
+    case Event(c: CreatePayment, WaitingForRequest) =>
       router ! RouteRequest(sourceNodeId, c.targetNodeId)
-      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, currentBlockCount)
+      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c)
   }
 
   when(WAITING_FOR_ROUTE) {
-    case Event(RouteResponse(hops), WaitingForRoute(s, c, currentBlockCount)) =>
+    case Event(RouteResponse(hops), WaitingForRoute(s, c)) =>
       val firstHop = hops.head
-      val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, currentBlockCount.toInt)
+      val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
       context.system.eventStream.subscribe(self, classOf[PaymentEvent])
       context.actorSelection(Register.actorPathToChannelId(firstHop.lastUpdate.channelId)) ! cmd
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
-    case Event(f@Failure(t), WaitingForRoute(s, _, _)) =>
+    case Event(f@Failure(t), WaitingForRoute(s, _)) =>
       s ! f
       stop(FSM.Failure(t))
   }
@@ -75,7 +75,7 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef, currentBlockC
 
 object PaymentLifecycle {
 
-  def props(sourceNodeId: BinaryData, router: ActorRef, initialBlockCount: Long) = Props(classOf[PaymentLifecycle], sourceNodeId, router, initialBlockCount)
+  def props(sourceNodeId: BinaryData, router: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router)
 
   /**
     *

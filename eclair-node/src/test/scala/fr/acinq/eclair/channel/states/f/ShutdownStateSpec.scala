@@ -28,7 +28,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient(), 300)))
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
@@ -41,7 +41,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val r1: BinaryData = "11" * 32
       val h1: BinaryData = Crypto.sha256(r1)
       val amount1 = 300000000
-      sender.send(alice, CMD_ADD_HTLC(amount1, h1, 1440))
+      sender.send(alice, CMD_ADD_HTLC(amount1, h1, 400144))
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
@@ -50,7 +50,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val r2: BinaryData = "22" * 32
       val h2: BinaryData = Crypto.sha256(r2)
       val amount2 = 200000000
-      sender.send(alice, CMD_ADD_HTLC(amount2, h2, 1440))
+      sender.send(alice, CMD_ADD_HTLC(amount2, h2, 400144))
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
@@ -344,7 +344,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(alice, CurrentBlockCount(1400))
+      sender.send(alice, CurrentBlockCount(400143))
       awaitCond(alice.stateData == initialState)
     }
   }
@@ -354,7 +354,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
       val aliceCommitTx = initialState.commitments.localCommit.publishableTxs.commitTx.tx
-      sender.send(alice, CurrentBlockCount(1441))
+      sender.send(alice, CurrentBlockCount(400145))
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]

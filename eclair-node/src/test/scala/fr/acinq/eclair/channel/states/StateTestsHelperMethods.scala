@@ -41,7 +41,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2blockchain.forward(blockchainA)
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
-    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
+    bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
     alice2blockchain.expectMsgType[WatchLost]
     bob2blockchain.expectMsgType[WatchLost]
     alice2bob.expectMsgType[FundingLocked]
@@ -58,7 +58,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     rand.nextBytes(R)
     val H: BinaryData = Crypto.sha256(R)
     val sender = TestProbe()
-    sender.send(s, CMD_ADD_HTLC(amountMsat, H, 1440))
+    sender.send(s, CMD_ADD_HTLC(amountMsat, H, 400144))
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)

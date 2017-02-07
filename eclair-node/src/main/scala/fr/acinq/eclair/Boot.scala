@@ -58,7 +58,9 @@ class Setup() extends Logging {
 
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
+  // TODO: check if bitcoind is in sync
   val (chain, blockCount) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
+  Globals.blockCount.set(blockCount)
   assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
   // we use it as final payment address, so that funds are moved to the bitcoind wallet upon channel termination
@@ -81,14 +83,14 @@ class Setup() extends Logging {
   val fatalEventFuture = fatalEventPromise.future
 
   val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
-  val watcher = system.actorOf(PeerWatcher.props(bitcoin_client, blockCount), name = "watcher")
+  val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
   val paymentHandler = config.getString("eclair.payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
   val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(watcher), name = "router")
-  val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router, blockCount), "payment-initiator")
+  val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router), "payment-initiator")
   val register = system.actorOf(Register.props(watcher, router, relayer, finalScriptPubKey), name = "register")
   val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
 

@@ -12,6 +12,10 @@ import scala.concurrent.Await
   */
 abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixture.FunSuiteLike with BeforeAndAfterEach with BeforeAndAfterAll {
 
+  override def beforeAll {
+    Globals.blockCount.set(400000)
+  }
+
   override def afterEach() {
     system.actorSelection(system / "*") ! PoisonPill
     intercept[ActorNotFound] {

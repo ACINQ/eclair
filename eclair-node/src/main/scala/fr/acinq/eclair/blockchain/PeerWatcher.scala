@@ -3,8 +3,8 @@ package fr.acinq.eclair.blockchain
 import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
-import fr.acinq.eclair.channel.BITCOIN_FUNDING_SPENT
 import fr.acinq.eclair.transactions.Scripts
 
 import scala.collection.SortedMap
@@ -16,13 +16,13 @@ import scala.concurrent.ExecutionContext
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
-  def receive: Receive = watching(Set(), SortedMap(), blockCount)
+  def receive: Receive = watching(Set(), SortedMap())
 
-  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], currentBlockCount: Long): Receive = {
+  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
 
     case NewTransaction(tx) =>
       val triggeredWatches = watches.collect {
@@ -31,10 +31,14 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
           channel ! WatchEventSpent(event, tx)
           w
       }
-      context.become(watching(watches -- triggeredWatches, block2tx, currentBlockCount))
+      context.become(watching(watches -- triggeredWatches, block2tx))
 
     case NewBlock(block) =>
-      client.getBlockCount.map(count => context.system.eventStream.publish(CurrentBlockCount(count)))
+      client.getBlockCount.map {
+        case count =>
+          Globals.blockCount.set(count)
+          context.system.eventStream.publish(CurrentBlockCount(count))
+      }
       // TODO: beware of the herd effect
       watches.collect {
         case w@WatchConfirmed(channel, txId, minDepth, event) =>
@@ -52,14 +56,14 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
     case ('trigger, w: WatchConfirmed, e: WatchEvent) if watches.contains(w) =>
       log.info(s"triggering $w")
       w.channel ! e
-      context.become(watching(watches - w, block2tx, currentBlockCount))
+      context.become(watching(watches - w, block2tx))
 
     case ('trigger, w: WatchConfirmed, e: WatchEvent) if !watches.contains(w) => {}
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
       toPublish.values.flatten.map(publish)
-      context.become(watching(watches, block2tx -- toPublish.keys, count))
+      context.become(watching(watches, block2tx -- toPublish.keys))
     }
 
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
@@ -67,20 +71,21 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
     case w: Watch if !watches.contains(w) =>
       log.info(s"adding watch $w for $sender")
       context.watch(w.channel)
-      context.become(watching(watches + w, block2tx, currentBlockCount))
+      context.become(watching(watches + w, block2tx))
 
     case PublishAsap(tx) =>
+      val blockCount = Globals.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
-      val csvTimeout = currentBlockCount + Scripts.csvTimeout(tx)
+      val csvTimeout = blockCount + Scripts.csvTimeout(tx)
       // absolute timeout in blocks
       val timeout = Math.max(cltvTimeout, csvTimeout)
-      if (timeout <= currentBlockCount) {
+      if (timeout <= blockCount) {
         log.info(s"publishing tx ${Transaction.write(tx)}")
         publish(tx)
       } else {
-        log.info(s"delaying publication of tx ${Transaction.write(tx)} until block=$timeout (curblock=$currentBlockCount)")
+        log.info(s"delaying publication of tx ${Transaction.write(tx)} until block=$timeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
-        context.become(watching(watches, block2tx1, currentBlockCount))
+        context.become(watching(watches, block2tx1))
       }
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
@@ -95,7 +100,7 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
       val deprecatedWatches = watches.filter(_.channel == channel)
-      context.become(watching(watches -- deprecatedWatches, block2tx, currentBlockCount))
+      context.become(watching(watches -- deprecatedWatches, block2tx))
 
   }
 
@@ -106,6 +111,6 @@ class PeerWatcher(client: ExtendedBitcoinClient, blockCount: Long)(implicit ec: 
 
 object PeerWatcher {
 
-  def props(client: ExtendedBitcoinClient, initialBlockCount: Long)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(classOf[PeerWatcher], client, initialBlockCount, ec)
+  def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(classOf[PeerWatcher], client, ec)
 
 }

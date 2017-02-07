@@ -2,6 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -63,6 +64,8 @@ object Commitments extends Logging {
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
 
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
+    val blockCount = Globals.blockCount.get()
+    require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
     // our available funds as seen by them, including all pending changes
     val reduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.acked, commitments.localChanges.proposed)
     // a node cannot spend pending incoming htlcs
@@ -78,6 +81,13 @@ object Commitments extends Logging {
   }
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
+    val blockCount = Globals.blockCount.get()
+    // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
+    val minExpiry = blockCount + 3
+    if (add.expiry < minExpiry) {
+      throw new RuntimeException(s"expiry too small: required=$minExpiry actual=${add.expiry} (blockCount=$blockCount)")
+    }
+
     // their available funds as seen by us, including all pending changes
     val reduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments.localChanges.acked, commitments.remoteChanges.proposed)
     // a node cannot spend pending incoming htlcs
