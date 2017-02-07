@@ -5,10 +5,11 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.Binding
-import fr.acinq.eclair.router.{Announcements, Router}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -309,7 +310,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+      log.error(s"peer sent $e, closing connection")
+      // see bolt #2: A node MUST fail the connection if it receives an err message
       val localCommitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
       blockchain ! PublishAsap(localCommitTx)
       blockchain ! WatchConfirmed(self, localCommitTx.txid, d.params.minimumDepth, BITCOIN_LOCALCOMMIT_DONE)
@@ -342,6 +344,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
           context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
         case _ => log.info(s"channel ${d.channelId} won't be announced")
       }
+      // this clock will be used to detect htlc timeouts
+      context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -511,6 +515,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
         case Failure(cause) => handleLocalError(cause, d)
       }
 
+    case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutHtlcs(count) =>
+      handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) => handleRemoteSpentOther(tx, d)
@@ -603,6 +610,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
+
+    case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutHtlcs(count) =>
+      handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -725,8 +735,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       }, stateName, stateData)
       stay
 
-    // because channels send CMD to each others when relaying payments
-    case Event("ok", _) => stay
+    // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
+    case Event(CurrentBlockCount(_), _) => stay
   }
 
   onTransition {
