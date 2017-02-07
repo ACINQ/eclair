@@ -18,7 +18,7 @@ class ReceivePaymentStage(handlers: Handlers, setup: Setup) extends Stage() {
   getIcons().add(new Image("/gui/commons/images/eclair02.png", false))
   setTitle("Receive a Payment")
   setWidth(550)
-  setHeight(350)
+  setHeight(380)
 
   setResizable(false)
 
