@@ -86,7 +86,7 @@ class Setup() extends Logging {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
-  val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "propagator")
+  val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(watcher), name = "router")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router, blockCount), "payment-initiator")
   val register = system.actorOf(Register.props(watcher, router, relayer, finalScriptPubKey), name = "register")
