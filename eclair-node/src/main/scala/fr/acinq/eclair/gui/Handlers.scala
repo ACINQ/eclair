@@ -49,10 +49,14 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
     }
   }
 
-  def getPaymentRequest(amountMsat: Long, textField: TextArea) = {
+  def getPaymentRequest(amountMsat: Long, textarea: TextArea) = {
     (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
       Platform.runLater(new Runnable() {
-        override def run = textField.setText(s"${Globals.Node.id}:$amountMsat:${h.toString()}")
+        override def run = {
+          textarea.setText(s"${Globals.Node.id}:$amountMsat:${h.toString()}")
+          textarea.requestFocus
+          textarea.selectAll
+        }
       })
     }
   }
