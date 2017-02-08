@@ -36,14 +36,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       log.info(s"new channel: $channel")
 
       val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
-      val channelPaneController = new ChannelPaneController(theirNodeId.toBin.toString())
+      val channelPaneController = new ChannelPaneController(theirNodeId.toBin.toString(), params)
       loader.setController(channelPaneController)
       val root = loader.load[VBox]
 
       channelPaneController.nodeId.setText(s"$theirNodeId")
       channelPaneController.funder.setText(if (params.isFunder) "Yes" else "No")
       channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
-        override def handle(event: ActionEvent): Unit = channel ! CMD_CLOSE(None)
+        override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
       })
 
       Platform.runLater(new Runnable() {
@@ -124,22 +124,5 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
           mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
         }
       })
-
-    // TODO
-    /*case ChannelDiscovered(ChannelDesc(id, a, b)) =>
-      graph.addVertex(BinaryData(a))
-      graph.addVertex(BinaryData(b))
-      graph.addEdge(a, b, new NamedEdge(id))
-      val jgxAdapter = new JGraphXAdapter(graph)
-      Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          val component = new mxGraphComponent(jgxAdapter)
-          component.setDragEnabled(false)
-          val lay = new mxCircleLayout(jgxAdapter)
-          lay.execute(jgxAdapter.getDefaultParent())
-          mainController.swingNode.setContent(component)
-        }
-      })*/
-
   }
 }

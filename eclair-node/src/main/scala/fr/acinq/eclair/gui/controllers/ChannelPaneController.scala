@@ -1,16 +1,17 @@
 package fr.acinq.eclair.gui.controllers
 
 import javafx.fxml.FXML
-import javafx.scene.control.{Button, ContextMenu, TextField, ProgressBar}
+import javafx.scene.control.{Button, ContextMenu, ProgressBar, TextField}
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 
+import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import grizzled.slf4j.Logging
 
 /**
   * Created by DPA on 23/09/2016.
   */
-class ChannelPaneController(theirNodeIdValue: String) extends Logging {
+class ChannelPaneController(theirNodeIdValue: String, channelParams: LocalParams) extends Logging {
 
   var channelIdValue = ""
   @FXML var channelId: TextField = _
