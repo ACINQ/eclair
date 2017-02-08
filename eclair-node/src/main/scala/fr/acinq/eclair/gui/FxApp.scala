@@ -16,7 +16,7 @@ import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.MainController
 import fr.acinq.eclair.gui.stages.SplashStage
 import fr.acinq.eclair.router.NetworkEvent
-import fr.acinq.eclair.{Globals, Setup}
+import fr.acinq.eclair.{Setup}
 import grizzled.slf4j.Logging
 
 /**
@@ -40,7 +40,7 @@ class FxApp extends Application with Logging {
 
           // add icon in system tray
           val awtIcon = Toolkit.getDefaultToolkit.createImage(getClass.getResource("/gui/commons/images/eclair02.png"))
-          val trayIcon = new TrayIcon(awtIcon, s"Eclair - ${Globals.Node.alias.substring(0,15)}")
+          val trayIcon = new TrayIcon(awtIcon, "Eclair")
           trayIcon.setImageAutoSize(true)
           if (SystemTray.isSupported()) {
             try {
@@ -136,7 +136,7 @@ class FxApp extends Application with Logging {
 
       // create menu
       val menu = new PopupMenu
-      val showItem = new MenuItem(s"Open ${Globals.Node.alias.substring(0,15)}")
+      val showItem = new MenuItem("Open Eclair")
       showItem.setFont(Font.decode(null).deriveFont(Font.BOLD))
       val minimizeItem = new MenuItem("Minimize")
       val closeItem = new MenuItem("Close")
