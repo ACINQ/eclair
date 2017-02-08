@@ -4,7 +4,7 @@ package fr.acinq.eclair.gui
 import java.awt.TrayIcon.MessageType
 import java.awt.{SystemTray, TrayIcon}
 import java.io.{File, FileWriter}
-import java.time.{LocalDate, LocalDateTime}
+import java.time.LocalDateTime
 import java.time.format.{DateTimeFormatter, FormatStyle}
 import javafx.application.Platform
 import javafx.scene.control.TextArea
@@ -37,37 +37,30 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
 
   def send(nodeId: String, rhash: String, amountMsat: String) = {
     logger.info(s"sending $amountMsat to $rhash @ $nodeId")
-    paymentInitiator ! CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))
+    (paymentInitiator ? CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[String].onComplete {
+      case Success(s) =>
+        val now = LocalDateTime.now.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT,FormatStyle.SHORT))
+        val message = s"Date: $now\nAmount (mSat): $amountMsat\nH: $rhash"
+        notification("Payment Successful", message, TrayIcon.MessageType.INFO)
+      case Failure(t) =>
+        val now = LocalDateTime.now.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT,FormatStyle.SHORT))
+        val message = s"Date: $now\nCause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $rhash"
+        notification("Payment Failed", message, TrayIcon.MessageType.WARNING)
+    }
   }
 
-  def getH(textField: TextField): Unit = {
-    import akka.pattern.ask
+  def getPaymentRequest(amountMsat: Long, textField: TextArea) = {
     (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          textField.setText(h.toString())
-        }
+        override def run = textField.setText(s"${Globals.Node.id}:$amountMsat:${h.toString()}")
       })
     }
   }
 
-  def getPaymentRequest(amountMsat: Long, textField: TextArea): Unit = {
-    import akka.pattern.ask
-    (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
-      Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          textField.setText(s"${Globals.Node.id}:$amountMsat:${h.toString()}")
-        }
-      })
-    }
-  }
+  def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
+    dot => printToFile(file)(writer => writer.write(dot)))
 
-  def exportToDot(file: File): Unit = {
-    import akka.pattern.ask
-    (router ? 'dot).mapTo[String].map(dot => printToFile(file)(writer => writer.write(dot)))
-  }
-
-  def printToFile(f: java.io.File)(op: java.io.FileWriter => Unit) {
+  private def printToFile(f: java.io.File)(op: java.io.FileWriter => Unit) {
     val p = new FileWriter(f)
     try {
       op(p)

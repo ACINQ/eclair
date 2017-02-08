@@ -62,6 +62,10 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef, currentBlockC
       s ! "sent"
       stop(FSM.Normal)
 
+    case Event(reason: String, WaitingForComplete(s, _)) =>
+      s ! Status.Failure(new RuntimeException(reason))
+      stop(FSM.Failure(reason))
+
     case Event(e@PaymentFailed(_, h, reason), WaitingForComplete(s, cmd)) if h == cmd.paymentHash =>
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
