@@ -12,7 +12,7 @@ import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, VBox}
 import javafx.stage.FileChooser.ExtensionFilter
-import javafx.stage.{FileChooser, Stage}
+import javafx.stage.{FileChooser, Stage, WindowEvent}
 import javafx.util.Callback
 
 import fr.acinq.eclair.gui.Handlers
@@ -147,6 +147,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     allChannelsTable.setRowFactory(new Callback[TableView[PeerChannel], TableRow[PeerChannel]]() {
       override def call(table: TableView[PeerChannel]): TableRow[PeerChannel] = setupPeerChannelContextMenu
     })
+
   }
 
   /**
@@ -239,7 +240,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     receiveStage.show
   }
 
-  @FXML def handleCloseRequest = stage.close
+  @FXML def handleCloseRequest = stage.fireEvent(new WindowEvent(stage, WindowEvent.WINDOW_CLOSE_REQUEST))
 
   @FXML def handleOpenAbout = {
     val aboutStage = new AboutStage(hostServices)

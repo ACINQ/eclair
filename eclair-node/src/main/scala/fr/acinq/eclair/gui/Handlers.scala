@@ -1,21 +1,27 @@
 package fr.acinq.eclair.gui
 
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File, FileWriter}
+import java.awt.TrayIcon.MessageType
+import java.awt.{SystemTray, TrayIcon}
+import java.io.{File, FileWriter}
+import java.time.{LocalDate, LocalDateTime}
+import java.time.format.{DateTimeFormatter, FormatStyle}
 import javafx.application.Platform
-import javafx.scene.control.{TextArea, TextField}
-import javafx.stage.Stage
+import javafx.scene.control.TextArea
 
+import akka.pattern.ask
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.io.Client
 import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
 
+import scala.util.{Failure, Success}
+
 /**
   * Created by PM on 16/08/2016.
   */
-class Handlers(setup: Setup) extends Logging {
+class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
 
   import setup._
 
@@ -67,6 +73,21 @@ class Handlers(setup: Setup) extends Logging {
       op(p)
     } finally {
       p.close()
+    }
+  }
+
+  /**
+    * Displays a system notification if the system supports it.
+    *
+    * @param title Title of the notification
+    * @param message content of the notification. Accepts line break
+    * @param messageType type of the message, default to NONE
+    * @param showAppName true if you want the notification title to be preceded by "Eclair - ". True by default
+    */
+  def notification (title: String, message: String, messageType: TrayIcon.MessageType = MessageType.NONE, showAppName: Boolean = true) = {
+    if (SystemTray.isSupported) {
+      val smartTitle = if (showAppName) s"Eclair - $title" else title
+      trayIcon.displayMessage(smartTitle, message, messageType)
     }
   }
 }
