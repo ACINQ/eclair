@@ -1,9 +1,11 @@
 package fr.acinq.eclair.gui.controllers
 
 import javafx.beans.value.{ChangeListener, ObservableValue}
-import javafx.event.ActionEvent
+import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
-import javafx.scene.control.{Label, TextArea, TextField}
+import javafx.scene.control.{Button, Label, TextArea, TextField}
+import javafx.scene.input.KeyCode.{ENTER, TAB}
+import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
 
 import fr.acinq.eclair.Setup
@@ -22,11 +24,26 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
   @FXML var nodeIdField: TextField = _
   @FXML var amountField: TextField = _
   @FXML var hashField: TextField = _
+  @FXML var sendButton: Button = _
 
   @FXML def initialize(): Unit = {
-
+    // ENTER or TAB events in the paymentRequest textarea insted fire or focus sendButton
+    paymentRequest.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent]() {
+      def handle(event: KeyEvent) = {
+        val parent = paymentRequest.getParent()
+        event.getCode match {
+          case ENTER =>
+            sendButton.fire
+            event.consume
+          case TAB =>
+            sendButton.requestFocus()
+            event.consume
+          case _ =>
+        }
+      }
+    })
     paymentRequest.textProperty().addListener(new ChangeListener[String] {
-      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = {
         if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
           val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
           amountField.setText(amount)
@@ -41,7 +58,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
     })
   }
 
-  @FXML def handleSend(event: ActionEvent): Unit = {
+  @FXML def handleSend(event: ActionEvent) = {
     if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
       val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
       if (GUIValidators.validate(amount, paymentRequestError, "Amount must be numeric", GUIValidators.amountRegex)
@@ -53,7 +70,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
     }
   }
 
-  @FXML def handleClose(event: ActionEvent): Unit = {
+  @FXML def handleClose(event: ActionEvent) = {
     stage.close()
   }
 }
