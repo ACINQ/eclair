@@ -1,3 +1,10 @@
+/* ---------- Root ---------- */
+
+.root {
+    -fx-font-size: 14px;
+    -fx-text-fill: rgb(80, 82, 84);
+}
+
 /* ---------- Text Utilities (color, weight) ---------- */
 
 .text-strong {
