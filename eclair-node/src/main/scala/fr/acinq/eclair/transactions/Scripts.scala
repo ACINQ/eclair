@@ -45,39 +45,6 @@ object Scripts {
   }
 
   /**
-    *
-    * @param pubkey1     public key for A
-    * @param pubkey2     public key for B
-    * @param amount      funding tx amount
-    * @param previousTx  tx that will fund the funding tx; it * must * be a P2PWPK embedded in a standard P2SH tx: the p2sh
-    *                    script is just the P2WPK script for the public key that matches our "key" parameter
-    * @param outputIndex index of the output in the funding tx
-    * @param key         private key that can redeem the funding tx
-    * @return a signed funding tx
-    */
-  def makeFundingTx(pubkey1: PublicKey, pubkey2: PublicKey, amount: Long, previousTx: Transaction, outputIndex: Int, key: PrivateKey): (Transaction, Int) = {
-    val tx = Transaction(version = 2,
-      txIn = TxIn(outPoint = OutPoint(previousTx, outputIndex), signatureScript = Array.emptyByteArray, sequence = 0xffffffffL) :: Nil,
-      txOut = TxOut(Satoshi(amount), publicKeyScript = pay2wsh(multiSig2of2(pubkey1, pubkey2))) :: Nil,
-      lockTime = 0)
-    val pub = key.publicKey
-    val pkh = OP_0 :: OP_PUSHDATA(pub.hash160) :: Nil
-    val p2sh: BinaryData = Script.write(pay2sh(pkh))
-
-    require(p2sh == previousTx.txOut(outputIndex).publicKeyScript)
-
-    val pubKeyScript = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pub.hash160) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-    val hash = Transaction.hashForSigning(tx, 0, pubKeyScript, SIGHASH_ALL, tx.txOut(0).amount, signatureVersion = 1)
-    val sig = Crypto.encodeSignature(Crypto.sign(hash, key)) :+ SIGHASH_ALL.toByte
-    val witness = ScriptWitness(Seq(sig, pub))
-    val script = Script.write(OP_0 :: OP_PUSHDATA(pub.hash160) :: Nil)
-    val signedTx = tx.updateSigScript(0, OP_PUSHDATA(script) :: Nil).updateWitness(0, witness)
-
-    // we don't permute outputs because by convention the multisig output has index = 0
-    (signedTx, 0)
-  }
-
-  /**
     * minimal encoding of a number into a script element:
     * - OP_0 to OP_16 if 0 <= n <= 16
     * - OP_PUSHDATA(encodeNumber(n)) otherwise
@@ -148,30 +115,6 @@ object Scripts {
       case (Satoshi(us), Satoshi(them)) if them < fee.toLong / 2 => (Satoshi(Math.max(us - fee.toLong + them, 0L)), Satoshi(0L))
     }
     (amount_us1, amount_them1)
-  }
-
-  /**
-    * Create a "final" channel transaction that will be published when the channel is closed
-    *
-    * @param inputs            inputs to include in the tx. In most cases, there's only one input that points to the output of
-    *                          the funding tx
-    * @param ourPubkeyScript   our public key script
-    * @param theirPubkeyScript their public key script
-    * @param amount_us         pay to us
-    * @param amount_them       pay to them
-    * @return an unsigned "final" tx
-    */
-  def makeFinalTx(inputs: Seq[TxIn], ourPubkeyScript: BinaryData, theirPubkeyScript: BinaryData, amount_us: Satoshi, amount_them: Satoshi, fee: Satoshi): Transaction = {
-    val (amount_us1: Satoshi, amount_them1: Satoshi) = applyFees(amount_us, amount_them, fee)
-
-    LexicographicalOrdering.sort(Transaction(
-      version = 2,
-      txIn = inputs,
-      txOut = Seq(
-        TxOut(amount = amount_us1, publicKeyScript = ourPubkeyScript),
-        TxOut(amount = amount_them1, publicKeyScript = theirPubkeyScript)
-      ),
-      lockTime = 0))
   }
 
   /**
