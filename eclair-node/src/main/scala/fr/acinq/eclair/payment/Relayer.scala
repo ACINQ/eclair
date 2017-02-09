@@ -119,18 +119,19 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           log.warning(s"no origin found for htlc $add")
       }
 
-    case WatchEventSpent(BITCOIN_HTLC_SPENT, tx) =>
+    case w@WatchEventSpent(BITCOIN_HTLC_SPENT, tx) =>
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
+      log.warning(s"processing $w")
       tx.txIn
         .map(_.witness)
         .map {
-          case ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil) =>
-            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)}")
+          case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) =>
+            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (claim-htlc-success)")
             Some(paymentPreimage)
-          case ScriptWitness(BinaryData.empty :: remoteSig :: localSig :: paymentPreimage :: htlcOfferedScript :: Nil) =>
-            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)}")
+          case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcOfferedScript)) =>
+            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (htlc-success)")
             Some(paymentPreimage)
           case _ =>
             None

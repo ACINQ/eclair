@@ -67,6 +67,8 @@ object Transactions {
   val htlcSuccessWeight = 671
   val claimP2WPKHOutputWeight = 437
   val claimHtlcDelayedWeight = 482
+  val claimHtlcSuccessWeight = 542
+  val claimHtlcTimeoutWeight = 516
   val mainPunishmentWeight = 483
 
   def weight2fee(feeRatePerKw: Long, weight: Int) = Satoshi((feeRatePerKw * weight) / 1000)
@@ -233,7 +235,8 @@ object Transactions {
     (htlcTimeoutTxs, htlcSuccessTxs)
   }
 
-  def makeClaimHtlcSuccessTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], htlc: UpdateAddHtlc): ClaimHtlcSuccessTx = {
+  def makeClaimHtlcSuccessTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], htlc: UpdateAddHtlc, feeRatePerKw: Long): ClaimHtlcSuccessTx = {
+    val fee = weight2fee(feeRatePerKw, claimHtlcSuccessWeight)
     val redeemScript = htlcOffered(remotePubkey, localPubkey, ripemd160(htlc.paymentHash))
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
@@ -242,12 +245,12 @@ object Transactions {
     ClaimHtlcSuccessTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
-      // the fee was pre-computed at the upper stage: fee = input.txOut.amount - htlc.amountMsat
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat), localFinalScriptPubKey) :: Nil,
+      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
       lockTime = 0))
   }
 
-  def makeClaimHtlcTimeoutTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], htlc: UpdateAddHtlc): ClaimHtlcTimeoutTx = {
+  def makeClaimHtlcTimeoutTx(commitTx: Transaction, localPubkey: PublicKey, remotePubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], htlc: UpdateAddHtlc, feeRatePerKw: Long): ClaimHtlcTimeoutTx = {
+    val fee = weight2fee(feeRatePerKw, claimHtlcTimeoutWeight)
     val redeemScript = htlcReceived(remotePubkey, localPubkey, ripemd160(htlc.paymentHash), htlc.expiry)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
@@ -256,8 +259,7 @@ object Transactions {
     ClaimHtlcTimeoutTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0x00000000L) :: Nil,
-      // the fee was pre-computed at the upper stage: fee = input.txOut.amount - htlc.amountMsat
-      txOut = TxOut(MilliSatoshi(htlc.amountMsat), localFinalScriptPubKey) :: Nil,
+      txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
       lockTime = htlc.expiry))
   }
 

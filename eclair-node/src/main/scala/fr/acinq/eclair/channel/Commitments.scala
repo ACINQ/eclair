@@ -244,7 +244,7 @@ object Commitments extends Logging {
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
 
-    logger.debug(s"current commit: index=${ourCommit1.index} htlc_in=${ourCommit1.spec.htlcs.filter(_.direction == IN).size} htlc_out=${ourCommit1.spec.htlcs.filter(_.direction == OUT).size} tx=${Transaction.write(ourCommit1.publishableTxs.commitTx.tx)}")
+    logger.debug(s"current commit: index=${ourCommit1.index} htlc_in=${ourCommit1.spec.htlcs.filter(_.direction == IN).size} htlc_out=${ourCommit1.spec.htlcs.filter(_.direction == OUT).size} txid=${ourCommit1.publishableTxs.commitTx.tx.txid} tx=${Transaction.write(ourCommit1.publishableTxs.commitTx.tx)}")
 
     (commitments1, revocation)
   }
