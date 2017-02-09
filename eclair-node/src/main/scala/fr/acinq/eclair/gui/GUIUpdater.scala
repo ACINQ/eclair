@@ -36,7 +36,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       log.info(s"new channel: $channel")
 
       val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
-      val channelPaneController = new ChannelPaneController(theirNodeId.toBin.toString(), params)
+      val channelPaneController = new ChannelPaneController(theirNodeId.toBin.toString, params)
       loader.setController(channelPaneController)
       val root = loader.load[VBox]
 
@@ -47,16 +47,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          mainController.channelBox.getChildren.addAll(root)
-        }
+        override def run = mainController.channelBox.getChildren.addAll(root)
       })
       context.become(main(m + (channel -> channelPaneController)))
 
     case ChannelIdAssigned(channel, channelId, capacity) =>
       val channelPane = m(channel)
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
+        override def run = {
           channelPane.channelId.setText(s"$channelId")
           channelPane.capacity.setText(s"${satoshi2millibtc(capacity).amount}")
           channelPane.funder.getText match {
@@ -69,16 +67,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
     case ChannelChangedState(channel, _, _, previousState, currentState, currentData) =>
       val channelPane = m(channel)
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          channelPane.state.setText(currentState.toString)
-        }
+        override def run = channelPane.state.setText(currentState.toString)
       })
 
     case ChannelSignatureReceived(channel, commitments) =>
       val channelPane = m(channel)
       val bal = commitments.localCommit.spec.toLocalMsat.toDouble / (commitments.localCommit.spec.toLocalMsat.toDouble + commitments.localCommit.spec.toRemoteMsat.toDouble)
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
+        override def run = {
           channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.localCommit.spec.toLocalMsat / 1000L)).amount}")
           channelPane.balanceBar.setProgress(bal)
         }
@@ -88,9 +84,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       log.debug(s"peer node discovered with node id = ${nodeAnnouncement.nodeId}")
       mainController.allNodesList.add(new PeerNode(nodeAnnouncement))
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
-        }
+        override def run = mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
       })
 
     case NodeLost(nodeId) =>
@@ -99,18 +93,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         override def test(pn: PeerNode) = nodeId.equals(pn.id)
       })
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
-        }
+        override def run = mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
       })
 
     case ChannelDiscovered(channelAnnouncement) =>
       log.debug(s"peer channel discovered with channel id = ${channelAnnouncement.channelId}")
       mainController.allChannelsList.add(new PeerChannel(channelAnnouncement))
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
-        }
+        override def run = mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
       })
 
     case ChannelLost(channelId) =>
@@ -119,9 +109,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         override def test(pc: PeerChannel) = pc.id.get == channelId
       })
       Platform.runLater(new Runnable() {
-        override def run(): Unit = {
-          mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
-        }
+        override def run = mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
       })
   }
 }

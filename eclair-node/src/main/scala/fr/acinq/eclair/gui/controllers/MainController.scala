@@ -75,7 +75,14 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
   @FXML var allChannelsNode1Column: TableColumn[PeerChannel, String] = _
   @FXML var allChannelsNode2Column: TableColumn[PeerChannel, String] = _
 
-  @FXML def initialize() = {
+  /**
+    * Initialize the main window.
+    *
+    * - Set content in status bar labels (node id, host, ...)
+    * - init the channels tab with a 'No channels found' message
+    * - init the 'nodes in network' and 'channels in network' tables
+    */
+  @FXML def initialize = {
 
     // init status bar
     labelNodeId.setText(s"${Globals.Node.id}")
@@ -147,7 +154,6 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     allChannelsTable.setRowFactory(new Callback[TableView[PeerChannel], TableRow[PeerChannel]]() {
       override def call(table: TableView[PeerChannel]): TableRow[PeerChannel] = setupPeerChannelContextMenu
     })
-
   }
 
   /**
