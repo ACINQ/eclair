@@ -20,9 +20,11 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
-  def receive: Receive = watching(Set(), SortedMap())
+  val LAST_TX_QUEUE_SIZE = 1000
 
-  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
+  def receive: Receive = watching(Set(), SortedMap(), Nil)
+
+  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], lastTxes: Seq[Transaction]): Receive = {
 
     case NewTransaction(tx) =>
       val triggeredWatches = watches.collect {
@@ -31,7 +33,7 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
           channel ! WatchEventSpent(event, tx)
           w
       }
-      context.become(watching(watches -- triggeredWatches, block2tx))
+      context.become(watching(watches -- triggeredWatches, block2tx, (lastTxes :+ tx).takeRight(LAST_TX_QUEUE_SIZE)))
 
     case NewBlock(block) =>
       client.getBlockCount.map {
@@ -56,22 +58,29 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
     case ('trigger, w: WatchConfirmed, e: WatchEvent) if watches.contains(w) =>
       log.info(s"triggering $w")
       w.channel ! e
-      context.become(watching(watches - w, block2tx))
+      context.become(watching(watches - w, block2tx, lastTxes))
 
     case ('trigger, w: WatchConfirmed, e: WatchEvent) if !watches.contains(w) => {}
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
       toPublish.values.flatten.map(publish)
-      context.become(watching(watches, block2tx -- toPublish.keys))
+      context.become(watching(watches, block2tx -- toPublish.keys, lastTxes))
     }
 
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
 
-    case w: Watch if !watches.contains(w) =>
-      log.info(s"adding watch $w for $sender")
-      context.watch(w.channel)
-      context.become(watching(watches + w, block2tx))
+    case w@WatchSpent(channel, txid, outputIndex, event) => {
+      // we need to check if the tx was already spent
+      // TODO: dirty
+      lastTxes.find(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex))
+      match {
+        case Some(tx) => channel ! WatchEventSpent(event, tx)
+        case None => addWatch(w, watches, block2tx, lastTxes)
+      }
+    }
+
+    case w: Watch => addWatch(w, watches, block2tx, lastTxes)
 
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
@@ -80,12 +89,12 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
       // absolute timeout in blocks
       val timeout = Math.max(cltvTimeout, csvTimeout)
       if (timeout <= blockCount) {
-        log.info(s"publishing tx ${Transaction.write(tx)}")
+        log.info(s"publishing tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
         publish(tx)
       } else {
-        log.info(s"delaying publication of tx ${Transaction.write(tx)} until block=$timeout (curblock=$blockCount)")
+        log.info(s"delaying publication of tx until block=$timeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
         val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
-        context.become(watching(watches, block2tx1))
+        context.become(watching(watches, block2tx1, lastTxes))
       }
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
@@ -100,12 +109,20 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
     case Terminated(channel) =>
       // we remove watches associated to dead actor
       val deprecatedWatches = watches.filter(_.channel == channel)
-      context.become(watching(watches -- deprecatedWatches, block2tx))
+      context.become(watching(watches -- deprecatedWatches, block2tx, lastTxes))
 
   }
 
+  def addWatch(w: Watch, watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], lastTx: Seq[Transaction]) = {
+    if (!watches.contains(w)) {
+      log.info(s"adding watch $w for $sender")
+      context.watch(w.channel)
+      context.become(watching(watches + w, block2tx, lastTx))
+    }
+  }
+
   def publish(tx: Transaction) = client.publishTransaction(tx).onFailure {
-    case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} tx=${BinaryData(Transaction.write(tx))}")
+    case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
   }
 }
 
