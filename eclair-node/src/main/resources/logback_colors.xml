@@ -27,11 +27,11 @@
         </encoder>
     </appender>
 
-    <appender name="RED" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="CYAN" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %red(%msg) %ex{12}%n
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %cyan(%msg) %ex{12}%n
             </pattern>
         </encoder>
     </appender>
@@ -40,7 +40,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %boldGreen(%msg) %ex{12}%n
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %green(%msg) %ex{12}%n
             </pattern>
         </encoder>
     </appender>
@@ -58,7 +58,7 @@
     </logger>
 
     <logger name="fr.acinq.eclair.router" level="DEBUG" additivity="false">
-        <appender-ref ref="RED"/>
+        <appender-ref ref="CYAN"/>
     </logger>
 
     <root level="INFO">
