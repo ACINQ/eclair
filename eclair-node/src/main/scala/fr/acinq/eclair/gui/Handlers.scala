@@ -12,6 +12,7 @@ import javafx.scene.control.TextArea
 import akka.pattern.ask
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
+import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Client
 import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
@@ -26,9 +27,8 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
   import setup._
 
   def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
-    val regex = "([a-fA-F0-9]+)@([a-zA-Z0-9\\.\\-_]+):([0-9]+)".r
     hostPort match {
-      case regex(pubkey, host, port) =>
+      case GUIValidators.hostRegex(pubkey, host, port) =>
         logger.info(s"connecting to $host:$port")
         system.actorOf(Client.props(host, port.toInt, pubkey, fundingSatoshis, pushMsat, register))
       case _ => {}

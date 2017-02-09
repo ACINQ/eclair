@@ -8,14 +8,13 @@ import scala.util.matching.Regex
   * Created by DPA on 27/09/2016.
   */
 object GUIValidators {
-
-  val hostRegex = """[0-9a-fA-F]+@[a-zA-Z0-9.]+:[0-9]{1,5}""".r
+  val hostRegex = """([a-fA-F0-9]+)@([a-zA-Z0-9\.\-_]+):([0-9]+)""".r
   val amountRegex = """[0-9]+""".r
   val paymentRequestRegex = """[a-zA-Z0-9]+:[a-zA-Z0-9]+:[a-zA-Z0-9]+""".r
   val hexRegex = """[0-9a-fA-F]+""".r
 
   /**
-    * Validate a field against a regex. If field does not match regex, validatorLabel is shown.
+    * Validate a field against a regex. If field does not match the regex, validatorLabel is shown.
     *
     * @param field            String content of the field to validate
     * @param validatorLabel   JFX label associated to the field.
