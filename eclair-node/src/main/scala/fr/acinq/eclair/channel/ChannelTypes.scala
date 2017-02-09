@@ -69,7 +69,7 @@ case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
 case object BITCOIN_HTLC_SPENT extends BitcoinEvent
 case object BITCOIN_LOCALCOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_REMOTECOMMIT_DONE extends BitcoinEvent
-case object BITCOIN_PUNISHMENT_DONE extends BitcoinEvent
+case object BITCOIN_PENALTY_DONE extends BitcoinEvent
 case object BITCOIN_CLOSE_DONE extends BitcoinEvent
 case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId: Long) extends BitcoinEvent
 
@@ -121,7 +121,7 @@ trait HasCommitments extends Data {
 
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], claimHtlcDelayedTx: Seq[Transaction])
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPunishmentTx: Option[Transaction], claimHtlcTimeoutTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], htlcPunishmentTxs: Seq[Transaction])
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], htlcPenaltyTxs: Seq[Transaction])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(localParams: LocalParams, autoSignInterval: Option[FiniteDuration]) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId: Long, localParams: LocalParams, fundingSatoshis: Long, pushMsat: Long, autoSignInterval: Option[FiniteDuration]) extends Data

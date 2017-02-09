@@ -88,14 +88,14 @@ class TransactionsSpec extends FunSuite {
     }
 
     {
-      // MainPunishmentTx
-      // first we create a fake commitTx tx, containing only the output that will be spent by the MainPunishmentTx
+      // MainPenaltyTx
+      // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
-      val mainPunishmentTx = makeMainPunishmentTx(commitTx, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeRatePerKw)
+      val mainPenaltyTx = makeMainPenaltyTx(commitTx, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeRatePerKw)
       // we use dummy signatures to compute the weight
-      val weight = Transaction.weight(addSigs(mainPunishmentTx, "bb" * 71).tx)
-      assert(mainPunishmentWeight == weight)
+      val weight = Transaction.weight(addSigs(mainPenaltyTx, "bb" * 71).tx)
+      assert(mainPenaltyWeight == weight)
     }
 
     {

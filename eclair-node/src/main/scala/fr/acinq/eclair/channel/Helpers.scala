@@ -243,7 +243,7 @@ object Helpers {
       * a) if it is a revoked tx we build a set of transactions that will punish them by stealing all their funds
       * b) otherwise there is nothing we can do
       *
-      * @return a [[RevokedCommitPublished]] object containing punishment transactions if the tx is a revoked commitment
+      * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
       */
     def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Option[RevokedCommitPublished] = {
       import commitments._
@@ -270,9 +270,9 @@ object Helpers {
           })
 
           // then we punish them by stealing their main output
-          val mainPunishmentTx = generateTx("main-punishment")(Try {
+          val mainPenaltyTx = generateTx("main-penalty")(Try {
             // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-            val txinfo = Transactions.makeMainPunishmentTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
+            val txinfo = Transactions.makeMainPenaltyTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
             val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
             Transactions.addSigs(txinfo, sig)
           })
@@ -286,10 +286,10 @@ object Helpers {
           RevokedCommitPublished(
             commitTx = tx,
             claimMainOutputTx = mainTx.map(_.tx),
-            mainPunishmentTx = mainPunishmentTx.map(_.tx),
+            mainPenaltyTx = mainPenaltyTx.map(_.tx),
             claimHtlcTimeoutTxs = Nil,
             htlcTimeoutTxs = Nil,
-            htlcPunishmentTxs = Nil
+            htlcPenaltyTxs = Nil
           )
         }
     }

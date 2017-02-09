@@ -34,8 +34,8 @@ object Transactions {
   case class ClaimHtlcTimeoutTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimP2WPKHOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClaimDelayedOutputTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
-  case class MainPunishmentTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
-  case class HtlcPunishmentTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class MainPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
+  case class HtlcPenaltyTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   case class ClosingTx(input: InputInfo, tx: Transaction) extends TransactionWithInputInfo
   // @formatter:on
 
@@ -54,12 +54,12 @@ object Transactions {
     *
     * When *remote* *revoked* [[CommitTx]] is published:
     *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
-    *   - [[MainPunishmentTx]] spends remote main output using the per-commitment secret
+    *   - [[MainPenaltyTx]] spends remote main output using the per-commitment secret
     *   - [[HtlcSuccessTx]] spends htlc-sent outputs of [[CommitTx]] for which they have the preimage (published by remote)
-    *     - [[HtlcPunishmentTx]] spends [[HtlcSuccessTx]] using the per-commitment secret
+    *     - [[HtlcPenaltyTx]] spends [[HtlcSuccessTx]] using the per-commitment secret
     *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
     *   - [[HtlcTimeoutTx]] spends htlc-received outputs of [[CommitTx]] after a timeout (published by local or remote)
-    *     - [[HtlcPunishmentTx]] spends [[HtlcTimeoutTx]] using the per-commitment secret
+    *     - [[HtlcPenaltyTx]] spends [[HtlcTimeoutTx]] using the per-commitment secret
     */
 
   val commitWeight = 724
@@ -69,7 +69,7 @@ object Transactions {
   val claimHtlcDelayedWeight = 482
   val claimHtlcSuccessWeight = 542
   val claimHtlcTimeoutWeight = 516
-  val mainPunishmentWeight = 483
+  val mainPenaltyWeight = 483
 
   def weight2fee(feeRatePerKw: Long, weight: Int) = Satoshi((feeRatePerKw * weight) / 1000)
 
@@ -291,21 +291,21 @@ object Transactions {
       lockTime = 0))
   }
 
-  def makeMainPunishmentTx(commitTx: Transaction, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], toRemoteDelay: Int, remoteDelayedPubkey: PublicKey, feeRatePerKw: Long): MainPunishmentTx = {
-    val fee = weight2fee(feeRatePerKw, mainPunishmentWeight)
+  def makeMainPenaltyTx(commitTx: Transaction, remoteRevocationPubkey: PublicKey, localFinalScriptPubKey: Seq[ScriptElt], toRemoteDelay: Int, remoteDelayedPubkey: PublicKey, feeRatePerKw: Long): MainPenaltyTx = {
+    val fee = weight2fee(feeRatePerKw, mainPenaltyWeight)
     val redeemScript = toLocalDelayed(remoteRevocationPubkey, toRemoteDelay, remoteDelayedPubkey)
     val pubkeyScript = write(pay2wsh(redeemScript))
     val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
     require(outputIndex >= 0, "output not found")
     val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), write(redeemScript))
-    MainPunishmentTx(input, Transaction(
+    MainPenaltyTx(input, Transaction(
       version = 2,
       txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
       txOut = TxOut(input.txOut.amount - fee, localFinalScriptPubKey) :: Nil,
       lockTime = 0))
   }
 
-  def makeHtlcPunishmentTx(commitTx: Transaction): HtlcPunishmentTx = ???
+  def makeHtlcPenaltyTx(commitTx: Transaction): HtlcPenaltyTx = ???
 
   /**
     * This generates a partial transaction that will be completed by bitcoind using a 'fundrawtransaction' rpc call.
@@ -372,7 +372,7 @@ object Transactions {
     commitTx.copy(tx = commitTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimMainDelayedRevokedTx: MainPunishmentTx, revocationSig: BinaryData): MainPunishmentTx = {
+  def addSigs(claimMainDelayedRevokedTx: MainPenaltyTx, revocationSig: BinaryData): MainPenaltyTx = {
     val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimMainDelayedRevokedTx.input.redeemScript)
     claimMainDelayedRevokedTx.copy(tx = claimMainDelayedRevokedTx.tx.updateWitness(0, witness))
   }

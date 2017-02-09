@@ -179,7 +179,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val bobRevokedTx = bobCommitTxes.head
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
 
-      // alice publishes and watches the punishment tx
+      // alice publishes and watches the penalty tx
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.expectMsgType[PublishAsap]
 
@@ -194,7 +194,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // bob publishes multiple revoked txes (last one isn't revoked)
       for (bobRevokedTx <- bobCommitTxes.dropRight(1)) {
         alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
-        // alice publishes and watches the punishment tx
+        // alice publishes and watches the penalty tx
         alice2blockchain.expectMsgType[WatchConfirmed]
         alice2blockchain.expectMsgType[PublishAsap]
         alice2blockchain.expectMsgType[PublishAsap]
@@ -203,21 +203,21 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_PUNISHMENT_DONE (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
+  test("recv BITCOIN_PENALTY_DONE (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, bobCommitTxes) =>
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes one of his revoked txes
       val bobRevokedTx = bobCommitTxes.head
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
-      // alice publishes and watches the punishment tx
+      // alice publishes and watches the penalty tx
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.expectMsgType[PublishAsap]
       // TODO
       // awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING] == initialState.copy(revokedCommitPublished = Seq(RevokedCommitPublished(bobRevokedTx))))
 
       // actual test starts here
-      alice ! WatchEventConfirmed(BITCOIN_PUNISHMENT_DONE, 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_PENALTY_DONE, 0, 0)
       awaitCond(alice.stateName == CLOSED)
     }
   }

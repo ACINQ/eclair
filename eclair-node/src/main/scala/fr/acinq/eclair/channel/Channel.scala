@@ -690,7 +690,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
     case Event(WatchEventConfirmed(BITCOIN_REMOTECOMMIT_DONE, _, _), d: DATA_CLOSING) if d.remoteCommitPublished.isDefined => goto(CLOSED)
 
-    case Event(WatchEventConfirmed(BITCOIN_PUNISHMENT_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
+    case Event(WatchEventConfirmed(BITCOIN_PENALTY_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
     case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
   }
@@ -852,17 +852,17 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(d.commitments, tx) match {
       case Some(revokedCommitPublished) =>
-        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the punishment tx")
+        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         them ! Error(0, "Funding tx has been spent".getBytes)
 
         // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
-        blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_PUNISHMENT_DONE)
+        blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_PENALTY_DONE)
 
         revokedCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
-        revokedCommitPublished.mainPunishmentTx.foreach(tx => blockchain ! PublishAsap(tx))
+        revokedCommitPublished.mainPenaltyTx.foreach(tx => blockchain ! PublishAsap(tx))
         revokedCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
         revokedCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
-        revokedCommitPublished.htlcPunishmentTxs.foreach(tx => blockchain ! PublishAsap(tx))
+        revokedCommitPublished.htlcPenaltyTxs.foreach(tx => blockchain ! PublishAsap(tx))
 
         val nextData = d match {
           case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
