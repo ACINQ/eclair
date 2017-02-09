@@ -14,11 +14,14 @@
 .text-error {
 	-fx-text-fill: rgb(216,31,74);
 	-fx-font-size: 11px;
-	-fx-translate-y: 6px;
+}
+
+.text-error.text-error-downward {
+	-fx-translate-y: 24px;
 }
 
 .text-error.text-error-upward {
-	-fx-translate-y: -6px;
+	-fx-translate-y: -24px;
 }
 
 .label-description {
@@ -33,6 +36,10 @@
 }
 .link:hover {
     -fx-fill: rgb(93,199,254);
+}
+
+.label.text-muted {
+	-fx-text-fill: rgb(146,149,151);
 }
 
 /* ---------- Context Menu ---------- */
@@ -85,4 +92,9 @@
 	-fx-background-color: rgb(206,230,255);
 	-fx-background-insets: 0;
 	-fx-background-radius: 0;
+}
+
+/* ---------- Forms ----------- */
+.options-separator {
+    -fx-translate-y: -7px;
 }
