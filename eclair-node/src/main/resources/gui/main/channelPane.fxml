@@ -22,28 +22,37 @@
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
             </rowConstraints>
             <children>
-                <Label styleClass="text-muted" text="Node id" GridPane.rowIndex="2"/>
-                <Label styleClass="text-muted" text="Capacity (milliBTC)" GridPane.rowIndex="4"/>
-                <Label styleClass="text-muted" text="Funder" GridPane.columnIndex="2" GridPane.rowIndex="3"/>
-                <Label styleClass="text-muted" text="State" GridPane.columnIndex="2" GridPane.rowIndex="4"/>
-                <Label styleClass="text-muted" text="Your balance (milliBTC)" GridPane.rowIndex="3"/>
+                <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
+                           focusTraversable="false" onContextMenuRequested="#openChannelContext" onMouseClicked="#closeChannelContext"
+                           GridPane.columnSpan="4"/>
                 <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"
                         GridPane.columnIndex="4" GridPane.halignment="RIGHT"/>
-                <TextField fx:id="nodeId" text="N/A" editable="false" styleClass="noteditable"
-                           GridPane.columnIndex="1" GridPane.columnSpan="4" GridPane.rowIndex="2"/>
-                <TextField fx:id="capacity" text="N/A" editable="false" styleClass="noteditable"
-                           GridPane.columnIndex="1" GridPane.rowIndex="4"/>
-                <TextField fx:id="funder" text="N/A" editable="false" styleClass="noteditable"
-                           GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="3"/>
-                <TextField fx:id="state" text="N/A" editable="false" styleClass="noteditable"
-                           GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="4"/>
-                <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
-                           GridPane.columnSpan="4"/>
-                <TextField fx:id="amountUs" text="N/A" editable="false" styleClass="noteditable"
-                           GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+
                 <ProgressBar fx:id="balanceBar" minHeight="4.0" prefHeight="4.0" maxWidth="1.7976931348623157E308"
-                             progress="0.0" snapToPixel="false" GridPane.columnSpan="5"
-                             GridPane.hgrow="ALWAYS" GridPane.rowIndex="1"/>
+                             progress="0.0" snapToPixel="false" focusTraversable="false"
+                             GridPane.columnSpan="5" GridPane.hgrow="ALWAYS" GridPane.rowIndex="1"/>
+
+                <Label styleClass="text-muted" text="Node id" GridPane.rowIndex="2"/>
+                <TextField fx:id="nodeId" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                           GridPane.columnIndex="1" GridPane.columnSpan="4" GridPane.rowIndex="2"/>
+
+                <Label styleClass="text-muted" text="Your balance (milliBTC)" GridPane.rowIndex="3"/>
+                <TextField fx:id="amountUs" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                           GridPane.columnIndex="1" GridPane.rowIndex="3"/>
+
+                <Label styleClass="text-muted" text="Capacity (milliBTC)" GridPane.rowIndex="4"/>
+                <TextField fx:id="capacity" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                           GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+
+                <Label styleClass="text-muted" text="Funder" GridPane.columnIndex="2" GridPane.rowIndex="3"/>
+                <TextField fx:id="funder" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                           GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="3"/>
+
+                <Label styleClass="text-muted" text="State" GridPane.columnIndex="2" GridPane.rowIndex="4"/>
+                <TextField fx:id="state" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                           GridPane.columnIndex="3" GridPane.columnSpan="2" GridPane.rowIndex="4"/>
+
+
             </children>
         </GridPane>
         <HBox styleClass="channel-separator"/>

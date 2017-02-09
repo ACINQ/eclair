@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui.controllers
 
+import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, ContextMenu, ProgressBar, TextField}
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
@@ -13,7 +14,6 @@ import grizzled.slf4j.Logging
   */
 class ChannelPaneController(theirNodeIdValue: String, channelParams: LocalParams) extends Logging {
 
-  var channelIdValue = ""
   @FXML var channelId: TextField = _
   @FXML var balanceBar: ProgressBar = _
   @FXML var amountUs: TextField = _
@@ -25,16 +25,33 @@ class ChannelPaneController(theirNodeIdValue: String, channelParams: LocalParams
 
   var contextMenu: ContextMenu = _
 
-  @FXML def openChannelContext(event: ContextMenuEvent): Unit = {
-    if (contextMenu != null) contextMenu.hide()
+  private def buildChannelContextMenu = {
     contextMenu = ContextMenuUtils.buildCopyContext(List(
-      new CopyAction("Copy Channel Id", channelIdValue),
+      new CopyAction("Copy Channel Id", channelId.getText),
       new CopyAction("Copy Node Pubkey", theirNodeIdValue)
     ))
-    contextMenu.show(channelId, event.getScreenX, event.getScreenY)
+    contextMenu.getStyleClass.add("context-channel")
+    channelId.setContextMenu(contextMenu)
+    amountUs.setContextMenu(contextMenu)
+    nodeId.setContextMenu(contextMenu)
+    capacity.setContextMenu(contextMenu)
+    funder.setContextMenu(contextMenu)
+    state.setContextMenu(contextMenu)
   }
 
-  @FXML def closeChannelContext(event: MouseEvent): Unit = {
-    if (contextMenu != null) contextMenu.hide()
+  @FXML def initialize = {
+    channelId.textProperty().addListener(new ChangeListener[String] {
+      override def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = buildChannelContextMenu
+    })
+    buildChannelContextMenu
+  }
+
+  @FXML def openChannelContext(event: ContextMenuEvent) {
+    contextMenu.show(channelId, event.getScreenX, event.getScreenY)
+    event.consume
+  }
+
+  @FXML def closeChannelContext(event: MouseEvent) {
+    if (contextMenu != null) contextMenu.hide
   }
 }

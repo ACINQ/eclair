@@ -57,7 +57,6 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       val channelPane = m(channel)
       Platform.runLater(new Runnable() {
         override def run(): Unit = {
-          channelPane.channelIdValue = s"$channelId"
           channelPane.channelId.setText(s"$channelId")
           channelPane.capacity.setText(s"${satoshi2millibtc(capacity).amount}")
           channelPane.funder.getText match {

@@ -69,6 +69,10 @@
 	-fx-padding: 0;
 }
 
+.context-menu.context-channel .menu-item .label {
+    -fx-font-size: 12px;
+}
+
 .tab:top:selected {
 	-fx-focus-color: transparent;
 	-fx-faint-focus-color: transparent;
