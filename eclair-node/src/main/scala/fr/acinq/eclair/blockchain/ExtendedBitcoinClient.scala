@@ -115,8 +115,6 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[FundTransactionResponse] =
     fundTransaction(tx2Hex(tx))
 
-  case class SignTransactionResponse(tx: Transaction, complete: Boolean)
-
   def signTransaction(hex: String)(implicit ec: ExecutionContext): Future[SignTransactionResponse] =
     client.invoke("signrawtransaction", hex).map(json => {
       val JString(hex) = json \ "hex"
@@ -189,5 +187,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 object ExtendedBitcoinClient {
 
   case class FundTransactionResponse(tx: Transaction, changepos: Int, fee: Double)
+
+  case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 
 }
