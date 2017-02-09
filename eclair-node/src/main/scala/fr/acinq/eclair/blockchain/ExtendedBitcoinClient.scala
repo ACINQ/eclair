@@ -28,7 +28,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
-      .map(json => Some((json \ "confirmations").extract[Int]))
+      .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
@@ -191,3 +191,4 @@ object ExtendedBitcoinClient {
   case class SignTransactionResponse(tx: Transaction, complete: Boolean)
 
 }
+
