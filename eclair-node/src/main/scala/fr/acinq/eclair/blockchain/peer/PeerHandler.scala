@@ -8,8 +8,6 @@ import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import fr.acinq.bitcoin._
 
-import scala.util.{Failure, Success, Try}
-
 /**
   * handles communication with a remote BTC node
   *
@@ -67,7 +65,7 @@ class PeerHandler(remote: InetSocketAddress, listener: ActorRef) extends Actor w
       val (messages, remainder) = extract(buffer ++ data)
       messages.map(message => listener ! message)
       context become connected(connection, remainder)
-      
+
     case 'close =>
       connection ! Close
 
