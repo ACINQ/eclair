@@ -173,11 +173,11 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
       peer2 = lncli.getPeers.head
       _ = assert(peer2.their_amount + peer2.their_fee == 70000000 + 80000000)
       // we send lightningd a HTLC
-      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Commitments.revocationHash(seed, 0), blockcount.toInt + 576, id = Some(42)))
+      _ <- sendCommand(channelId, CMD_ADD_HTLC(70000000, Commitments.revocationHash(seed, 0), blockcount.toInt + 576))
       _ <- sendCommand(channelId, CMD_SIGN)
       _ = Thread.sleep(500)
       // and we ask lightingd to fulfill it
-      _ = lncli.fulfillhtlc(peer.peerid, 42, Commitments.revocationPreimage(seed, 0))
+      _ = lncli.fulfillhtlc(peer.peerid, 0, Commitments.revocationPreimage(seed, 0))
       _ = Thread.sleep(500)
       _ <- sendCommand(channelId, CMD_SIGN)
       c <- listChannels.map(_.head).map(_.data.asInstanceOf[DATA_NORMAL].commitments)

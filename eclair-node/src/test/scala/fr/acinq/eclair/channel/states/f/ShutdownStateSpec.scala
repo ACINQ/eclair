@@ -77,7 +77,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(bob, CMD_FULFILL_HTLC(1, "11" * 32))
+      sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
       awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
@@ -108,7 +108,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-      val fulfill = UpdateFulfillHtlc(0, 1, "11" * 32)
+      val fulfill = UpdateFulfillHtlc(0, 0, "11" * 32)
       sender.send(alice, fulfill)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill)))
     }
@@ -186,7 +186,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       // we need to have something to sign so we first send a fulfill and acknowledge (=sign) it
-      sender.send(bob, CMD_FULFILL_HTLC(1, "11" * 32))
+      sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
       bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
       sender.send(bob, CMD_SIGN)
@@ -227,7 +227,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CommitSig") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, "11" * 32))
+      sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
       sender.expectMsg("ok")
       bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
@@ -266,7 +266,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv RevokeAndAck (with remaining htlcs on both sides)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      fulfillHtlc(2, "22" * 32, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -284,8 +284,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv RevokeAndAck (with remaining htlcs on one side)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      fulfillHtlc(1, "11" * 32, bob, alice, bob2alice, alice2bob)
-      fulfillHtlc(2, "22" * 32, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -303,8 +303,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("recv RevokeAndAck (no more htlcs on either side)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      fulfillHtlc(1, "11" * 32, bob, alice, bob2alice, alice2bob)
-      fulfillHtlc(2, "22" * 32, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
       sign(bob, alice, bob2alice, alice2bob)
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -322,7 +322,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
-      sender.send(bob, CMD_FULFILL_HTLC(1, "11" * 32))
+      sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
       sender.expectMsg("ok")
       bob2alice.expectMsgType[UpdateFulfillHtlc]
       bob2alice.forward(alice)
@@ -415,7 +415,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(revokedTx.txOut.size == 4)
 
       // bob fulfills one of the pending htlc (just so that he can have a new sig)
-      fulfillHtlc(1, "11" * 32, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
       // bob and alice sign
       sign(bob, alice, bob2alice, alice2bob)
       sign(alice, bob, alice2bob, bob2alice)

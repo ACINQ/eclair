@@ -37,7 +37,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val router = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, router.ref, relayer, Alice.channelParams, Bob.id))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, router.ref, relayer, Bob.channelParams, Alice.id))
-    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, 0)
+    // alice and bob will both have 1 000 000 sat
+    alice ! INPUT_INIT_FUNDER(2000000, 1000000000)
     bob ! INPUT_INIT_FUNDEE()
     pipe ! (alice, bob)
     within(30 seconds) {

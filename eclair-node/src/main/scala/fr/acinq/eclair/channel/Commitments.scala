@@ -32,7 +32,7 @@ case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, rem
 case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
-                       localCurrentHtlcId: Long,
+                       localNextHtlcId: Long, remoteNextHtlcId: Long,
                        remoteNextCommitInfo: Either[RemoteCommit, Point],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: Long) {
@@ -91,14 +91,17 @@ object Commitments extends Logging {
       throw new RuntimeException(s"insufficient funds: to-local=${reduced.toRemoteMsat / 1000} reserve=${commitments.remoteParams.channelReserveSatoshis} available=${available / 1000}")
     }
 
-    val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
-    val add = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
-    val commitments1 = addLocalProposal(commitments, add).copy(localCurrentHtlcId = id)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     (commitments1, add)
   }
 
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
+    if (add.id != commitments.remoteNextHtlcId) {
+      throw new RuntimeException(s"unexpected htlc id: actual=${add.id} expected=${commitments.remoteNextHtlcId}")
+    }
+
     val blockCount = Globals.blockCount.get()
     // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
     val minExpiry = blockCount + 3
@@ -129,7 +132,7 @@ object Commitments extends Logging {
       throw new RuntimeException(s"insufficient funds: to-remote=${reduced.toRemoteMsat / 1000} reserve=${commitments.localParams.channelReserveSatoshis} available=${available / 1000}")
     }
 
-    addRemoteProposal(commitments, add)
+    addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) = {

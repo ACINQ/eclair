@@ -23,9 +23,8 @@ import fr.acinq.eclair.transactions.{IN, OUT}
  */
 class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging with Stash {
 
-  val offer = "(.):offer ([0-9]+),([0-9]+),([0-9a-f]+)".r
+  val offer = "(.):offer ([0-9]+),([0-9a-f]+)".r
   val fulfill = "(.):fulfill ([0-9]+),([0-9a-f]+)".r
-  val send = "(.):send ([0-9]+)".r
   val commit = "(.):commit".r
   val feechange = "(.):feechange".r
   val recv = "(.):recv.*".r
@@ -39,8 +38,8 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
     def resolve(x: String) = if (x == "A") a else b
 
     script match {
-      case offer(x, id, amount, rhash) :: rest =>
-        resolve(x) ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), 144, id = Some(id.toLong))
+      case offer(x, amount, rhash) :: rest =>
+        resolve(x) ! CMD_ADD_HTLC(amount.toInt, BinaryData(rhash), 144)
         exec(rest, a, b)
       case fulfill(x, id, r) :: rest =>
         resolve(x) ! CMD_FULFILL_HTLC(id.toInt, BinaryData(r))
@@ -48,28 +47,6 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
       case commit(x) :: rest =>
         resolve(x) ! CMD_SIGN
         exec(rest, a, b)
-      case send(x, amount) :: rest =>
-        // this is a macro for sending a given amount including commits and fulfill
-        val sender = x
-        val recipt = if (x == "A") "B" else "A"
-        val r: BinaryData = Crypto.sha256(scala.compat.Platform.currentTime.toString.getBytes)
-        val h: BinaryData = Crypto.sha256(r)
-        exec(s"$sender:offer 42,$amount,$h" ::
-          s"$recipt:recvoffer" ::
-          s"$sender:commit" ::
-          s"$recipt:recvcommit" ::
-          s"$sender:recvrevoke" ::
-          s"$recipt:commit" ::
-          s"$sender:recvcommit" ::
-          s"$recipt:recvrevoke" ::
-          s"$recipt:fulfill 42,$r" ::
-          s"$recipt:commit" ::
-          s"$sender:recvremove" ::
-          s"$sender:recvcommit" ::
-          s"$recipt:recvrevoke" ::
-          s"$sender:commit" ::
-          s"$recipt:recvcommit" ::
-          s"$sender:recvrevoke" :: rest, a, b)
       /*case feechange(x) :: rest =>
         resolve(x) ! CmdFeeChange()
         exec(rest, a, b)*/
