@@ -122,7 +122,7 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       }
 
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
-      context become mainWithLog(nodes -- lostNodes, channels - channelId, updates, rebroadcast, awaiting, stash)
+      context become mainWithLog(nodes -- lostNodes, channels - channelId, updates.filterKeys(_.id != channelId), rebroadcast, awaiting, stash)
 
     case n: NodeAnnouncement if awaiting.size > 0 =>
       context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ n)
