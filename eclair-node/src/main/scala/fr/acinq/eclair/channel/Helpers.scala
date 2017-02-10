@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -19,6 +20,11 @@ import scala.util.{Failure, Success, Try}
 object Helpers {
 
   object Funding {
+
+    def validateParams(channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+      val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
+      require(reserveToFundingRatio <= Globals.max_reserve_to_funding_ratio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${Globals.max_reserve_to_funding_ratio}")
+    }
 
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)

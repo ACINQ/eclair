@@ -43,6 +43,18 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass {
     }
   }
 
+  test("recv OpenChannel (reserve too high)") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      // 30% is huge, recommended ratio is 1%
+      val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
+      bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "requirement failed: channelReserveSatoshis too high: ratio=0.3 max=0.05")
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
   test("recv Error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
       bob ! Error(0, "oops".getBytes())

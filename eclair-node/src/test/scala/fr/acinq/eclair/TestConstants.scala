@@ -17,7 +17,7 @@ object TestConstants {
     val channelParams = LocalParams(
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,
-      channelReserveSatoshis = 0,
+      channelReserveSatoshis = 10000, // Bob will need to keep that much satoshis as direct payment
       htlcMinimumMsat = 0,
       feeratePerKw = 10000,
       toSelfDelay = 144,
@@ -37,7 +37,7 @@ object TestConstants {
     val channelParams = LocalParams(
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,
-      channelReserveSatoshis = 0,
+      channelReserveSatoshis = 20000, // Alice will need to keep that much satoshis as direct payment
       htlcMinimumMsat = 0,
       feeratePerKw = 10000,
       toSelfDelay = 144,

@@ -88,7 +88,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144))
-      sender.expectMsg("insufficient funds (available=800000000 msat)")
+      sender.expectMsg("insufficient funds: to-local=800000 reserve=20000 available=780000")
     }
   }
 
@@ -97,10 +97,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, 400144))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(300000000, "22" * 32, 400144))
+      sender.send(alice, CMD_ADD_HTLC(200000000, "22" * 32, 400144))
       sender.expectMsg("ok")
-      sender.send(alice, CMD_ADD_HTLC(100000000, "33" * 32, 400144))
-      sender.expectMsg("insufficient funds (available=0 msat)")
+      sender.send(alice, CMD_ADD_HTLC(80000000, "33" * 32, 400144))
+      sender.expectMsg("ok")
+      sender.send(alice, CMD_ADD_HTLC(100000, "33" * 32, 400144))
+      sender.expectMsg("insufficient funds: to-local=20000 reserve=20000 available=0")
     }
   }
 
@@ -112,7 +114,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, CMD_ADD_HTLC(300000000, "22" * 32, 400144))
       sender.expectMsg("ok")
       sender.send(alice, CMD_ADD_HTLC(500000000, "33" * 32, 400144))
-      sender.expectMsg("insufficient funds (available=200000000 msat)")
+      sender.expectMsg("insufficient funds: to-local=200000 reserve=20000 available=180000")
     }
   }
 
@@ -156,7 +158,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val htlc = UpdateAddHtlc(0, 42, Long.MaxValue, 400144, BinaryData("00112233445566778899aabbccddeeff"), "")
       alice2bob.forward(bob, htlc)
-      bob2alice.expectMsgType[Error]
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "insufficient funds: to-remote=800000 reserve=20000 available=780000")
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -167,9 +170,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice2bob.forward(bob, UpdateAddHtlc(0, 42, 500000000, 400144, "11" * 32, ""))
-      alice2bob.forward(bob, UpdateAddHtlc(0, 43, 500000000, 400144, "22" * 32, ""))
-      alice2bob.forward(bob, UpdateAddHtlc(0, 44, 500000000, 400144, "33" * 32, ""))
-      bob2alice.expectMsgType[Error]
+      alice2bob.forward(bob, UpdateAddHtlc(0, 43, 200000000, 400144, "22" * 32, ""))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 44, 80000000, 400144, "33" * 32, ""))
+      alice2bob.forward(bob, UpdateAddHtlc(0, 44, 10000000, 400144, "44" * 32, ""))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "insufficient funds: to-remote=20000 reserve=20000 available=0")
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -182,7 +187,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob, UpdateAddHtlc(0, 42, 300000000, 400144, "11" * 32, ""))
       alice2bob.forward(bob, UpdateAddHtlc(0, 43, 300000000, 400144, "22" * 32, ""))
       alice2bob.forward(bob, UpdateAddHtlc(0, 44, 500000000, 400144, "33" * 32, ""))
-      bob2alice.expectMsgType[Error]
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "insufficient funds: to-remote=200000 reserve=20000 available=180000")
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]

@@ -40,11 +40,23 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass {
     test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
 
-  test("recv AcceptChannel") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv AcceptChannel") { case (alice, _, bob2alice, _, _) =>
     within(30 seconds) {
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CREATED_INTERNAL)
+    }
+  }
+
+  test("recv AcceptChannel (reserve too high)") { case (alice, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val accept = bob2alice.expectMsgType[AcceptChannel]
+      // 30% is huge, recommended ratio is 1%
+      val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
+      alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
+      val error = alice2bob.expectMsgType[Error]
+      assert(new String(error.data) === "requirement failed: channelReserveSatoshis too high: ratio=0.3 max=0.05")
+      awaitCond(alice.stateName == CLOSED)
     }
   }
 

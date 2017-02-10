@@ -96,43 +96,49 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(localParams, autoSignInterval)) =>
-      // TODO: here we should check if remote parameters suit us
-      // TODO: maybe also check uniqueness of temporary channel id
-      val minimumDepth = Globals.mindepth_blocks
-      val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-      them ! AcceptChannel(temporaryChannelId = Platform.currentTime,
-        dustLimitSatoshis = localParams.dustLimitSatoshis,
-        maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = localParams.channelReserveSatoshis,
-        minimumDepth = minimumDepth,
-        htlcMinimumMsat = localParams.htlcMinimumMsat,
-        toSelfDelay = localParams.toSelfDelay,
-        maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-        fundingPubkey = localParams.fundingPrivKey.publicKey,
-        revocationBasepoint = localParams.revocationSecret.toPoint,
-        paymentBasepoint = localParams.paymentKey.toPoint,
-        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
-        firstPerCommitmentPoint = firstPerCommitmentPoint)
-      val remoteParams = RemoteParams(
-        dustLimitSatoshis = open.dustLimitSatoshis,
-        maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = open.channelReserveSatoshis,
-        htlcMinimumMsat = open.htlcMinimumMsat,
-        feeratePerKw = open.feeratePerKw,
-        toSelfDelay = open.toSelfDelay,
-        maxAcceptedHtlcs = open.maxAcceptedHtlcs,
-        fundingPubKey = open.fundingPubkey,
-        revocationBasepoint = open.revocationBasepoint,
-        paymentBasepoint = open.paymentBasepoint,
-        delayedPaymentBasepoint = open.delayedPaymentBasepoint)
-      log.debug(s"remote params: $remoteParams")
-      val params = ChannelParams(
-        localParams = localParams.copy(feeratePerKw = open.feeratePerKw), // funder gets to choose the first feerate
-        remoteParams = remoteParams,
-        fundingSatoshis = open.fundingSatoshis,
-        minimumDepth = minimumDepth,
-        autoSignInterval = autoSignInterval)
-      goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, params, open.pushMsat, open.firstPerCommitmentPoint)
+      Try(Funding.validateParams(open.channelReserveSatoshis, open.fundingSatoshis)) match {
+        case Failure(t) =>
+          log.warning(t.getMessage)
+          them ! Error(open.temporaryChannelId, t.getMessage.getBytes)
+          goto(CLOSED)
+        case Success(_) =>
+          // TODO: maybe also check uniqueness of temporary channel id
+          val minimumDepth = Globals.mindepth_blocks
+          val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
+          them ! AcceptChannel(temporaryChannelId = Platform.currentTime,
+            dustLimitSatoshis = localParams.dustLimitSatoshis,
+            maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
+            channelReserveSatoshis = localParams.channelReserveSatoshis,
+            minimumDepth = minimumDepth,
+            htlcMinimumMsat = localParams.htlcMinimumMsat,
+            toSelfDelay = localParams.toSelfDelay,
+            maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
+            fundingPubkey = localParams.fundingPrivKey.publicKey,
+            revocationBasepoint = localParams.revocationSecret.toPoint,
+            paymentBasepoint = localParams.paymentKey.toPoint,
+            delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
+            firstPerCommitmentPoint = firstPerCommitmentPoint)
+          val remoteParams = RemoteParams(
+            dustLimitSatoshis = open.dustLimitSatoshis,
+            maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
+            channelReserveSatoshis = open.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+            htlcMinimumMsat = open.htlcMinimumMsat,
+            feeratePerKw = open.feeratePerKw,
+            toSelfDelay = open.toSelfDelay,
+            maxAcceptedHtlcs = open.maxAcceptedHtlcs,
+            fundingPubKey = open.fundingPubkey,
+            revocationBasepoint = open.revocationBasepoint,
+            paymentBasepoint = open.paymentBasepoint,
+            delayedPaymentBasepoint = open.delayedPaymentBasepoint)
+          log.debug(s"remote params: $remoteParams")
+          val params = ChannelParams(
+            localParams = localParams.copy(feeratePerKw = open.feeratePerKw), // funder gets to choose the first feerate
+            remoteParams = remoteParams,
+            fundingSatoshis = open.fundingSatoshis,
+            minimumDepth = minimumDepth,
+            autoSignInterval = autoSignInterval)
+          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, params, open.pushMsat, open.firstPerCommitmentPoint)
+      }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -143,31 +149,37 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis, pushMsat, autoSignInterval)) =>
-      // TODO: here we should check if remote parameters suit us
-      // TODO: check equality of temporaryChannelId? or should be done upstream
-      val remoteParams = RemoteParams(
-        dustLimitSatoshis = accept.dustLimitSatoshis,
-        maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
-        channelReserveSatoshis = accept.channelReserveSatoshis,
-        htlcMinimumMsat = accept.htlcMinimumMsat,
-        feeratePerKw = localParams.feeratePerKw, // funder gets to choose the first feerate
-        toSelfDelay = accept.toSelfDelay,
-        maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
-        fundingPubKey = accept.fundingPubkey,
-        revocationBasepoint = accept.revocationBasepoint,
-        paymentBasepoint = accept.paymentBasepoint,
-        delayedPaymentBasepoint = accept.delayedPaymentBasepoint
-      )
-      log.debug(s"remote params: $remoteParams")
-      val params = ChannelParams(
-        localParams = localParams,
-        remoteParams = remoteParams,
-        fundingSatoshis = fundingSatoshis,
-        minimumDepth = accept.minimumDepth,
-        autoSignInterval = autoSignInterval)
-      val localFundingPubkey = params.localParams.fundingPrivKey.publicKey
-      blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubKey, Satoshi(params.fundingSatoshis))
-      goto(WAIT_FOR_FUNDING_CREATED_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, accept.firstPerCommitmentPoint)
+      Try(Funding.validateParams(accept.channelReserveSatoshis, fundingSatoshis)) match {
+        case Failure(t) =>
+          log.warning(t.getMessage)
+          them ! Error(temporaryChannelId, t.getMessage.getBytes)
+          goto(CLOSED)
+        case _ =>
+          // TODO: check equality of temporaryChannelId? or should be done upstream
+          val remoteParams = RemoteParams(
+            dustLimitSatoshis = accept.dustLimitSatoshis,
+            maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
+            channelReserveSatoshis = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
+            htlcMinimumMsat = accept.htlcMinimumMsat,
+            feeratePerKw = localParams.feeratePerKw, // funder gets to choose the first feerate
+            toSelfDelay = accept.toSelfDelay,
+            maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
+            fundingPubKey = accept.fundingPubkey,
+            revocationBasepoint = accept.revocationBasepoint,
+            paymentBasepoint = accept.paymentBasepoint,
+            delayedPaymentBasepoint = accept.delayedPaymentBasepoint
+          )
+          log.debug(s"remote params: $remoteParams")
+          val params = ChannelParams(
+            localParams = localParams,
+            remoteParams = remoteParams,
+            fundingSatoshis = fundingSatoshis,
+            minimumDepth = accept.minimumDepth,
+            autoSignInterval = autoSignInterval)
+          val localFundingPubkey = params.localParams.fundingPrivKey.publicKey
+          blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubKey, Satoshi(params.fundingSatoshis))
+          goto(WAIT_FOR_FUNDING_CREATED_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, accept.firstPerCommitmentPoint)
+      }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 

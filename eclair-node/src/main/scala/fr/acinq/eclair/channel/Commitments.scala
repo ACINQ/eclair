@@ -42,7 +42,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def hasTimedoutHtlcs(blockheight: Long): Boolean =
     localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
-    remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)
+      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
@@ -66,12 +66,12 @@ object Commitments extends Logging {
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
     val blockCount = Globals.blockCount.get()
     require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
-    // our available funds as seen by them, including all pending changes
+    // our available funds *as seen by them*, including all pending changes
     val reduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.acked, commitments.localChanges.proposed)
-    // a node cannot spend pending incoming htlcs
-    val available = reduced.toRemoteMsat
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
+    val available = reduced.toRemoteMsat - commitments.remoteParams.channelReserveSatoshis * 1000
     if (cmd.amountMsat > available) {
-      throw new RuntimeException(s"insufficient funds (available=$available msat)")
+      throw new RuntimeException(s"insufficient funds: to-local=${reduced.toRemoteMsat / 1000} reserve=${commitments.remoteParams.channelReserveSatoshis} available=${available / 1000}")
     } else {
       val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
       val add = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
@@ -90,10 +90,10 @@ object Commitments extends Logging {
 
     // their available funds as seen by us, including all pending changes
     val reduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments.localChanges.acked, commitments.remoteChanges.proposed)
-    // a node cannot spend pending incoming htlcs
-    val available = reduced.toRemoteMsat
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
+    val available = reduced.toRemoteMsat - commitments.localParams.channelReserveSatoshis * 1000
     if (add.amountMsat > available) {
-      throw new RuntimeException("Insufficient funds")
+      throw new RuntimeException(s"insufficient funds: to-remote=${reduced.toRemoteMsat / 1000} reserve=${commitments.localParams.channelReserveSatoshis} available=${available / 1000}")
     } else {
       // TODO: nodeIds are ignored
       addRemoteProposal(commitments, add)
