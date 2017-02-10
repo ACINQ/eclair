@@ -1065,7 +1065,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Transaction.correctlySpends(penaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // two main outputs are 760 000 and 200 000
-      assert(mainTx.txOut(0).amount == Satoshi(746670))
+      assert(mainTx.txOut(0).amount == Satoshi(741510))
       assert(penaltyTx.txOut(0).amount == Satoshi(195170))
 
       awaitCond(alice.stateName == CLOSING)

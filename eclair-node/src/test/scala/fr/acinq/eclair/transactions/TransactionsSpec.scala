@@ -52,7 +52,7 @@ class TransactionsSpec extends FunSuite {
       Htlc(IN, UpdateAddHtlc(0, 0, MilliSatoshi(800000).amount, 551, Hash.Zeroes, BinaryData("")), None)
     )
     val spec = CommitmentSpec(htlcs, feeRatePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
-    val fee = Transactions.commitTxFee(5000, Satoshi(546), spec)
+    val fee = Transactions.commitTxFee(Satoshi(546), spec)
     assert(fee == Satoshi(5340))
   }
 
