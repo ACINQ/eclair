@@ -72,7 +72,13 @@ object Commitments extends Logging {
 
     val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum + cmd.amountMsat
     if (htlcValueInFlight > commitments.remoteParams.maxHtlcValueInFlightMsat) {
-      throw new RuntimeException(s"in-flight htlcs would carry too much value: value=$htlcValueInFlight max=${commitments.remoteParams.maxHtlcValueInFlightMsat}")
+      throw new RuntimeException(s"reached counterparty's in-flight htlcs value limit: value=$htlcValueInFlight max=${commitments.remoteParams.maxHtlcValueInFlightMsat}")
+    }
+
+    // the HTLC we are about to create is outgoing, but from their point of view it is incoming
+    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN) + 1
+    if (acceptedHtlcs > commitments.remoteParams.maxAcceptedHtlcs) {
+      throw new RuntimeException(s"reached counterparty's max accepted htlc count limit: value=$acceptedHtlcs max=${commitments.remoteParams.maxAcceptedHtlcs}")
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
@@ -101,7 +107,12 @@ object Commitments extends Logging {
 
     val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum + add.amountMsat
     if (htlcValueInFlight > commitments.localParams.maxHtlcValueInFlightMsat) {
-      throw new RuntimeException(s"in-flight htlcs would carry too much value: value=$htlcValueInFlight max=${commitments.localParams.maxHtlcValueInFlightMsat}")
+      throw new RuntimeException(s"in-flight htlcs hold too much value: value=$htlcValueInFlight max=${commitments.localParams.maxHtlcValueInFlightMsat}")
+    }
+
+    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN) + 1
+    if (acceptedHtlcs > commitments.localParams.maxAcceptedHtlcs) {
+      throw new RuntimeException(s"too many accepted htlcs: value=$acceptedHtlcs max=${commitments.localParams.maxAcceptedHtlcs}")
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty

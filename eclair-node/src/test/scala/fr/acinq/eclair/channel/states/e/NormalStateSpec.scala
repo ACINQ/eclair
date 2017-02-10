@@ -145,8 +145,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(bob, CMD_ADD_HTLC(151000000, "11" * 32, 400144))
-      sender.expectMsg("in-flight htlcs would carry too much value: value=151000000 max=150000000")
+      sender.expectMsg("reached counterparty's in-flight htlcs value limit: value=151000000 max=150000000")
       bob2alice.expectNoMsg(200 millis)
+    }
+  }
+
+  test("recv CMD_ADD_HTLC (over max accepted htlcs)") { case (alice, _, alice2bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      // Bob accepts a maximum of 30 htlcs
+      for (i <- 0 until 30) {
+        sender.send(alice, CMD_ADD_HTLC(10000000, "11" * 32, 400144))
+        sender.expectMsg("ok")
+        alice2bob.expectMsgType[UpdateAddHtlc]
+      }
+      sender.send(alice, CMD_ADD_HTLC(10000000, "33" * 32, 400144))
+      sender.expectMsg("reached counterparty's max accepted htlc count limit: value=31 max=30")
+      alice2bob.expectNoMsg(200 millis)
     }
   }
 
@@ -218,10 +233,26 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       alice2bob.forward(alice, UpdateAddHtlc(0, 42, 151000000, 400144, "11" * 32, ""))
       val error = alice2bob.expectMsgType[Error]
-      assert(new String(error.data) === "in-flight htlcs would carry too much value: value=151000000 max=150000000")
+      assert(new String(error.data) === "in-flight htlcs hold too much value: value=151000000 max=150000000")
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateAddHtlc (over max accepted htlcs)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      // Bob accepts a maximum of 30 htlcs
+      for (i <- 0 until 30) {
+        alice2bob.forward(bob, UpdateAddHtlc(i, 42, 1000000, 400144, "11" * 32, ""))
+      }
+      alice2bob.forward(bob, UpdateAddHtlc(0, 42, 1000000, 400144, "11" * 32, ""))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "too many accepted htlcs: value=31 max=30")
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 

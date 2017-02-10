@@ -41,7 +41,7 @@ object TestConstants {
       htlcMinimumMsat = 0,
       feeratePerKw = 10000,
       toSelfDelay = 144,
-      maxAcceptedHtlcs = 100,
+      maxAcceptedHtlcs = 30,
       fundingPrivKey = PrivateKey(Array.fill[Byte](32)(11), compressed = true),
       revocationSecret = PrivateKey(Array.fill[Byte](32)(12), compressed = true),
       paymentKey = PrivateKey(Array.fill[Byte](32)(13), compressed = true),
