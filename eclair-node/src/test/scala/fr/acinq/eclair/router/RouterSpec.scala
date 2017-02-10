@@ -1,20 +1,16 @@
 package fr.acinq.eclair.router
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, File}
-import javafx.application.Platform
-
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import com.google.common.io.Files
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
-import fr.acinq.eclair.toShortId
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.ChannelAnnouncement
+import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
+import fr.acinq.eclair.wire.Error
 
 import scala.concurrent.duration._
 
@@ -29,7 +25,7 @@ class RouterSpec extends BaseRouterSpec {
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
     val channelId_ac = toShortId(420000, 5, 0)
-    val chan_ac = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_ac, a, c, funding_a, funding_c)
+    val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
 
     router ! chan_ac
     watcher.expectMsg(GetTx(420000, 5, 0, chan_ac))
@@ -63,6 +59,29 @@ class RouterSpec extends BaseRouterSpec {
 
   }
 
+  test("handle bad signature for ChannelAnnouncement") { case (router, _) =>
+    val sender = TestProbe()
+    val channelId_ac = toShortId(420000, 5, 0)
+    val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    val buggy_chan_ac = chan_ac.copy(nodeSignature1 = chan_ac.nodeSignature2)
+    sender.send(router, buggy_chan_ac)
+    sender.expectMsgType[Error]
+  }
+
+  test("handle bad signature for NodeAnnouncement") { case (router, _) =>
+    val sender = TestProbe()
+    val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = 1)
+    sender.send(router, buggy_ann_a)
+    sender.expectMsgType[Error]
+  }
+
+  test("handle bad signature for ChannelUpdate") { case (router, _) =>
+    val sender = TestProbe()
+    val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = 1)
+    sender.send(router, buggy_channelUpdate_ab)
+    sender.expectMsgType[Error]
+  }
+
   test("route not found (unreachable target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
@@ -74,7 +93,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route not found (non-existing source)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(randomPubkey, f))
+    sender.send(router, RouteRequest(randomKey.publicKey, f))
     val res = sender.expectMsgType[Failure]
     assert(res.cause.getMessage === "graph must contain the source vertex")
   }
@@ -82,7 +101,7 @@ class RouterSpec extends BaseRouterSpec {
   test("route not found (non-existing target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, randomPubkey))
+    sender.send(router, RouteRequest(a, randomKey.publicKey))
     val res = sender.expectMsgType[Failure]
     assert(res.cause.getMessage === "graph must contain the sink vertex")
   }

@@ -2,13 +2,14 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpent}
+import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestkitBaseClass, randomKey}
+import fr.acinq.eclair.{TestkitBaseClass, randomKey, _}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -24,36 +25,41 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   type FixtureParam = Tuple2[ActorRef, TestProbe]
 
-  def randomPubkey = randomKey.publicKey
+  val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (a, b, c, d, e, f) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey, priv_f.publicKey)
 
-  val (a, b, c, d, e, f) = (randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey)
-  val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey, randomPubkey)
+  val (priv_funding_a, priv_funding_b, priv_funding_c, priv_funding_d, priv_funding_e, priv_funding_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
+  val (funding_a, funding_b, funding_c, funding_d, funding_e, funding_f) = (priv_funding_a.publicKey, priv_funding_b.publicKey, priv_funding_c.publicKey, priv_funding_d.publicKey, priv_funding_e.publicKey, priv_funding_f.publicKey)
 
-  val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
+  //val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
-  val ann_a = NodeAnnouncement(DUMMY_SIG, 0, a, (15, 10, -70), "node-A", "0000", Nil)
-  val ann_b = NodeAnnouncement(DUMMY_SIG, 0, b, (50, 99, -80), "node-B", "0000", Nil)
-  val ann_c = NodeAnnouncement(DUMMY_SIG, 0, c, (123, 100, -40), "node-C", "0000", Nil)
-  val ann_d = NodeAnnouncement(DUMMY_SIG, 0, d, (-120, -20, 60), "node-D", "0000", Nil)
-  val ann_e = NodeAnnouncement(DUMMY_SIG, 0, e, (-50, 0, 10), "node-E", "0000", Nil)
-  val ann_f = NodeAnnouncement(DUMMY_SIG, 0, f, (30, 10, -50), "node-F", "0000", Nil)
+  val ann_a = makeNodeAnnouncement(priv_a, "node-A", (15, 10, -70), Nil, 0)
+  val ann_b = makeNodeAnnouncement(priv_b, "node-B", (50, 99, -80), Nil, 0)
+  val ann_c = makeNodeAnnouncement(priv_c, "node-C", (123, 100, -40), Nil, 0)
+  val ann_d = makeNodeAnnouncement(priv_d, "node-D", (-120, -20, 60), Nil, 0)
+  val ann_e = makeNodeAnnouncement(priv_e, "node-E", (-50, 0, 10), Nil, 0)
+  val ann_f = makeNodeAnnouncement(priv_f, "node-F", (30, 10, -50), Nil, 0)
 
   val channelId_ab = toShortId(420000, 1, 0)
   val channelId_bc = toShortId(420000, 2, 0)
   val channelId_cd = toShortId(420000, 3, 0)
   val channelId_ef = toShortId(420000, 4, 0)
 
-  val chan_ab = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_ab, a, b, funding_a, funding_b)
-  val chan_bc = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_bc, b, c, funding_b, funding_c)
-  val chan_cd = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_cd, c, d, funding_c, funding_d)
-  val chan_ef = ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, channelId_ef, e, f, funding_e, funding_f)
+  def channelAnnouncement(channelId: Long, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+    val (node1_sig, funding1_sig) = signChannelAnnouncement(channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey)
+    val (node2_sig, funding2_sig) = signChannelAnnouncement(channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey)
+    makeChannelAnnouncement(channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
+  }
 
-  val defaultChannelUpdate = ChannelUpdate(DUMMY_SIG, 0, 0, "0000", 0, 0, 0, 0)
-  val channelUpdate_ab = ChannelUpdate(DUMMY_SIG, channelId_ab, 0, "0000", cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
-  val channelUpdate_bc = ChannelUpdate(DUMMY_SIG, channelId_bc, 0, "0000", cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
-  val channelUpdate_cd = ChannelUpdate(DUMMY_SIG, channelId_cd, 0, "0000", cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_ef = ChannelUpdate(DUMMY_SIG, channelId_ef, 0, "0000", cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
+  val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
+  val chan_bc = channelAnnouncement(channelId_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
+  val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
+  val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
+  val channelUpdate_ab = makeChannelUpdate(priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 0)
+  val channelUpdate_bc = makeChannelUpdate(priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1, 0)
+  val channelUpdate_cd = makeChannelUpdate(priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, 0)
+  val channelUpdate_ef = makeChannelUpdate(priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8, 0)
 
   override def withFixture(test: OneArgTest) = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)

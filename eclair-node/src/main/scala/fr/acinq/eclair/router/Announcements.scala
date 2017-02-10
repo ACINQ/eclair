@@ -31,6 +31,7 @@ object Announcements {
     }
     val nodeSig = Crypto.encodeSignature(Crypto.sign(witness, localNodeSecret)) :+ 1.toByte
     val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, localFundingPrivKey)) :+ 1.toByte
+    println(s"channelId: $channelId, localNodeSecret: $localNodeSecret, remoteNodeId: $remoteNodeId, localFundingPrivKey: $localFundingPrivKey, remoteFundingKey: $remoteFundingKey")
     (nodeSig, bitcoinSig)
   }
 

@@ -300,7 +300,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       val channelId = toShortId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
       blockchain ! WatchLost(self, commitments.anchorId, params.minimumDepth, BITCOIN_FUNDING_LOST)
       val nextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 1)
-      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
+      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
       them ! FundingLocked(temporaryChannelId, channelId, Some(localNodeSig), Some(localBitcoinSig), nextPerCommitmentPoint)
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection

@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.router.Router
+import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -70,10 +70,9 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       val channelAnnouncement = router.expectMsgType[ChannelAnnouncement]
       val nodeAnnouncement = router.expectMsgType[NodeAnnouncement]
       val channelUpdate = router.expectMsgType[ChannelUpdate]
-      //assert(Router.checkSigs(channelAnnouncement))
-      //assert(Router.checkSig(nodeAnnouncement))
-      // TODO: test should not use global key
-      //assert(Router.checkSig(channelUpdate, TestConstants.Alice.id))
+      /*assert(Announcements.checkSigs(channelAnnouncement))
+      assert(Announcements.checkSig(nodeAnnouncement))
+      assert(Announcements.checkSig(channelUpdate, TestConstants.Alice.id))*/
     }
   }
 

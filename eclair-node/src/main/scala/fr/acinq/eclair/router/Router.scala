@@ -72,6 +72,11 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
     case s: ChannelChangedState =>
     // other channel changed state messages are ignored
 
+    case c: ChannelAnnouncement if !Announcements.checkSigs(c) =>
+      // TODO: (dirty) this will make the origin channel close the connection
+      log.error(s"bad signature for announcement $c")
+      sender ! Error(0, "bad announcement sig!!!".getBytes())
+
     case c: ChannelAnnouncement if channels.containsKey(c.channelId) =>
       log.debug(s"ignoring $c (duplicate)")
 
@@ -103,8 +108,10 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       } else stash
       context become mainWithLog(nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
 
-    //case n: NodeAnnouncement if !checkSig(n) =>
-    // TODO: fail connection (should probably be done in the auth handler or channel)
+    case n: NodeAnnouncement if !Announcements.checkSig(n) =>
+      // TODO: (dirty) this will make the origin channel close the connection
+      log.error(s"bad signature for announcement $n")
+      sender ! Error(0, "bad announcement sig!!!".getBytes())
 
     case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId), tx) if channels.containsKey(channelId) =>
       val lostChannel = channels(channelId)
@@ -149,8 +156,10 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
     case u: ChannelUpdate if !channels.contains(u.channelId) =>
       log.debug(s"ignoring $u (no related channel found)")
 
-    //case u: ChannelUpdate if !checkSig(u, getDesc(u, channels(u.channelId)).a) =>
-    // TODO: fail connection (should probably be done in the auth handler or channel)
+    case u: ChannelUpdate if !Announcements.checkSig(u, getDesc(u, channels(u.channelId)).a) =>
+      // TODO: (dirty) this will make the origin channel close the connection
+      log.error(s"bad signature for announcement $u")
+      sender ! Error(0, "bad announcement sig!!!".getBytes())
 
     case u: ChannelUpdate =>
       val channel = channels(u.channelId)
