@@ -85,6 +85,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_ADD_HTLC (value too small)") { case (alice, _, alice2bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_ADD_HTLC(50, "11" * 32, 400144))
+      sender.expectMsg("counterparty requires a minimum htlc value of 1000 msat")
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
   test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -127,20 +136,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (while waiting for Shutdown)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
-    within(30 seconds) {
-      val sender = TestProbe()
-      sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[Shutdown]
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
-
-      // actual test starts here
-      sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
-      sender.expectMsg("cannot send new htlcs, closing in progress")
-    }
-  }
-
   test("recv CMD_ADD_HTLC (over max inflight htlc value)") { case (_, bob, _, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -165,10 +160,24 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_ADD_HTLC (while waiting for Shutdown)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[Shutdown]
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+
+      // actual test starts here
+      sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
+      sender.expectMsg("cannot send new htlcs, closing in progress")
+    }
+  }
+
   test("recv UpdateAddHtlc") { case (_, bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-      val htlc = UpdateAddHtlc(0, 42, 150, 400144, BinaryData("00112233445566778899aabbccddeeff"), "")
+      val htlc = UpdateAddHtlc(0, 42, 150000, 400144, BinaryData("00112233445566778899aabbccddeeff"), "")
       bob ! htlc
       awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc))))
     }
@@ -177,9 +186,23 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (expiry too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      val htlc = UpdateAddHtlc(0, 42, 150, expiry = 1, BinaryData("00112233445566778899aabbccddeeff"), "")
+      val htlc = UpdateAddHtlc(0, 42, 150000, expiry = 1, BinaryData("00112233445566778899aabbccddeeff"), "")
       alice2bob.forward(bob, htlc)
-      bob2alice.expectMsgType[Error]
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "expiry too small: required=400003 actual=1 (blockCount=400000)")
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateAddHtlc (value too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val htlc = UpdateAddHtlc(0, 42, 150, expiry = 400144, BinaryData("00112233445566778899aabbccddeeff"), "")
+      alice2bob.forward(bob, htlc)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "htlc value too small: min=1000")
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]

@@ -38,7 +38,7 @@ object TestConstants {
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       channelReserveSatoshis = 20000, // Alice will need to keep that much satoshis as direct payment
-      htlcMinimumMsat = 0,
+      htlcMinimumMsat = 1000,
       feeratePerKw = 10000,
       toSelfDelay = 144,
       maxAcceptedHtlcs = 30,

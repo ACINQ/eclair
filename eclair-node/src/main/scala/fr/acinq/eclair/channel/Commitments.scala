@@ -67,6 +67,10 @@ object Commitments extends Logging {
     val blockCount = Globals.blockCount.get()
     require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
 
+    if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
+      throw new RuntimeException(s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
+    }
+
     // let's compute the current commitment *as seen by them*
     val reduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.acked, commitments.localChanges.proposed)
 
@@ -100,6 +104,10 @@ object Commitments extends Logging {
     val minExpiry = blockCount + 3
     if (add.expiry < minExpiry) {
       throw new RuntimeException(s"expiry too small: required=$minExpiry actual=${add.expiry} (blockCount=$blockCount)")
+    }
+
+    if (add.amountMsat < commitments.localParams.htlcMinimumMsat) {
+      throw new RuntimeException(s"htlc value too small: min=${commitments.localParams.htlcMinimumMsat}")
     }
 
     // let's compute the current commitment *as seen by us* including all pending changes
