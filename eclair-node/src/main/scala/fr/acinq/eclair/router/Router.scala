@@ -133,8 +133,13 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
     case n: NodeAnnouncement if nodes.containsKey(n.nodeId) && nodes(n.nodeId).timestamp >= n.timestamp =>
       log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
 
+    case n: NodeAnnouncement if nodes.containsKey(n.nodeId) =>
+      log.info(s"updated node nodeId=${n.nodeId}")
+      context.system.eventStream.publish(NodeUpdated(n))
+      context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
+
     case n: NodeAnnouncement =>
-      log.info(s"added/replaced node nodeId=${n.nodeId}")
+      log.info(s"added node nodeId=${n.nodeId}")
       context.system.eventStream.publish(NodeDiscovered(n))
       context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
 

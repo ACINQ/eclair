@@ -10,6 +10,8 @@ trait NetworkEvent
 
 case class NodeDiscovered(ann: NodeAnnouncement) extends NetworkEvent
 
+case class NodeUpdated(ann: NodeAnnouncement) extends NetworkEvent
+
 case class NodeLost(nodeId: BinaryData) extends NetworkEvent
 
 case class ChannelDiscovered(ann: ChannelAnnouncement) extends NetworkEvent
