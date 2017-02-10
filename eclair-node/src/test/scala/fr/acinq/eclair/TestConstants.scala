@@ -16,7 +16,7 @@ object TestConstants {
     val id = randomKey.publicKey
     val channelParams = LocalParams(
       dustLimitSatoshis = 542,
-      maxHtlcValueInFlightMsat = Long.MaxValue,
+      maxHtlcValueInFlightMsat = 150000000,
       channelReserveSatoshis = 10000, // Bob will need to keep that much satoshis as direct payment
       htlcMinimumMsat = 0,
       feeratePerKw = 10000,
@@ -36,7 +36,7 @@ object TestConstants {
     val id = randomKey.publicKey
     val channelParams = LocalParams(
       dustLimitSatoshis = 542,
-      maxHtlcValueInFlightMsat = Long.MaxValue,
+      maxHtlcValueInFlightMsat = Long.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       channelReserveSatoshis = 20000, // Alice will need to keep that much satoshis as direct payment
       htlcMinimumMsat = 0,
       feeratePerKw = 10000,

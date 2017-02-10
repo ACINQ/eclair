@@ -81,6 +81,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000))
       sender.expectMsg("requirement failed: expiry can't be in the past (expiry=300000 blockCount=400000)")
+      alice2bob.expectNoMsg(200 millis)
     }
   }
 
@@ -89,6 +90,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144))
       sender.expectMsg("insufficient funds: to-local=800000 reserve=20000 available=780000")
+      alice2bob.expectNoMsg(200 millis)
     }
   }
 
@@ -97,12 +99,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, 400144))
       sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(200000000, "22" * 32, 400144))
       sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(80000000, "33" * 32, 400144))
       sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(100000, "33" * 32, 400144))
       sender.expectMsg("insufficient funds: to-local=20000 reserve=20000 available=0")
+      alice2bob.expectNoMsg(200 millis)
     }
   }
 
@@ -111,10 +117,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
       sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(300000000, "22" * 32, 400144))
       sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(500000000, "33" * 32, 400144))
       sender.expectMsg("insufficient funds: to-local=200000 reserve=20000 available=180000")
+      alice2bob.expectNoMsg(200 millis)
     }
   }
 
@@ -132,7 +141,16 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc") { case (_, bob, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (over max inflight htlc value)") { case (_, bob, _, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(bob, CMD_ADD_HTLC(151000000, "11" * 32, 400144))
+      sender.expectMsg("in-flight htlcs would carry too much value: value=151000000 max=150000000")
+      bob2alice.expectNoMsg(200 millis)
+    }
+  }
+
+  test("recv UpdateAddHtlc") { case (_, bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
       val htlc = UpdateAddHtlc(0, 42, 150, 400144, BinaryData("00112233445566778899aabbccddeeff"), "")
@@ -192,6 +210,18 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateAddHtlc (over max inflight htlc value)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      alice2bob.forward(alice, UpdateAddHtlc(0, 42, 151000000, 400144, "11" * 32, ""))
+      val error = alice2bob.expectMsgType[Error]
+      assert(new String(error.data) === "in-flight htlcs would carry too much value: value=151000000 max=150000000")
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 
@@ -914,7 +944,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // alice = 800 000
       //   bob = 200 000
       def send(): Transaction = {
-        // alice sends 10 000 sat
+        // alice sends 8 000 sat
         val (r, htlc) = addHtlc(10000000, alice, bob, alice2bob, bob2alice)
         sign(alice, bob, alice2bob, bob2alice)
 

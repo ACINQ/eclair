@@ -66,19 +66,27 @@ object Commitments extends Logging {
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
     val blockCount = Globals.blockCount.get()
     require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
-    // our available funds *as seen by them*, including all pending changes
+
+    // let's compute the current commitment *as seen by them*
     val reduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.acked, commitments.localChanges.proposed)
+
+    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum + cmd.amountMsat
+    if (htlcValueInFlight > commitments.remoteParams.maxHtlcValueInFlightMsat) {
+      throw new RuntimeException(s"in-flight htlcs would carry too much value: value=$htlcValueInFlight max=${commitments.remoteParams.maxHtlcValueInFlightMsat}")
+    }
+
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
     val available = reduced.toRemoteMsat - commitments.remoteParams.channelReserveSatoshis * 1000
     if (cmd.amountMsat > available) {
       throw new RuntimeException(s"insufficient funds: to-local=${reduced.toRemoteMsat / 1000} reserve=${commitments.remoteParams.channelReserveSatoshis} available=${available / 1000}")
-    } else {
-      val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
-      val add = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
-      val commitments1 = addLocalProposal(commitments, add).copy(localCurrentHtlcId = id)
-      (commitments1, add)
     }
+
+    val id = cmd.id.getOrElse(commitments.localCurrentHtlcId + 1)
+    val add = UpdateAddHtlc(commitments.channelId, id, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    val commitments1 = addLocalProposal(commitments, add).copy(localCurrentHtlcId = id)
+    (commitments1, add)
   }
+
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     val blockCount = Globals.blockCount.get()
@@ -88,16 +96,21 @@ object Commitments extends Logging {
       throw new RuntimeException(s"expiry too small: required=$minExpiry actual=${add.expiry} (blockCount=$blockCount)")
     }
 
-    // their available funds as seen by us, including all pending changes
+    // let's compute the current commitment *as seen by us* including all pending changes
     val reduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments.localChanges.acked, commitments.remoteChanges.proposed)
+
+    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum + add.amountMsat
+    if (htlcValueInFlight > commitments.localParams.maxHtlcValueInFlightMsat) {
+      throw new RuntimeException(s"in-flight htlcs would carry too much value: value=$htlcValueInFlight max=${commitments.localParams.maxHtlcValueInFlightMsat}")
+    }
+
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
     val available = reduced.toRemoteMsat - commitments.localParams.channelReserveSatoshis * 1000
     if (add.amountMsat > available) {
       throw new RuntimeException(s"insufficient funds: to-remote=${reduced.toRemoteMsat / 1000} reserve=${commitments.localParams.channelReserveSatoshis} available=${available / 1000}")
-    } else {
-      // TODO: nodeIds are ignored
-      addRemoteProposal(commitments, add)
     }
+
+    addRemoteProposal(commitments, add)
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) = {
