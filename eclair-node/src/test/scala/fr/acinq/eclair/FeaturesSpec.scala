@@ -17,4 +17,11 @@ class FeaturesSpec extends FunSuite {
     assert(isChannelPublic("01") === true)
   }
 
+  test("'initial_routing_sync' feature") {
+    assert(requiresInitialRoutingSync("") === false)
+    assert(requiresInitialRoutingSync("01") === false)
+    assert(requiresInitialRoutingSync("0000") === false)
+    assert(requiresInitialRoutingSync("0001") === true)
+  }
+
 }

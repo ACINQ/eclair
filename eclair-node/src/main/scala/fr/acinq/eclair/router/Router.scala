@@ -26,6 +26,7 @@ case class ChannelDesc(id: Long, a: BinaryData, b: BinaryData)
 case class Hop(nodeId: BinaryData, nextNodeId: BinaryData, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: BinaryData, target: BinaryData)
 case class RouteResponse(hops: Seq[Hop]) { require(hops.size > 0, "route cannot be empty") }
+case class SendRoutingState(to: ActorRef)
 
 // @formatter:on
 
@@ -38,8 +39,6 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
   import Router._
 
   import ExecutionContext.Implicits.global
-
-  context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
   def receive: Receive = main(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil, awaiting = Set(), stash = Nil)
@@ -62,15 +61,11 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
             awaiting: Set[ChannelAnnouncement],
             stash: Seq[RoutingMessage]): Receive = {
 
-    case ChannelChangedState(channel, transport, _, WAIT_FOR_INIT_INTERNAL, _, _) =>
-      // we send all known announcements to the new peer as soon as the connection is opened
-      log.info(s"info sending all announcements to $channel: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
-      channels.values.foreach(transport ! _)
-      nodes.values.foreach(transport ! _)
-      updates.values.foreach(transport ! _)
-
-    case s: ChannelChangedState =>
-    // other channel changed state messages are ignored
+    case SendRoutingState(remote) =>
+      log.info(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
+      channels.values.foreach(remote ! _)
+      updates.values.foreach(remote ! _)
+      nodes.values.foreach(remote ! _)
 
     case c: ChannelAnnouncement if !Announcements.checkSigs(c) =>
       // TODO: (dirty) this will make the origin channel close the connection

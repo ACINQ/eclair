@@ -9,7 +9,7 @@ import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.Binding
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.{Announcements, SendRoutingState}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -82,6 +82,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
     case Event(Init(remoteGlobalFeatures, remoteLocalFeatures), DATA_WAIT_FOR_INIT(localParams, Left(initFunder), autoSignInterval)) =>
       val temporaryChannelId = Platform.currentTime
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
+      if (Features.requiresInitialRoutingSync(remoteLocalFeatures)) {
+        router ! SendRoutingState(them)
+      }
       them ! OpenChannel(temporaryChannelId = temporaryChannelId,
         fundingSatoshis = initFunder.fundingSatoshis,
         pushMsat = initFunder.pushMsat,
@@ -100,6 +103,9 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = initFunder.fundingSatoshis, pushMsat = initFunder.pushMsat, remoteGlobalFeatures = remoteGlobalFeatures, remoteLocalFeatures = remoteLocalFeatures, autoSignInterval = autoSignInterval)
 
     case Event(Init(remoteGlobalFeatures, remoteLocalFeatures), DATA_WAIT_FOR_INIT(localParams, Right(initFundee), autoSignInterval)) =>
+      if (Features.requiresInitialRoutingSync(remoteLocalFeatures)) {
+        router ! SendRoutingState(them)
+      }
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(localParams, remoteGlobalFeatures = remoteGlobalFeatures, remoteLocalFeatures = remoteLocalFeatures, autoSignInterval = autoSignInterval)
   })
 

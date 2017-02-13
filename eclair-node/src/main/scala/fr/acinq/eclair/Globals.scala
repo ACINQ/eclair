@@ -31,7 +31,7 @@ object Globals {
   }
 
   val global_features = BinaryData("")
-  val local_features = BinaryData("01") // public channel
+  val local_features = BinaryData("0101") // public channel
 
   val expiry_delta_blocks = config.getInt("expiry-delta-blocks")
   val htlc_minimum_msat = config.getInt("htlc-minimum-msat")
