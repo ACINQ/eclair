@@ -5,8 +5,8 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{MakeFundingTx, PeerWatcher}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, OpenChannel}
-import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -33,6 +33,10 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass {
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
+      alice2bob.expectMsgType[Init]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Init]
+      bob2alice.forward(alice)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]

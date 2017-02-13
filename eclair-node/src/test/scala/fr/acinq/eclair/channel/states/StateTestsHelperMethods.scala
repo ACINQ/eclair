@@ -24,6 +24,10 @@ trait StateTestsHelperMethods extends TestKitBase {
                   bob2blockchain: TestProbe): Unit = {
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
+    alice2bob.expectMsgType[Init]
+    alice2bob.forward(bob)
+    bob2alice.expectMsgType[Init]
+    bob2alice.forward(alice)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]

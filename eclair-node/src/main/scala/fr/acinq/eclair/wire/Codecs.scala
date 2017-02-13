@@ -141,8 +141,6 @@ object Codecs {
   val fundingLockedCodec: Codec[FundingLocked] = (
     ("temporaryChannelId" | int64) ::
       ("channelId" | int64) ::
-      ("announcementNodeSignature" | optionalSignature) ::
-      ("announcementBitcoinSignature" | optionalSignature) ::
       ("nextPerCommitmentPoint" | point)).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
@@ -228,6 +226,11 @@ object Codecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
+  val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
+    ("channelId" | int64) ::
+      ("nodeSignature" | signature) ::
+      ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
@@ -247,6 +250,7 @@ object Codecs {
     .typecase(256, channelAnnouncementCodec)
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
+    .typecase(259, announcementSignaturesCodec)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | ignore(8 * 1)) ::

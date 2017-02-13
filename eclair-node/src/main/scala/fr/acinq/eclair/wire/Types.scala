@@ -64,8 +64,6 @@ case class FundingSigned(temporaryChannelId: Long,
 
 case class FundingLocked(temporaryChannelId: Long,
                          channelId: Long,
-                         announcementNodeSignature: Option[BinaryData],
-                         announcementBitcoinSignature: Option[BinaryData],
                          nextPerCommitmentPoint: Point) extends ChannelMessage
 
 case class Shutdown(channelId: Long,
@@ -129,6 +127,10 @@ case class ChannelUpdate(signature: BinaryData,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
+
+case class AnnouncementSignatures(channelId: Long,
+                                  nodeSignature: BinaryData,
+                                  bitcoinSignature: BinaryData) extends RoutingMessage
 
 case class PerHopPayload(amt_to_forward: Long,
                          outgoing_cltv_value: Int)

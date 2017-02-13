@@ -56,7 +56,9 @@ class Register(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFi
         delayedPaymentKey = generateKey(3),
         defaultFinalScriptPubKey = defaultFinalScriptPubKey,
         shaSeed = Globals.Node.seed,
-        isFunder = funding_opt.isDefined
+        isFunder = funding_opt.isDefined,
+        globalFeatures = Globals.global_features,
+        localFeatures = Globals.local_features
       )
 
       def makeChannel(conn: ActorRef, publicKey: PublicKey, ctx: ActorContext): ActorRef = {

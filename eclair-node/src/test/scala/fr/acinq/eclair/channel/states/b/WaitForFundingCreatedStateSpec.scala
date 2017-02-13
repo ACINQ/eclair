@@ -32,6 +32,10 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass {
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
+      alice2bob.expectMsgType[Init]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Init]
+      bob2alice.forward(alice)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]

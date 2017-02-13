@@ -6,8 +6,8 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, OpenChannel}
-import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, FundingCreated, FundingSigned, Init, OpenChannel}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -34,6 +34,10 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass {
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
+      alice2bob.expectMsgType[Init]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Init]
+      bob2alice.forward(alice)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]

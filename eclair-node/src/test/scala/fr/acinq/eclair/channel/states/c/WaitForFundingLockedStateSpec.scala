@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states.c
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Crypto
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -10,6 +10,7 @@ import fr.acinq.eclair.router.{Announcements, Router}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
+import org.scalatest.{ConfigMap, Tag, TestData}
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
@@ -30,11 +31,22 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, Alice.channelParams, Bob.id))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, Bob.channelParams, Alice.id))
+
+    val (aliceParams, bobParams) = if (test.tags.contains("public")) {
+      (Alice.channelParams.copy(localFeatures = "01"), Bob.channelParams.copy(localFeatures = "01"))
+    } else {
+      (Alice.channelParams, Bob.channelParams)
+    }
+
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, aliceParams, Bob.id))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, bobParams, Alice.id))
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
+      alice2bob.expectMsgType[Init]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Init]
+      bob2alice.forward(alice)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -67,12 +79,15 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NORMAL)
-      val channelAnnouncement = router.expectMsgType[ChannelAnnouncement]
-      val nodeAnnouncement = router.expectMsgType[NodeAnnouncement]
-      val channelUpdate = router.expectMsgType[ChannelUpdate]
-      /*assert(Announcements.checkSigs(channelAnnouncement))
-      assert(Announcements.checkSig(nodeAnnouncement))
-      assert(Announcements.checkSig(channelUpdate, TestConstants.Alice.id))*/
+    }
+  }
+
+  test("recv FundingLocked (with announcement)", Tag("public")) { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
+    within(30 seconds) {
+      bob2alice.expectMsgType[FundingLocked]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateName == WAIT_FOR_ANN_SIGNATURES)
+      alice2bob.expectMsgType[AnnouncementSignatures]
     }
   }
 
@@ -127,5 +142,4 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
     }
   }
-
 }

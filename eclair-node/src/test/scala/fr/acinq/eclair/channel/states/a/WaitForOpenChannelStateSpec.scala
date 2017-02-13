@@ -1,10 +1,10 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.{TestkitBaseClass, TestConstants}
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.wire.{Error, OpenChannel}
+import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -30,6 +30,10 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass {
     alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
     bob ! INPUT_INIT_FUNDEE()
     within(30 seconds) {
+      alice2bob.expectMsgType[Init]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Init]
+      bob2alice.forward(alice)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))

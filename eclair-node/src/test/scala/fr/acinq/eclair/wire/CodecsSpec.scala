@@ -141,7 +141,7 @@ class CodecsSpec extends FunSuite {
     val accept = AcceptChannel(2, 3, 4, 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5))
     val funding_created = FundingCreated(2, bin(32, 0), 3, randomSignature)
     val funding_signed = FundingSigned(2, randomSignature)
-    val funding_locked = FundingLocked(1, 2, Some(randomSignature), Some(randomSignature), point(2))
+    val funding_locked = FundingLocked(1, 2, point(2))
     val update_fee = UpdateFee(1, 2)
     val shutdown = Shutdown(1, bin(47, 0))
     val closing_signed = ClosingSigned(1, 2, randomSignature)
@@ -153,11 +153,12 @@ class CodecsSpec extends FunSuite {
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, 1, bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
     val node_announcement = NodeAnnouncement(randomSignature, 1, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias", bin(0, 0), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val channel_update = ChannelUpdate(randomSignature, 1, 2, bin(2, 2), 3, 4, 5, 6)
+    val announcement_signatures = AnnouncementSignatures(1, randomSignature, randomSignature)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: Nil
+        channel_announcement :: node_announcement :: channel_update :: announcement_signatures :: Nil
 
     msgs.foreach {
       case msg => {

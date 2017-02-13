@@ -28,7 +28,9 @@ object TestConstants {
       delayedPaymentKey = PrivateKey(Array.fill[Byte](32)(4), compressed = true),
       defaultFinalScriptPubKey = Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey),
       shaSeed = Crypto.sha256("alice-seed".getBytes()),
-      isFunder = true
+      isFunder = true,
+      globalFeatures = "",
+      localFeatures = "00" // no announcement
     )
   }
 
@@ -48,7 +50,9 @@ object TestConstants {
       delayedPaymentKey = PrivateKey(Array.fill[Byte](32)(14), compressed = true),
       defaultFinalScriptPubKey = Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(15), compressed = true).publicKey),
       shaSeed = Crypto.sha256("alice-seed".getBytes()),
-      isFunder = false
+      isFunder = false,
+      globalFeatures = "",
+      localFeatures = "00" // no announcement
     )
   }
 
