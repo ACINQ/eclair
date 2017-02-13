@@ -13,6 +13,9 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.io.Source
+import scala.util.matching.Regex
+import scala.util.matching.Regex.MatchIterator
 import scala.util.{Failure, Random, Success, Try}
 
 /**
@@ -52,7 +55,7 @@ class TransactionsSpec extends FunSuite {
       Htlc(IN, UpdateAddHtlc(0, 0, MilliSatoshi(800000).amount, 551, Hash.Zeroes, BinaryData("")), None)
     )
     val spec = CommitmentSpec(htlcs, feeRatePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
-    val fee = Transactions.commitTxFee(5000, Satoshi(546), spec)
+    val fee = Transactions.commitTxFee(Satoshi(546), spec)
     assert(fee == Satoshi(5340))
   }
 
@@ -243,5 +246,52 @@ class TransactionsSpec extends FunSuite {
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {
     case Success(_) => ()
     case Failure(t) => fail(t)
+  }
+
+  def htlc(direction: Direction, amount: Satoshi): Htlc =
+    Htlc(direction, UpdateAddHtlc(0, 0, amount.amount * 1000, 144, "00" * 32, ""), None)
+
+  test("BOLT 2 fee tests") {
+
+    val bolt3 = Source
+      .fromURL("https://raw.githubusercontent.com/lightningnetwork/lightning-rfc/master/03-transactions.md")
+      .mkString
+      .replace("    name:", "$   name:")
+    // character '$' separates tests
+
+    // this regex extract params from a given test
+    val testRegex = ("""name: (.*)\n""" +
+      """.*to_local_msat: ([0-9]+)\n""" +
+      """.*to_remote_msat: ([0-9]+)\n""" +
+      """.*feerate_per_kw: ([0-9]+)\n""" +
+      """.*base commitment transaction fee = ([0-9]+)\n""" +
+      """[^$]+""").r
+    // this regex extracts htlc direction and amounts
+    val htlcRegex =
+    """.*HTLC ([a-z]+) amount ([0-9]+).*""".r
+
+    val dustLimit = Satoshi(546)
+    case class TestSetup(name: String, dustLimit: Satoshi, spec: CommitmentSpec, expectedFee: Satoshi)
+
+    val tests = testRegex.findAllIn(bolt3).map(s => {
+      val testRegex(name, to_local_msat, to_remote_msat, feerate_per_kw, fee) = s
+      val htlcs = htlcRegex.findAllIn(s).map(l => {
+        val htlcRegex(direction, amount) = l
+        direction match {
+          case "offered" => htlc(OUT, Satoshi(amount.toLong))
+          case "received" => htlc(IN, Satoshi(amount.toLong))
+        }
+      }).toSet
+      TestSetup(name, dustLimit, CommitmentSpec(htlcs = htlcs, feeRatePerKw = feerate_per_kw.toLong, toLocalMsat = to_local_msat.toLong, toRemoteMsat = to_remote_msat.toLong), Satoshi(fee.toLong))
+    })
+
+    // simple non-reg test making sure we are not missing tests
+    assert(tests.size === 15, "there were 15 tests at ec99f893f320e8c88f564c1c8566f3454f0f1f5f")
+
+    tests.foreach(test => {
+      println(s"running BOLT 2 test: '${test.name}'")
+      val fee = commitTxFee(test.dustLimit, test.spec)
+      assert(fee === test.expectedFee)
+    })
   }
 }

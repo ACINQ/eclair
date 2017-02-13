@@ -168,7 +168,7 @@ class TestVectorsSpec extends FunSuite {
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
-    val baseFee = Transactions.commitTxFee(spec.feeRatePerKw, Local.dustLimit, spec)
+    val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)
     println(s"# base commitment transaction fee = $baseFee")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
     println(s"# actual commitment transaction fee = $actualFee")
