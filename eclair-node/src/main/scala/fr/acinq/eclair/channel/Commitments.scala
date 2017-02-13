@@ -71,28 +71,30 @@ object Commitments extends Logging {
       throw new RuntimeException(s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
     }
 
-    // let's compute the current commitment *as seen by them*
-    val reduced = CommitmentSpec.reduce(commitments.remoteCommit.spec, commitments.remoteChanges.acked, commitments.localChanges.proposed)
+    // let's compute the current commitment *as seen by them* with this change taken into account
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
+    val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
-    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum + cmd.amountMsat
-    if (htlcValueInFlight > commitments.remoteParams.maxHtlcValueInFlightMsat) {
-      throw new RuntimeException(s"reached counterparty's in-flight htlcs value limit: value=$htlcValueInFlight max=${commitments.remoteParams.maxHtlcValueInFlightMsat}")
+    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
+    if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
+      throw new RuntimeException(s"reached counterparty's in-flight htlcs value limit: value=$htlcValueInFlight max=${commitments1.remoteParams.maxHtlcValueInFlightMsat}")
     }
 
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
-    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN) + 1
-    if (acceptedHtlcs > commitments.remoteParams.maxAcceptedHtlcs) {
-      throw new RuntimeException(s"reached counterparty's max accepted htlc count limit: value=$acceptedHtlcs max=${commitments.remoteParams.maxAcceptedHtlcs}")
+    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
+    if (acceptedHtlcs > commitments1.remoteParams.maxAcceptedHtlcs) {
+      throw new RuntimeException(s"reached counterparty's max accepted htlc count limit: value=$acceptedHtlcs max=${commitments1.remoteParams.maxAcceptedHtlcs}")
     }
 
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
-    val available = reduced.toRemoteMsat - commitments.remoteParams.channelReserveSatoshis * 1000
-    if (cmd.amountMsat > available) {
-      throw new RuntimeException(s"insufficient funds: to-local=${reduced.toRemoteMsat / 1000} reserve=${commitments.remoteParams.channelReserveSatoshis} available=${available / 1000}")
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
+    val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
+    val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
+    if (missing < 0) {
+      throw new RuntimeException(s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.remoteParams.channelReserveSatoshis} fees=$fees")
     }
 
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
-    val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     (commitments1, add)
   }
 
@@ -113,26 +115,28 @@ object Commitments extends Logging {
       throw new RuntimeException(s"htlc value too small: min=${commitments.localParams.htlcMinimumMsat}")
     }
 
-    // let's compute the current commitment *as seen by us* including all pending changes
-    val reduced = CommitmentSpec.reduce(commitments.localCommit.spec, commitments.localChanges.acked, commitments.remoteChanges.proposed)
+    // let's compute the current commitment *as seen by us* including this change
+    val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
+    val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
-    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum + add.amountMsat
-    if (htlcValueInFlight > commitments.localParams.maxHtlcValueInFlightMsat) {
-      throw new RuntimeException(s"in-flight htlcs hold too much value: value=$htlcValueInFlight max=${commitments.localParams.maxHtlcValueInFlightMsat}")
+    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
+    if (htlcValueInFlight > commitments1.localParams.maxHtlcValueInFlightMsat) {
+      throw new RuntimeException(s"in-flight htlcs hold too much value: value=$htlcValueInFlight max=${commitments1.localParams.maxHtlcValueInFlightMsat}")
     }
 
-    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN) + 1
-    if (acceptedHtlcs > commitments.localParams.maxAcceptedHtlcs) {
-      throw new RuntimeException(s"too many accepted htlcs: value=$acceptedHtlcs max=${commitments.localParams.maxAcceptedHtlcs}")
+    val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
+    if (acceptedHtlcs > commitments1.localParams.maxAcceptedHtlcs) {
+      throw new RuntimeException(s"too many accepted htlcs: value=$acceptedHtlcs max=${commitments1.localParams.maxAcceptedHtlcs}")
     }
 
-    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty
-    val available = reduced.toRemoteMsat - commitments.localParams.channelReserveSatoshis * 1000
-    if (add.amountMsat > available) {
-      throw new RuntimeException(s"insufficient funds: to-remote=${reduced.toRemoteMsat / 1000} reserve=${commitments.localParams.channelReserveSatoshis} available=${available / 1000}")
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
+    val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
+    if (missing < 0) {
+      throw new RuntimeException(s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.localParams.channelReserveSatoshis} fees=$fees")
     }
 
-    addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
+    commitments1
   }
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) = {
