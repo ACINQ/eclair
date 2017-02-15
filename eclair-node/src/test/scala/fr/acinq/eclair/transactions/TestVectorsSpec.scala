@@ -4,6 +4,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -18,9 +19,10 @@ class TestVectorsSpec extends FunSuite {
 
    # import block #1 (you already have the genesis block #0, using the debug console:
    submitblock 0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910faf2d96b7d903bc86c5dd4b609ceee6ab0ca396cac66c2eac1f671d87a5bd3eed1b849458ffff7f20000000000102000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0200f2052a010000002321023699c8328fd3b3071558b651fb18c51e2ea93ebd0e507966b912cb1babf3ff97ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000
+   submitblock 0000002006226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910fadbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fdc30f9858ffff7f20000000000101000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000
 
    # import the private key that can be used to spend the coinbase tx in block #1
-   importprivkey cR3LefrJ1cM4D5H4UVpSdgNRrX9nVM22EAQDSNj1H3fPhcUJ4GRv
+   importprivkey cRCH7YNcarfvaiY1GWUKQrRGmoezvfAiqHtdRvxe16shzbd7LDMz
 
    # generate 499 blocks. this is necessay to activate segwit. You can check its activation status wth getblockchaininfo
    generate 500
@@ -48,28 +50,25 @@ class TestVectorsSpec extends FunSuite {
   }
 
   /*
- <!-- We derive the test vector values as per Key Derivation, though it's not
-    required for this test.  They're included here for completeness and
-  in case someone wants to reproduce the test vectors themselves:
+   <!-- We derive the test vector values as per Key Derivation, though it's not
+      required for this test.  They're included here for completeness and
+    in case someone wants to reproduce the test vectors themselves:
 
- INTERNAL: remote_funding_privkey: 1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e130101
- INTERNAL: local_payment_basepoint_secret: 111111111111111111111111111111111111111111111111111111111111111101
- INTERNAL: local_revocation_basepoint_secret: 222222222222222222222222222222222222222222222222222222222222222201
- INTERNAL: local_delayed_payment_basepoint_secret: 333333333333333333333333333333333333333333333333333333333333333301
- INTERNAL: remote_payment_basepoint_secret: 444444444444444444444444444444444444444444444444444444444444444401
- x_local_per_commitment_secret: 1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010001
- INTERNAL: remote_per_commit_secret: 444444444444444444444444444444444444444444444444444444444444444401
- # From local_revocation_basepoint_secret
- INTERNAL: local_revocation_basepoint: 02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27
- # From local_delayed_payment_basepoint_secret
- INTERNAL: local_delayed_payment_basepoint: 023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1
- INTERNAL: local_per_commitment_point: 025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486
- INTERNAL: remote_per_commitment_point: 022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325
- INTERNAL: remote_secretkey: 839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01
- # From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
- INTERNAL: local_delayed_secretkey: adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01
--->
-
+  INTERNAL: remote_funding_privkey: 1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e130101
+  INTERNAL: local_payment_basepoint_secret: 111111111111111111111111111111111111111111111111111111111111111101
+  INTERNAL: local_revocation_basepoint_secret: 222222222222222222222222222222222222222222222222222222222222222201
+  INTERNAL: local_delayed_payment_basepoint_secret: 333333333333333333333333333333333333333333333333333333333333333301
+  INTERNAL: remote_payment_basepoint_secret: 444444444444444444444444444444444444444444444444444444444444444401
+  x_local_per_commitment_secret: 1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a0908070605040302010001
+  # From local_revocation_basepoint_secret
+  INTERNAL: local_revocation_basepoint: 02466d7fcae563e5cb09a0d1870bb580344804617879a14949cf22285f1bae3f27
+  # From local_delayed_payment_basepoint_secret
+  INTERNAL: local_delayed_payment_basepoint: 023c72addb4fdf09af94f0c94d7fe92a386a7e70cf8a1d85916386bb2535c7b1b1
+  INTERNAL: local_per_commitment_point: 025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486
+  INTERNAL: remote_secretkey: 839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01
+  # From local_delayed_payment_basepoint_secret, local_per_commitment_point and local_delayed_payment_basepoint
+  INTERNAL: local_delayed_secretkey: adf3464ce9c2f230fd2582fda4c6965e4993ca5524e8c9580e3df0cf226981ad01
+  -->
   */
 
   object Remote {
@@ -82,12 +81,12 @@ class TestVectorsSpec extends FunSuite {
     val revocation_basepoint = revocation_basepoint_secret.toPoint
     val funding_privkey = PrivateKey(BinaryData("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301"))
     val funding_pubkey = funding_privkey.publicKey
-    val private_key = PrivateKey(BinaryData("839ad0480cde69fc721fb8e919dcf20bc4f2b3374c7b27ff37f200ddfa7b0edb01"))
+    val private_key = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
     val public_key = private_key.publicKey
     val per_commitment_point = Point(BinaryData("022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325"))
   }
 
-  val coinbaseTx = Transaction.read("02000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0200f2052a010000002321023699c8328fd3b3071558b651fb18c51e2ea93ebd0e507966b912cb1babf3ff97ac0000000000000000266a24aa21a9ede2f61c3f71d1defd3fa999dfa36953755c690689799962b48bebd836974e8cf900000000")
+  val coinbaseTx = Transaction.read("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff03510101ffffffff0100f2052a010000001976a9143ca33c2e4446f4a305f23c80df8ad1afdcf652f988ac00000000")
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
   val fundingAmount = fundingTx.txOut(0).amount
@@ -149,7 +148,7 @@ class TestVectorsSpec extends FunSuite {
   def run(spec: CommitmentSpec) = {
     println(s"to_local_msat: ${spec.toLocalMsat}")
     println(s"to_remote_msat: ${spec.toRemoteMsat}")
-    println(s"feerate_per_kw: ${spec.feeRatePerKw}")
+    println(s"local_feerate_per_kw: ${spec.feeRatePerKw}")
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
@@ -161,23 +160,39 @@ class TestVectorsSpec extends FunSuite {
         spec)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
-      println(s"# local_signature = $local_sig")
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
-      println(s"# remote_signature = $remote_sig")
 
       Transactions.addSigs(tx, Local.funding_pubkey, Remote.funding_pubkey, local_sig, remote_sig)
     }
 
     val baseFee = Transactions.commitTxFee(Local.dustLimit, spec)
-    println(s"# base commitment transaction fee = $baseFee")
+    println(s"# base commitment transaction fee = ${baseFee.toLong}")
     val actualFee = fundingAmount - commitTx.tx.txOut.map(_.amount).sum
-    println(s"# actual commitment transaction fee = $actualFee")
+    println(s"# actual commitment transaction fee = ${actualFee.toLong}")
     commitTx.tx.txOut.map(txOut => {
       txOut.publicKeyScript.length match {
-        case 22 => println(s"# to-remote amount ${txOut.amount}")
-        case 34 => println(s"# to-local amount ${txOut.amount}")
+        case 22 => println(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.public_key})")
+        case 34 =>
+          val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
+          if (index == -1) println(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_key, Local.toSelfDelay, Local.delayed_key))}")
+          else println(s"# HTLC ${if (htlcs(index).direction == OUT) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
+
+    {
+      val tx = Transactions.makeCommitTx(
+        commitmentInput,
+        Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
+        true, Local.dustLimit,
+        Local.public_key, Local.revocation_key, Local.toSelfDelay, Local.delayed_key,
+        Remote.public_key,
+        spec)
+
+      val local_sig = Transactions.sign(tx, Local.funding_privkey)
+      println(s"# local_signature = $local_sig")
+      val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
+      println(s"remote_signature: $remote_sig")
+    }
 
     assert(Transactions.getCommitTxNumber(commitTx.tx, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -191,168 +206,192 @@ class TestVectorsSpec extends FunSuite {
       Remote.public_key,
       spec)
 
-    val hlcTimeoutTxs = for (i <- 0 until unsignedHtlcTimeoutTxs.length) yield {
-      val tx = unsignedHtlcTimeoutTxs(i)
-      val localSig = Transactions.sign(tx, Local.private_key)
-      val remoteSig = Transactions.sign(tx, Remote.private_key)
-      val tx1 = Transactions.addSigs(tx, localSig, remoteSig)
-      Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      println(s"# htlc timeout tx $i spends commit tx output ${tx.input.outPoint.index} amount ${tx.input.txOut.amount}")
-      println(s"# htlc timeout tx $i local signature $localSig")
-      println(s"# htlc timeout tx $i remote signature $remoteSig")
-      println(s"# htlc timeout tx $i ${Transaction.write(tx1.tx)}")
-      tx1
-    }
+    println(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
+    val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)
 
-    val htlcSuccessTxs = for (i <- 0 until unsignedHtlcSuccessTxs.length) yield {
-      val tx = unsignedHtlcSuccessTxs(i)
-      val localSig = Transactions.sign(tx, Local.private_key)
-      val remoteSig = Transactions.sign(tx, Remote.private_key)
-      val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
-      val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage)
-      Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      println(s"# htlc success tx $i spends commit tx output ${tx.input.outPoint.index} amount ${tx.input.txOut.amount}")
-      println(s"# htlc success tx $i local signature $localSig")
-      println(s"# htlc success tx $i remote signature $remoteSig")
-      println(s"# htlc success tx $i ${Transaction.write(tx1.tx)}")
-      tx1
-    }
 
-    (commitTx, hlcTimeoutTxs, htlcSuccessTxs)
+    htlcTxs.map(_ match {
+      case tx: HtlcSuccessTx =>
+        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
+        println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
+        println(s"remote_htlc_signature: $remoteSig")
+      case tx: HtlcTimeoutTx =>
+        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
+        println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
+        println(s"remote_htlc_signature: $remoteSig")
+    })
+
+    val signedTxs = htlcTxs.map(_ match {
+      case tx: HtlcSuccessTx =>
+        //val tx = tx0.copy(tx = tx0.tx.copy(txOut = tx0.tx.txOut(0).copy(amount = Satoshi(545)) :: Nil))
+        val localSig = Transactions.sign(tx, Local.private_key)
+        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
+        val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage)
+        Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
+        println(s"# local signature $localSig")
+        println(s"output htlc_success_tx ${htlcIndex}: ${Transaction.write(tx1.tx)}")
+        tx1
+      case tx: HtlcTimeoutTx =>
+        val localSig = Transactions.sign(tx, Local.private_key)
+        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val tx1 = Transactions.addSigs(tx, localSig, remoteSig)
+        Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        println(s"# local signature $localSig")
+        val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
+        println(s"output htlc_timeout_tx ${htlcIndex}: ${Transaction.write(tx1.tx)}")
+        tx1
+    })
+
+    println
+    (commitTx, signedTxs)
   }
 
   test("simple commitment tx with no HTLCs") {
     println("name: simple commitment tx with no HTLCs")
     val spec = CommitmentSpec(htlcs = Set.empty, feeRatePerKw = 15000, toLocalMsat = 7000000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8002c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a03654a56a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040047304402205fdea103b8eb092e46362bbc8d80c790dd3756db2474baaf538bf96039a2670c02206dc19fb7e152382887018f5f76047d0b0d75e0876f06663a49c59d8f6d40895401483045022100f732ff890ea9af685f9577bd38f11ceb77f5ead254af663638bbf80bbfa180da022005bb3493d2ba28e6ea43db36d156f5c2befa5de469d118a321a3fd3f3f356dcd01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8002c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311054a56a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400473044022051b75c73198c6deee1a875871c3961832909acd297c6b908d59e3319e5185a46022055c419379c5051a78d00dbbce11b5b664a0c22815fbcc6fcef6b1937c383693901483045022100f51d2e566a70ba740fc5d8c0f07b9b93d2ed741c3c0860c613173de7d39e7968022041376d520e9c0e1ad52248ddf4b22e12be8763007df977253ef45a4ca3bdb7c001475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with all 5 htlcs untrimmed (minimum feerate)") {
     println("name: commitment tx with all 5 htlcs untrimmed (minimum feerate")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 0, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8007e80300000000000022002070b024855cc882f19cadb563400cb24cc07987c917daf702bb5b2e6f52e04318d0070000000000002200204117dad487a3c3bc07e34db505d567fcc263b30075f0b4679a1b27c297b4b147d007000000000000220020a736f71c05ae323c2d1821f88e8b3b5563f9048ad6d63b27ce528722eda10f14b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036e0a06a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400473044022002ae4ffeca449455d06bd20192d70a107b68faed1a57ba0702ca77755f9da32102202e667e6b079d7d529a3b33af89428e4469d7d58db609f8d678113b1be1f5153401483045022100b8aa92242b6f9f414b3d9c06d2bb03ae2d8b458232dae446ece5c250823e8619022078f1bf9d0fe59434517df3adf46acce524e79db6759e70ecce8cc26612bf5bbd01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8007e8030000000000002200207eaf624c3ab8f5cad0589f46db3fed940bf79a88fb5ab7fa3a6e1d071b5845bfd00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110e0a06a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100ce8a5a47e1377b7878c65209affe5645e400f0b834ddcbd2248a961c034686590220349d27b5a3bd2dac4117bdcf6a94449b0e4a5b179aef1d6b23f526081cdfe8ab014830450221008f60b91c64ffaeb498bca51827c378a5a0c3488888677cd8483b42bae7222269022028e7ff07936b62327bd43f5c27c2cbc28351242bcb3b4a9f77e0fc3ee8558c9301475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 7 outputs untrimmed (maximum feerate)") {
     println("name: commitment tx with 7 outputs untrimmed (maximum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 678, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8007e80300000000000022002070b024855cc882f19cadb563400cb24cc07987c917daf702bb5b2e6f52e04318d0070000000000002200204117dad487a3c3bc07e34db505d567fcc263b30075f0b4679a1b27c297b4b147d007000000000000220020a736f71c05ae323c2d1821f88e8b3b5563f9048ad6d63b27ce528722eda10f14b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036af9c6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100ce89d603b86ab055ad0546fe3e3407566598f6a671368223a0aaa449eb36a4b902204cc65a61c8f799b8e541d3190f3951bd2dbd5a4af36698ff469cc68dd2b696750147304402202e737723eaa3b291bbdf9e66623b2ca9a571034d92a0403c3140ada9d536c25f022012a21463bd9767f3645145fbd2507231908d4a76a5beb00d944da7b954e0ad7701475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8007e8030000000000002200207eaf624c3ab8f5cad0589f46db3fed940bf79a88fb5ab7fa3a6e1d071b5845bfd00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110b29c6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004830450221009fb6cb38db01817f77a5f973729948b8af0b3a6dad3429e2bd7a88b7b3d1de8b022025e1cd9f23dfe3f87e39e8c14fd054771758287e35aa1b4499de99427844abf201483045022100f46729e7a3126cf03d94691f814405b26cf896ecd6617d565aba6915c68de3a202204ca52c50b0c6fe424671b9986907f6180d8c65b289347fa02aac3c69065c6b9701475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 6 outputs untrimmed (minimum feerate)") {
     println("name: commitment tx with 6 outputs untrimmed (minimum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 679, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d0070000000000002200204117dad487a3c3bc07e34db505d567fcc263b30075f0b4679a1b27c297b4b147d007000000000000220020a736f71c05ae323c2d1821f88e8b3b5563f9048ad6d63b27ce528722eda10f14b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036229d6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004730440220241985f3095d908e8d92d935bc2fdfa2c06983c889c31c09dcedbc4336cc5086022056d0325ab2898ca9cd460c0f730ba027867d7ae58a10ab9bffc500652add187b01483045022100baadda7b5f7dfd01f26546d2cbdd570fc4325026ff4f981150ad7ca94ae3614e02206a0a999ae63d06550894ba4b2347e1b3ee52e8837496c7c92cb51a54950385d801475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110259d6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004830450221008acdee277c284cacc3c0b64b0724d459bcae09e3390cd36767f6a65bb265ccfe0220608b5459263c4a80fa30ca3901c08642df793d3048bf985df7da66d6dbb5d4b901473044022025a153b4c6310fa5f1825a077625054f993e07540149ef76f39d41fdbfa3432402202ff44666e56a9cfc3dbca68d26d2174f09a7aad9f2ca0741f3e7373686ff7c9d01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 6 outputs untrimmed (maximum feerate)") {
     println("name: commitment tx with 6 outputs untrimmed (maximum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2168, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 1454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d0070000000000002200204117dad487a3c3bc07e34db505d567fcc263b30075f0b4679a1b27c297b4b147d007000000000000220020a736f71c05ae323c2d1821f88e8b3b5563f9048ad6d63b27ce528722eda10f14b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036eb946a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040048304502210081e3e359864c94003bacf4c34cfac9a6698188aace28688b2329a2ff2bc6865b02206cdf48dd2ab4cc2e1049094857387646d995f7775cf22b53168769360a45f93f0148304502210088e8509b60534065e2097be1a4fc8590864850424f482306e33e4beef6c284ba022009a13b8984819c812f0dcacbcfc26c266d6c1a4c4ca966295896f75597a1eec701475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110f5946a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b42a3229202c8c5ddbff95efa6aa2d48c39b57d437ad4a8b2a917d11a3ca55ff02205bb9c65d06656222ced3bfd804145f658d1fa11804b20ef44962a9ea547bd6b701483045022100a9976e89763982487b7ff07a26347d398b9f19c0fb01046c8a787d7cd6068f440220224138e065ed31f248fd2756d3e209c0cab69ea5e1ede66d019e18072267284f01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 5 outputs untrimmed (minimum feerate)") {
     println("name: commitment tx with 5 outputs untrimmed (minimum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2169, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 1454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8005d007000000000000220020a736f71c05ae323c2d1821f88e8b3b5563f9048ad6d63b27ce528722eda10f14b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a0365f966a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100970682c827d19dc2c0b3a0dc5b5423ed9bbfdf70536177401da31d9edf050c2602200c6754465782f62ee48e95387c9a86b82ae4bd04813ddf0485a8646ab670f16c01483045022100c5b421beaa860fb40fa14127ce51b01f63f0359f3c6fb83a1fa9cfd78ce876c302204644c1fef1299ac051559c542aed6903bcd8c58c0587296e2d57025e4e354ba901475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8005d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311068966a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100bfcdea8720cb25031a4ffa9f44195b2b66922183af9fcf040281b60ebcaa1dac0220636987b0fbacd90ea9ba6262d675f97d77aeaf8808ed0aaeecca20991b19c7d501483045022100e7b45245c3b6079d0606000d1e340f6957621ab09fa8feb28ec69272851ed9650220299ecd0833d086d97a094b0e1b82be2b878fbd03b15616ee06e40ca8b909d84c01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 5 outputs untrimmed (maximum feerate)") {
     println("name: commitment tx with 5 outputs untrimmed (maximum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2294, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 1454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8005d007000000000000220020a736f71c05ae323c2d1821f88e8b3b5563f9048ad6d63b27ce528722eda10f14b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036c4956a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004730440220412f4f5e7738e0822e87093570297b4be7f486f0dd5e204ba59d3fe9732686f4022048734cbdaf8a8a29a0dbcbb11a47a2b913a15d83eac3eca2fe82a8a62fd0958f0147304402207e387e7e3646ba0cd45db3e35a768d294cbb96f59225f3151cf12ae4856788c602203c3cb2dbc2d18425b5c78969a8a3e6ff179a0af6e26f7cd260981845184b0ffb01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8005d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110c8956a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b9174ba09413297731a39e245d1b7fda4cb363c333b58dd6f7f780b9ec2497f102205da2fca746fa0b4516f5e0d4d9cb8ecdf5cf241b44dd33c4b24e8313e844df72014730440220204316f3553a265922a99c207addeae456349e0aca229d809a526193d5ebd03002206bb618812f43efff52bbf48ca4cbb92529ef0bd6dcfaae4235ff8aebde1b121f01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 4 outputs untrimmed (minimum feerate)") {
     println("name: commitment tx with 4 outputs untrimmed (minimum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 2295, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 1454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a0364d976a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100a1a83337bc08abc2e1e0ec076fd8955cd52654c4fecfda5085f4c1a80a795c0502207803dc3e7a16714386ccca408716def503d4d06f04ce2db317035c1f561b949201483045022100e858d59c407479f1fbe64849ef80f5535848c9b509329fc3895357641720e67c02207c6018822d79c59a46416a790fd841deb78729a9fe129ef9b954480601a0ae3201475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311051976a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100e0b270640f8fd88e51f75c5142443b943e6a349671fa7eae0325bdaff86a87c40220009796bfc452cb6c49a3286defea2ac8efaf4721bcc643eb92a7e93bb9c5b4d30148304502210085ef217e4ee408810c1be4994bb671b2c4868c37169a3d853f8f122bdfb87be9022003188677686ebf025849b67ad49babff11325b5255fe9b608fbfac16722e47a401475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 4 outputs untrimmed (maximum feerate)") {
     println("name: commitment tx with 4 outputs untrimmed (maximum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 3872, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 2454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b0000000000002200205e984a3f84e6f0e09d7b3f4685c37f9c78eae32dd1a97e3fdd55d78e414d6c39a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036b9906a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100d102f5830a8c342028e6814b182945e8f5a089b2ee916c292a1b60b9dc65081902203c28957d11f8ebacd6ec4c7b7fa95c6f1dbe80a38d066625e1f1e906aca0ada501483045022100cfa71cb1cc0523056bc195ab9d41faf9fdbde3ea793fcf686b10da8a63893b490220102a99f828ae77aa5ddb1aeffb33196d13e552167ddd090b37667783f9d6d9da01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110c0906a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040048304502210080b66478598786deb4bdb9d49574012b0a8c988d5d784f14a42e9329569ae52802207276e265d0c3a86d97cfe97d6491a51c3c2013ff762fb1caced12d5b31f0029a01483045022100efb46b8a0ab766a7c81de0deb00985eed8a9928d055485ef12bd554cf8afa84e02207dfcff213f6e6c5ef4c369a0aaafadfcc9fad3a21a7888919cfeee114755d03d01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 3 outputs untrimmed (minimum feerate)") {
     println("name: commitment tx with 3 outputs untrimmed (minimum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 3873, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 2454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8003a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a03652936a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004730440220670c9bbffc08bf3b7afaa11b54b6da3a9ec2c104ad68c63a060200caeeb056ed02206c4f2e16735ad2517aa1051797cd90e1b684f1d7472948033308e3754dace6be0147304402204aea8340a74b1ad2ccc149db8cae4ea8ca87bee3874291f238a8b3575fb4d94702203885c9b27fa44819c02767a50536e7dde2badcbff58492abd71eeb158668128a01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8003a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311058936a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040047304402201923a8d7909f2c8708863ba70b2ba5c20939abffd603cf937c54129e5c6b28b2022018ca56507178141663fe1fac2a55d9e9b4278b8324a5f880464d3e6edbc44a1b01473044022045b6ce3604bbd13d2bf83d003f721dd726bfb8357e5a68b6f8a49db5a86faf48022070b95df3fadd1244c53cca7a62d1e128085d5138bd9b70be61662c09d4a6085301475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 3 outputs untrimmed (maximum feerate)") {
     println("name: commitment tx with 3 outputs untrimmed (maximum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 5149, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 3454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8003a00f00000000000022002024bec9455b911553c1200bbf925db2d5fe047130c80da32a7d05abb490996e22c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036db8e6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040047304402203ced9eb9d0ef8aed60615853a4c29c526b4f74515a763ad76d94d866192528ca0220301023778619919648a009809dfb45adb76f55cd83350c5461a0113a48eba85d01483045022100a1886113f74051fff92e6c549a5d39ace6b9ee51c6a6b86518ad4bb5d1158720022059421e01a12838946e03da07e29307c72bf8b486c9d80359e1235ec582a5f47901475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8003a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110e98e6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b413ebb50e942ae53fea93578a0122603b79af5b1daac71a35e52cc176e8247d022066eca652a57ec48eab57ebfe719dcf17aad8e0e746f4b0fb10bad866693e201401483045022100f7164661832d55b28789b7b63690bee01b43bde46fd713ca7e8747258b00d7410220602329a65ab366e99ec2c68b91acf7162fff7d61298e78472d1544d7dd2204a801475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 2 outputs untrimmed (minimum feerate)") {
     println("name: commitment tx with 2 outputs untrimmed (minimum feerate)")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 5150, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeRatePerKw = 3454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8002c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a03650926a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040047304402202f5f5d8b3abbbfab4781d7b18ea0bbe9f3fd0e4fb538afdfab61e269bc1921760220357518aa91c1cda40f24ec64f32e685427f886d40ab22b9c4f1df9b87746f10301483045022100bd729fa3790528e36f6518f5efdcedc0b0e25650e156ca5684960de37fd1cf9c022004069b1771651d8ea77ac18d1d86219a1b1bd46e635db85d3b73a8293e42c19101475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8002c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de8431105b926a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100fc35aae81065b76858d692233d20fd3b249fefbacc14eb4caf001a0347cc00670220613311610016742e609e19d1bc1e6b5a1f5ff9dc080f443633afdbc953c119c001483045022100c386d933436598ea7c33491ef464300a214cff27a0f7312d99ab3768326d7b8d02204df07a4f71c5dbd697032c50b9819f2519d604219a097dd0fab61377ece322a201475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 2 outputs untrimmed (maximum feerate)") {
     println("name: commitment tx with 2 outputs untrimmed (maximum feerate)")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651180, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b800222020000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80ec0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a0360400483045022100bab11758e8182f7957047c19033df1b8294bc623a474efe4e1eb6519e49c7147022018af25c278ed3e9809dbf7f0b132ffccce6ff7b59a4a67f507a3648c46e5b3e501473044022017f82cdb8e5b1c443afe9191efdde7aa742e8f03c265bdab7df18a74b30711a7022009a5b4c676778c6bda8d87db551ae5d89ac792aff62011734afa1caf4bc857dd01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b800222020000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80ec0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311004004730440220514f977bf7edc442de8ce43ace9686e5ebdc0f893033f13e40fb46c8b8c6e1f90220188006227d175f5c35da0b092c57bea82537aed89f7778204dc5bacf4f29f2b901473044022037f83ff00c8e5fb18ae1f918ffc24e54581775a20ff1ae719297ef066c71caa9022039c529cccd89ff6c5ed1db799614533844bd6d101da503761c45c713996e3bbd01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with 1 output untrimmed (minimum feerate)") {
     println("name: commitment tx with 1 output untrimmed (minimum feerate)")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651181, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8001c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036040047304402204788ebe839058b6d917999d82ffa7ad235710d49b8f99aea7c8d95fe60ecc26502200c6ad2bcec214d83e66570bf22fa383f8e71b8991cd63feea018d2cd610b86f6014830450221008dc967ec76f7a4837f00bdab1dc3e93c62cd28ec9931649dbb5f0b9105615bf702203fa4646c7f85b19d0bd4691a7ab89ee7243aa6f14a3a3744bed6fd6e0b6b17b901475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8001c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de8431100400473044022031a82b51bd014915fe68928d1abf4b9885353fb896cac10c3fdd88d7f9c7f2e00220716bda819641d2c63e65d3549b6120112e1aeaf1742eed94a471488e79e206b101473044022064901950be922e62cbe3f2ab93de2b99f37cff9fc473e73e394b27f88ef0731d02206d1dfa227527b4df44a07599289e207d6fd9cca60c0365682dcd3deaf739567e01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 
   test("commitment tx with fee greater than funder amount") {
     println("name: commitment tx with fee greater than funder amount")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651936, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
-    val (commitTx, hlcTimeoutTxs, htlcSuccessTxs) = run(spec)
+    val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8001c0c62d0000000000160014e2f14ead9ca9a2f4c8b8a3f9bd109762ed33a036040047304402204788ebe839058b6d917999d82ffa7ad235710d49b8f99aea7c8d95fe60ecc26502200c6ad2bcec214d83e66570bf22fa383f8e71b8991cd63feea018d2cd610b86f6014830450221008dc967ec76f7a4837f00bdab1dc3e93c62cd28ec9931649dbb5f0b9105615bf702203fa4646c7f85b19d0bd4691a7ab89ee7243aa6f14a3a3744bed6fd6e0b6b17b901475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8001c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de8431100400473044022031a82b51bd014915fe68928d1abf4b9885353fb896cac10c3fdd88d7f9c7f2e00220716bda819641d2c63e65d3549b6120112e1aeaf1742eed94a471488e79e206b101473044022064901950be922e62cbe3f2ab93de2b99f37cff9fc473e73e394b27f88ef0731d02206d1dfa227527b4df44a07599289e207d6fd9cca60c0365682dcd3deaf739567e01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
   }
 }
