@@ -319,24 +319,9 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => handleInformationLeak(d)
 
-    case Event(cmd: CMD_CLOSE, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
-      val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
-      blockchain ! PublishAsap(commitTx)
-      blockchain ! WatchConfirmed(self, commitTx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      // there can't be htlcs at this stage
-      val localCommitPublished = LocalCommitPublished(commitTx, None, Nil, Nil, Nil)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
+    case Event(cmd: CMD_CLOSE, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => spendLocalCurrent(d)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
-      log.error(s"peer sent $e, closing connection")
-      // see bolt #2: A node MUST fail the connection if it receives an err message
-      val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
-      blockchain ! PublishAsap(commitTx)
-      blockchain ! WatchConfirmed(self, commitTx.txid, d.params.minimumDepth, BITCOIN_LOCALCOMMIT_DONE)
-      // there can't be htlcs at this stage
-      // TODO: LocalCommitPublished.claimDelayedOutputTx should be defined
-      val localCommitPublished = LocalCommitPublished(commitTx, None, Nil, Nil, Nil)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => handleRemoteError(e, d)
   })
 
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
@@ -362,14 +347,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
-    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) =>
-      val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
-      blockchain ! PublishAsap(commitTx)
-      blockchain ! WatchConfirmed(self, commitTx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      // there can't be htlcs at this stage
-      // TODO: LocalCommitPublished.claimDelayedOutputTx should be defined
-      val localCommitPublished = LocalCommitPublished(commitTx, None, Nil, Nil, Nil)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
+    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) => spendLocalCurrent(d)
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
   })
@@ -394,17 +372,9 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
-    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) =>
-      val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
-      blockchain ! PublishAsap(commitTx)
-      blockchain ! WatchConfirmed(self, commitTx.txid, d.params.minimumDepth, BITCOIN_CLOSE_DONE)
-      // there can't be htlcs at this stage
-      // TODO: LocalCommitPublished.claimDelayedOutputTx should be defined
-      val localCommitPublished = LocalCommitPublished(commitTx, None, Nil, Nil, Nil)
-      goto(CLOSING) using DATA_CLOSING(d.commitments, localCommitPublished = Some(localCommitPublished))
+    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) => spendLocalCurrent(d)
 
-    case Event(e: Error, d: DATA_NORMAL)
-    => handleRemoteError(e, d)
+    case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
   })
 
 
