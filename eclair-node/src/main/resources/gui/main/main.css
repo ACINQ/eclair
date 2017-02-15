@@ -7,7 +7,7 @@
 	-fx-border-color: rgb(181,181,181);
 }
 .status-bar .separator:vertical {
-	-fx-padding: 0 1em;
+	-fx-padding: 0 5px;
 }
 
 .status-bar .separator:vertical .line {
@@ -17,7 +17,7 @@
 }
 
 .status-bar .label {
-	-fx-padding: 2px 0px 2px .5em;
+	-fx-padding: 2px 0px 2px 5px;
 	-fx-font-size: 12px;
 }
 
