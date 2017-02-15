@@ -4,8 +4,6 @@ package fr.acinq.eclair.gui
 import java.awt.TrayIcon.MessageType
 import java.awt.{SystemTray, TrayIcon}
 import java.io.{File, FileWriter}
-import java.time.LocalDateTime
-import java.time.format.{DateTimeFormatter, FormatStyle}
 import javafx.application.Platform
 import javafx.scene.control.TextArea
 
@@ -39,12 +37,10 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
     logger.info(s"sending $amountMsat to $rhash @ $nodeId")
     (paymentInitiator ? CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[String].onComplete {
       case Success(s) =>
-        val now = LocalDateTime.now.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT,FormatStyle.SHORT))
-        val message = s"Date: $now\nAmount (mSat): $amountMsat\nH: $rhash"
+        val message = s"Amount (mSat): $amountMsat\nH: $rhash"
         notification("Payment Successful", message, TrayIcon.MessageType.INFO)
       case Failure(t) =>
-        val now = LocalDateTime.now.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT,FormatStyle.SHORT))
-        val message = s"Date: $now\nCause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $rhash"
+        val message = s"Cause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $rhash"
         notification("Payment Failed", message, TrayIcon.MessageType.WARNING)
     }
   }
