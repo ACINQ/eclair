@@ -112,12 +112,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144))
-      sender.expectMsg("insufficient funds: missing=1367483 reserve=20000 fees=0")
+      sender.expectMsg("insufficient funds: missing=1376443 reserve=20000 fees=8960")
       alice2bob.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 1/2)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, 400144))
@@ -126,11 +126,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, CMD_ADD_HTLC(200000000, "22" * 32, 400144))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
-      sender.send(alice, CMD_ADD_HTLC(80000000, "33" * 32, 400144))
+      sender.send(alice, CMD_ADD_HTLC(67600000, "33" * 32, 400144))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
-      sender.send(alice, CMD_ADD_HTLC(100000, "33" * 32, 400144))
-      sender.expectMsg("insufficient funds: missing=100 reserve=20000 fees=0")
+      sender.send(alice, CMD_ADD_HTLC(1000000, "44" * 32, 400144))
+      sender.expectMsg("insufficient funds: missing=1000 reserve=20000 fees=12400")
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -145,7 +145,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(500000000, "33" * 32, 400144))
-      sender.expectMsg("insufficient funds: missing=320000 reserve=20000 fees=0")
+      sender.expectMsg("insufficient funds: missing=332400 reserve=20000 fees=12400")
       alice2bob.expectNoMsg(200 millis)
     }
   }
