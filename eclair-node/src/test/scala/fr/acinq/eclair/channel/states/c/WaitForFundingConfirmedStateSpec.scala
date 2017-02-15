@@ -16,7 +16,7 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForFundingLockedInternalStateSpec extends TestkitBaseClass {
+class WaitForFundingConfirmedStateSpec extends TestkitBaseClass {
 
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
 
@@ -48,7 +48,7 @@ class WaitForFundingLockedInternalStateSpec extends TestkitBaseClass {
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.expectMsgType[PublishAsap]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     }
     test((alice, bob, alice2bob, bob2alice, alice2blockchain, blockchainA))
   }
@@ -60,7 +60,7 @@ class WaitForFundingLockedInternalStateSpec extends TestkitBaseClass {
       val msg = bob2alice.expectMsgType[FundingLocked]
       bob2alice.forward(alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL].deferred == Some(msg))
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     }
   }
 

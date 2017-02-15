@@ -33,7 +33,7 @@ case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_CREATED_INTERNAL extends State
 case object WAIT_FOR_FUNDING_CREATED extends State
 case object WAIT_FOR_FUNDING_SIGNED extends State
-case object WAIT_FOR_FUNDING_LOCKED_INTERNAL extends State
+case object WAIT_FOR_FUNDING_CONFIRMED extends State
 case object WAIT_FOR_FUNDING_LOCKED extends State
 case object WAIT_FOR_ANN_SIGNATURES extends State
 case object NORMAL extends State

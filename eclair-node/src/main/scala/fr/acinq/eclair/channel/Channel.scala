@@ -251,7 +251,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             commitInput, ShaChain.init, channelId = 0) // TODO: we will compute the channelId at the next step, so we temporarily put 0
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
-          goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -286,7 +286,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
             commitInput, ShaChain.init, channelId = 0)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
-          goto(WAIT_FOR_FUNDING_LOCKED_INTERNAL) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
+          goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, None)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -296,7 +296,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
       goto(CLOSED)
   })
 
-  when(WAIT_FOR_FUNDING_LOCKED_INTERNAL)(handleExceptions {
+  when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(msg: FundingLocked, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) =>
       log.info(s"received their FundingLocked, deferring message")
       stay using d.copy(deferred = Some(msg))
