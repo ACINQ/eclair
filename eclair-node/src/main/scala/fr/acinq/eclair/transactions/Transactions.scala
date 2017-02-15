@@ -63,8 +63,8 @@ object Transactions {
     */
 
   val commitWeight = 724
-  val htlcTimeoutWeight = 634
-  val htlcSuccessWeight = 671
+  val htlcTimeoutWeight = 635
+  val htlcSuccessWeight = 673
   val claimP2WPKHOutputWeight = 437
   val claimHtlcDelayedWeight = 482
   val claimHtlcSuccessWeight = 542

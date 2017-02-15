@@ -5,8 +5,6 @@ import java.awt.TrayIcon.MessageType
 import java.awt.{SystemTray, TrayIcon}
 import java.io.{File, FileWriter}
 import java.net.InetSocketAddress
-import java.time.LocalDateTime
-import java.time.format.{DateTimeFormatter, FormatStyle}
 import javafx.application.Platform
 import javafx.scene.control.TextArea
 
@@ -15,7 +13,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.utils.GUIValidators
-import fr.acinq.eclair.io.Client
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
@@ -47,12 +44,10 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
     logger.info(s"sending $amountMsat to $rhash @ $nodeId")
     (paymentInitiator ? CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[String].onComplete {
       case Success(s) =>
-        val now = LocalDateTime.now.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT,FormatStyle.SHORT))
-        val message = s"Date: $now\nAmount (mSat): $amountMsat\nH: $rhash"
+        val message = s"Amount (mSat): $amountMsat\nH: $rhash"
         notification("Payment Successful", message, TrayIcon.MessageType.INFO)
       case Failure(t) =>
-        val now = LocalDateTime.now.format(DateTimeFormatter.ofLocalizedDateTime(FormatStyle.SHORT,FormatStyle.SHORT))
-        val message = s"Date: $now\nCause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $rhash"
+        val message = s"Cause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $rhash"
         notification("Payment Failed", message, TrayIcon.MessageType.WARNING)
     }
   }
