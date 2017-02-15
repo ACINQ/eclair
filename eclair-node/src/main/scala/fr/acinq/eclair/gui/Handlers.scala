@@ -4,16 +4,19 @@ package fr.acinq.eclair.gui
 import java.awt.TrayIcon.MessageType
 import java.awt.{SystemTray, TrayIcon}
 import java.io.{File, FileWriter}
+import java.net.InetSocketAddress
 import java.time.LocalDateTime
 import java.time.format.{DateTimeFormatter, FormatStyle}
 import javafx.application.Platform
 import javafx.scene.control.TextArea
 
 import akka.pattern.ask
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Client
+import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
 
@@ -28,9 +31,14 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
 
   def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
     hostPort match {
-      case GUIValidators.hostRegex(pubkey, host, port) =>
-        logger.info(s"connecting to $host:$port")
-        system.actorOf(Client.props(host, port.toInt, pubkey, fundingSatoshis, pushMsat, register))
+      case GUIValidators.hostRegex(remoteNodeId, host, port) =>
+        logger.info(s"opening a channel with remoteNodeId=$remoteNodeId")
+        (setup.switchboard ? NewConnection(PublicKey(remoteNodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(fundingSatoshis, pushMsat)))).mapTo[String].onComplete {
+          case Success(s) => {}
+          case Failure(t) =>
+            val message = s"$host:$port"
+            notification("Connection failed", message, TrayIcon.MessageType.WARNING)
+        }
       case _ => {}
     }
   }

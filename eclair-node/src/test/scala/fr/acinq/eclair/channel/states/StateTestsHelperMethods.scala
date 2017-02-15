@@ -4,6 +4,7 @@ import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
@@ -22,12 +23,10 @@ trait StateTestsHelperMethods extends TestKitBase {
                   blockchainA: ActorRef,
                   alice2blockchain: TestProbe,
                   bob2blockchain: TestProbe): Unit = {
-    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
-    bob ! INPUT_INIT_FUNDEE()
-    alice2bob.expectMsgType[Init]
-    alice2bob.forward(bob)
-    bob2alice.expectMsgType[Init]
-    bob2alice.forward(alice)
+    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    alice ! INPUT_INIT_FUNDER(Bob.id, 0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, bobInit)
+    bob ! INPUT_INIT_FUNDEE(Alice.id, 0, Bob.channelParams, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]

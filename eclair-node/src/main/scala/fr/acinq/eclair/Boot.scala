@@ -8,14 +8,13 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Base58Check, BinaryData, MilliSatoshi, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi}
+import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
-import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.FxApp
-import fr.acinq.eclair.io.{Client, Server}
+import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -91,17 +90,15 @@ class Setup() extends Logging {
   val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(watcher), name = "router")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router), "payment-initiator")
-  val register = system.actorOf(Register.props(watcher, router, relayer, finalScriptPubKey), name = "register")
-  val server = system.actorOf(Server.props(config.getString("eclair.server.host"), config.getInt("eclair.server.port"), register), "server")
+  val switchboard = system.actorOf(Switchboard.props(watcher, router, relayer, finalScriptPubKey), name = "switchboard")
+  val server = system.actorOf(Server.props(switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
 
   val _setup = this
   val api = new Service {
-    override val register: ActorRef = _setup.register
+    override val switchboard: ActorRef = _setup.switchboard
     override val router: ActorRef = _setup.router
     override val paymentHandler: ActorRef = _setup.paymentHandler
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
-
-    override def connect(host: String, port: Int, pubkey: BinaryData, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): Unit = system.actorOf(Client.props(host, port, pubkey, fundingSatoshis, pushMsat, register))
   }
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port")) onFailure {
     case t: Throwable => system.eventStream.publish(HTTPBindError)

@@ -95,10 +95,10 @@ object PaymentLifecycle {
 
     val payloadsbin: Seq[BinaryData] = payloads
       .map(Codecs.perHopPayloadCodec.encode(_))
-        .map {
-          case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
-          case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
-        } :+ BinaryData("00" * 20)
+      .map {
+        case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
+        case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
+      } :+ BinaryData("00" * 20)
 
     Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, associatedData)
   }
@@ -106,7 +106,7 @@ object PaymentLifecycle {
   /**
     *
     * @param finalAmountMsat the final htlc amount in millisatoshis
-    * @param hops the hops as computed by the router
+    * @param hops            the hops as computed by the router
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
     *         - firstAmountMsat is the amount for the first htlc in the route
     *         - firstExpiry is the cltv expiry for the first htlc in the route

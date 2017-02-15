@@ -3,14 +3,12 @@ package fr.acinq.eclair.interop
 import java.nio.file.{Files, Paths}
 
 import akka.actor.{ActorRef, ActorSystem}
-import akka.pattern.ask
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.channel.Register.ListChannels
 import fr.acinq.eclair.channel.{CLOSED, CLOSING, CMD_ADD_HTLC, _}
 import org.json4s.JsonAST.JString
 import org.json4s.jackson.JsonMethods._
@@ -79,7 +77,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
 
   val setup = new Setup()
   implicit val system = setup.system
-  val register = setup.register
+  //val register = setup.register
 
   implicit val timeout = Timeout(30 seconds)
 
@@ -106,11 +104,11 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
     future
   }
 
-  def listChannels: Future[Iterable[RES_GETINFO]] = {
+  def listChannels: Future[Iterable[RES_GETINFO]] = ???/*{
     implicit val timeout = Timeout(5 seconds)
     (register ? ListChannels).mapTo[Iterable[ActorRef]]
       .flatMap(l => Future.sequence(l.map(c => (c ? CMD_GETINFO).mapTo[RES_GETINFO])))
-  }
+  }*/
 
   def waitForState(state: State): Future[Unit] = {
     listChannels.map(_.map(_.state)).flatMap(current =>

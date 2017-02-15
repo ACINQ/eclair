@@ -6,7 +6,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.{PeerWatcher, WatchConfirmed, WatchSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestkitBaseClass, TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -27,15 +27,13 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass {
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, router.ref, relayer.ref, Alice.channelParams, Bob.id))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, Bob.channelParams, Alice.id))
-    alice ! INPUT_INIT_FUNDER(TestConstants.fundingSatoshis, TestConstants.pushMsat)
-    bob ! INPUT_INIT_FUNDEE()
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, blockchainA, router.ref, relayer.ref))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref))
+    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice2bob.expectMsgType[Init]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[Init]
-      bob2alice.forward(alice)
+      alice ! INPUT_INIT_FUNDER(Bob.id, 0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, bobInit)
+      bob ! INPUT_INIT_FUNDEE(Alice.id, 0, Bob.channelParams, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]

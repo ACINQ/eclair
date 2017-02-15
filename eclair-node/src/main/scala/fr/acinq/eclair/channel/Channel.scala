@@ -9,7 +9,7 @@ import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment.Binding
-import fr.acinq.eclair.router.{Announcements, SendRoutingState}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
@@ -24,12 +24,12 @@ import scala.util.{Failure, Success, Try}
   */
 
 object Channel {
-  def props(them: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, localParams: LocalParams, theirNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None) = Props(new Channel(them, blockchain, router, relayer, localParams, theirNodeId, autoSignInterval))
+  def props(remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, autoSignInterval: Option[FiniteDuration] = None) = Props(new Channel(remote, blockchain, router, relayer, autoSignInterval))
 }
 
-class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, val localParams: LocalParams, remoteNodeId: PublicKey, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
-  context.system.eventStream.publish(ChannelCreated(self, localParams, remoteNodeId))
+  var remoteNodeId: PublicKey = null
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -69,25 +69,13 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(i@INPUT_INIT_FUNDER(fundingSatoshis, pushMsat), Nothing) if localParams.isFunder =>
-      them ! Init(globalFeatures = localParams.globalFeatures, localFeatures = localParams.localFeatures)
-      goto(WAIT_FOR_INIT) using DATA_WAIT_FOR_INIT(localParams, Left(i), autoSignInterval)
-
-    case Event(i@INPUT_INIT_FUNDEE(), Nothing) if !localParams.isFunder =>
-      them ! Init(globalFeatures = localParams.globalFeatures, localFeatures = localParams.localFeatures)
-      goto(WAIT_FOR_INIT) using DATA_WAIT_FOR_INIT(localParams, Right(i), autoSignInterval)
-  })
-
-  when(WAIT_FOR_INIT)(handleExceptions {
-    case Event(Init(remoteGlobalFeatures, remoteLocalFeatures), DATA_WAIT_FOR_INIT(localParams, Left(initFunder), autoSignInterval)) =>
-      val temporaryChannelId = Platform.currentTime
+    case Event(initFunder@INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), Nothing) =>
+      this.remoteNodeId = remoteNodeId
+      context.system.eventStream.publish(ChannelCreated(self, localParams, remoteNodeId))
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-      if (Features.requiresInitialRoutingSync(remoteLocalFeatures)) {
-        router ! SendRoutingState(them)
-      }
-      them ! OpenChannel(temporaryChannelId = temporaryChannelId,
-        fundingSatoshis = initFunder.fundingSatoshis,
-        pushMsat = initFunder.pushMsat,
+      remote ! OpenChannel(temporaryChannelId = temporaryChannelId,
+        fundingSatoshis = fundingSatoshis,
+        pushMsat = pushMsat,
         dustLimitSatoshis = localParams.dustLimitSatoshis,
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = localParams.channelReserveSatoshis,
@@ -100,27 +88,26 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
         paymentBasepoint = localParams.paymentKey.toPoint,
         delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis = initFunder.fundingSatoshis, pushMsat = initFunder.pushMsat, remoteGlobalFeatures = remoteGlobalFeatures, remoteLocalFeatures = remoteLocalFeatures, autoSignInterval = autoSignInterval)
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, autoSignInterval = autoSignInterval)
 
-    case Event(Init(remoteGlobalFeatures, remoteLocalFeatures), DATA_WAIT_FOR_INIT(localParams, Right(initFundee), autoSignInterval)) =>
-      if (Features.requiresInitialRoutingSync(remoteLocalFeatures)) {
-        router ! SendRoutingState(them)
-      }
-      goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(localParams, remoteGlobalFeatures = remoteGlobalFeatures, remoteLocalFeatures = remoteLocalFeatures, autoSignInterval = autoSignInterval)
+    case Event(inputFundee@INPUT_INIT_FUNDEE(remoteNodeId, _, localParams, _), Nothing) if !localParams.isFunder =>
+      this.remoteNodeId = remoteNodeId
+      context.system.eventStream.publish(ChannelCreated(self, localParams, remoteNodeId))
+      goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee, autoSignInterval = autoSignInterval)
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
-    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(localParams, remoteGlobalFeatures, remoteLocalFeatures, autoSignInterval)) =>
+    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, _, localParams, remoteInit), autoSignInterval)) =>
       Try(Funding.validateParams(open.channelReserveSatoshis, open.fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
-          them ! Error(open.temporaryChannelId, t.getMessage.getBytes)
+          remote ! Error(open.temporaryChannelId, t.getMessage.getBytes)
           goto(CLOSED)
         case Success(_) =>
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Globals.mindepth_blocks
           val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-          them ! AcceptChannel(temporaryChannelId = Platform.currentTime,
+          remote ! AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = localParams.channelReserveSatoshis,
@@ -145,8 +132,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
             revocationBasepoint = open.revocationBasepoint,
             paymentBasepoint = open.paymentBasepoint,
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
-            globalFeatures = remoteGlobalFeatures,
-            localFeatures = remoteLocalFeatures)
+            globalFeatures = remoteInit.globalFeatures,
+            localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
           val params = ChannelParams(
             localParams = localParams.copy(feeratePerKw = open.feeratePerKw), // funder gets to choose the first feerate
@@ -165,11 +152,11 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(temporaryChannelId, localParams, fundingSatoshis, pushMsat, remoteGlobalFeatures, remoteLocalFeatures, autoSignInterval)) =>
+    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(_, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), autoSignInterval)) =>
       Try(Funding.validateParams(accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
-          them ! Error(temporaryChannelId, t.getMessage.getBytes)
+          remote ! Error(temporaryChannelId, t.getMessage.getBytes)
           goto(CLOSED)
         case _ =>
           // TODO: check equality of temporaryChannelId? or should be done upstream
@@ -185,9 +172,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
             revocationBasepoint = accept.revocationBasepoint,
             paymentBasepoint = accept.paymentBasepoint,
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
-            globalFeatures = remoteGlobalFeatures,
-            localFeatures = remoteLocalFeatures
-          )
+            globalFeatures = remoteInit.globalFeatures,
+            localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
           val params = ChannelParams(
             localParams = localParams,
@@ -215,8 +201,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       // let's create the first commitment tx that spends the yet uncommitted funding tx
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(params, pushMsat, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
-      val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey) // signature of their initial commitment tx that pays them pushMsat
-      them ! FundingCreated(
+      val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, params.localParams.fundingPrivKey) // signature of their initial commitment tx that pays remote pushMsat
+      remote ! FundingCreated(
         temporaryChannelId = temporaryChannelId,
         txid = fundingTx.hash,
         outputIndex = fundingTxOutputIndex,
@@ -237,18 +223,18 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(params, pushMsat, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
       // check remote signature validity
-      val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
+      val localSigOfLocalTx = Transactions.sign(localCommitTx, params.localParams.fundingPrivKey)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivKey.publicKey, params.remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingCreated message contains an invalid signature")
-          them ! Error(temporaryChannelId, cause.getMessage.getBytes)
+          remote ! Error(temporaryChannelId, cause.getMessage.getBytes)
           // we haven't anything at stake yet, we can just stop
           goto(CLOSED)
         case Success(_) =>
           log.info(s"signing remote tx: $remoteCommitTx")
-          val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
-          them ! FundingSigned(
+          val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, params.localParams.fundingPrivKey)
+          remote ! FundingSigned(
             temporaryChannelId = temporaryChannelId,
             signature = localSigOfRemoteTx
           )
@@ -278,12 +264,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
     case Event(FundingSigned(_, remoteSig), DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId, params, fundingTx, localSpec, localCommitTx, remoteCommit)) =>
       // we make sure that their sig checks out and that our first commit tx is spendable
-      val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
+      val localSigOfLocalTx = Transactions.sign(localCommitTx, params.localParams.fundingPrivKey)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, params.localParams.fundingPrivKey.publicKey, params.remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
-          them ! Error(temporaryChannelId, cause.getMessage.getBytes)
+          remote ! Error(temporaryChannelId, cause.getMessage.getBytes)
           // we haven't published anything yet, we can just stop
           goto(CLOSED)
         case Success(_) =>
@@ -318,15 +304,15 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex), d@DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId, params, commitments, deferred)) =>
       val channelId = toShortId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
       blockchain ! WatchLost(self, commitments.anchorId, params.minimumDepth, BITCOIN_FUNDING_LOST)
-      val nextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 1)
-      them ! FundingLocked(temporaryChannelId, channelId, nextPerCommitmentPoint)
+      val nextPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 1)
+      remote ! FundingLocked(temporaryChannelId, channelId, nextPerCommitmentPoint)
       deferred.map(self ! _)
       // TODO: htlcIdx should not be 0 when resuming connection
       goto(WAIT_FOR_FUNDING_LOCKED) using DATA_NORMAL(params, commitments.copy(channelId = channelId), None)
 
     // TODO: not implemented, maybe should be done with a state timer and not a blockchain watch?
     case Event(BITCOIN_FUNDING_TIMEOUT, _) =>
-      them ! Error(0, "Funding tx timed out".getBytes)
+      remote ! Error(0, "Funding tx timed out".getBytes)
       goto(CLOSED)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -365,7 +351,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       if (Features.isChannelPublic(d.params.localParams.localFeatures) && Features.isChannelPublic(d.params.remoteParams.localFeatures)) {
         val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
-        them ! AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
+        remote ! AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
         goto(WAIT_FOR_ANN_SIGNATURES) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)))
       } else {
         log.info(s"channel ${d.channelId} won't be announced")
@@ -509,7 +495,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
     case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d: DATA_NORMAL) =>
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) =>
-          them ! revocation
+          remote ! revocation
           // now that we have their sig, we should propagate the htlcs newly received
           (commitments1.localCommit.spec.htlcs -- d.commitments.localCommit.spec.htlcs)
             .filter(_.direction == IN)
@@ -552,18 +538,18 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(commitments)) {
           val (commitments1, commit) = Commitments.sendCommit(d.commitments)
-          them ! commit
+          remote ! commit
           commitments1
         } else commitments
         val shutdown = Shutdown(d.channelId, Script.write(params.localParams.defaultFinalScriptPubKey))
-        them ! shutdown
+        remote ! shutdown
         (shutdown, commitments2)
       }) match {
         case Success((localShutdown, commitments3))
           if (commitments3.remoteNextCommitInfo.isRight && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.localCommit.spec.htlcs.size == 0)
             || (commitments3.remoteNextCommitInfo.isLeft && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteNextCommitInfo.left.get.spec.htlcs.size == 0) =>
           val closingSigned = Closing.makeFirstClosingTx(params, commitments3, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          them ! closingSigned
+          remote ! closingSigned
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments3, localShutdown, remoteShutdown, closingSigned)
         case Success((localShutdown, commitments3)) =>
           goto(SHUTDOWN) using DATA_SHUTDOWN(params, commitments3, localShutdown, remoteShutdown)
@@ -643,12 +629,12 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       // TODO: we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
-          them ! revocation
+          remote ! revocation
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          them ! closingSigned
+          remote ! closingSigned
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success((commitments1, revocation)) =>
-          them ! revocation
+          remote ! revocation
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -659,7 +645,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
         case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
           val closingSigned = Closing.makeFirstClosingTx(params, commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          them ! closingSigned
+          remote ! closingSigned
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success(commitments1) =>
           stay using d.copy(commitments = commitments1)
@@ -694,7 +680,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.feeSatoshis), Satoshi(remoteClosingFee))
           val (_, closingSigned) = Closing.makeClosingTx(d.params, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
-          them ! closingSigned
+          remote ! closingSigned
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
             publishMutualClosing(signedClosingTx)
             goto(CLOSING) using DATA_CLOSING(d.commitments, ourSignature = Some(closingSigned), mutualClosePublished = Some(signedClosingTx))
@@ -747,23 +733,19 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
     case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
   }
 
-  when(CLOSED, stateTimeout = 30 seconds) {
+  when(CLOSED, stateTimeout = 10 seconds) {
     case Event(StateTimeout, _) =>
       log.info("shutting down")
       stop(FSM.Normal)
   }
 
-  when(ERR_INFORMATION_LEAK, stateTimeout = 30 seconds) {
+  when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds) {
     case Event(StateTimeout, _) =>
       log.info("shutting down")
       stop(FSM.Normal)
   }
 
   whenUnhandled {
-
-    case Event(msg: RoutingMessage, _) =>
-      router forward msg
-      stay
 
     case Event(WatchEventLost(BITCOIN_FUNDING_LOST), _) => goto(ERR_FUNDING_LOST)
 
@@ -778,8 +760,8 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
     case Event(CMD_GETINFO, _) =>
       sender ! RES_GETINFO(remoteNodeId, stateData match {
         // TODO
-        case c: DATA_WAIT_FOR_OPEN_CHANNEL => 0L
-        case c: DATA_WAIT_FOR_ACCEPT_CHANNEL => c.temporaryChannelId
+        case c: DATA_WAIT_FOR_OPEN_CHANNEL => c.initFundee.temporaryChannelId
+        case c: DATA_WAIT_FOR_ACCEPT_CHANNEL => c.initFunder.temporaryChannelId
         case c: DATA_WAIT_FOR_FUNDING_CREATED => c.temporaryChannelId
         case c: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL => c.temporaryChannelId
         case c: DATA_NORMAL => c.commitments.channelId
@@ -810,7 +792,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
    */
 
   def handleCommandSuccess(sender: ActorRef, msg: LightningMessage, newData: Data) = {
-    them ! msg
+    remote ! msg
     if (sender != self) {
       sender ! "ok"
     }
@@ -825,7 +807,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
 
   def handleLocalError(cause: Throwable, d: HasCommitments) = {
     log.error(cause, "")
-    them ! Error(0, cause.getMessage.getBytes)
+    remote ! Error(0, cause.getMessage.getBytes)
     spendLocalCurrent(d)
   }
 
@@ -925,7 +907,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
         log.warning(s"txid=${
           tx.txid
         } was a revoked commitment, publishing the penalty tx")
-        them ! Error(0, "Funding tx has been spent".getBytes)
+        remote ! Error(0, "Funding tx has been spent".getBytes)
 
         // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
         blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_PENALTY_DONE)
@@ -956,7 +938,7 @@ class Channel(val them: ActorRef, val blockchain: ActorRef, router: ActorRef, re
       d.commitments.anchorId
     } was spent !!")
     // TODO! channel id
-    them ! Error(0, "Funding tx has been spent".getBytes)
+    remote ! Error(0, "Funding tx has been spent".getBytes)
     // TODO: not enough
     val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
     blockchain ! PublishAsap(commitTx)

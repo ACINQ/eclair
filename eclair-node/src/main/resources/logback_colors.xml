@@ -18,6 +18,15 @@
         </encoder>
     </appender>
 
+    <appender name="RED" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %red(%msg) %ex{12}%n
+            </pattern>
+        </encoder>
+    </appender>
+
     <appender name="BLUE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
@@ -44,6 +53,10 @@
             </pattern>
         </encoder>
     </appender>
+
+    <logger name="fr.acinq.eclair.io.Peer" level="DEBUG" additivity="false">
+        <appender-ref ref="RED"/>
+    </logger>
 
     <logger name="fr.acinq.eclair.channel" level="DEBUG" additivity="false">
         <appender-ref ref="BLUE"/>

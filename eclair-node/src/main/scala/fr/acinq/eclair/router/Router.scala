@@ -170,7 +170,7 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
 
     case 'tick_broadcast =>
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
-      rebroadcast.foreach(context.actorSelection(Register.actorPathToTransportHandlers) ! _)
+      rebroadcast.foreach(context.actorSelection(Register.actorPathToPeers) ! _)
       context become main(nodes, channels, updates, Nil, awaiting, stash)
 
     case 'nodes => sender ! nodes.values

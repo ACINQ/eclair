@@ -8,8 +8,9 @@ import akka.testkit.{TestFSMRef, TestKit, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.payment.{NoopPaymentHandler, Relayer}
-import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.payment.NoopPaymentHandler
+import fr.acinq.eclair.wire.Init
+import fr.acinq.eclair.{Globals, TestBitcoinClient}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
@@ -35,11 +36,13 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     // we just bypass the relayer for this test
     val relayer = paymentHandler
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, router.ref, relayer, Alice.channelParams, Bob.id))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, router.ref, relayer, Bob.channelParams, Alice.id))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainA, router.ref, relayer))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, blockchainB, router.ref, relayer))
+    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
-    alice ! INPUT_INIT_FUNDER(2000000, 1000000000)
-    bob ! INPUT_INIT_FUNDEE()
+    alice ! INPUT_INIT_FUNDER(Bob.id, 0, 2000000, 1000000000, Alice.channelParams, bobInit)
+    bob ! INPUT_INIT_FUNDEE(Alice.id, 0, Bob.channelParams, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {
       awaitCond(alice.stateName == NORMAL)

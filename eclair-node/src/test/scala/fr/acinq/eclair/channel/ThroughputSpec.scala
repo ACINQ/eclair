@@ -9,7 +9,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.payment.Relayer
-import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -52,10 +52,13 @@ class ThroughputSpec extends FunSuite {
           context.become(run(h2r - htlc.paymentHash))
       }
     }), "payment-handler")
-    val router: ActorRef = ???
     val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler))
-    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, relayer, Alice.channelParams, Bob.id), "a")
-    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, relayer, Bob.channelParams, Alice.id), "b")
+    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, relayer), "a")
+    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, relayer), "b")
+    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
+    alice ! INPUT_INIT_FUNDER(Bob.id, 0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, bobInit)
+    bob ! INPUT_INIT_FUNDEE(Alice.id, 0, Bob.channelParams, aliceInit)
 
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {

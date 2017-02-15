@@ -1,5 +1,7 @@
 package fr.acinq.eclair.api
 
+import java.net.InetSocketAddress
+
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
@@ -11,14 +13,15 @@ import akka.pattern.ask
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.Register.{ListChannels, SendCommand}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
 import fr.acinq.eclair.router.ChannelDesc
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JDouble, JInt, JString}
+import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.{JValue, jackson}
 
 import scala.concurrent.duration._
@@ -47,9 +50,7 @@ trait Service extends Logging {
 
   import Json4sSupport.{json4sMarshaller, json4sUnmarshaller}
 
-  def connect(host: String, port: Int, pubkey: BinaryData, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi): Unit
-
-  def register: ActorRef
+  def switchboard: ActorRef
 
   def router: ActorRef
 
@@ -70,28 +71,31 @@ trait Service extends Logging {
           entity(as[JsonRPCBody]) {
             req =>
               val f_res: Future[AnyRef] = req match {
-                case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(anchor_amount) :: Nil) =>
-                  connect(host, port.toInt, BinaryData(pubkey), Satoshi(anchor_amount.toLong), MilliSatoshi(0))
+                case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: Nil) =>
+                  switchboard ! NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), None)
+                  Future.successful("ok")
+                case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(funding_amount) :: Nil) =>
+                  switchboard ! NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(funding_amount.toLong), MilliSatoshi(0))))
                   Future.successful("ok")
                 case JsonRPCBody(_, _, "info", _) =>
                   Future.successful(Status(Globals.Node.id))
-                case JsonRPCBody(_, _, "list", _) =>
+                /*case JsonRPCBody(_, _, "list", _) =>
                   (register ? ListChannels).mapTo[Iterable[ActorRef]]
-                    .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))
+                    .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))*/
                 case JsonRPCBody(_, _, "network", _) =>
                   (router ? 'channels).mapTo[Iterable[ChannelDesc]]
                 case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? CreatePayment(amount.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
-                case JsonRPCBody(_, _, "sign", JInt(channel) :: Nil) =>
+                /*case JsonRPCBody(_, _, "sign", JInt(channel) :: Nil) =>
                   (register ? SendCommand(channel.toLong, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
                   (register ? SendCommand(channel.toLong, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
                   (register ? SendCommand(channel.toLong, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
                 case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                  (register ? SendCommand(channel.toLong, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")
+                  (register ? SendCommand(channel.toLong, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")*/
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "info: display basic node information",
