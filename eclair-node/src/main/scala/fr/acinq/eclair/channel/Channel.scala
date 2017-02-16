@@ -146,9 +146,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      goto(CLOSED)
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
@@ -188,9 +186,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      goto(CLOSED)
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_FUNDING_CREATED_INTERNAL)(handleExceptions {
@@ -212,9 +208,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      goto(CLOSED)
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
@@ -256,9 +250,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      goto(CLOSED)
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
@@ -291,9 +283,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) =>
-      log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-      goto(CLOSED)
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -319,7 +309,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => handleInformationLeak(d)
 
-    case Event(cmd: CMD_CLOSE, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => spendLocalCurrent(d)
+    case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => spendLocalCurrent(d)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL) => handleRemoteError(e, d)
   })
@@ -347,7 +337,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
-    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) => spendLocalCurrent(d)
+    case Event(CMD_CLOSE(_), d: DATA_NORMAL) => spendLocalCurrent(d)
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
   })
@@ -372,7 +362,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_NORMAL) => handleInformationLeak(d)
 
-    case Event(cmd: CMD_CLOSE, d: DATA_NORMAL) => spendLocalCurrent(d)
+    case Event(CMD_CLOSE(_), d: DATA_NORMAL) => spendLocalCurrent(d)
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
   })
@@ -779,6 +769,12 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
     log.error(cause, "")
     remote ! Error(0, cause.getMessage.getBytes)
     spendLocalCurrent(d)
+  }
+
+  def handleRemoteErrorNoCommitments(e: Error) = {
+    // when there is no commitment yet, we just go to CLOSED state in case an error occurs
+    log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
+    goto(CLOSED)
   }
 
   def handleRemoteError(e: Error, d: HasCommitments) = {
