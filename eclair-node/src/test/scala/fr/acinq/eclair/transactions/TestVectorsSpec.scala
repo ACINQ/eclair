@@ -189,9 +189,9 @@ class TestVectorsSpec extends FunSuite {
         spec)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
-      println(s"# local_signature = $local_sig")
+      println(s"# local_signature = ${toHexString(local_sig.dropRight(1))}")
       val remote_sig = Transactions.sign(tx, Remote.funding_privkey)
-      println(s"remote_signature: $remote_sig")
+      println(s"remote_signature: ${toHexString(remote_sig.dropRight(1))}")
     }
 
     assert(Transactions.getCommitTxNumber(commitTx.tx, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
@@ -215,12 +215,12 @@ class TestVectorsSpec extends FunSuite {
         val remoteSig = Transactions.sign(tx, Remote.private_key)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
-        println(s"remote_htlc_signature: $remoteSig")
+        println(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
       case tx: HtlcTimeoutTx =>
         val remoteSig = Transactions.sign(tx, Remote.private_key)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
-        println(s"remote_htlc_signature: $remoteSig")
+        println(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
     })
 
     val signedTxs = htlcTxs.map(_ match {
@@ -232,7 +232,7 @@ class TestVectorsSpec extends FunSuite {
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
-        println(s"# local signature $localSig")
+        println(s"# local_signature = ${toHexString(localSig.dropRight(1))}")
         println(s"output htlc_success_tx ${htlcIndex}: ${Transaction.write(tx1.tx)}")
         tx1
       case tx: HtlcTimeoutTx =>
@@ -240,7 +240,7 @@ class TestVectorsSpec extends FunSuite {
         val remoteSig = Transactions.sign(tx, Remote.private_key)
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-        println(s"# local signature $localSig")
+        println(s"# local_signature = ${toHexString(localSig.dropRight(1))}")
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"output htlc_timeout_tx ${htlcIndex}: ${Transaction.write(tx1.tx)}")
         tx1
