@@ -33,7 +33,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       remoteNextCommitInfo: Either[RemoteCommit, Point],
+                       remoteNextCommitInfo: Either[(RemoteCommit, CommitSig), Point],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: Long) {
   def anchorId: BinaryData = commitInput.outPoint.txid
@@ -205,7 +205,7 @@ object Commitments extends Logging {
           htlcSignatures = htlcSigs.toList
         )
         val commitments1 = commitments.copy(
-          remoteNextCommitInfo = Left(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)),
+          remoteNextCommitInfo = Left((RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig)),
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
           remoteChanges = remoteChanges.copy(acked = Nil))
         (commitments1, commitSig)
@@ -278,7 +278,7 @@ object Commitments extends Logging {
     )
 
     // update our commitment data
-    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
+    val ourCommit1 = LocalCommit(index = localCommit.index + 1, spec, publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
     val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
@@ -294,7 +294,7 @@ object Commitments extends Logging {
     remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
-      case Left(theirNextCommit) =>
+      case Left((theirNextCommit, _)) =>
         // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig
         val (_, htlcTimeoutTxs, _) = makeRemoteTxs(theirNextCommit.index, localParams, remoteParams, commitInput, theirNextCommit.remotePerCommitmentPoint, theirNextCommit.spec)
         // then we sort and sign them
