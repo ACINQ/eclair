@@ -16,7 +16,7 @@ import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.MainController
 import fr.acinq.eclair.gui.stages.SplashStage
 import fr.acinq.eclair.router.NetworkEvent
-import fr.acinq.eclair.{Setup}
+import fr.acinq.eclair.Setup
 import grizzled.slf4j.Logging
 
 /**
@@ -25,6 +25,7 @@ import grizzled.slf4j.Logging
 class FxApp extends Application with Logging {
 
   override def start(primaryStage: Stage): Unit = {
+
 
     val icon = new Image("/gui/commons/images/eclair02.png", true)
     primaryStage.getIcons().add(icon)
@@ -37,20 +38,8 @@ class FxApp extends Application with Logging {
 
         try {
           val setup = new Setup()
-
-          // add icon in system tray
-          val awtIcon = Toolkit.getDefaultToolkit.createImage(getClass.getResource("/gui/commons/images/eclair02.png"))
-          val trayIcon = new TrayIcon(awtIcon, "Eclair")
-          trayIcon.setImageAutoSize(true)
-          if (SystemTray.isSupported()) {
-            try {
-              SystemTray.getSystemTray.add(trayIcon)
-            } catch {
-              case e: AWTException => logger.debug("Eclair could not be added to System Tray.")
-            }
-          }
-
-          val handlers = new Handlers(setup, trayIcon)
+          val systemTrayIcon = initSystemTrayIcon
+          val handlers = new Handlers(setup, systemTrayIcon)
           val controller = new MainController(handlers, primaryStage, setup, getHostServices)
           val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
@@ -84,18 +73,17 @@ class FxApp extends Application with Logging {
 
               primaryStage.setTitle("Eclair")
               primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
-                override def handle(event: WindowEvent): Unit = {
-                  SystemTray.getSystemTray.remove(trayIcon)
+                override def handle(event: WindowEvent) {
+                  SystemTray.getSystemTray.remove(systemTrayIcon.orNull)
                   System.exit(0)
                 }
               })
-              splashStage.close()
+              splashStage.close
               primaryStage.setScene(scene)
-              primaryStage.show()
-              addTrayIconActions(trayIcon, primaryStage)
+              primaryStage.show
+              systemTrayIcon.map(addTrayIconActions(_, primaryStage))
             }
           })
-
         } catch {
           case con: ConnectException => {
             logger.error(s"Error when connecting to bitcoin-core: ", con)
@@ -115,9 +103,29 @@ class FxApp extends Application with Logging {
           }
         }
       }
+    }).start
+  }
 
-    }).start()
-
+  /**
+    * Adds an icon to the system tray if the OS is Windows or MacOS.
+    * Returns the created tray icon as an Option.
+    */
+  private def initSystemTrayIcon: Option[TrayIcon] = {
+    System.getProperty("os.name").toLowerCase match {
+      case os if SystemTray.isSupported && (os.startsWith("windows") || os.startsWith("macosx") || os.startsWith("osx")) =>
+        // add icon in system tray
+        val awtIcon = Toolkit.getDefaultToolkit.createImage(getClass.getResource("/gui/commons/images/eclair02.png"))
+        val trayIcon = new TrayIcon(awtIcon, "Eclair")
+        trayIcon.setImageAutoSize(true)
+        try {
+          SystemTray.getSystemTray.add(trayIcon)
+          Option(trayIcon)
+        } catch {
+          case e: AWTException => logger.debug("Eclair could not be added to System Tray.")
+          None
+        }
+      case _ => None
+    }
   }
 
   /**
@@ -127,6 +135,7 @@ class FxApp extends Application with Logging {
     *   <li>Minimize the stage
     *   <li>Close the stage
     * </ul>
+    *
     * @param trayIcon the tray icon
     * @param stage the main app stage
     */

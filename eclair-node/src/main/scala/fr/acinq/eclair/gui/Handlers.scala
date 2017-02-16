@@ -22,7 +22,7 @@ import scala.util.{Failure, Success}
 /**
   * Created by PM on 16/08/2016.
   */
-class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
+class Handlers(setup: Setup, trayIcon: Option[TrayIcon]) extends Logging {
 
   import setup._
 
@@ -85,9 +85,10 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
     * @param showAppName true if you want the notification title to be preceded by "Eclair - ". True by default
     */
   def notification (title: String, message: String, messageType: TrayIcon.MessageType = MessageType.NONE, showAppName: Boolean = true) = {
+
     if (SystemTray.isSupported) {
       val smartTitle = if (showAppName) s"Eclair - $title" else title
-      trayIcon.displayMessage(smartTitle, message, messageType)
+      trayIcon.map(_.displayMessage(smartTitle, message, messageType))
     }
   }
 }
