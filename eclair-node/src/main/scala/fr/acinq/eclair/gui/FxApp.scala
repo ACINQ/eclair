@@ -26,11 +26,12 @@ class FxApp extends Application with Logging {
 
   override def start(primaryStage: Stage): Unit = {
 
+    val icon = new Image(getClass.getResource("/gui/commons/images/eclair02.png").toExternalForm, false)
+    primaryStage.getIcons.add(icon)
 
-    val icon = new Image("/gui/commons/images/eclair02.png", true)
-    primaryStage.getIcons().add(icon)
     val splashStage = new SplashStage()
     splashStage.initOwner(primaryStage)
+    splashStage.getIcons.add(icon)
     splashStage.show
 
     new Thread(new Runnable {
