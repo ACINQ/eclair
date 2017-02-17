@@ -20,9 +20,6 @@ class SplashStage() extends Stage() {
   initStyle(StageStyle.TRANSPARENT)
   setResizable(false)
 
-  val icon = new Image("/gui/commons/images/eclair02.png", false)
-  this.getIcons().add(icon)
-
   // get fxml/controller
   val splash = new FXMLLoader(getClass.getResource("/gui/splash/splash.fxml"))
   val root = splash.load[Parent]
