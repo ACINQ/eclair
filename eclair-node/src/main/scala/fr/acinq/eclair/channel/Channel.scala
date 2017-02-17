@@ -429,7 +429,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(params, commitments, _)) =>
+    case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(params, _, _)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success((commitments1, htlc)) =>
           relayer ! (htlc, fail)
@@ -472,7 +472,14 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Success(commitments1) =>
           // we forward HTLCs only when they have been committed by both sides
           // it always happen when we receive a revocation, because, we always sign our changes before they sign them
-          val newlySignedHtlcs = d.commitments.remoteChanges.signed.collect { case htlc: UpdateAddHtlc => relayer ! htlc }
+          d.commitments.remoteChanges.signed.collect {
+            case htlc: UpdateAddHtlc =>
+              log.info(s"relaying $htlc")
+              relayer ! htlc
+          }
+          if (d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
+            self ! CMD_SIGN
+          }
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -614,6 +621,9 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           remote ! closingSigned
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success(commitments1) =>
+          if (d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
+            self ! CMD_SIGN
+          }
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -768,21 +778,38 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(INPUT_RECONNECTED(r), d@DATA_NORMAL(_, commitments, _)) =>
       remote = r
+      log.info(s"resuming in state NORMAL")
       // first we reverse remote changes
+      log.info(s"reversing remote changes:")
+      commitments.remoteChanges.proposed.foreach(c => log.info(s"reversing $c"))
       val remoteChanges1 = commitments.remoteChanges.copy(proposed = Nil)
+      val remoteNextHtlcId1 = commitments.remoteNextHtlcId - commitments.remoteChanges.proposed.count(_.isInstanceOf[UpdateAddHtlc])
       commitments.remoteNextCommitInfo match {
         case Left(WaitForRevocation(_, commitSig, _)) =>
           // we had sent a CommitSig and didn't receive their RevokeAndAck
           // first we re-send the changes included in the CommitSig
+          log.info(s"re-sending signed changes:")
+          commitments.localChanges.signed.foreach(c => log.info(s"re-sending $c"))
           commitments.localChanges.signed.foreach(remote ! _)
           // then we re-send the CommitSig
+          log.info(s"re-sending commit-sig containing ${commitSig.htlcSignatures.size} htlcs")
           remote ! commitSig
         case Right(_) =>
-          require(commitments.localChanges.signed == 0, "there can't be local signed changes if we haven't sent a CommitSig")
+          require(commitments.localChanges.signed.size == 0, "there can't be local signed changes if we haven't sent a CommitSig")
       }
       // and finally we re-send the updates that were not included in a CommitSig
+      log.info(s"re-sending unsigned changes:")
+      commitments.localChanges.proposed.foreach(c => log.info(s"re-sending $c"))
       commitments.localChanges.proposed.foreach(remote ! _)
-      goto(NORMAL) using d.copy(commitments = commitments.copy(remoteChanges = remoteChanges1))
+      val commitments1 = commitments.copy(remoteChanges = remoteChanges1)
+      if (Commitments.localHasChanges(commitments1)) {
+        // if we have newly acknowledged changes let's sign them
+        self ! CMD_SIGN
+      }
+      log.info(s"resuming with commitments $commitments1")
+      log.info(s"local changes: ${commitments1.localChanges}")
+      log.info(s"remote changes: ${commitments1.remoteChanges}")
+      goto(NORMAL) using d.copy(commitments = commitments1)
   }
 
   when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds) {

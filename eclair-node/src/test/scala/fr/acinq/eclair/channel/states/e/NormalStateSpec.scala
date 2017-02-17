@@ -589,6 +589,27 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv RevokeAndAck (with reSignAsap=true)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      val (r2, htlc2) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      sender.send(alice, CMD_SIGN)
+      sender.expectNoMsg(300 millis)
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.left.toOption.get.reSignAsap === true)
+
+      // actual test starts here
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[CommitSig]
+    }
+  }
+
   test("recv RevokeAndAck (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
