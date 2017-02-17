@@ -240,7 +240,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
           val commitments = Commitments(params.localParams, params.remoteParams,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
-            LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
+            LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             commitInput, ShaChain.init, channelId = 0) // TODO: we will compute the channelId at the next step, so we temporarily put 0
@@ -272,7 +272,7 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
           val commitments = Commitments(params.localParams, params.remoteParams,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), remoteCommit,
-            LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil),
+            LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             commitInput, ShaChain.init, channelId = 0)
@@ -456,10 +456,6 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) =>
           remote ! revocation
-          // now that we have their sig, we should propagate the htlcs newly received
-          (commitments1.localCommit.spec.htlcs -- d.commitments.localCommit.spec.htlcs)
-            .filter(_.direction == IN)
-            .foreach(htlc => relayer ! htlc.add)
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
@@ -470,6 +466,9 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
         case Success(commitments1) =>
+          // we forward HTLCs only when they have been committed by both sides
+          // it always happen when we receive a revocation, because, we always sign our changes before they sign them
+          val newlySignedHtlcs = d.commitments.remoteChanges.signed.collect { case htlc: UpdateAddHtlc => relayer ! htlc}
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
