@@ -1,7 +1,5 @@
 package fr.acinq.eclair.gui
 
-import java.awt._
-import java.awt.event.{ActionEvent, ActionListener}
 import java.net.ConnectException
 import javafx.application.{Application, Platform}
 import javafx.event.EventHandler
@@ -38,9 +36,8 @@ class FxApp extends Application with Logging {
       override def run(): Unit = {
 
         try {
-          val setup = new Setup()
-          val systemTrayIcon = initSystemTrayIcon
-          val handlers = new Handlers(setup, systemTrayIcon)
+          val setup = new Setup
+          val handlers = new Handlers(setup)
           val controller = new MainController(handlers, primaryStage, setup, getHostServices)
           val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
@@ -75,14 +72,12 @@ class FxApp extends Application with Logging {
               primaryStage.setTitle("Eclair")
               primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
                 override def handle(event: WindowEvent) {
-                  SystemTray.getSystemTray.remove(systemTrayIcon.orNull)
                   System.exit(0)
                 }
               })
               splashStage.close
               primaryStage.setScene(scene)
               primaryStage.show
-              systemTrayIcon.map(addTrayIconActions(_, primaryStage))
             }
           })
         } catch {
@@ -105,83 +100,5 @@ class FxApp extends Application with Logging {
         }
       }
     }).start
-  }
-
-  /**
-    * Adds an icon to the system tray if the OS is Windows or MacOS.
-    * Returns the created tray icon as an Option.
-    */
-  private def initSystemTrayIcon: Option[TrayIcon] = {
-    System.getProperty("os.name").toLowerCase match {
-      case os if SystemTray.isSupported && (os.startsWith("windows") || os.startsWith("macosx") || os.startsWith("osx")) =>
-        // add icon in system tray
-        val awtIcon = Toolkit.getDefaultToolkit.createImage(getClass.getResource("/gui/commons/images/eclair02.png"))
-        val trayIcon = new TrayIcon(awtIcon, "Eclair")
-        trayIcon.setImageAutoSize(true)
-        try {
-          SystemTray.getSystemTray.add(trayIcon)
-          Option(trayIcon)
-        } catch {
-          case e: AWTException => logger.debug("Eclair could not be added to System Tray.")
-          None
-        }
-      case _ => None
-    }
-  }
-
-  /**
-    * Adds a popup menu to the system tray icon, if the system supports it, with the following actions:
-    * <ul>
-    *   <li>Open the stage (with menu item and double click on icon)
-    *   <li>Minimize the stage
-    *   <li>Close the stage
-    * </ul>
-    *
-    * @param trayIcon the tray icon
-    * @param stage the main app stage
-    */
-  private def addTrayIconActions (trayIcon: TrayIcon, stage: Stage): Unit = {
-    if (SystemTray.isSupported) {
-      Platform.setImplicitExit(false)
-
-      // create menu
-      val menu = new PopupMenu
-      val showItem = new MenuItem("Open Eclair")
-      showItem.setFont(Font.decode(null).deriveFont(Font.BOLD))
-      val minimizeItem = new MenuItem("Minimize")
-      val closeItem = new MenuItem("Close")
-      menu.add(showItem)
-      menu.add(minimizeItem)
-      menu.addSeparator
-      menu.add(closeItem)
-      trayIcon.setPopupMenu(menu)
-
-      // add actions listeners
-      trayIcon.addActionListener(new ActionListener {
-        override def actionPerformed(e: ActionEvent) = {
-          Platform.runLater(new Runnable {
-            // show the stage when the user double-clicks on tray icon
-            override def run() = stage.show
-          })
-        }
-      })
-      showItem.addActionListener(new ActionListener() {
-        override def actionPerformed(e: ActionEvent) = {
-          Platform.runLater(new Runnable {
-            override def run() = stage.show
-          })
-        }
-      })
-      minimizeItem.addActionListener(new ActionListener() {
-        override def actionPerformed(e: ActionEvent) = {
-          Platform.runLater(new Runnable {
-            override def run() = stage.hide
-          })
-        }
-      })
-      closeItem.addActionListener(new ActionListener {
-        override def actionPerformed(e: ActionEvent) = stage.fireEvent(new WindowEvent(stage, WindowEvent.WINDOW_CLOSE_REQUEST))
-      })
-    }
   }
 }

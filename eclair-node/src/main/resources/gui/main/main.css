@@ -78,6 +78,8 @@
 	-fx-faint-focus-color: transparent;
 }
 
+/* ---------- Table ---------- */
+
 .table-view {
     -fx-focus-color: transparent;
     -fx-faint-focus-color: transparent;
@@ -89,4 +91,40 @@
 
 .table-column:last-visible {
     -fx-background-insets: 0px, 0px 0px 1px 0, 1px 1px 2px 1px;
+}
+
+/* ---------- Notifications ---------- */
+
+.notifications-box {
+    -fx-background-color: transparent;
+    -fx-padding: 2em;
+}
+.notification-pane.grid {
+    -fx-background-color: #252525;
+    -fx-border-width: 0 0 0 5px;
+    -fx-padding: 1.5em;
+}
+.notification-pane .label {
+    -fx-text-fill: rgb(245, 245, 245);
+}
+.notification-pane .label.notification-title {
+    -fx-font-weight: bold;
+}
+.notification-pane .label.notification-body {
+    -fx-text-fill: rgb(200, 200, 200);
+}
+.button.notification-close {
+	-fx-background-color: transparent;
+	-fx-background-image: url("../commons/images/close.png");
+	-fx-background-repeat: no-repeat;
+	-fx-background-size: 12px;
+    -fx-background-position: center center;
+    -fx-border-color: transparent;
+	-fx-padding: 0;
+	-fx-translate-x: 10px;
+	-fx-translate-y: -10px;
+}
+.button.notification-close:hover,
+.button.notification-close:pressed {
+    -fx-background-color: #542b2b;
 }
