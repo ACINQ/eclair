@@ -56,7 +56,12 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
       // alice signs
-      sign(alice, bob, alice2bob, bob2alice)
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
@@ -210,17 +215,23 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  ignore("recv CMD_SIGN (while waiting for RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv CMD_SIGN (while waiting for RevokeAndAck)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
-      sender.send(alice, UpdateFulfillHtlc(0, 1, "12" * 32))
-      sender.send(alice, CMD_SIGN)
+      sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
       sender.expectMsg("ok")
-      alice2bob.expectMsgType[CommitSig]
-      awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("cannot sign until next revocation hash is received")
+      bob2alice.expectMsgType[UpdateFulfillHtlc]
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+      bob2alice.expectMsgType[CommitSig]
+      awaitCond(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isLeft)
+      val waitForRevocation = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.left.toOption.get
+      assert(waitForRevocation.reSignAsap === false)
+
+      // actual test starts here
+      sender.send(bob, CMD_SIGN)
+      sender.expectNoMsg(300 millis)
+      assert(bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo === Left(waitForRevocation))
     }
   }
 
@@ -267,18 +278,12 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv RevokeAndAck (with remaining htlcs on both sides)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
-      sign(bob, alice, bob2alice, alice2bob)
-      val sender = TestProbe()
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[CommitSig]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[RevokeAndAck]
+      // this will cause alice and bob to receive RevokeAndAcks
+      crossSign(bob, alice, bob2alice, alice2bob)
       // actual test starts here
-      bob2alice.forward(bob)
       assert(alice.stateName == SHUTDOWN)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 1)
-      awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 2)
+      awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 1)
     }
   }
 
@@ -286,13 +291,12 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
       fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
-      sign(bob, alice, bob2alice, alice2bob)
       val sender = TestProbe()
-      sender.send(alice, CMD_SIGN)
+      sender.send(bob, CMD_SIGN)
       sender.expectMsg("ok")
-      alice2bob.expectMsgType[CommitSig]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[RevokeAndAck]
       // actual test starts here
       bob2alice.forward(bob)
       assert(alice.stateName == SHUTDOWN)
@@ -305,13 +309,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
       fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
-      sign(bob, alice, bob2alice, alice2bob)
-      val sender = TestProbe()
-      sender.send(alice, CMD_SIGN)
-      sender.expectMsg("ok")
-      alice2bob.expectMsgType[CommitSig]
-      alice2bob.forward(bob)
-      bob2alice.expectMsgType[RevokeAndAck]
+      crossSign(bob, alice, bob2alice, alice2bob)
       // actual test starts here
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
@@ -417,8 +415,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // bob fulfills one of the pending htlc (just so that he can have a new sig)
       fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
       // bob and alice sign
-      sign(bob, alice, bob2alice, alice2bob)
-      sign(alice, bob, alice2bob, bob2alice)
+      crossSign(bob, alice, bob2alice, alice2bob)
       // bob now has a new commitment tx
 
       // bob published the revoked tx

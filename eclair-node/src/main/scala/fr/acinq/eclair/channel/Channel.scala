@@ -16,7 +16,7 @@ import fr.acinq.eclair.wire._
 import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Left, Success, Try}
 
 
 /**
@@ -24,10 +24,10 @@ import scala.util.{Failure, Success, Try}
   */
 
 object Channel {
-  def props(remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, autoSignInterval: Option[FiniteDuration] = None) = Props(new Channel(remote, blockchain, router, relayer, autoSignInterval))
+  def props(remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(remote, blockchain, router, relayer))
 }
 
-class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, autoSignInterval: Option[FiniteDuration] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
   var remote = r
   var remoteNodeId: PublicKey = null
@@ -90,16 +90,16 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       remote ! open
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, autoSignInterval = autoSignInterval, open)
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open)
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(remoteNodeId, _, localParams, _), Nothing) if !localParams.isFunder =>
       this.remoteNodeId = remoteNodeId
       context.system.eventStream.publish(ChannelCreated(context.parent, self, localParams, remoteNodeId))
-      goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee, autoSignInterval = autoSignInterval)
+      goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
-    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, _, localParams, remoteInit), autoSignInterval)) =>
+    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, _, localParams, remoteInit))) =>
       Try(Funding.validateParams(open.channelReserveSatoshis, open.fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
@@ -142,8 +142,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             localParams = localParams.copy(feeratePerKw = open.feeratePerKw), // funder gets to choose the first feerate
             remoteParams = remoteParams,
             fundingSatoshis = open.fundingSatoshis,
-            minimumDepth = minimumDepth,
-            autoSignInterval = autoSignInterval)
+            minimumDepth = minimumDepth)
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, params, open.pushMsat, open.firstPerCommitmentPoint, accept)
       }
 
@@ -153,7 +152,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(_, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), autoSignInterval, open)) =>
+    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(_, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), open)) =>
       Try(Funding.validateParams(accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
@@ -180,8 +179,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             localParams = localParams,
             remoteParams = remoteParams,
             fundingSatoshis = fundingSatoshis,
-            minimumDepth = accept.minimumDepth,
-            autoSignInterval = autoSignInterval)
+            minimumDepth = accept.minimumDepth)
           val localFundingPubkey = params.localParams.fundingPrivKey.publicKey
           blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubKey, Satoshi(params.fundingSatoshis))
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, params, pushMsat, accept.firstPerCommitmentPoint, open)
@@ -403,7 +401,6 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(add: UpdateAddHtlc, d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
         case Success(commitments1) =>
-          params.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -420,7 +417,6 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success((commitments1, htlc)) =>
           relayer ! (htlc, fulfill)
-          params.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -437,32 +433,33 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success((commitments1, htlc)) =>
           relayer ! (htlc, fail)
-          params.autoSignInterval.map(interval => context.system.scheduler.scheduleOnce(interval, self, CMD_SIGN))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
-    case Event(CMD_SIGN, d: DATA_NORMAL) if d.commitments.remoteNextCommitInfo.isLeft =>
-      // TODO: this is a temporary fix
-      log.info(s"already in the process of signing, delaying CMD_SIGN")
-      context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
-      stay
-
-    case Event(CMD_SIGN, d: DATA_NORMAL) if !Commitments.localHasChanges(d.commitments) =>
-      // nothing to sign, just ignoring
-      log.info("ignoring CMD_SIGN (nothing to sign)")
-      stay()
-
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
-      Try(Commitments.sendCommit(d.commitments)) match {
-        case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
-        case Failure(cause) => handleCommandError(sender, cause)
+      d.commitments.remoteNextCommitInfo match {
+        case _ if !Commitments.localHasChanges(d.commitments) =>
+          log.info("ignoring CMD_SIGN (nothing to sign)")
+          stay
+        case Right(_) =>
+          Try(Commitments.sendCommit(d.commitments)) match {
+            case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
+            case Failure(cause) => handleCommandError(sender, cause)
+          }
+        case Left(waitForRevocation) =>
+          log.info(s"already in the process of signing, will sign again as soon as possible")
+          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d: DATA_NORMAL) =>
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success((commitments1, revocation)) =>
           remote ! revocation
+          if (Commitments.localHasChanges(commitments1)) {
+            // if we have newly acknowledged changes let's sign them
+            self ! CMD_SIGN
+          }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
@@ -475,7 +472,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Success(commitments1) =>
           // we forward HTLCs only when they have been committed by both sides
           // it always happen when we receive a revocation, because, we always sign our changes before they sign them
-          val newlySignedHtlcs = d.commitments.remoteChanges.signed.collect { case htlc: UpdateAddHtlc => relayer ! htlc}
+          val newlySignedHtlcs = d.commitments.remoteChanges.signed.collect { case htlc: UpdateAddHtlc => relayer ! htlc }
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -513,7 +510,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       }) match {
         case Success((localShutdown, commitments3))
           if (commitments3.remoteNextCommitInfo.isRight && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.localCommit.spec.htlcs.size == 0)
-            || (commitments3.remoteNextCommitInfo.isLeft && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteNextCommitInfo.left.get._1.spec.htlcs.size == 0) =>
+            || (commitments3.remoteNextCommitInfo.isLeft && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteNextCommitInfo.left.get.nextRemoteCommit.spec.htlcs.size == 0) =>
           val closingSigned = Closing.makeFirstClosingTx(params, commitments3, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           remote ! closingSigned
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments3, localShutdown, remoteShutdown, closingSigned)
@@ -574,21 +571,19 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
-    case Event(CMD_SIGN, d: DATA_SHUTDOWN) if d.commitments.remoteNextCommitInfo.isLeft =>
-      // TODO: this is a temporary fix
-      log.info(s"already in the process of signing, delaying CMD_SIGN")
-      context.system.scheduler.scheduleOnce(100 milliseconds, self, CMD_SIGN)
-      stay
-
-    case Event(CMD_SIGN, d: DATA_SHUTDOWN) if !Commitments.localHasChanges(d.commitments) =>
-      // nothing to sign, just ignoring
-      log.info("ignoring CMD_SIGN (nothing to sign)")
-      stay()
-
     case Event(CMD_SIGN, d: DATA_SHUTDOWN) =>
-      Try(Commitments.sendCommit(d.commitments)) match {
-        case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
-        case Failure(cause) => handleCommandError(sender, cause)
+      d.commitments.remoteNextCommitInfo match {
+        case _ if !Commitments.localHasChanges(d.commitments) =>
+          log.info("ignoring CMD_SIGN (nothing to sign)")
+          stay
+        case Right(_) =>
+          Try(Commitments.sendCommit(d.commitments)) match {
+            case Success((commitments1, commit)) => handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
+            case Failure(cause) => handleCommandError(sender, cause)
+          }
+        case Left(waitForRevocation) =>
+          log.info(s"already in the process of signing, will sign again as soon as possible")
+          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown)) =>
@@ -601,6 +596,11 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success((commitments1, revocation)) =>
           remote ! revocation
+          if (Commitments.localHasChanges(commitments1)) {
+            // if we have newly acknowledged changes let's sign them
+            self ! CMD_SIGN
+          }
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -722,7 +722,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       // let's rebuild the previous state data
       val remoteInit = Init(params.remoteParams.globalFeatures, params.remoteParams.localFeatures)
       val initFunder = INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, params.fundingSatoshis, pushMsat, params.localParams, remoteInit)
-      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, params.autoSignInterval, lastSent)
+      goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, lastSent)
 
     case Event(INPUT_RECONNECTED(r), d: DATA_WAIT_FOR_FUNDING_CREATED) =>
       remote = r
@@ -771,7 +771,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       // first we reverse remote changes
       val remoteChanges1 = commitments.remoteChanges.copy(proposed = Nil)
       commitments.remoteNextCommitInfo match {
-        case Left((_, commitSig)) =>
+        case Left(WaitForRevocation(_, commitSig, _)) =>
           // we had sent a CommitSig and didn't receive their RevokeAndAck
           // first we re-send the changes included in the CommitSig
           commitments.localChanges.signed.foreach(remote ! _)

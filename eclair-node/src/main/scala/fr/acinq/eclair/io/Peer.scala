@@ -145,7 +145,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
 
   def createChannel(transport: ActorRef, temporaryChannelId: Long, funder: Boolean): (ActorRef, LocalParams) = {
     val localParams = makeChannelParams(temporaryChannelId, defaultFinalScriptPubKey, funder)
-    val channel = context.actorOf(Channel.props(transport, watcher, router, relayer, Some(Globals.autosign_interval)), s"channel-$temporaryChannelId")
+    val channel = context.actorOf(Channel.props(transport, watcher, router, relayer), s"channel-$temporaryChannelId")
     context watch channel
     (channel, localParams)
   }

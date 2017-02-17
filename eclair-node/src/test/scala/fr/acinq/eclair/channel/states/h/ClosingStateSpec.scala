@@ -37,11 +37,10 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
         val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
-        sign(alice, bob, alice2bob, bob2alice)
+        crossSign(alice, bob, alice2bob, bob2alice)
         val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
         fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
-        sign(bob, alice, bob2alice, alice2bob)
-        sign(alice, bob, alice2bob, bob2alice)
+        crossSign(bob, alice, bob2alice, alice2bob)
         val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
         bobCommitTx1 :: bobCommitTx2 :: Nil
       }).flatten
