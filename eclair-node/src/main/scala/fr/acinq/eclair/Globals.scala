@@ -42,7 +42,6 @@ object Globals {
   val fee_proportional_millionth = config.getInt("fee-proportional-millionth")
 
   val default_anchor_amount = 1000000
-  val autosign_interval = 300 milliseconds
 
   // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
   val max_reserve_to_funding_ratio = 0.05
