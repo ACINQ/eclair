@@ -40,8 +40,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
-      test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer))
     }
+    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer))
   }
 
   test("recv CMD_ADD_HTLC (empty origin)") { case (alice, _, alice2bob, _, _, _, relayer) =>
@@ -54,7 +54,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
       assert(htlc.id == 0 && htlc.paymentHash == h)
       awaitCond(alice.stateData == initialState.copy(
-        commitments = initialState.commitments.copy(localNextHtlcId = 1, localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil))))
+        commitments = initialState.commitments.copy(
+          localNextHtlcId = 1,
+          localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
+          unackedMessages = htlc :: Nil
+        )))
       relayer.expectMsg(Binding(htlc, origin = Local))
     }
   }
@@ -85,7 +89,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val htlc = alice2bob.expectMsgType[UpdateAddHtlc]
       assert(htlc.id == 0 && htlc.paymentHash == h)
       awaitCond(alice.stateData == initialState.copy(
-        commitments = initialState.commitments.copy(localNextHtlcId = 1, localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil))))
+        commitments = initialState.commitments.copy(
+          localNextHtlcId = 1,
+          localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
+          unackedMessages = htlc :: Nil)))
       relayer.expectMsg(Binding(htlc, origin = Relayed(originHtlc)))
     }
   }
@@ -180,7 +187,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
 
       // actual test starts here
       sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
@@ -316,7 +323,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       sender.send(alice, CMD_SIGN)
       sender.expectMsg("ok")
-      alice2bob.expectMsgType[CommitSig]
+      val commitSig = alice2bob.expectMsgType[CommitSig]
+      assert(commitSig.htlcSignatures.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isLeft)
     }
   }
@@ -655,7 +663,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(bob, CMD_FULFILL_HTLC(htlc.id, r))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-      awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
+      awaitCond(bob.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill),
+          unackedMessages = fulfill :: Nil)))
     }
   }
 
@@ -666,7 +677,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
       sender.send(bob, CMD_FULFILL_HTLC(42, r))
-      sender.expectMsg("unknown htlc id=42")
+      sender.expectMsg("requirement failed: unknown htlc id=42")
       assert(initialState == bob.stateData)
     }
   }
@@ -759,7 +770,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
-      awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+      awaitCond(bob.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
+          unackedMessages = fail :: Nil)))
     }
   }
 
@@ -826,12 +840,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
     }
   }
 
@@ -861,19 +875,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
     }
   }
 
   test("recv CMD_CLOSE (two in a row)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("closing already in progress")
     }

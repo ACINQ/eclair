@@ -17,9 +17,9 @@ case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessag
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
 case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
 case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: Seq[HtlcTxAndSigs])
-case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
+case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs, commit: CommitSig)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
-case class WaitForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, reSignAsap: Boolean = false)
+case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, reSignAsap: Boolean = false)
 // @formatter:on
 
 /**
@@ -34,7 +34,8 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       remoteNextCommitInfo: Either[WaitForRevocation, Point],
+                       remoteNextCommitInfo: Either[WaitingForRevocation, Point],
+                       unackedMessages: Seq[LightningMessage],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: Long) {
   def anchorId: BinaryData = commitInput.outPoint.txid
@@ -59,7 +60,9 @@ object Commitments extends Logging {
     * @return an updated commitment instance
     */
   private def addLocalProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
-    commitments.copy(localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal))
+  commitments.copy(
+    localChanges = commitments.localChanges.copy(proposed = commitments.localChanges.proposed :+ proposal),
+    unackedMessages = commitments.unackedMessages :+ proposal)
 
   private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
@@ -99,6 +102,9 @@ object Commitments extends Logging {
     (commitments1, add)
   }
 
+  def isOldAdd(commitments: Commitments, add: UpdateAddHtlc): Boolean = {
+    add.id < commitments.remoteNextHtlcId
+  }
 
   def receiveAdd(commitments: Commitments, add: UpdateAddHtlc): Commitments = {
     if (add.id != commitments.remoteNextHtlcId) {
@@ -140,22 +146,58 @@ object Commitments extends Logging {
     commitments1
   }
 
+  def isHtlcCrossSigned(commitments: Commitments, cmd: CMD_FULFILL_HTLC): Boolean = {
+    val remoteSigned = commitments.localCommit.spec.htlcs.exists(htlc => htlc.direction == IN && htlc.add.id == cmd.id)
+    val localSigned = commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && htlc.add.id == cmd.id)
+      case Right(_) => commitments.remoteCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && htlc.add.id == cmd.id)
+    }
+    if (!remoteSigned || !localSigned) {
+      logger.warn(
+        s"""htlc ${cmd.id} remoteSigned=$remoteSigned localSigned=$localSigned
+            |${specsToString(commitments)}""".stripMargin)
+    }
+    remoteSigned && localSigned
+  }
+
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) = {
+    require(isHtlcCrossSigned(commitments, cmd), s"unknown htlc id=${cmd.id}")
     commitments.localCommit.spec.htlcs.collectFirst { case u: Htlc if u.direction == IN && u.add.id == cmd.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
         (commitments1, fulfill)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${cmd.id}")
-      case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
+      case None => ??? // never happens
     }
   }
 
+  def isOldFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Boolean = {
+    commitments.remoteChanges.proposed.contains(fulfill) ||
+    commitments.remoteChanges.signed.contains(fulfill) ||
+    commitments.remoteChanges.acked.contains(fulfill)
+  }
+
+  def isHtlcCrossSigned(commitments: Commitments, fulfill: UpdateFulfillHtlc): Boolean = {
+    val remoteSigned = commitments.localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && htlc.add.id == fulfill.id)
+    val localSigned = commitments.remoteNextCommitInfo match {
+      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && htlc.add.id == fulfill.id)
+      case Right(_) => commitments.remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && htlc.add.id == fulfill.id)
+    }
+    if (!remoteSigned || !localSigned) {
+      logger.warn(
+        s"""htlc ${fulfill.id} remoteSigned=$remoteSigned localSigned=$localSigned
+            |${specsToString(commitments)}""".stripMargin)
+    }
+    remoteSigned && localSigned
+  }
+
   def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): (Commitments, UpdateAddHtlc) = {
+    require(isHtlcCrossSigned(commitments, fulfill), s"unknown htlc id=${fulfill.id}")
     commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.direction == IN && u.add.id == fulfill.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => (addRemoteProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
-      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO: we should fail the channel
+      case None => ??? // never happens
     }
   }
 
@@ -191,6 +233,9 @@ object Commitments extends Logging {
         throw new RuntimeException("cannot sign when there are no changes")
       case Right(remoteNextPerCommitmentPoint) =>
         // remote commitment will includes all local changes + remote acked changes
+        if (remoteCommit.spec.htlcs.size == 2 && localChanges.proposed.size >= 1) {
+          val a = 1
+        }
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
         val sig = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
@@ -205,14 +250,20 @@ object Commitments extends Logging {
           signature = sig,
           htlcSignatures = htlcSigs.toList
         )
+
         val commitments1 = commitments.copy(
-          remoteNextCommitInfo = Left(WaitForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig)),
+          remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig)),
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
-          remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
+          remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked),
+          unackedMessages = unackedMessages :+ commitSig)
         (commitments1, commitSig)
       case Left(_) =>
         throw new RuntimeException("cannot sign until next revocation hash is received")
     }
+  }
+
+  def isOldCommit(commitments: Commitments, commit: CommitSig): Boolean = {
+    commitments.localCommit.commit == commit
   }
 
   def receiveCommit(commitments: Commitments, commit: CommitSig): (Commitments, RevokeAndAck) = {
@@ -242,7 +293,9 @@ object Commitments extends Logging {
 
     // no need to compute htlc sigs if commit sig doesn't check out
     val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, sig, commit.signature)
-    if (Transactions.checkSpendable(signedCommitTx).isFailure) throw new RuntimeException("invalid sig")
+    if (Transactions.checkSpendable(signedCommitTx).isFailure) {
+      throw new RuntimeException("invalid sig")
+    }
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
     require(commit.htlcSignatures.size == sortedHtlcTxs.size, s"htlc sig count mismatch (received=${commit.htlcSignatures.size}, expected=${sortedHtlcTxs.size})")
@@ -279,14 +332,29 @@ object Commitments extends Logging {
     )
 
     // update our commitment data
-    val ourCommit1 = localCommit.copy(index = localCommit.index + 1, spec, publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
+    val ourCommit1 = LocalCommit(
+      index = localCommit.index + 1,
+      spec,
+      publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs),
+      commit = commit)
     val ourChanges1 = localChanges.copy(acked = Nil)
     val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
-    val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1)
+    // they have received our previous revocation (otherwise they wouldn't have sent a commit)
+    // so we can acknowledge the revocation
+    val unackedMessages1 = commitments.unackedMessages.filterNot(_.isInstanceOf[RevokeAndAck]) :+ revocation
+    val commitments1 = commitments.copy(localCommit = ourCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1, unackedMessages = unackedMessages1)
 
     logger.debug(s"current commit: index=${ourCommit1.index} htlc_in=${ourCommit1.spec.htlcs.filter(_.direction == IN).size} htlc_out=${ourCommit1.spec.htlcs.filter(_.direction == OUT).size} txid=${ourCommit1.publishableTxs.commitTx.tx.txid} tx=${Transaction.write(ourCommit1.publishableTxs.commitTx.tx)}")
 
     (commitments1, revocation)
+  }
+
+  def isOldRevocation(commitments: Commitments, revocation: RevokeAndAck): Boolean = {
+    commitments.remoteNextCommitInfo match {
+      case Right(point) if point == revocation.nextPerCommitmentPoint => true
+      case Left(waitForRevocation) if waitForRevocation.nextRemoteCommit.remotePerCommitmentPoint == revocation.nextPerCommitmentPoint => true
+      case _ => false
+    }
   }
 
   def receiveRevocation(commitments: Commitments, revocation: RevokeAndAck): Commitments = {
@@ -295,7 +363,7 @@ object Commitments extends Logging {
     remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
-      case Left(WaitForRevocation(theirNextCommit, _, _)) =>
+      case Left(WaitingForRevocation(theirNextCommit, _, _)) =>
         // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig
         val (_, htlcTimeoutTxs, _) = makeRemoteTxs(theirNextCommit.index, localParams, remoteParams, commitInput, theirNextCommit.remotePerCommitmentPoint, theirNextCommit.spec)
         // then we sort and sign them
@@ -313,11 +381,16 @@ object Commitments extends Logging {
         // and finally whe check the sigs
         require(signedHtlcTxs.forall(Transactions.checkSpendable(_).isSuccess), "bad sig")
 
+        // they have received our last commitsig (otherwise they wouldn't have replied with a revocation)
+        // so we can acknowledge all our previous updates and the commitsig
+        val unackedMessages1 = commitments.unackedMessages.drop(commitments.unackedMessages.indexWhere(_.isInstanceOf[CommitSig]) + 1)
+
         commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
           remoteChanges = remoteChanges.copy(signed = Nil),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
+          unackedMessages = unackedMessages1,
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index))
       case Right(_) =>
         throw new RuntimeException("received unexpected RevokeAndAck message")
@@ -342,6 +415,54 @@ object Commitments extends Logging {
     val commitTx = Transactions.makeCommitTx(commitmentInput, commitTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint, !localParams.isFunder, Satoshi(remoteParams.dustLimitSatoshis), remotePubkey, remoteRevocationPubkey, remoteParams.toSelfDelay, remoteDelayedPubkey, localPubkey, spec)
     val (htlcTimeoutTxs, htlcSuccessTxs) = Transactions.makeHtlcTxs(commitTx.tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, remoteParams.toSelfDelay, remotePubkey, remoteDelayedPubkey, localPubkey, spec)
     (commitTx, htlcTimeoutTxs, htlcSuccessTxs)
+  }
+
+  def msg2String(msg: LightningMessage): String = msg match {
+    case u: UpdateAddHtlc => s"add-${u.id}"
+    case u: UpdateFulfillHtlc => s"ful-${u.id}"
+    case u: UpdateFailHtlc => s"fail-${u.id}"
+    case _: UpdateFee => s"fee"
+    case _: CommitSig => s"sig"
+    case _: RevokeAndAck => s"rev"
+    case _: Error => s"err"
+    case _ => "???"
+  }
+
+  def toString(commitments: Commitments): String = {
+    import commitments._
+    s"""commitments:
+        |    localChanges:
+        |        proposed: ${localChanges.proposed.map(msg2String(_)).mkString(" ")}
+        |        signed: ${localChanges.signed.map(msg2String(_)).mkString(" ")}
+        |        acked: ${localChanges.acked.map(msg2String(_)).mkString(" ")}
+        |    remoteChanges:
+        |        proposed: ${remoteChanges.proposed.map(msg2String(_)).mkString(" ")}
+        |        acked: ${remoteChanges.acked.map(msg2String(_)).mkString(" ")}
+        |        signed: ${remoteChanges.signed.map(msg2String(_)).mkString(" ")}
+        |    nextHtlcId:
+        |        local: $localNextHtlcId
+        |        remote: $remoteNextHtlcId
+        |    unackedMessages:
+        |        ${unackedMessages.map(msg2String(_)).mkString(" ")}""".stripMargin
+  }
+
+  def specsToString(commitments: Commitments): String = {
+    s"""specs:
+        |localcommit:
+        |  toLocal: ${commitments.localCommit.spec.toLocalMsat}
+        |  toRemote: ${commitments.localCommit.spec.toRemoteMsat}
+        |  htlcs:
+        |${commitments.localCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
+        |remotecommit:
+        |  toLocal: ${commitments.remoteCommit.spec.toLocalMsat}
+        |  toRemote: ${commitments.remoteCommit.spec.toRemoteMsat}
+        |  htlcs:
+        |${commitments.remoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")}
+        |next remotecommit:
+        |  toLocal: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toLocalMsat).getOrElse("N/A")}
+        |  toRemote: ${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.toRemoteMsat).getOrElse("N/A")}
+        |  htlcs:
+        |${commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.map(h => s"    ${h.direction} ${h.add.id} ${h.add.expiry}").mkString("\n")).getOrElse("N/A")}""".stripMargin
   }
 }
 

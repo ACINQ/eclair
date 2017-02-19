@@ -1,7 +1,9 @@
 package fr.acinq.eclair
 
-import akka.actor.{Actor, ActorRef, Stash}
+import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
+import fr.acinq.eclair.channel.Commitments.msg2String
 import fr.acinq.eclair.channel.{INPUT_DISCONNECTED, INPUT_RECONNECTED}
+import fr.acinq.eclair.wire.LightningMessage
 
 /**
   * Handles a bi-directional path between 2 actors
@@ -9,7 +11,7 @@ import fr.acinq.eclair.channel.{INPUT_DISCONNECTED, INPUT_RECONNECTED}
   * a = new Channel(b)
   * b = new Channel(a)
   */
-class Pipe extends Actor with Stash {
+class Pipe extends Actor with Stash with ActorLogging {
 
   def receive = {
     case (a: ActorRef, b: ActorRef) =>
@@ -20,23 +22,33 @@ class Pipe extends Actor with Stash {
   }
 
   def connected(a: ActorRef, b: ActorRef): Receive = {
-    case msg if sender() == a => b forward msg
-    case msg if sender() == b => a forward msg
-    case msg@INPUT_DISCONNECTED =>
-      // used for fuzzy testing (eg: send Disconnected messages)
+    case msg: LightningMessage if sender() == a =>
+      log.debug(f"A ---${msg2String(msg)}%-6s--> B")
       b forward msg
+    case msg: LightningMessage if sender() == b =>
+      log.debug(f"A <--${msg2String(msg)}%-6s--- B")
       a forward msg
+    case msg@INPUT_DISCONNECTED =>
+      log.debug("DISCONNECTED")
+      // used for fuzzy testing (eg: send Disconnected messages)
+      a forward msg
+      b forward msg
       context become disconnected(a, b)
   }
 
   def disconnected(a: ActorRef, b: ActorRef): Receive = {
-    case msg if sender() == a => {} // dropped
-    case msg if sender() == b => {} // dropped
-    case msg: INPUT_RECONNECTED =>
+    case msg: LightningMessage if sender() == a =>
+      // dropped
+      log.info(f"A ---${msg2String(msg)}%-6s-X")
+    case msg: LightningMessage if sender() == b =>
+      // dropped
+      log.debug(f"  X-${msg2String(msg)}%-6s--- B")
+    case msg@INPUT_RECONNECTED(r) =>
+      log.debug(s"RECONNECTED with $r")
       // used for fuzzy testing (eg: send Disconnected messages)
-      b forward msg
       a forward msg
-      context become connected(a, b)
+      b forward msg
+      r ! (a, b)
 
   }
 }

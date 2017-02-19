@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel.states
 
-import akka.actor.{Actor, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -27,8 +27,8 @@ class NormalOfflineFuzzySpec extends TestkitBaseClass with StateTestsHelperMetho
     val alice2blockchain = TestProbe()
     val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
-    val relayerA = system.actorOf(Props(new FuzzyRelayer()))
-    val relayerB = system.actorOf(Props(new FuzzyRelayer()))
+    val relayerA = system.actorOf(Props(new FuzzyRelayer(410000)))
+    val relayerB = system.actorOf(Props(new FuzzyRelayer(420000)))
     val router = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, alice2blockchain.ref, router.ref, relayerA))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, bob2blockchain.ref, router.ref, relayerB))
@@ -60,7 +60,7 @@ class NormalOfflineFuzzySpec extends TestkitBaseClass with StateTestsHelperMetho
     test((alice, bob, pipe, relayerA, relayerB))
   }
 
-  class FuzzyRelayer() extends Actor {
+  class FuzzyRelayer(expiry: Int) extends Actor with ActorLogging {
 
     val paymentpreimage = BinaryData("42" * 32)
     val paymentHash = Crypto.sha256(paymentpreimage)
@@ -81,53 +81,71 @@ class NormalOfflineFuzzySpec extends TestkitBaseClass with StateTestsHelperMetho
         sender ! CMD_SIGN
 
       case (add: UpdateAddHtlc, fulfill: UpdateFulfillHtlc) =>
-        println(s"received fulfill for htlc ${fulfill.id}, htlcInFlight = ${htlcInFlight - 1}")
         if (htlcInFlight <= 1) {
           if (htlcSent < 100) {
+            log.info(s"already sent $htlcSent, inFlight=${htlcInFlight - 1}")
             self ! 'add
           } else {
             origin ! "done"
-            context stop self
           }
         }
-        context become main(origin, channel, htlcSent + 1, htlcInFlight - 1)
+        context become main(origin, channel, htlcSent, htlcInFlight - 1)
 
       case 'add =>
-        val cmds = for (i <- 0 to Random.nextInt(10)) yield CMD_ADD_HTLC(Random.nextInt(1000000), paymentHash, 400144)
-        println(s"sending ${cmds.size} htlcs")
+        val cmds = for (i <- 0 to Random.nextInt(10)) yield CMD_ADD_HTLC(Random.nextInt(1000000) + 1000, paymentHash, 400144)
+        //val cmds = CMD_ADD_HTLC(Random.nextInt(1000000), paymentHash, expiry) :: Nil
         cmds.foreach(channel ! _)
         channel ! CMD_SIGN
-        context become main(origin, channel, htlcSent + 1, htlcInFlight + cmds.size)
-
-      case 'sign =>
-        channel ! CMD_SIGN
+        context become main(origin, channel, htlcSent + cmds.size, htlcInFlight + cmds.size)
 
       case "ok" => {}
-
-      /*case paymentHash: BinaryData =>
-        for(i <- 0 until Random.nextInt(5))
-        channel ! CMD_ADD_HTLC(42000, paymentHash, 400144)
-        if (Random.nextInt(5) == 0) {
-          self ! 'sign
-        } else {
-          self ! 'add
-        }
-        context become main(htlcSent + 1)*/
 
     }
 
   }
 
-  test("fuzzy testing in NORMAL state with only one party sending HTLCs") {
+  test("fuzzy testing with only one party sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB) =>
       val sender = TestProbe()
       sender.send(relayerA, 'start)
       sender.send(relayerB, 'start)
       relayerA ! 'add
-      /*import scala.concurrent.ExecutionContext.Implicits.global
-      system.scheduler.scheduleOnce(2 seconds, pipe, INPUT_DISCONNECTED)
-      system.scheduler.scheduleOnce(5 seconds, pipe, INPUT_RECONNECTED(pipe))*/
-      println(sender.expectMsgType[String](1 hour))
+      import scala.concurrent.ExecutionContext.Implicits.global
+      var currentPipe = pipe
+
+      val task = system.scheduler.schedule(3 seconds, 3 seconds) {
+        currentPipe ! INPUT_DISCONNECTED
+        val newPipe = system.actorOf(Props(new Pipe()))
+        system.scheduler.scheduleOnce(500 millis) {
+          currentPipe ! INPUT_RECONNECTED(newPipe)
+          currentPipe = newPipe
+        }
+      }
+      sender.expectMsg(10 minutes, "done")
+      task.cancel()
+  }
+
+  test("fuzzy testing in with both parties sending HTLCs") {
+    case (alice, bob, pipe, relayerA, relayerB) =>
+      val sender = TestProbe()
+      sender.send(relayerA, 'start)
+      sender.send(relayerB, 'start)
+      relayerA ! 'add
+      relayerB ! 'add
+      import scala.concurrent.ExecutionContext.Implicits.global
+      var currentPipe = pipe
+
+      val task = system.scheduler.schedule(3 seconds, 3 seconds) {
+        currentPipe ! INPUT_DISCONNECTED
+        val newPipe = system.actorOf(Props(new Pipe()))
+        system.scheduler.scheduleOnce(500 millis) {
+          currentPipe ! INPUT_RECONNECTED(newPipe)
+          currentPipe = newPipe
+        }
+      }
+      sender.expectMsg(10 minutes, "done")
+      sender.expectMsg(10 minutes, "done")
+      task.cancel()
   }
 
 

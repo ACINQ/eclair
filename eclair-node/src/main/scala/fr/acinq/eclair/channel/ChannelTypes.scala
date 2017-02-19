@@ -6,9 +6,7 @@ import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
 import fr.acinq.eclair.payment.{Local, Origin}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
-
-import scala.concurrent.duration.FiniteDuration
+import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown}
 
 
 /**
@@ -132,7 +130,7 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: 
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(params: ChannelParams, commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_ANN_SIGNATURES(params: ChannelParams, commitments: Commitments, lastSent: AnnouncementSignatures) extends Data with HasCommitments
-final case class DATA_NORMAL(params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown]) extends Data with HasCommitments
+final case class DATA_NORMAL(params: ChannelParams, commitments: Commitments, unackedShutdown: Option[Shutdown]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(params: ChannelParams, commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(params: ChannelParams, commitments: Commitments,
