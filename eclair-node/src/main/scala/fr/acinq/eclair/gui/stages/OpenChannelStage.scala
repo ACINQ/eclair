@@ -15,7 +15,7 @@ import fr.acinq.eclair.gui.controllers.OpenChannelController
 class OpenChannelStage(handlers: Handlers, setup: Setup) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
-  getIcons().add(new Image("/gui/commons/images/eclair02.png", false))
+  getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
   setTitle("Open a new channel")
   setWidth(550)
   setHeight(350)

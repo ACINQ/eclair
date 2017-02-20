@@ -14,7 +14,7 @@ import fr.acinq.eclair.gui.controllers.AboutController
 class AboutStage(hostServices: HostServices) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
-  getIcons().add(new Image("/gui/commons/images/eclair02.png", false))
+  getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
   setTitle("About Eclair")
   setResizable(false)
 

@@ -15,7 +15,7 @@
     <children>
         <ImageView fx:id="imgBlurred" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="115.0" pickOnBounds="true" preserveRatio="true">
             <image>
-                <Image url="@../commons/images/eclair01-icon.png" />
+                <Image url="@../commons/images/eclair-fit.png" />
             </image>
             <effect>
                 <BoxBlur height="114.75" width="92.44" />
@@ -23,7 +23,7 @@
         </ImageView>
         <ImageView fx:id="img" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="114.0" opacity="0.0" pickOnBounds="true" preserveRatio="true">
             <image>
-                <Image url="@../commons/images/eclair01-icon.png" />
+                <Image url="@../commons/images/eclair-fit.png" />
             </image>
         </ImageView>
         <VBox fx:id="errorBox" alignment="CENTER" layoutX="196.0" layoutY="103.0" opacity="0.0" prefWidth="370.0" styleClass="error-box">

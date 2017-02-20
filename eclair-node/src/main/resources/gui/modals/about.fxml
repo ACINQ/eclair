@@ -19,7 +19,7 @@
     <children>
         <ImageView fitHeight="120.0" fitWidth="120.0" pickOnBounds="true" preserveRatio="true" GridPane.halignment="CENTER">
             <image>
-                <Image url="@../commons/images/eclair02.png" />
+                <Image url="@../commons/images/eclair-square.png" />
             </image>
         </ImageView>
         <VBox spacing="10.0" styleClass="about-content" GridPane.columnIndex="1">

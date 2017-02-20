@@ -28,7 +28,7 @@
              maxHeight="70.0" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
       <ImageView fx:id="icon" fitWidth="25.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
          <image>
-            <Image url="@../commons/images/eclair02.png" />
+            <Image url="@../commons/images/eclair-square.png" />
          </image>
       </ImageView>
       <Button fx:id="closeButton" mnemonicParsing="false" styleClass="notification-close" text="" GridPane.columnIndex="2"

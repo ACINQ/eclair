@@ -16,7 +16,7 @@ import grizzled.slf4j.Logging
 class SendPaymentStage(handlers: Handlers, setup: Setup) extends Stage() with Logging {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
-  getIcons().add(new Image("/gui/commons/images/eclair02.png", false))
+  getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
   setWidth(450)
   setHeight(450)
   setTitle("Send a Payment Request")
