@@ -10,8 +10,28 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.io.Source
+
 @RunWith(classOf[JUnitRunner])
 class TestVectorsSpec extends FunSuite {
+
+  val results = collection.mutable.HashMap.empty[String, Map[String, String]]
+  val current = collection.mutable.HashMap.empty[String, String]
+  var name = ""
+  Source.fromInputStream(classOf[TestVectorsSpec].getResourceAsStream("/bolt3-tx-test-vectors.txt")).getLines().toArray.map(s => s.dropWhile(_.isWhitespace)).map(line => {
+    if (line.startsWith("name: ")) {
+      val Array(_, n) = line.split(": ")
+      if (!name.isEmpty) results.put(name, current.toMap)
+      name = n
+      current.clear()
+    } else {
+      line.split(":") match {
+        case Array(k, v) => current.put(k, v)
+        case _ => ()
+      }
+    }
+  })
+  results.put(name, current.toMap)
 
   /*
    # start bitcoin-qt or bitcoind in regtest mode with an empty data directory and priority set to false
@@ -210,7 +230,7 @@ class TestVectorsSpec extends FunSuite {
     val htlcTxs: Seq[TransactionWithInputInfo] = (unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).sortBy(_.input.outPoint.index)
 
 
-    htlcTxs.map(_ match {
+    htlcTxs.collect {
       case tx: HtlcSuccessTx =>
         val remoteSig = Transactions.sign(tx, Remote.private_key)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
@@ -221,9 +241,9 @@ class TestVectorsSpec extends FunSuite {
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         println(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
-    })
+    }
 
-    val signedTxs = htlcTxs.map(_ match {
+    val signedTxs = htlcTxs collect {
       case tx: HtlcSuccessTx =>
         //val tx = tx0.copy(tx = tx0.tx.copy(txOut = tx0.tx.txOut(0).copy(amount = Satoshi(545)) :: Nil))
         val localSig = Transactions.sign(tx, Local.private_key)
@@ -244,154 +264,209 @@ class TestVectorsSpec extends FunSuite {
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"output htlc_timeout_tx ${htlcIndex}: ${Transaction.write(tx1.tx)}")
         tx1
-    })
+    }
 
     println
     (commitTx, signedTxs)
   }
 
   test("simple commitment tx with no HTLCs") {
-    println("name: simple commitment tx with no HTLCs")
+    val name = "simple commitment tx with no HTLCs"
+    println(s"name: $name")
     val spec = CommitmentSpec(htlcs = Set.empty, feeRatePerKw = 15000, toLocalMsat = 7000000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8002c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311054a56a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400473044022051b75c73198c6deee1a875871c3961832909acd297c6b908d59e3319e5185a46022055c419379c5051a78d00dbbce11b5b664a0c22815fbcc6fcef6b1937c383693901483045022100f51d2e566a70ba740fc5d8c0f07b9b93d2ed741c3c0860c613173de7d39e7968022041376d520e9c0e1ad52248ddf4b22e12be8763007df977253ef45a4ca3bdb7c001475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
   }
 
   test("commitment tx with all 5 htlcs untrimmed (minimum feerate)") {
-    println("name: commitment tx with all 5 htlcs untrimmed (minimum feerate")
+    val name = "commitment tx with all 5 htlcs untrimmed (minimum feerate)"
+    println(s"name: $name")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 0, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8007e8030000000000002200207eaf624c3ab8f5cad0589f46db3fed940bf79a88fb5ab7fa3a6e1d071b5845bfd00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110e0a06a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100ce8a5a47e1377b7878c65209affe5645e400f0b834ddcbd2248a961c034686590220349d27b5a3bd2dac4117bdcf6a94449b0e4a5b179aef1d6b23f526081cdfe8ab014830450221008f60b91c64ffaeb498bca51827c378a5a0c3488888677cd8483b42bae7222269022028e7ff07936b62327bd43f5c27c2cbc28351242bcb3b4a9f77e0fc3ee8558c9301475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
   }
 
   test("commitment tx with 7 outputs untrimmed (maximum feerate)") {
-    println("name: commitment tx with 7 outputs untrimmed (maximum feerate)")
+    val name = "commitment tx with 7 outputs untrimmed (maximum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 454999 / Transactions.htlcSuccessWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8007e8030000000000002200207eaf624c3ab8f5cad0589f46db3fed940bf79a88fb5ab7fa3a6e1d071b5845bfd00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110b29c6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004830450221009fb6cb38db01817f77a5f973729948b8af0b3a6dad3429e2bd7a88b7b3d1de8b022025e1cd9f23dfe3f87e39e8c14fd054771758287e35aa1b4499de99427844abf201483045022100f46729e7a3126cf03d94691f814405b26cf896ecd6617d565aba6915c68de3a202204ca52c50b0c6fe424671b9986907f6180d8c65b289347fa02aac3c69065c6b9701475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 6 outputs untrimmed (minimum feerate)") {
-    println("name: commitment tx with 6 outputs untrimmed (minimum feerate)")
+    val name = "commitment tx with 6 outputs untrimmed (minimum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 454999 / Transactions.htlcSuccessWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110259d6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e04004830450221008acdee277c284cacc3c0b64b0724d459bcae09e3390cd36767f6a65bb265ccfe0220608b5459263c4a80fa30ca3901c08642df793d3048bf985df7da66d6dbb5d4b901473044022025a153b4c6310fa5f1825a077625054f993e07540149ef76f39d41fdbfa3432402202ff44666e56a9cfc3dbca68d26d2174f09a7aad9f2ca0741f3e7373686ff7c9d01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 6 outputs untrimmed (maximum feerate)") {
-    println("name: commitment tx with 6 outputs untrimmed (maximum feerate)")
+    val name = "commitment tx with 6 outputs untrimmed (maximum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 1454999 / Transactions.htlcSuccessWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
     assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110f5946a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b42a3229202c8c5ddbff95efa6aa2d48c39b57d437ad4a8b2a917d11a3ca55ff02205bb9c65d06656222ced3bfd804145f658d1fa11804b20ef44962a9ea547bd6b701483045022100a9976e89763982487b7ff07a26347d398b9f19c0fb01046c8a787d7cd6068f440220224138e065ed31f248fd2756d3e209c0cab69ea5e1ede66d019e18072267284f01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 5 outputs untrimmed (minimum feerate)") {
-    println("name: commitment tx with 5 outputs untrimmed (minimum feerate)")
+    val name = "commitment tx with 5 outputs untrimmed (minimum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 1454999 / Transactions.htlcSuccessWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8005d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311068966a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100bfcdea8720cb25031a4ffa9f44195b2b66922183af9fcf040281b60ebcaa1dac0220636987b0fbacd90ea9ba6262d675f97d77aeaf8808ed0aaeecca20991b19c7d501483045022100e7b45245c3b6079d0606000d1e340f6957621ab09fa8feb28ec69272851ed9650220299ecd0833d086d97a094b0e1b82be2b878fbd03b15616ee06e40ca8b909d84c01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 5 outputs untrimmed (maximum feerate)") {
-    println("name: commitment tx with 5 outputs untrimmed (maximum feerate)")
+    val name = "commitment tx with 5 outputs untrimmed (maximum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 1454999 / Transactions.htlcTimeoutWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8005d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110c8956a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b9174ba09413297731a39e245d1b7fda4cb363c333b58dd6f7f780b9ec2497f102205da2fca746fa0b4516f5e0d4d9cb8ecdf5cf241b44dd33c4b24e8313e844df72014730440220204316f3553a265922a99c207addeae456349e0aca229d809a526193d5ebd03002206bb618812f43efff52bbf48ca4cbb92529ef0bd6dcfaae4235ff8aebde1b121f01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 4 outputs untrimmed (minimum feerate)") {
-    println("name: commitment tx with 4 outputs untrimmed (minimum feerate)")
+    val name = "commitment tx with 4 outputs untrimmed (minimum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 1454999 / Transactions.htlcTimeoutWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
     assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311051976a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100e0b270640f8fd88e51f75c5142443b943e6a349671fa7eae0325bdaff86a87c40220009796bfc452cb6c49a3286defea2ac8efaf4721bcc643eb92a7e93bb9c5b4d30148304502210085ef217e4ee408810c1be4994bb671b2c4868c37169a3d853f8f122bdfb87be9022003188677686ebf025849b67ad49babff11325b5255fe9b608fbfac16722e47a401475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 4 outputs untrimmed (maximum feerate)") {
-    println("name: commitment tx with 4 outputs untrimmed (maximum feerate)")
+    val name = "commitment tx with 4 outputs untrimmed (maximum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 2454999 / Transactions.htlcTimeoutWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110c0906a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040048304502210080b66478598786deb4bdb9d49574012b0a8c988d5d784f14a42e9329569ae52802207276e265d0c3a86d97cfe97d6491a51c3c2013ff762fb1caced12d5b31f0029a01483045022100efb46b8a0ab766a7c81de0deb00985eed8a9928d055485ef12bd554cf8afa84e02207dfcff213f6e6c5ef4c369a0aaafadfcc9fad3a21a7888919cfeee114755d03d01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 3 outputs untrimmed (minimum feerate)") {
-    println("name: commitment tx with 3 outputs untrimmed (minimum feerate)")
+    val name = "commitment tx with 3 outputs untrimmed (minimum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 2454999 / Transactions.htlcTimeoutWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8003a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311058936a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e040047304402201923a8d7909f2c8708863ba70b2ba5c20939abffd603cf937c54129e5c6b28b2022018ca56507178141663fe1fac2a55d9e9b4278b8324a5f880464d3e6edbc44a1b01473044022045b6ce3604bbd13d2bf83d003f721dd726bfb8357e5a68b6f8a49db5a86faf48022070b95df3fadd1244c53cca7a62d1e128085d5138bd9b70be61662c09d4a6085301475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 3 outputs untrimmed (maximum feerate)") {
-    println("name: commitment tx with 3 outputs untrimmed (maximum feerate)")
+    val name = "commitment tx with 3 outputs untrimmed (maximum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 3454999 / Transactions.htlcSuccessWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8003a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110e98e6a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b413ebb50e942ae53fea93578a0122603b79af5b1daac71a35e52cc176e8247d022066eca652a57ec48eab57ebfe719dcf17aad8e0e746f4b0fb10bad866693e201401483045022100f7164661832d55b28789b7b63690bee01b43bde46fd713ca7e8747258b00d7410220602329a65ab366e99ec2c68b91acf7162fff7d61298e78472d1544d7dd2204a801475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 2 outputs untrimmed (minimum feerate)") {
-    println("name: commitment tx with 2 outputs untrimmed (minimum feerate)")
+    val name = "commitment tx with 2 outputs untrimmed (minimum feerate)"
+    println(s"name: $name")
     val feeRatePerKw = 3454999 / Transactions.htlcSuccessWeight
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8002c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de8431105b926a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100fc35aae81065b76858d692233d20fd3b249fefbacc14eb4caf001a0347cc00670220613311610016742e609e19d1bc1e6b5a1f5ff9dc080f443633afdbc953c119c001483045022100c386d933436598ea7c33491ef464300a214cff27a0f7312d99ab3768326d7b8d02204df07a4f71c5dbd697032c50b9819f2519d604219a097dd0fab61377ece322a201475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 2 outputs untrimmed (maximum feerate)") {
-    println("name: commitment tx with 2 outputs untrimmed (maximum feerate)")
+    val name = "commitment tx with 2 outputs untrimmed (maximum feerate)"
+    println(s"name: $name")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651180, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b800222020000000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80ec0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311004004730440220514f977bf7edc442de8ce43ace9686e5ebdc0f893033f13e40fb46c8b8c6e1f90220188006227d175f5c35da0b092c57bea82537aed89f7778204dc5bacf4f29f2b901473044022037f83ff00c8e5fb18ae1f918ffc24e54581775a20ff1ae719297ef066c71caa9022039c529cccd89ff6c5ed1db799614533844bd6d101da503761c45c713996e3bbd01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with 1 output untrimmed (minimum feerate)") {
-    println("name: commitment tx with 1 output untrimmed (minimum feerate)")
+    val name = "commitment tx with 1 output untrimmed (minimum feerate)"
+    println(s"name: $name")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651181, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8001c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de8431100400473044022031a82b51bd014915fe68928d1abf4b9885353fb896cac10c3fdd88d7f9c7f2e00220716bda819641d2c63e65d3549b6120112e1aeaf1742eed94a471488e79e206b101473044022064901950be922e62cbe3f2ab93de2b99f37cff9fc473e73e394b27f88ef0731d02206d1dfa227527b4df44a07599289e207d6fd9cca60c0365682dcd3deaf739567e01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 
   test("commitment tx with fee greater than funder amount") {
-    println("name: commitment tx with fee greater than funder amount")
+    val name = "commitment tx with fee greater than funder amount"
+    println(s"name: $name")
     val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651936, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8001c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de8431100400473044022031a82b51bd014915fe68928d1abf4b9885353fb896cac10c3fdd88d7f9c7f2e00220716bda819641d2c63e65d3549b6120112e1aeaf1742eed94a471488e79e206b101473044022064901950be922e62cbe3f2ab93de2b99f37cff9fc473e73e394b27f88ef0731d02206d1dfa227527b4df44a07599289e207d6fd9cca60c0365682dcd3deaf739567e01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
+
+    val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
+    assert(htlcTxs.map(_.tx).toSet == check)
   }
 }
