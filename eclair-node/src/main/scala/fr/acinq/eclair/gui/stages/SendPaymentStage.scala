@@ -17,10 +17,11 @@ class SendPaymentStage(handlers: Handlers, setup: Setup) extends Stage() with Lo
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
-  setWidth(450)
-  setHeight(450)
   setTitle("Send a Payment Request")
-  setResizable(false)
+  setMinWidth(450)
+  setWidth(450)
+  setMinHeight(450)
+  setHeight(450)
 
   // get fxml/controller
   val receivePayment = new FXMLLoader(getClass.getResource("/gui/modals/sendPayment.fxml"))

@@ -17,9 +17,10 @@ class OpenChannelStage(handlers: Handlers, setup: Setup) extends Stage() {
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
   setTitle("Open a new channel")
+  setMinWidth(550)
   setWidth(550)
+  setMinHeight(350)
   setHeight(350)
-  setResizable(false)
 
   // get fxml/controller
   val openFXML = new FXMLLoader(getClass.getResource("/gui/modals/openChannel.fxml"))

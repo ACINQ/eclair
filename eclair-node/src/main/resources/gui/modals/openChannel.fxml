@@ -13,8 +13,7 @@
 <?import javafx.scene.layout.VBox?>
 
 <?import javafx.scene.control.Separator?>
-<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" prefWidth="528.0"
-          styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="180.0" minWidth="10.0" prefWidth="180.0" halignment="RIGHT" />
         <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="180.0" />

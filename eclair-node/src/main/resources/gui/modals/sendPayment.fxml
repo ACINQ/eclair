@@ -4,11 +4,10 @@
 <?import javafx.scene.layout.*?>
 <?import java.lang.String?>
 <?import java.net.URL?>
-<GridPane fx:id="nodeId" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
-          prefWidth="395.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane fx:id="nodeId" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="110.0"/>
-        <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="250.0"/>
+        <ColumnConstraints halignment="LEFT" hgrow="ALWAYS" minWidth="10.0" prefWidth="250.0"/>
     </columnConstraints>
     <rowConstraints>
         <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>

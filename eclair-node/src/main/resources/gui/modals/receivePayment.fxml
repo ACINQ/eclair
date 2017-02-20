@@ -6,11 +6,10 @@
 <?import java.net.URL?>
 <?import javafx.collections.FXCollections?>
 <?import java.lang.String?>
-<GridPane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" styleClass="grid"
-          xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="210.0" minWidth="10.0" prefWidth="200.0"/>
-        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="120.0"/>
+        <ColumnConstraints hgrow="ALWAYS" minWidth="10.0" prefWidth="120.0"/>
         <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="120.0"/>
     </columnConstraints>
     <rowConstraints>
@@ -49,7 +48,7 @@
         <Text strokeType="OUTSIDE" strokeWidth="0.0"
               text="Send this Payment Request to the person owing you the amount above"
               textAlignment="RIGHT" wrappingWidth="188.9560546875" GridPane.rowIndex="3"/>
-        <TextArea fx:id="paymentRequest" editable="false" prefHeight="150.0" prefWidth="275.0" styleClass="ta"
+        <TextArea fx:id="paymentRequest" editable="false" prefHeight="80.0" prefWidth="275.0" styleClass="ta"
                   wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="3"/>
     </children>
     <stylesheets>
