@@ -34,7 +34,7 @@
                 <Label styleClass="label-description" text="Address of the node" textAlignment="RIGHT" wrapText="true" />
             </children>
         </VBox>
-        <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port1"
+        <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port"
                    GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="0" />
         <Label fx:id="hostError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid URI" mouseTransparent="true"
                GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2" />
@@ -42,7 +42,7 @@
         <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="1">
             <children>
                 <Label styleClass="text-strong" text="Capacity" />
-                <Label styleClass="label-description" text="Funding capacity of the channel." textAlignment="RIGHT" wrapText="true" />
+                <Label styleClass="label-description" text="Funding capacity of the channel" textAlignment="RIGHT" wrapText="true" />
             </children>
         </VBox>
         <TextField fx:id="fundingSatoshis" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="1" />
