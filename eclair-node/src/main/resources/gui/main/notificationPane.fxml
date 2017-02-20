@@ -14,8 +14,8 @@
           xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1"
           onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit" onMouseClicked="#handleMouseClick">
   <columnConstraints>
-    <ColumnConstraints hgrow="SOMETIMES" maxWidth="40.0" prefWidth="40.0" />
-    <ColumnConstraints hgrow="SOMETIMES" maxWidth="169.0" minWidth="10.0" prefWidth="169.0" />
+    <ColumnConstraints hgrow="SOMETIMES" maxWidth="25.0" prefWidth="25.0" />
+    <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="220.0" />
     <ColumnConstraints hgrow="SOMETIMES" maxWidth="30.0" minWidth="5.0" prefWidth="20.0" />
   </columnConstraints>
   <rowConstraints>
@@ -26,7 +26,7 @@
       <Label fx:id="titleLabel" styleClass="notification-title" text="Eclair Notification" GridPane.columnIndex="1" />
       <Label fx:id="bodyLabel" styleClass="notification-body" text="N/A" wrapText="true"
              maxHeight="70.0" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-      <ImageView fx:id="icon" fitWidth="35.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
+      <ImageView fx:id="icon" fitWidth="25.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
          <image>
             <Image url="@../commons/images/eclair02.png" />
          </image>
