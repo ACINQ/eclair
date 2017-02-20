@@ -4,6 +4,7 @@ import javafx.animation._
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.{FXML, FXMLLoader}
+import javafx.scene.Parent
 import javafx.scene.image.Image
 import javafx.scene.layout.{GridPane, VBox}
 import javafx.util.Duration
@@ -45,6 +46,7 @@ class NotificationsController extends Logging {
         val root = loader.load[GridPane]
         notifsVBox.getChildren.add(root)
 
+        // set notification content
         notifPaneController.titleLabel.setText(title)
         notifPaneController.bodyLabel.setText(body)
         notificationType match {
@@ -54,33 +56,46 @@ class NotificationsController extends Logging {
           case _ =>
         }
 
+        // in/out animations
+        val showAnimation = getShowAnimation(notifPaneController.rootPane)
+        val dismissAnimation = getDismissAnimation(notifPaneController.rootPane)
+        dismissAnimation.setOnFinished(new EventHandler[ActionEvent] {
+          override def handle(event: ActionEvent) = notifsVBox.getChildren.remove(root)
+        })
         notifPaneController.closeButton.setOnAction(new EventHandler[ActionEvent] {
           override def handle(event: ActionEvent) = {
-            val fadeOutTransition = new FadeTransition(Duration.millis(200))
-            fadeOutTransition.setFromValue(1)
-            fadeOutTransition.setToValue(0)
-            val translateRevTransition = new TranslateTransition(Duration.millis(450))
-            translateRevTransition.setFromX(0)
-            translateRevTransition.setToX(150)
-            val scaleTransition = new ScaleTransition(Duration.millis(350))
-            scaleTransition.setFromY(1)
-            scaleTransition.setToY(0)
-            val ptR = new ParallelTransition(notifPaneController.rootPane, fadeOutTransition, translateRevTransition, scaleTransition)
-            ptR.setOnFinished(new EventHandler[ActionEvent] {
-              override def handle(event: ActionEvent) = notifsVBox.getChildren.remove(root)
-            })
-            ptR.play
+            dismissAnimation.stop
+            dismissAnimation.setDelay(Duration.ZERO)
+            dismissAnimation.play
           }
         })
-        val fadeTransition = new FadeTransition(Duration.millis(400))
-        fadeTransition.setFromValue(0)
-        fadeTransition.setToValue(.95)
-        val translateTransition = new TranslateTransition(Duration.millis(500))
-        translateTransition.setFromX(150)
-        translateTransition.setToX(0)
-        val pt = new ParallelTransition(notifPaneController.rootPane, fadeTransition, translateTransition)
-        pt.play
+        showAnimation.play
+        dismissAnimation.setDelay(Duration.seconds(12))
+        dismissAnimation.play
       }
     })
+  }
+
+  private def getDismissAnimation(element: Parent): Transition = {
+    val fadeOutTransition = new FadeTransition(Duration.millis(200))
+    fadeOutTransition.setFromValue(1)
+    fadeOutTransition.setToValue(0)
+    val translateRevTransition = new TranslateTransition(Duration.millis(450))
+    translateRevTransition.setFromX(0)
+    translateRevTransition.setToX(150)
+    val scaleTransition = new ScaleTransition(Duration.millis(350))
+    scaleTransition.setFromY(1)
+    scaleTransition.setToY(0)
+    new ParallelTransition(element, fadeOutTransition, translateRevTransition, scaleTransition)
+  }
+
+  private def getShowAnimation(element: Parent): Transition = {
+    val fadeTransition = new FadeTransition(Duration.millis(400))
+    fadeTransition.setFromValue(0)
+    fadeTransition.setToValue(.95)
+    val translateTransition = new TranslateTransition(Duration.millis(500))
+    translateTransition.setFromX(150)
+    translateTransition.setToX(0)
+    new ParallelTransition(element, fadeTransition, translateTransition)
   }
 }
