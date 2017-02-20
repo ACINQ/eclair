@@ -92,6 +92,6 @@ class Handlers(setup: Setup) extends Logging {
     * @param showAppName true if you want the notification title to be preceded by "Eclair - ". True by default
     */
   def notification (title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true) = {
-    notifsController.map(_.addNotification(title, message, notificationType, notifsStage))
+    notifsController.map(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType, notifsStage))
   }
 }

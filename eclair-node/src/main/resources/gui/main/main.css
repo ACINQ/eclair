@@ -121,8 +121,7 @@
     -fx-background-position: center center;
     -fx-border-color: transparent;
 	-fx-padding: 0;
-	-fx-translate-x: 10px;
-	-fx-translate-y: -10px;
+	-fx-translate-y: -12px;
 }
 .button.notification-close:hover,
 .button.notification-close:pressed {
