@@ -126,5 +126,5 @@
 }
 .button.notification-close:hover,
 .button.notification-close:pressed {
-    -fx-background-color: #542b2b;
+    -fx-background-color: #7e7e7e;
 }
