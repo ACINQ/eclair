@@ -1,8 +1,5 @@
 package fr.acinq.eclair.gui
 
-
-import java.awt.TrayIcon.MessageType
-import java.awt.{SystemTray, TrayIcon}
 import java.io.{File, FileWriter}
 import java.net.InetSocketAddress
 import javafx.application.Platform
@@ -12,6 +9,8 @@ import akka.pattern.ask
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
+import fr.acinq.eclair.gui.controllers._
+import fr.acinq.eclair.gui.stages.NotificationsStage
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
@@ -22,9 +21,17 @@ import scala.util.{Failure, Success}
 /**
   * Created by PM on 16/08/2016.
   */
-class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
+class Handlers(setup: Setup) extends Logging {
 
   import setup._
+
+  private var notifsController:Option[NotificationsController] = None
+  private var notifsStage:Option[NotificationsStage] = None
+
+  def initNotifications (controller: NotificationsController, stage: NotificationsStage) = {
+    notifsController = Option(controller)
+    notifsStage = Option(stage)
+  }
 
   def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
     hostPort match {
@@ -34,7 +41,7 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
           case Success(s) => {}
           case Failure(t) =>
             val message = s"$host:$port"
-            notification("Connection failed", message, TrayIcon.MessageType.WARNING)
+            notification("Connection failed", message, NOTIFICATION_ERROR)
         }
       case _ => {}
     }
@@ -45,10 +52,10 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
     (paymentInitiator ? CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[String].onComplete {
       case Success(s) =>
         val message = s"Amount (mSat): $amountMsat\nH: $rhash"
-        notification("Payment Successful", message, TrayIcon.MessageType.INFO)
+        notification("Payment Successful", message, NOTIFICATION_SUCCESS)
       case Failure(t) =>
         val message = s"Cause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $rhash"
-        notification("Payment Failed", message, TrayIcon.MessageType.WARNING)
+        notification("Payment Failed", message, NOTIFICATION_ERROR)
     }
   }
 
@@ -81,13 +88,10 @@ class Handlers(setup: Setup, trayIcon: TrayIcon) extends Logging {
     *
     * @param title Title of the notification
     * @param message content of the notification. Accepts line break
-    * @param messageType type of the message, default to NONE
+    * @param notificationType type of the message, default to NONE
     * @param showAppName true if you want the notification title to be preceded by "Eclair - ". True by default
     */
-  def notification (title: String, message: String, messageType: TrayIcon.MessageType = MessageType.NONE, showAppName: Boolean = true) = {
-    if (SystemTray.isSupported) {
-      val smartTitle = if (showAppName) s"Eclair - $title" else title
-      trayIcon.displayMessage(smartTitle, message, messageType)
-    }
+  def notification (title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true) = {
+    notifsController.map(_.addNotification(title, message, notificationType, notifsStage))
   }
 }

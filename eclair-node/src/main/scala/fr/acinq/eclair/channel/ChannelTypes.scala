@@ -33,7 +33,7 @@ case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_CREATED_INTERNAL extends State
 case object WAIT_FOR_FUNDING_CREATED extends State
 case object WAIT_FOR_FUNDING_SIGNED extends State
-case object WAIT_FOR_FUNDING_LOCKED_INTERNAL extends State
+case object WAIT_FOR_FUNDING_CONFIRMED extends State
 case object WAIT_FOR_FUNDING_LOCKED extends State
 case object WAIT_FOR_ANN_SIGNATURES extends State
 case object NORMAL extends State
@@ -120,12 +120,12 @@ case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx:
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: Seq[Transaction], claimHtlcTimeoutTxs: Seq[Transaction])
 case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: Seq[Transaction], htlcTimeoutTxs: Seq[Transaction], htlcPenaltyTxs: Seq[Transaction])
 
-final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE, autoSignInterval: Option[FiniteDuration]) extends Data
-final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, autoSignInterval: Option[FiniteDuration]) extends Data
+final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
+final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit) extends Data
-final case class DATA_WAIT_FOR_FUNDING_LOCKED_INTERNAL(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked]) extends Data with HasCommitments
 final case class DATA_NORMAL(params: ChannelParams, commitments: Commitments, localShutdown: Option[Shutdown]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(params: ChannelParams, commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
@@ -143,8 +143,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class ChannelParams(localParams: LocalParams,
                                remoteParams: RemoteParams,
                                fundingSatoshis: Long,
-                               minimumDepth: Long,
-                               autoSignInterval: Option[FiniteDuration] = None)
+                               minimumDepth: Long)
 
 final case class LocalParams(dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: Long,

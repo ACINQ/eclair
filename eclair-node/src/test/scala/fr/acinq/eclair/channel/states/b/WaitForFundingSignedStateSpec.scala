@@ -53,7 +53,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass {
     within(30 seconds) {
       bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED_INTERNAL)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.expectMsgType[PublishAsap]

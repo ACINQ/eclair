@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.net.URL?>
+<?import javafx.scene.control.Label?>
+<?import javafx.scene.layout.Pane?>
+<?import javafx.scene.layout.VBox?>
+
+<Pane maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity" styleClass="notifications-box" xmlns="http://javafx.com/javafx/8.0.60" xmlns:fx="http://javafx.com/fxml/1">
+   <stylesheets>
+      <URL value="@../commons/globals.css" />
+      <URL value="@main.css" />
+   </stylesheets>
+   <children>
+      <VBox fx:id="notifsVBox" alignment="TOP_RIGHT" spacing="10.0" />
+   </children>
+</Pane>

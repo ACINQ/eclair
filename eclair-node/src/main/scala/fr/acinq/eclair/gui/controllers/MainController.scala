@@ -1,22 +1,24 @@
 package fr.acinq.eclair.gui.controllers
 
 import java.net.InetSocketAddress
-import javafx.application.HostServices
+import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.collections.{FXCollections, ObservableList}
 import javafx.event.{ActionEvent, EventHandler}
-import javafx.fxml.FXML
+import javafx.fxml.{FXML, FXMLLoader}
+import javafx.scene.{Parent, Scene}
 import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, VBox}
+import javafx.scene.paint.Color
 import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage.{FileChooser, Stage, WindowEvent}
 import javafx.util.Callback
 
 import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.stages.{AboutStage, OpenChannelStage, ReceivePaymentStage, SendPaymentStage}
+import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import fr.acinq.eclair.{Globals, Setup}
@@ -83,6 +85,8 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     * - init the 'nodes in network' and 'channels in network' tables
     */
   @FXML def initialize = {
+
+    initNotifs
 
     // init status bar
     labelNodeId.setText(s"${Globals.Node.id}")
@@ -255,10 +259,37 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
   }
 
   @FXML def openNodeIdContext(event: ContextMenuEvent) = contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
-  @FXML def closeNodeIdContext(event: MouseEvent) = contextMenu.hide()
+  @FXML def closeNodeIdContext(event: MouseEvent) = contextMenu.hide
 
   def positionAtCenter(childStage: Stage) = {
     childStage.setX(stage.getX + stage.getWidth / 2 - childStage.getWidth / 2)
     childStage.setY(stage.getY + stage.getHeight / 2 - childStage.getHeight / 2)
+  }
+
+  /**
+    * Initialize the notification stage and assign it to the handler class.
+    *
+    * @return
+    */
+  private def initNotifs: NotificationsController = {
+    // get fxml/controller
+    val notifFXML = new FXMLLoader(getClass.getResource("/gui/main/notifications.fxml"))
+    val notifsController = new NotificationsController
+    notifFXML.setController(notifsController)
+    val root = notifFXML.load[Parent]
+
+    Platform.runLater(new Runnable() {
+      override def run = {
+        // create scene
+        val scene = new Scene(root)
+        scene.setFill(Color.TRANSPARENT)
+        val notifsStage = new NotificationsStage
+        notifsStage.setScene(scene)
+        notifsStage.initOwner(stage)
+        handlers.initNotifications(notifsController, notifsStage)
+        notifsStage.show
+      }
+    })
+    notifsController
   }
 }

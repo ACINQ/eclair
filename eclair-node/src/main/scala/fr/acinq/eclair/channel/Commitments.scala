@@ -13,12 +13,13 @@ import grizzled.slf4j.Logging
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
 }
-case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage])
+case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
 case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
 case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: Seq[HtlcTxAndSigs])
 case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
+case class WaitForRevocation(nextRemoteCommit: RemoteCommit, reSignAsap: Boolean = false)
 // @formatter:on
 
 /**
@@ -33,7 +34,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
-                       remoteNextCommitInfo: Either[RemoteCommit, Point],
+                       remoteNextCommitInfo: Either[WaitForRevocation, Point],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: Long) {
   def anchorId: BinaryData = commitInput.outPoint.txid
@@ -89,7 +90,7 @@ object Commitments extends Logging {
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
     // we look from remote's point of view, so if local is funder remote doesn't pay the fees
-    val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
+    val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount else 0
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
       throw new RuntimeException(s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.remoteParams.channelReserveSatoshis} fees=$fees")
@@ -154,7 +155,7 @@ object Commitments extends Logging {
     commitments.remoteCommit.spec.htlcs.collectFirst { case u: Htlc if u.direction == IN && u.add.id == fulfill.id => u.add } match {
       case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => (addRemoteProposal(commitments, fulfill), htlc)
       case Some(htlc) => throw new RuntimeException(s"invalid htlc preimage for htlc id=${fulfill.id}")
-      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}") // TODO: we should fail the channel
+      case None => throw new RuntimeException(s"unknown htlc id=${fulfill.id}")
     }
   }
 
@@ -205,9 +206,9 @@ object Commitments extends Logging {
           htlcSignatures = htlcSigs.toList
         )
         val commitments1 = commitments.copy(
-          remoteNextCommitInfo = Left(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint)),
+          remoteNextCommitInfo = Left(WaitForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint))),
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
-          remoteChanges = remoteChanges.copy(acked = Nil))
+          remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
         (commitments1, commitSig)
       case Left(_) =>
         throw new RuntimeException("cannot sign until next revocation hash is received")
@@ -294,7 +295,7 @@ object Commitments extends Logging {
     remoteNextCommitInfo match {
       case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
         throw new RuntimeException("invalid preimage")
-      case Left(theirNextCommit) =>
+      case Left(WaitForRevocation(theirNextCommit, reSignAsap)) =>
         // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig
         val (_, htlcTimeoutTxs, _) = makeRemoteTxs(theirNextCommit.index, localParams, remoteParams, commitInput, theirNextCommit.remotePerCommitmentPoint, theirNextCommit.spec)
         // then we sort and sign them
@@ -314,6 +315,7 @@ object Commitments extends Logging {
 
         commitments.copy(
           localChanges = localChanges.copy(signed = Nil, acked = localChanges.acked ++ localChanges.signed),
+          remoteChanges = remoteChanges.copy(signed = Nil),
           remoteCommit = theirNextCommit,
           remoteNextCommitInfo = Right(revocation.nextPerCommitmentPoint),
           remotePerCommitmentSecrets = commitments.remotePerCommitmentSecrets.addHash(revocation.perCommitmentSecret, 0xFFFFFFFFFFFFL - commitments.remoteCommit.index))

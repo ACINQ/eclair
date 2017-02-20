@@ -78,17 +78,37 @@ trait StateTestsHelperMethods extends TestKitBase {
     awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteChanges.proposed.contains(fulfill))
   }
 
-  def sign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
+  def crossSign(s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe) = {
     val sender = TestProbe()
+    val sCommitIndex = s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
     val rCommitIndex = r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index
+    val rHasChanges = Commitments.localHasChanges(r.stateData.asInstanceOf[HasCommitments].commitments)
     sender.send(s, CMD_SIGN)
     sender.expectMsg("ok")
     s2r.expectMsgType[CommitSig]
     s2r.forward(r)
     r2s.expectMsgType[RevokeAndAck]
     r2s.forward(s)
-    awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
-    awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+    r2s.expectMsgType[CommitSig]
+    r2s.forward(s)
+    s2r.expectMsgType[RevokeAndAck]
+    s2r.forward(r)
+    if (rHasChanges) {
+      s2r.expectMsgType[CommitSig]
+      s2r.forward(r)
+      r2s.expectMsgType[RevokeAndAck]
+      r2s.forward(s)
+      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == sCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == sCommitIndex + 2)
+      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 2)
+      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+    } else {
+      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == sCommitIndex + 1)
+      awaitCond(s.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == sCommitIndex + 1)
+      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.localCommit.index == rCommitIndex + 1)
+      awaitCond(r.stateData.asInstanceOf[HasCommitments].commitments.remoteCommit.index == rCommitIndex + 1)
+    }
+
   }
 
 }
