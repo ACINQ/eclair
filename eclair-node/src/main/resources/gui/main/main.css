@@ -101,7 +101,7 @@
 }
 .notification-pane.grid {
     -fx-background-color: #252525;
-    -fx-border-width: 0 0 0 5px;
+    -fx-border-width: 0 0 0 3px;
     -fx-padding: 1.5em;
 }
 .notification-pane .label {

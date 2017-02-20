@@ -50,9 +50,18 @@ class NotificationsController extends Logging {
         notifPaneController.titleLabel.setText(title)
         notifPaneController.bodyLabel.setText(body)
         notificationType match {
-          case NOTIFICATION_SUCCESS => notifPaneController.icon.setImage(successIcon)
-          case NOTIFICATION_ERROR => notifPaneController.icon.setImage(errorIcon)
-          case NOTIFICATION_INFO => notifPaneController.icon.setImage(infoIcon)
+          case NOTIFICATION_SUCCESS => {
+            notifPaneController.rootPane.setStyle("-fx-border-color: #28d087")
+            notifPaneController.icon.setImage(successIcon)
+          }
+          case NOTIFICATION_ERROR => {
+            notifPaneController.rootPane.setStyle("-fx-border-color: #d43c4e")
+            notifPaneController.icon.setImage(errorIcon)
+          }
+          case NOTIFICATION_INFO => {
+            notifPaneController.rootPane.setStyle("-fx-border-color: #409be6")
+            notifPaneController.icon.setImage(infoIcon)
+          }
           case _ =>
         }
 
