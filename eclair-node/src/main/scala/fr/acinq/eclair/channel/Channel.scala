@@ -887,7 +887,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   }
 
   onTransition {
-    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, context.parent, remoteNodeId, previousState, currentState, stateData))
+    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, context.parent, remoteNodeId, previousState, currentState, nextStateData))
   }
 
   /*
