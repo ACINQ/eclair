@@ -5,6 +5,7 @@ import akka.pattern.pipe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
+import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 
 import scala.collection.SortedMap
@@ -85,17 +86,25 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
-      val csvTimeout = blockCount + Scripts.csvTimeout(tx)
-      // absolute timeout in blocks
-      val timeout = Math.max(cltvTimeout, csvTimeout)
-      if (timeout <= blockCount) {
-        log.info(s"publishing tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
-        publish(tx)
-      } else {
-        log.info(s"delaying publication of tx until block=$timeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
-        val block2tx1 = block2tx.updated(timeout, tx +: block2tx.getOrElse(timeout, Seq.empty[Transaction]))
+      val csvTimeout = Scripts.csvTimeout(tx)
+      if (csvTimeout > 0) {
+        require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
+        log.info(s"this tx has a relative timeout of ${csvTimeout} blocks, watching parent tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
+        self ! WatchConfirmed(self, tx.txIn(0).outPoint.txid, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+      } else if (cltvTimeout > blockCount) {
+        log.info(s"delaying publication of tx until block=$cltvTimeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
+        val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))
         context.become(watching(watches, block2tx1, lastTxes))
-      }
+      } else publish(tx)
+
+    case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _) =>
+      val blockCount = Globals.blockCount.get()
+      val csvTimeout = Scripts.csvTimeout(tx)
+      val absTimeout = blockHeight + csvTimeout
+      log.info(s"parent tx has been confirmed, now need to wait for relative timeout of ${csvTimeout} blocks")
+      log.info(s"delaying publication of tx until block=$absTimeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
+      val block2tx1 = block2tx.updated(absTimeout, tx +: block2tx.getOrElse(absTimeout, Seq.empty[Transaction]))
+      context.become(watching(watches, block2tx1, lastTxes))
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
       client.makeFundingTx(ourCommitPub, theirCommitPub, amount).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
@@ -121,8 +130,11 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
     }
   }
 
-  def publish(tx: Transaction) = client.publishTransaction(tx).onFailure {
-    case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
+  def publish(tx: Transaction) = {
+    log.info(s"publishing tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
+    client.publishTransaction(tx).onFailure {
+      case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
+    }
   }
 }
 
