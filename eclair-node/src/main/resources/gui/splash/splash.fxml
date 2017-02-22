@@ -10,7 +10,7 @@
 <?import java.lang.String?>
 <?import java.net.URL?>
 <Pane fx:id="splash" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
-      prefHeight="457.0" prefWidth="760.0" styleClass="transparent"
+      prefHeight="457.0" prefWidth="760.0" style="-fx-background-color: transparent"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" fx:controller="fr.acinq.eclair.gui.controllers.SplashController">
     <children>
         <ImageView fx:id="imgBlurred" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="115.0" pickOnBounds="true" preserveRatio="true">
