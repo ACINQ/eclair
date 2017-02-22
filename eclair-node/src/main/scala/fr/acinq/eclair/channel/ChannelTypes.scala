@@ -70,6 +70,7 @@ case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
 case object BITCOIN_HTLC_SPENT extends BitcoinEvent
 case object BITCOIN_LOCALCOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_REMOTECOMMIT_DONE extends BitcoinEvent
+case object BITCOIN_NEXTREMOTECOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_PENALTY_DONE extends BitcoinEvent
 case object BITCOIN_CLOSE_DONE extends BitcoinEvent
 case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId: Long) extends BitcoinEvent
@@ -136,8 +137,9 @@ final case class DATA_CLOSING(commitments: Commitments,
                               mutualClosePublished: Option[Transaction] = None,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
+                              nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: Seq[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
+  require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || nextRemoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
 }
 
 final case class ChannelParams(localParams: LocalParams,

@@ -406,6 +406,53 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv BITCOIN_FUNDING_SPENT (their next commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      // bob fulfills the first htlc
+      fulfillHtlc(0, "11" * 32, bob, alice, bob2alice, alice2bob)
+      // then signs
+      val sender = TestProbe()
+      sender.send(bob, CMD_SIGN)
+      sender.expectMsg("ok")
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[RevokeAndAck]
+      alice2bob.forward(bob)
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      // we intercept bob's revocation
+      // as far as alice knows, bob currently has two valid unrevoked commitment transactions
+
+      // bob publishes his current commit tx, which contains one pending htlc alice->bob
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      assert(bobCommitTx.txOut.size == 3) // two main outputs and 1 pending htlc
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === bobCommitTx.txid)
+      assert(watch.event === BITCOIN_NEXTREMOTECOMMIT_DONE)
+
+      val amountClaimed = (for (i <- 0 until 2) yield {
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        assert(claimHtlcTx.txOut.size == 1)
+        Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
+      assert(amountClaimed == Satoshi(481510))
+
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      alice2blockchain.expectNoMsg(1 second)
+
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.isDefined)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimHtlcSuccessTxs.size == 0)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimHtlcTimeoutTxs.size == 1)
+    }
+  }
+
   test("recv BITCOIN_FUNDING_SPENT (revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val revokedTx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx

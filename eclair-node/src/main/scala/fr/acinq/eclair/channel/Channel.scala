@@ -517,6 +517,8 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) => handleRemoteSpentOther(tx, d)
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
@@ -616,6 +618,8 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) => handleRemoteSpentOther(tx, d)
 
     case Event(e: Error, d: DATA_SHUTDOWN) => handleRemoteError(e, d)
@@ -657,6 +661,8 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) => handleRemoteSpentOther(tx, d)
 
     case Event(e: Error, d: DATA_NEGOTIATING) => handleRemoteError(e, d)
@@ -686,6 +692,8 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
     case Event(WatchEventConfirmed(BITCOIN_LOCALCOMMIT_DONE, _, _), d: DATA_CLOSING) if d.localCommitPublished.isDefined => goto(CLOSED)
 
     case Event(WatchEventConfirmed(BITCOIN_REMOTECOMMIT_DONE, _, _), d: DATA_CLOSING) if d.remoteCommitPublished.isDefined => goto(CLOSED)
+
+    case Event(WatchEventConfirmed(BITCOIN_NEXTREMOTECOMMIT_DONE, _, _), d: DATA_CLOSING) if d.nextRemoteCommitPublished.isDefined => goto(CLOSED)
 
     case Event(WatchEventConfirmed(BITCOIN_PENALTY_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
@@ -826,33 +834,30 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
     goto(CLOSING) using nextData
   }
 
-  def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments) = {
-    log.warning(s"they published their current commit in txid=${
-      commitTx.txid
-    }")
-    require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
-
-    // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
-    blockchain ! WatchConfirmed(self, commitTx.txid, 3, BITCOIN_REMOTECOMMIT_DONE)
-
-    val remoteCommitPublished = Helpers.Closing.claimCurrentRemoteCommitTxOutputs(d.commitments, commitTx)
+  def handleRemoteSpent(commitTx: Transaction, d: HasCommitments, remoteCommit: RemoteCommit): RemoteCommitPublished = {
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitTxOutputs(d.commitments, remoteCommit, commitTx)
     remoteCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     remoteCommitPublished.claimHtlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))
     remoteCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
 
     // we also watch the htlc-sent outputs in order to extract payment preimages
     remoteCommitPublished.claimHtlcTimeoutTxs.foreach(tx => {
-      require(tx.txIn.size == 1, s"a claim-htlc-timeout tx must have exactly 1 input (has ${
-        tx.txIn.size
-      })")
+      require(tx.txIn.size == 1, s"a claim-htlc-timeout tx must have exactly 1 input (has ${tx.txIn.size})")
       val outpoint = tx.txIn(0).outPoint
-      log.info(s"watching output ${
-        outpoint.index
-      } of commit tx ${
-        outpoint.txid
-      }")
+      log.info(s"watching output ${outpoint.index} of commit tx ${outpoint.txid}")
       blockchain ! WatchSpent(relayer, outpoint.txid, outpoint.index.toInt, BITCOIN_HTLC_SPENT)
     })
+    remoteCommitPublished
+  }
+
+  def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments) = {
+    log.warning(s"they published their current commit in txid=${commitTx.txid}")
+    require(commitTx.txid == d.commitments.remoteCommit.txid, "txid mismatch")
+
+    // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
+    blockchain ! WatchConfirmed(self, commitTx.txid, 3, BITCOIN_REMOTECOMMIT_DONE)
+
+    val remoteCommitPublished = handleRemoteSpent(commitTx, d, d.commitments.remoteCommit)
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
@@ -862,16 +867,31 @@ class Channel(val remote: ActorRef, val blockchain: ActorRef, router: ActorRef, 
     goto(CLOSING) using nextData
   }
 
+  def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {
+    log.warning(s"they published their next commit in txid=${commitTx.txid}")
+    require(d.commitments.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
+    val remoteCommit = d.commitments.remoteNextCommitInfo.left.get.nextRemoteCommit
+    require(commitTx.txid == remoteCommit.txid, "txid mismatch")
+
+    // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
+    blockchain ! WatchConfirmed(self, commitTx.txid, 3, BITCOIN_NEXTREMOTECOMMIT_DONE)
+
+    val remoteCommitPublished = handleRemoteSpent(commitTx, d, remoteCommit)
+
+    val nextData = d match {
+      case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, nextRemoteCommitPublished = Some(remoteCommitPublished))
+    }
+
+    goto(CLOSING) using nextData
+  }
+
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
-    log.warning(s"funding tx spent in txid=${
-      tx.txid
-    }")
+    log.warning(s"funding tx spent in txid=${tx.txid}")
 
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(d.commitments, tx) match {
       case Some(revokedCommitPublished) =>
-        log.warning(s"txid=${
-          tx.txid
-        } was a revoked commitment, publishing the penalty tx")
+        log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         remote ! Error(0, "Funding tx has been spent".getBytes)
 
         // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?

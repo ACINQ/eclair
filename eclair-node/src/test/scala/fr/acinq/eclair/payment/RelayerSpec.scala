@@ -77,7 +77,7 @@ class RelayerSpec extends TestkitBaseClass {
     val upstreams1 = sender.expectMsgType[Set[OutgoingChannel]]
     assert(upstreams1 === Set(OutgoingChannel(channelId_bc, channel_bc.ref, nodeId_c.hash160)))
 
-    sender.send(relayer, ChannelChangedState(channel_bc.ref, null, nodeId_c, NORMAL, CLOSING, DATA_CLOSING(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, channelId_bc), None, Some(null), None, None, Nil)))
+    sender.send(relayer, ChannelChangedState(channel_bc.ref, null, nodeId_c, NORMAL, CLOSING, DATA_CLOSING(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, channelId_bc), None, Some(null), None, None, None, Nil)))
     sender.send(relayer, 'upstreams)
     val upstreams2 = sender.expectMsgType[Set[OutgoingChannel]]
     assert(upstreams2 === Set.empty)

@@ -1022,7 +1022,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         claimHtlcTx.txOut(0).amount
       }).sum
-      // at best we have a little less than 449 999 990 + 250 000 + 100 000 + 50 000 = 850010 (because fees)
+      // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
       assert(amountClaimed == Satoshi(815760))
 
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
@@ -1033,6 +1033,69 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimHtlcSuccessTxs.size == 1)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.get.claimHtlcTimeoutTxs.size == 2)
+    }
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (their *next* commit w/ htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+      val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
+      val (ra3, htlca3) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+      val (rb1, htlcb1) = addHtlc(50000000, bob, alice, bob2alice, alice2bob)
+      val (rb2, htlcb2) = addHtlc(55000000, bob, alice, bob2alice, alice2bob)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(1, ra2, bob, alice, bob2alice, alice2bob)
+      fulfillHtlc(0, rb1, alice, bob, alice2bob, bob2alice)
+      // alice sign but we intercept bob's revocation
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+
+      // as far as alice knows, bob currently has two valid unrevoked commitment transactions
+
+      // at this point here is the situation from bob's pov with the latest sig received from alice,
+      // and what alice should do when bob publishes his commit tx:
+      // balances :
+      //    alice's balance : 499 999 990                             => nothing to do
+      //    bob's balance   :  95 000 000                             => nothing to do
+      // htlcs :
+      //    alice -> bob    : 250 000 000 (bob does not have the preimage)   => wait for the timeout and spend
+      //    alice -> bob    : 100 000 000 (bob has the preimage)             => if bob does not use the preimage, wait for the timeout and spend
+      //    alice -> bob    :          10 (dust)                             => won't appear in the commitment tx
+      //    bob -> alice    :  55 000 000 (alice does not have the preimage) => nothing to do, bob will get his money back after the timeout
+
+      // bob publishes his current commit tx
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+
+      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
+      assert(watch.txId === bobCommitTx.txid)
+      assert(watch.event === BITCOIN_NEXTREMOTECOMMIT_DONE)
+
+      // in addition to its main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
+      val amountClaimed = (for (i <- 0 until 3) yield {
+        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+        assert(claimHtlcTx.txIn.size == 1)
+        assert(claimHtlcTx.txOut.size == 1)
+        Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+        claimHtlcTx.txOut(0).amount
+      }).sum
+      // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
+      assert(amountClaimed == Satoshi(822900))
+
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      alice2blockchain.expectNoMsg(1 second)
+
+      awaitCond(alice.stateName == CLOSING)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.isDefined)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimHtlcSuccessTxs.size == 0)
+      assert(alice.stateData.asInstanceOf[DATA_CLOSING].nextRemoteCommitPublished.get.claimHtlcTimeoutTxs.size == 2)
     }
   }
 
