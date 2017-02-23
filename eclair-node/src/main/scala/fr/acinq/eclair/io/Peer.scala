@@ -120,7 +120,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
-    case Event(msg: RoutingMessage, ConnectedData(transport, _, _)) if sender == router=>
+    case Event(msg: RoutingMessage, ConnectedData(transport, _, _)) if sender == router =>
       transport forward msg
       stay
 
