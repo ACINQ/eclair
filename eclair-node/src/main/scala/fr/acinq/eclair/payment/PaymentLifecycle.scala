@@ -13,7 +13,7 @@ import scodec.Attempt
 
 // @formatter:off
 
-case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: BinaryData)
+case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey)
 
 sealed trait Data
 case object WaitingForRequest extends Data
@@ -46,7 +46,7 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef) extends Loggi
     case Event(RouteResponse(hops), WaitingForRoute(s, c)) =>
       val firstHop = hops.head
       val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
-      context.actorSelection(Register.actorPathToChannelId(firstHop.lastUpdate.channelId)) ! cmd
+      context.actorSelection(Register.actorPathToChannel(firstHop.lastUpdate.channelId)) ! cmd
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
     case Event(f@Failure(t), WaitingForRoute(s, _)) =>

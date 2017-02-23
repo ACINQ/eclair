@@ -33,7 +33,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(peer, channel, params, theirNodeId) =>
+    case ChannelCreated(_, peer, channel, params, theirNodeId) =>
       log.info(s"new channel: $channel")
 
       val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
@@ -68,7 +68,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         }
       })
 
-    case ChannelChangedState(channel, _, _, previousState, currentState, currentData) =>
+    case ChannelChangedState(channel, _, _, previousState, currentState, currentData) if m.contains(channel) =>
       val channelPane = m(channel)
       Platform.runLater(new Runnable() {
         override def run = channelPane.state.setText(currentState.toString)

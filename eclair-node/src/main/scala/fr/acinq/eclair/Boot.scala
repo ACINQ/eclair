@@ -8,11 +8,12 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA}
+import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
+import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -67,7 +68,7 @@ class Setup() extends Logging {
   logger.info(s"finaladdress=$finalAddress")
   // TODO: we should use p2wpkh instead of p2pkh as soon as bitcoind supports it
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
-  val finalScriptPubKey = OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil
+  val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
   val socket = new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))
 
   val fatalEventPromise = Promise[FatalEvent]()
@@ -87,6 +88,7 @@ class Setup() extends Logging {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
+  val register = system.actorOf(Props(new Register), name = "register")
   val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(watcher), name = "router")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router), "payment-initiator")
@@ -97,8 +99,10 @@ class Setup() extends Logging {
   val api = new Service {
     override val switchboard: ActorRef = _setup.switchboard
     override val router: ActorRef = _setup.router
+    override val register: ActorRef = _setup.register
     override val paymentHandler: ActorRef = _setup.paymentHandler
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
+    override val system: ActorSystem = _setup.system
   }
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port")) onFailure {
     case t: Throwable => system.eventStream.publish(HTTPBindError)

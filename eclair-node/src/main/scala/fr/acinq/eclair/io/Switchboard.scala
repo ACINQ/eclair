@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{MilliSatoshi, Satoshi, ScriptElt}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi, ScriptElt}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 
@@ -12,7 +12,7 @@ import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) extends Actor with ActorLogging {
+class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -26,7 +26,8 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
     case NewConnection(remoteNodeId, address, newChannel_opt) =>
       val connection = connections.get(remoteNodeId) match {
         case Some(connection) =>
-          log.info(s"connection to $remoteNodeId is already in progress")
+          log.info(s"already connected to nodeId=$remoteNodeId")
+          sender ! s"already connected to nodeId=$remoteNodeId"
           connection
         case None =>
           log.info(s"connecting to $remoteNodeId @ $address")
@@ -38,7 +39,7 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
         case Some(peer) => peer
         case None => createPeer(remoteNodeId, Some(address))
       }
-      newChannel_opt.map (peer forward _)
+      newChannel_opt.foreach(peer forward _)
       context become main(peers + (remoteNodeId -> peer), connections + (remoteNodeId -> connection))
 
     case Terminated(actor) if connections.values.toSet.contains(actor) =>
@@ -51,6 +52,9 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
       peer forward h
       context become main(peers + (remoteNodeId -> peer), connections)
 
+    case 'peers =>
+      sender ! peers.keys
+
   }
 
   def createPeer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = context.actorOf(Peer.props(remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
@@ -58,7 +62,7 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
 
 object Switchboard {
 
-  def props(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) = Props(classOf[Switchboard], watcher, router, relayer, defaultFinalScriptPubKey)
+  def props(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(classOf[Switchboard], watcher, router, relayer, defaultFinalScriptPubKey)
 
   // @formatter:off
   case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi)

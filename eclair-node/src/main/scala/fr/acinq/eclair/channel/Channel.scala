@@ -72,7 +72,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
     case Event(initFunder@INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), Nothing) =>
       this.remoteNodeId = remoteNodeId
-      context.system.eventStream.publish(ChannelCreated(context.parent, self, localParams, remoteNodeId))
+      context.system.eventStream.publish(ChannelCreated(temporaryChannelId, context.parent, self, localParams, remoteNodeId))
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
       val open = OpenChannel(temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
@@ -94,7 +94,6 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(inputFundee@INPUT_INIT_FUNDEE(remoteNodeId, _, localParams, _), Nothing) if !localParams.isFunder =>
       this.remoteNodeId = remoteNodeId
-      context.system.eventStream.publish(ChannelCreated(context.parent, self, localParams, remoteNodeId))
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
   })
 
@@ -106,6 +105,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           remote ! Error(open.temporaryChannelId, t.getMessage.getBytes)
           goto(CLOSED)
         case Success(_) =>
+          context.system.eventStream.publish(ChannelCreated(open.temporaryChannelId, context.parent, self, localParams, remoteNodeId))
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Globals.mindepth_blocks
           val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
@@ -329,7 +329,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(FundingLocked(_, _, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(params, commitments, _)) =>
       log.info(s"channelId=${java.lang.Long.toUnsignedString(d.channelId)}")
-      Register.createAlias(remoteNodeId.hash160, d.channelId)
+      Register.createAlias(remoteNodeId, d.channelId)
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       if (Features.isChannelPublic(params.localParams.localFeatures) && Features.isChannelPublic(params.remoteParams.localFeatures)) {
@@ -507,7 +507,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       handleCommandError(sender, new RuntimeException("cannot close when there are pending changes"))
 
     case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) =>
-      ourScriptPubKey_opt.getOrElse(Script.write(d.params.localParams.defaultFinalScriptPubKey)) match {
+      ourScriptPubKey_opt.getOrElse(d.params.localParams.defaultFinalScriptPubKey) match {
         case finalScriptPubKey if Closing.isValidFinalScriptPubkey(finalScriptPubKey) =>
           val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
           handleCommandSuccess(sender, localShutdown, d.copy(unackedShutdown = Some(localShutdown)))
@@ -526,7 +526,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           remote ! commit
           commitments1
         } else commitments
-        val shutdown = Shutdown(d.channelId, Script.write(params.localParams.defaultFinalScriptPubKey))
+        val shutdown = Shutdown(d.channelId, params.localParams.defaultFinalScriptPubKey)
         remote ! shutdown
         (shutdown, commitments2)
       }) match {

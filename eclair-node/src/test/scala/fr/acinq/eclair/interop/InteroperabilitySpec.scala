@@ -89,7 +89,7 @@ class InteroperabilitySpec extends FunSuite with BeforeAndAfterAll {
   }
 
   def sendCommand(channelId: Long, cmd: Command): Future[String] = {
-    system.actorSelection(Register.actorPathToChannelId(system, channelId)).resolveOne().map(actor => {
+    system.actorSelection(Register.actorPathToChannel(system, channelId)).resolveOne().map(actor => {
       actor ! cmd
       "ok"
     })

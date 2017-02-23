@@ -911,7 +911,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv Shutdown (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, Shutdown(0, Script.write(Bob.channelParams.defaultFinalScriptPubKey)))
+      sender.send(alice, Shutdown(0, Bob.channelParams.defaultFinalScriptPubKey))
       alice2bob.expectMsgType[Shutdown]
       alice2bob.expectMsgType[ClosingSigned]
       awaitCond(alice.stateName == NEGOTIATING)
@@ -937,7 +937,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       // actual test begins
-      sender.send(bob, Shutdown(0, Script.write(TestConstants.Alice.channelParams.defaultFinalScriptPubKey)))
+      sender.send(bob, Shutdown(0, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -963,7 +963,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       crossSign(alice, bob, alice2bob, bob2alice)
 
       // actual test begins
-      sender.send(bob, Shutdown(0, Script.write(TestConstants.Alice.channelParams.defaultFinalScriptPubKey)))
+      sender.send(bob, Shutdown(0, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
       bob2alice.expectMsgType[Shutdown]
       awaitCond(bob.stateName == SHUTDOWN)
     }

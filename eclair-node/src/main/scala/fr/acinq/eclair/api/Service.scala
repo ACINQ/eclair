@@ -2,7 +2,7 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, ActorSystem}
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
@@ -15,11 +15,10 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
-import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
-import fr.acinq.eclair.router.ChannelDesc
+import fr.acinq.eclair.wire.NodeAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -44,7 +43,7 @@ trait Service extends Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -54,15 +53,24 @@ trait Service extends Logging {
 
   def router: ActorRef
 
+  def register: ActorRef
+
   def paymentInitiator: ActorRef
 
   def paymentHandler: ActorRef
+
+  def system: ActorSystem
 
   val customHeaders = `Access-Control-Allow-Origin`(*) ::
     `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
     `Access-Control-Allow-Methods`(PUT, GET, POST, DELETE, OPTIONS) ::
     `Cache-Control`(public, `no-store`, `max-age`(0)) ::
     `Access-Control-Allow-Headers`("x-requested-with") :: Nil
+
+  def getChannel(channelIdHex: String): Future[ActorRef] =
+    for {
+      channels <- (register ? 'channels).mapTo[Map[String, ActorRef]]
+    } yield channels.get(channelIdHex).getOrElse(throw new RuntimeException("unknown channel"))
 
   val route =
     respondWithDefaultHeaders(customHeaders) {
@@ -72,39 +80,36 @@ trait Service extends Logging {
             req =>
               val f_res: Future[AnyRef] = req match {
                 case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: Nil) =>
-                  switchboard ! NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), None)
-                  Future.successful("ok")
-                case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(funding_amount) :: Nil) =>
-                  switchboard ! NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(funding_amount.toLong), MilliSatoshi(0))))
-                  Future.successful("ok")
-                case JsonRPCBody(_, _, "info", _) =>
-                  Future.successful(Status(Globals.Node.id))
-                /*case JsonRPCBody(_, _, "list", _) =>
-                  (register ? ListChannels).mapTo[Iterable[ActorRef]]
-                    .flatMap(l => Future.sequence(l.map(c => c ? CMD_GETINFO)))*/
+                  (switchboard ? NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
+                case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>
+                  (switchboard ? NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong))))).mapTo[String]
+                case JsonRPCBody(_, _, "peers", _) =>
+                  (switchboard ? 'peers).mapTo[Iterable[PublicKey]].map(_.map(_.toBin))
+                case JsonRPCBody(_, _, "channels", _) =>
+                  (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys)
+                case JsonRPCBody(_, _, "channel", JString(channelIdHex) :: Nil) =>
+                  getChannel(channelIdHex).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "network", _) =>
-                  (router ? 'channels).mapTo[Iterable[ChannelDesc]]
-                case JsonRPCBody(_, _, "addhtlc", JInt(amount) :: JString(rhash) :: JString(nodeId) :: Nil) =>
-                  (paymentInitiator ? CreatePayment(amount.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[ChannelEvent]
+                  (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
-                /*case JsonRPCBody(_, _, "sign", JInt(channel) :: Nil) =>
-                  (register ? SendCommand(channel.toLong, CMD_SIGN)).mapTo[ActorRef].map(_ => "ok")
-                case JsonRPCBody(_, _, "fulfillhtlc", JString(channel) :: JDouble(id) :: JString(r) :: Nil) =>
-                  (register ? SendCommand(channel.toLong, CMD_FULFILL_HTLC(id.toLong, BinaryData(r), commit = true))).mapTo[ActorRef].map(_ => "ok")
-                case JsonRPCBody(_, _, "close", JString(channel) :: JString(scriptPubKey) :: Nil) =>
-                  (register ? SendCommand(channel.toLong, CMD_CLOSE(Some(scriptPubKey)))).mapTo[ActorRef].map(_ => "ok")
-                case JsonRPCBody(_, _, "close", JString(channel) :: Nil) =>
-                  (register ? SendCommand(channel.toLong, CMD_CLOSE(None))).mapTo[ActorRef].map(_ => "ok")*/
+                case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
+                  (paymentInitiator ? CreatePayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[String]
+                case JsonRPCBody(_, _, "close", JString(channelIdHex) :: JString(scriptPubKey) :: Nil) =>
+                  getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
+                case JsonRPCBody(_, _, "close", JString(channelIdHex) :: Nil) =>
+                  getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "info: display basic node information",
-                    "connect (host, port, anchor_amount): open a channel with another eclair or lightningd instance",
-                    "list: list existing channels",
-                    "addhtlc (amount, rhash, nodeId): send an htlc",
-                    "sign (channel_id): update the commitment transaction",
-                    "fulfillhtlc (channel_id, htlc_id, r): fulfill an htlc",
+                    "connect (host, port, nodeId): opens a secure connection with another lightning node",
+                    "connect (host, port, nodeId, fundingSat, pushMsat): open a channel with another lightning node",
+                    "peers: list existing peers",
+                    "channels: list existing channels",
+                    "channel (channelId): retrieve detailed information about a given channel",
+                    "send (amount, paymentHash, nodeId): send a payment to a lightning node",
                     "close (channel_id): close a channel",
+                    "close (channel_id, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
                 case _ => Future.failed(new RuntimeException("method not found"))
               }

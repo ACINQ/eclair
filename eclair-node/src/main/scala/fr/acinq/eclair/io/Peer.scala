@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{DeterministicWallet, ScriptElt}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, ScriptElt}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
@@ -39,7 +39,7 @@ case object CONNECTED extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) extends LoggingFSM[State, Data] {
+class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
 
   import Peer._
 
@@ -154,11 +154,11 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
 
 object Peer {
 
-  def props(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: Seq[ScriptElt]) = Props(classOf[Peer], remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey)
+  def props(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(classOf[Peer], remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey)
 
   def generateKey(keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, keyPath).privateKey
 
-  def makeChannelParams(keyIndex: Long, defaultFinalScriptPubKey: Seq[ScriptElt], isFunder: Boolean): LocalParams =
+  def makeChannelParams(keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean): LocalParams =
     LocalParams(
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,

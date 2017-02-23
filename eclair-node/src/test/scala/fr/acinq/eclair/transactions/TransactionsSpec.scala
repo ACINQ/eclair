@@ -64,7 +64,7 @@ class TransactionsSpec extends FunSuite {
     val localPaymentPriv = PrivateKey(BinaryData("dd" * 32), compressed = true)
     val remotePaymentPriv = PrivateKey(BinaryData("ee" * 32), compressed = true)
     val localFinalPriv = PrivateKey(BinaryData("ff" * 32), compressed = true)
-    val finalPubKeyScript = Script.pay2wpkh(PrivateKey(BinaryData("ff" * 32), compressed = true).publicKey)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("ff" * 32), compressed = true).publicKey))
     val toLocalDelay = 144
     val feeRatePerKw = 1000
 
@@ -134,7 +134,7 @@ class TransactionsSpec extends FunSuite {
     val localRevocationPriv = PrivateKey(BinaryData("cc" * 32) :+ 1.toByte)
     val localPaymentPriv = PrivateKey(BinaryData("dd" * 32) :+ 1.toByte)
     val remotePaymentPriv = PrivateKey(BinaryData("ee" * 32) :+ 1.toByte)
-    val finalPubKeyScript = Script.pay2wpkh(PrivateKey(BinaryData("ee" * 32), true).publicKey)
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("ee" * 32), true).publicKey))
     val commitInput = Funding.makeFundingInputInfo(BinaryData("12" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val toLocalDelay = 144
     val localDustLimit = Satoshi(542)

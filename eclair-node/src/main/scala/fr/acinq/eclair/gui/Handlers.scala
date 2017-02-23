@@ -54,7 +54,7 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: String, rhash: String, amountMsat: String) = {
     logger.info(s"sending $amountMsat to $rhash @ $nodeId")
-    (paymentInitiator ? CreatePayment(amountMsat.toLong, BinaryData(rhash), BinaryData(nodeId))).mapTo[String].onComplete {
+    (paymentInitiator ? CreatePayment(amountMsat.toLong, rhash, PublicKey(nodeId))).mapTo[String].onComplete {
       case Success(s) =>
         val message = s"Amount (mSat): $amountMsat\nH: $rhash"
         notification("Payment Successful", message, NOTIFICATION_SUCCESS)
