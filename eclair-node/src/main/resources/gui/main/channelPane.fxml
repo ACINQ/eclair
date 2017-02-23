@@ -4,7 +4,7 @@
 <?import javafx.scene.layout.*?>
 <?import java.net.URL?>
 <VBox styleClass="channel" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-      onContextMenuRequested="#openChannelContext" onMouseClicked="#closeChannelContext">
+      onContextMenuRequested="#openChannelContext">
     <children>
         <GridPane styleClass="grid" prefWidth="400.0">
             <columnConstraints>
@@ -23,8 +23,7 @@
             </rowConstraints>
             <children>
                 <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
-                           focusTraversable="false" onContextMenuRequested="#openChannelContext" onMouseClicked="#closeChannelContext"
-                           GridPane.columnSpan="4"/>
+                           focusTraversable="false" GridPane.columnSpan="4"/>
                 <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT">
                     <children>
                         <Button fx:id="reconnect" mnemonicParsing="false" styleClass="" text="Reconnect"/>
