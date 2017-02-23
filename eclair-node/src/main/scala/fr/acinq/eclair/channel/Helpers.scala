@@ -114,7 +114,7 @@ object Helpers {
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo]): Option[TransactionWithInputInfo] = {
       attempt match {
         case Success(txinfo) =>
-          logger.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} tx=${Transaction.write(txinfo.tx)}")
+          logger.warn(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${Transaction.write(txinfo.tx)}")
           Some(txinfo)
         case Failure(t) =>
           logger.warn(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
@@ -261,6 +261,7 @@ object Helpers {
       // this tx has been published by remote, so we need to invert local/remote params
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
+      logger.warn(s"counterparty has published revoked commit txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
       remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
         .map(d => Scalar(d))
