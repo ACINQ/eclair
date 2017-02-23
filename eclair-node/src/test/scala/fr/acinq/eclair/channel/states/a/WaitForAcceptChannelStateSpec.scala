@@ -4,7 +4,7 @@ import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain.PeerWatcher
-import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_CREATED_INTERNAL, _}
+import fr.acinq.eclair.channel.{WAIT_FOR_FUNDING_INTERNAL, _}
 import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -46,7 +46,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass {
     within(30 seconds) {
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_CREATED_INTERNAL)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     }
   }
 

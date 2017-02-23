@@ -85,7 +85,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(bob, CMD_FULFILL_HTLC(0, "11" * 32))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
-      awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
+      awaitCond(bob.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill),
+          unackedMessages = fulfill :: Nil)))
     }
   }
 
@@ -151,7 +154,10 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(bob, CMD_FAIL_HTLC(1, "some reason"))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
-      awaitCond(bob.stateData == initialState.copy(commitments = initialState.commitments.copy(localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
+      awaitCond(bob.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
+          unackedMessages = fail :: Nil)))
     }
   }
 

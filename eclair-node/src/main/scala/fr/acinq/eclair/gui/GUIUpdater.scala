@@ -11,6 +11,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, PeerChannel, PeerNode}
+import fr.acinq.eclair.io.Reconnect
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.{Globals, Setup}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
@@ -32,7 +33,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(channel, params, theirNodeId) =>
+    case ChannelCreated(peer, channel, params, theirNodeId) =>
       log.info(s"new channel: $channel")
 
       val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
@@ -44,6 +45,9 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       channelPaneController.funder.setText(if (params.isFunder) "Yes" else "No")
       channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
+      })
+      channelPaneController.reconnect.setOnAction(new EventHandler[ActionEvent] {
+        override def handle(event: ActionEvent) = peer ! Reconnect
       })
 
       Platform.runLater(new Runnable() {

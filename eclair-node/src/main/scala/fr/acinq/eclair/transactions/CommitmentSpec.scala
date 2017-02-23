@@ -9,9 +9,9 @@ import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, U
   */
 
 // @formatter:off
-sealed trait Direction
-case object IN extends Direction
-case object OUT extends Direction
+sealed trait Direction { def opposite: Direction }
+case object IN extends Direction { def opposite = OUT }
+case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
 case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])
@@ -36,7 +36,7 @@ object CommitmentSpec {
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
   def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFulfillHtlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.add.id == update.id && htlc.add.paymentHash == sha256(update.paymentPreimage)) match {
+    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == update.id) match {
       case Some(htlc) if direction == OUT => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
@@ -45,15 +45,15 @@ object CommitmentSpec {
 
   // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
   def failHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFailHtlc): CommitmentSpec = {
-    spec.htlcs.find(_.add.id == update.id) match {
+    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == update.id) match {
       case Some(htlc) if direction == OUT => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
     }
   }
 
-  def reduce(ourCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {
-    val spec1 = localChanges.foldLeft(ourCommitSpec) {
+  def reduce(localCommitSpec: CommitmentSpec, localChanges: List[UpdateMessage], remoteChanges: List[UpdateMessage]): CommitmentSpec = {
+    val spec1 = localChanges.foldLeft(localCommitSpec) {
       case (spec, u: UpdateAddHtlc) => addHtlc(spec, OUT, u)
       case (spec, _) => spec
     }
@@ -73,4 +73,5 @@ object CommitmentSpec {
     }
     spec4
   }
+
 }

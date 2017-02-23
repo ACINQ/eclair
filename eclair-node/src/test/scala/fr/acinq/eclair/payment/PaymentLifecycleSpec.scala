@@ -5,6 +5,7 @@ import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.router.BaseRouterSpec
+import fr.acinq.eclair.wire.{UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -46,7 +47,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    sender.send(paymentFSM, PaymentFailed(null, request.paymentHash, "some reason"))
+    sender.send(paymentFSM, UpdateFailHtlc(0, 0, "some reason".getBytes))
 
     val res = sender.expectMsgType[Failure]
     assert(res.cause.getMessage === "some reason")
@@ -56,6 +57,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
     val monitor = TestProbe()
     val sender = TestProbe()
+    val eventListener = TestProbe()
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
@@ -65,10 +68,11 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    sender.send(paymentFSM, PaymentSent(null, request.paymentHash))
+    sender.send(paymentFSM, UpdateFulfillHtlc(0, 0, "42" * 32))
 
     val res = sender.expectMsgType[String]
     assert(res === "sent")
+
   }
 
 }

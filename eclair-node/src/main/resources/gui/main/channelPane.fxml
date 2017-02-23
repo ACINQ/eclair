@@ -25,8 +25,12 @@
                 <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
                            focusTraversable="false" onContextMenuRequested="#openChannelContext" onMouseClicked="#closeChannelContext"
                            GridPane.columnSpan="4"/>
-                <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"
-                        GridPane.columnIndex="4" GridPane.halignment="RIGHT"/>
+                <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT">
+                    <children>
+                        <Button fx:id="reconnect" mnemonicParsing="false" styleClass="" text="Reconnect"/>
+                        <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"/>
+                    </children>
+                </HBox>
 
                 <ProgressBar fx:id="balanceBar" minHeight="4.0" prefHeight="4.0" maxWidth="1.7976931348623157E308"
                              progress="0.0" snapToPixel="false" focusTraversable="false"

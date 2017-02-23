@@ -88,7 +88,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
 
   test("recv FundingLocked (channel id mismatch") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       val fundingLocked = bob2alice.expectMsgType[FundingLocked]
       alice ! fundingLocked.copy(channelId = 42)
       alice2bob.expectMsgType[Error]
@@ -101,7 +101,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       // bob publishes his commitment tx
-      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
@@ -110,7 +110,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
 
   test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(PublishAsap(tx))
@@ -120,7 +120,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
 
   test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error(0, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
@@ -130,7 +130,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass {
 
   test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))

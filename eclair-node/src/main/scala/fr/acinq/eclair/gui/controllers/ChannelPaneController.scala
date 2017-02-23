@@ -22,6 +22,7 @@ class ChannelPaneController(theirNodeIdValue: String, channelParams: LocalParams
   @FXML var funder: TextField = _
   @FXML var state: TextField = _
   @FXML var close: Button = _
+  @FXML var reconnect: Button = _
 
   var contextMenu: ContextMenu = _
 

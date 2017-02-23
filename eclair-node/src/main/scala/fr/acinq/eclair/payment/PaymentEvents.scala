@@ -8,8 +8,8 @@ import fr.acinq.bitcoin.BinaryData
   */
 class PaymentEvent
 
-case class PaymentSent(channel: ActorRef, h: BinaryData) extends PaymentEvent
+//case class PaymentSent(channel: ActorRef, h: BinaryData) extends PaymentEvent
 
-case class PaymentFailed(channel: ActorRef, h: BinaryData, reason: String) extends PaymentEvent
+//case class PaymentFailed(channel: ActorRef, h: BinaryData, reason: String) extends PaymentEvent
 
 case class PaymentReceived(channel: ActorRef, h: BinaryData) extends PaymentEvent

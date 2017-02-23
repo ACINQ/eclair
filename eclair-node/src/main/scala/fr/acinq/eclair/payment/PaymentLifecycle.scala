@@ -8,7 +8,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire.{Codecs, PerHopPayload}
+import fr.acinq.eclair.wire.{Codecs, PerHopPayload, UpdateFailHtlc, UpdateFulfillHtlc}
 import scodec.Attempt
 
 // @formatter:off
@@ -46,7 +46,6 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef) extends Loggi
     case Event(RouteResponse(hops), WaitingForRoute(s, c)) =>
       val firstHop = hops.head
       val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
-      context.system.eventStream.subscribe(self, classOf[PaymentEvent])
       context.actorSelection(Register.actorPathToChannelId(firstHop.lastUpdate.channelId)) ! cmd
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
@@ -58,15 +57,17 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef) extends Loggi
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event("ok", _) => stay()
 
-    case Event(e@PaymentSent(_, h), WaitingForComplete(s, cmd)) if h == cmd.paymentHash =>
-      s ! "sent"
-      stop(FSM.Normal)
-
     case Event(reason: String, WaitingForComplete(s, _)) =>
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 
-    case Event(e@PaymentFailed(_, h, reason), WaitingForComplete(s, cmd)) if h == cmd.paymentHash =>
+    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, cmd)) =>
+      s ! "sent"
+      stop(FSM.Normal)
+
+    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, cmd)) =>
+      // TODO: fix new String(fail.reason)
+      val reason = new String(fail.reason)
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
   }
@@ -128,7 +129,7 @@ object PaymentLifecycle {
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion, commit = true)
+    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion, upstream_opt = None, commit = true)
   }
 
 }
