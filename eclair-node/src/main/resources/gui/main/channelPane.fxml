@@ -27,7 +27,7 @@
                                    HBox.hgrow="ALWAYS" focusTraversable="false" />
                         <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT" alignment="CENTER_RIGHT" HBox.hgrow="NEVER" spacing="5.0">
                             <children>
-                                <Button fx:id="reconnect" mnemonicParsing="false" styleClass="" text="Reconnect"/>
+                                <Button fx:id="reconnect" mnemonicParsing="false" styleClass="" text="Reconnect" disable="true"/>
                                 <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"/>
                             </children>
                         </HBox>

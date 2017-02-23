@@ -71,7 +71,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
     case ChannelChangedState(channel, _, _, previousState, currentState, currentData) if m.contains(channel) =>
       val channelPane = m(channel)
       Platform.runLater(new Runnable() {
-        override def run = channelPane.state.setText(currentState.toString)
+        override def run = {
+          if (channelPane.channelParams.isFunder && OFFLINE.equals(currentState)) {
+            channelPane.reconnect.setDisable(false)
+          } else {
+            channelPane.reconnect.setDisable(true)
+          }
+          channelPane.state.setText(currentState.toString)
+        }
       })
 
     case ChannelSignatureReceived(channel, commitments) =>
