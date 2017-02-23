@@ -89,8 +89,9 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
       val csvTimeout = Scripts.csvTimeout(tx)
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
-        log.info(s"this tx has a relative timeout of ${csvTimeout} blocks, watching parent tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
-        self ! WatchConfirmed(self, tx.txIn(0).outPoint.txid, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        val parentTxid = tx.txIn(0).outPoint.txid
+        log.info(s"this tx has a relative timeout of ${csvTimeout} blocks, watching parent tx: parenttxid=$parentTxid txid=${tx.txid} tx=${Transaction.write(tx)}")
+        self ! WatchConfirmed(self, parentTxid, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of tx until block=$cltvTimeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
         val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))
