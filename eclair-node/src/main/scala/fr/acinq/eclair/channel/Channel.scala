@@ -302,8 +302,9 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       blockchain ! WatchLost(self, commitments.anchorId, params.minimumDepth, BITCOIN_FUNDING_LOST)
       val nextPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 1)
       val fundingLocked = FundingLocked(temporaryChannelId, channelId, nextPerCommitmentPoint)
-      remote ! fundingLocked
       deferred.map(self ! _)
+      remote ! fundingLocked
+      log.info(s"unstashing messages")
       // TODO: htlcIdx should not be 0 when resuming connection
       goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(params, commitments.copy(channelId = channelId), fundingLocked)
 
