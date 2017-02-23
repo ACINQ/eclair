@@ -450,7 +450,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
-              log.debug(s"sending a new sig, spec:\n${Commitments.specsToString(commitments1)}")
+              log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
             case Failure(cause) => handleCommandError(sender, cause)
           }
@@ -463,7 +463,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveCommit(d.commitments, commit)) match {
         case Success(Right((commitments1, revocation))) =>
           remote ! revocation
-          log.debug(s"received a new sig, spec:\n${Commitments.specsToString(commitments1)}")
+          log.debug(s"received a new sig, spec:\n${Commitments.specs2String(commitments1)}")
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
@@ -488,7 +488,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
               log.debug(s"relaying $htlc")
               relayer ! ForwardAdd(htlc)
           }
-          log.debug(s"received a new rev, spec:\n${Commitments.specsToString(commitments1)}")
+          log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
@@ -605,7 +605,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
-              log.debug(s"sending a new sig, spec:\n${Commitments.specsToString(commitments1)}")
+              log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
             case Failure(cause) => handleCommandError(sender, cause)
           }
@@ -621,7 +621,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           remote ! revocation
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           remote ! closingSigned
-          log.debug(s"received a new sig, switching to NEGOTIATING spec:\n${Commitments.specsToString(commitments1)}")
+          log.debug(s"received a new sig, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success(Right((commitments1, revocation))) =>
           remote ! revocation
@@ -629,7 +629,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
-          log.debug(s"received a new sig, spec:\n${Commitments.specsToString(commitments1)}")
+          log.debug(s"received a new sig, spec:\n${Commitments.specs2String(commitments1)}")
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) =>
@@ -646,13 +646,13 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
 
           remote ! closingSigned
-          log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specsToString(commitments1)}")
+          log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success(Right(commitments1)) =>
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
-          log.debug(s"received a new rev, spec:\n${Commitments.specsToString(commitments1)}")
+          log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) =>
           // this was an old revocation, nothing to do
@@ -816,7 +816,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(INPUT_RECONNECTED(r), d@DATA_NORMAL(_, commitments, _)) =>
       remote = r
-      log.info(s"resuming with ${Commitments.changesToString(commitments)}")
+      log.info(s"resuming with ${Commitments.changes2String(commitments)}")
       //val resend = commitments.unackedMessages.filterNot(_.isInstanceOf[RevokeAndAck])
       val resend = commitments.unackedMessages //.filterNot(_.isInstanceOf[RevokeAndAck])
       log.info(s"re-sending: ${resend.map(Commitments.msg2String(_)).mkString(" ")}")

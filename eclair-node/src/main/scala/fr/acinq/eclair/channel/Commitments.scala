@@ -430,7 +430,7 @@ object Commitments extends Logging {
     case _ => "???"
   }
 
-  def changesToString(commitments: Commitments): String = {
+  def changes2String(commitments: Commitments): String = {
     import commitments._
     s"""commitments:
        |    localChanges:
@@ -448,7 +448,7 @@ object Commitments extends Logging {
        |        ${unackedMessages.map(msg2String(_)).mkString(" ")}""".stripMargin
   }
 
-  def specsToString(commitments: Commitments): String = {
+  def specs2String(commitments: Commitments): String = {
     s"""specs:
        |localcommit:
        |  toLocal: ${commitments.localCommit.spec.toLocalMsat}

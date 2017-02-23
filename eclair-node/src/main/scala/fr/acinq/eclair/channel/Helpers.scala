@@ -73,7 +73,7 @@ object Helpers {
     }
 
     def makeFirstClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
-      logger.info(s"making first closing tx with commitments:\n${Commitments.specsToString(commitments)}")
+      logger.info(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
       import commitments._
       val closingFee = {
         // this is just to estimate the weight
