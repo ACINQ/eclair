@@ -24,7 +24,7 @@ case class Init(globalFeatures: BinaryData,
                 localFeatures: BinaryData) extends SetupMessage
 
 case class Error(channelId: Long,
-                 data: BinaryData) extends SetupMessage
+                 data: BinaryData) extends SetupMessage with HasChannelId
 
 case class OpenChannel(temporaryChannelId: Long,
                        fundingSatoshis: Long,
