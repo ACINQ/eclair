@@ -9,9 +9,9 @@ import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, U
   */
 
 // @formatter:off
-sealed trait Direction
-case object IN extends Direction
-case object OUT extends Direction
+sealed trait Direction { def opposite: Direction }
+case object IN extends Direction { def opposite = OUT }
+case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
 case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])

@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.payment.Binding
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
@@ -391,25 +391,20 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.unackedShutdown.isDefined =>
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
 
-    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
+    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success((commitments1, add)) =>
-          relayer ! Binding(add, origin)
+          val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
+          relayer ! Bind(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, add, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
     case Event(add: UpdateAddHtlc, d@DATA_NORMAL(params, commitments, _)) =>
-      if (Commitments.isOldAdd(d.commitments, add)) {
-        log.warning(s"ignoring old add")
-        stay
-      } else {
-        Try(Commitments.receiveAdd(commitments, add)) match {
-          case Success(commitments1) =>
-            stay using d.copy(commitments = commitments1)
-          case Failure(cause) => handleLocalError(cause, d)
-        }
+      Try(Commitments.receiveAdd(commitments, add)) match {
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Failure(cause) => handleLocalError(cause, d)
       }
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_NORMAL) =>
@@ -421,19 +416,12 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       }
 
     case Event(fulfill@UpdateFulfillHtlc(_, id, r), d@DATA_NORMAL(params, commitments, _)) =>
-      if (Commitments.isOldFulfill(d.commitments, fulfill)) {
-        log.warning(s"ignoring old fulfill")
-        stay
-      } /*else if (!Commitments.isFulfillCrossSigned(d.commitments, fulfill)) {
-        log.warning(s"ignoring fulfill not cross-signed (old?)")
-        stay
-      }*/ else {
-        Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
-          case Success((commitments1, htlc)) =>
-            relayer ! (htlc, fulfill)
-            stay using d.copy(commitments = commitments1)
-          case Failure(cause) => handleLocalError(cause, d)
-        }
+      Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFulfill(fulfill)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
+        case Failure(cause) => handleLocalError(cause, d)
       }
 
     case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_NORMAL) =>
@@ -446,9 +434,10 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(params, _, _)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
-        case Success((commitments1, htlc)) =>
-          relayer ! (htlc, fail)
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFail(fail)
           stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -470,47 +459,43 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       }
 
     case Event(commit@CommitSig(_, theirSig, theirHtlcSigs), d: DATA_NORMAL) =>
-      if (Commitments.isOldCommit(d.commitments, commit)) {
-        log.warning(s"ignoring old commit")
-        stay
-      } else {
-        Try(Commitments.receiveCommit(d.commitments, commit)) match {
-          case Success((commitments1, revocation)) =>
-            remote ! revocation
-            log.debug(s"received a new sig, spec:\n${Commitments.specsToString(commitments1)}")
-            if (Commitments.localHasChanges(commitments1)) {
-              // if we have newly acknowledged changes let's sign them
-              self ! CMD_SIGN
-            }
-            context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-            stay using d.copy(commitments = commitments1)
-          case Failure(cause) => handleLocalError(cause, d)
-        }
+      Try(Commitments.receiveCommit(d.commitments, commit)) match {
+        case Success(Right((commitments1, revocation))) =>
+          remote ! revocation
+          log.debug(s"received a new sig, spec:\n${Commitments.specsToString(commitments1)}")
+          if (Commitments.localHasChanges(commitments1)) {
+            // if we have newly acknowledged changes let's sign them
+            self ! CMD_SIGN
+          }
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) =>
+          // this was an old commit, nothing to do
+          stay
+        case Failure(cause) => handleLocalError(cause, d)
       }
 
     case Event(revocation: RevokeAndAck, d: DATA_NORMAL) =>
-      if (Commitments.isOldRevocation(d.commitments, revocation)) {
-        log.warning(s"ignoring old revocation")
-        stay
-      } else {
-        // we received a revocation because we sent a signature
-        // => all our changes have been acked
-        Try(Commitments.receiveRevocation(d.commitments, revocation)) match {
-          case Success(commitments1) =>
-            // we forward HTLCs only when they have been committed by both sides
-            // it always happen when we receive a revocation, because, we always sign our changes before they sign them
-            d.commitments.remoteChanges.signed.collect {
-              case htlc: UpdateAddHtlc =>
-                log.debug(s"relaying $htlc")
-                relayer ! htlc
-            }
-            log.debug(s"received a new rev, spec:\n${Commitments.specsToString(commitments1)}")
-            if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
-              self ! CMD_SIGN
-            }
-            stay using d.copy(commitments = commitments1)
-          case Failure(cause) => handleLocalError(cause, d)
-        }
+      // we received a revocation because we sent a signature
+      // => all our changes have been acked
+      Try(Commitments.receiveRevocation(d.commitments, revocation)) match {
+        case Success(Right(commitments1)) =>
+          // we forward HTLCs only when they have been committed by both sides
+          // it always happen when we receive a revocation, because, we always sign our changes before they sign them
+          d.commitments.remoteChanges.signed.collect {
+            case htlc: UpdateAddHtlc =>
+              log.debug(s"relaying $htlc")
+              relayer ! ForwardAdd(htlc)
+          }
+          log.debug(s"received a new rev, spec:\n${Commitments.specsToString(commitments1)}")
+          if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
+            self ! CMD_SIGN
+          }
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) =>
+          // this was an old revocation, nothing to do
+          stay
+        case Failure(cause) => handleLocalError(cause, d)
       }
 
     case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) if d.unackedShutdown.isDefined =>
@@ -587,9 +572,10 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(fulfill@UpdateFulfillHtlc(_, id, r), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
-        case Success((commitments1, htlc)) =>
-          relayer ! (htlc, fulfill)
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFulfill(fulfill)
           stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -601,9 +587,10 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(fail@UpdateFailHtlc(_, id, reason), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
-        case Success((commitments1, htlc)) =>
-          relayer ! (htlc, fail)
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFail(fail)
           stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -627,13 +614,13 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown)) =>
       // TODO: we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
-        case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
+        case Success(Right((commitments1, revocation))) if commitments1.hasNoPendingHtlcs =>
           remote ! revocation
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           remote ! closingSigned
           log.debug(s"received a new sig, switching to NEGOTIATING spec:\n${Commitments.specsToString(commitments1)}")
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
-        case Success((commitments1, revocation)) =>
+        case Success(Right((commitments1, revocation))) =>
           remote ! revocation
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
@@ -642,6 +629,9 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           log.debug(s"received a new sig, spec:\n${Commitments.specsToString(commitments1)}")
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
           stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) =>
+          // this was an old commit, nothing to do
+          stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -649,18 +639,21 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       // we received a revocation because we sent a signature
       // => all our changes have been acked
       Try(Commitments.receiveRevocation(d.commitments, msg)) match {
-        case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
+        case Success(Right(commitments1)) if commitments1.hasNoPendingHtlcs =>
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
 
           remote ! closingSigned
           log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specsToString(commitments1)}")
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
-        case Success(commitments1) =>
+        case Success(Right(commitments1)) =>
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
           log.debug(s"received a new rev, spec:\n${Commitments.specsToString(commitments1)}")
           stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) =>
+          // this was an old revocation, nothing to do
+          stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -814,9 +807,9 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(INPUT_RECONNECTED(r), d@DATA_NORMAL(_, commitments, _)) =>
       remote = r
-      log.info(s"resuming with ${Commitments.toString(commitments)}")
+      log.info(s"resuming with ${Commitments.changesToString(commitments)}")
       //val resend = commitments.unackedMessages.filterNot(_.isInstanceOf[RevokeAndAck])
-      val resend = commitments.unackedMessages//.filterNot(_.isInstanceOf[RevokeAndAck])
+      val resend = commitments.unackedMessages //.filterNot(_.isInstanceOf[RevokeAndAck])
       log.info(s"re-sending: ${resend.map(Commitments.msg2String(_)).mkString(" ")}")
       resend.foreach(remote ! _)
       if (Commitments.localHasChanges(commitments)) {
@@ -825,11 +818,12 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       }
       goto(NORMAL)
 
-    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, origin, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
+    case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
       log.info(s"we are disconnected so we just include the add in our commitments")
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success((commitments1, add)) =>
-          relayer ! Binding(add, origin)
+          val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
+          relayer ! Bind(add, origin)
           sender ! "ok"
           stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleCommandError(sender, cause)

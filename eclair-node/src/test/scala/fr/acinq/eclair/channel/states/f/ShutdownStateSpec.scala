@@ -97,7 +97,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FULFILL_HTLC(42, "12" * 32))
-      sender.expectMsg("requirement failed: unknown htlc id=42")
+      sender.expectMsg("unknown htlc id=42")
       assert(initialState == bob.stateData)
     }
   }

@@ -8,7 +8,7 @@
         </encoder>
     </appender>
 
-    <appender name="CONSOLEWARN" class="ch.qos.logback.core.ConsoleAppender">
+    <!--appender name="CONSOLEWARN" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>WARN</level>
@@ -16,7 +16,7 @@
         <encoder>
             <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>
+    </appender-->
 
     <appender name="FILE" class="ch.qos.logback.core.FileAppender">
         <file>eclair.log</file>
@@ -26,17 +26,13 @@
         </encoder>
     </appender>
 
-    <logger name="fr.acinq.eclair.Pipe" level="INFO">
-        <appender-ref ref="CONSOLE"/>
-    </logger>
-
-    <logger name="fr.acinq.eclair.channel.states.NormalOfflineFuzzySpec" level="INFO">
+    <logger name="fr.acinq.eclair.Pipe" level="DEBUG">
         <appender-ref ref="CONSOLE"/>
     </logger>
 
     <root level="INFO">
-        <!--appender-ref ref="FILE"/-->
-        <!--appender-ref ref="CONSOLEWARN"/-->
+        <!--appender-ref ref="FILE"/>
+        <appender-ref ref="CONSOLEWARN"/-->
         <appender-ref ref="CONSOLE"/>
     </root>
 

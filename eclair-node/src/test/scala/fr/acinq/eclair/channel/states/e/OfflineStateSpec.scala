@@ -119,17 +119,16 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // => A expects rev2 but it will first receive rev1
     val comm_a1_1 = comm_a
     // A ignores rev1
-    assert(Commitments.isOldRevocation(comm_a1_1, ba_rev_1) === true)
+    assert(Commitments.receiveRevocation(comm_a1_1, ba_rev_1).isLeft)
     // since A sent back sig2 so b replies with rev2
-    val comm_a1_2 = Commitments.receiveRevocation(comm_a1_1, ba_rev_2)
+    val comm_a1_2 = Commitments.receiveRevocation(comm_a1_1, ba_rev_2).right.get
     assert(comm_a1_2.unackedMessages.map(Commitments.msg2String(_)).mkString(" ") === "")
 
     // SCENARIO A2: B did receive sig2
     // => A expects rev2 and will receive it
     val comm_a2_1 = comm_a
     // a will first receive sig2
-    assert(Commitments.isOldRevocation(comm_a2_1, ba_rev_2) === false)
-    val comm_a2_2 = Commitments.receiveRevocation(comm_a2_1, ba_rev_2)
+    val comm_a2_2 = Commitments.receiveRevocation(comm_a2_1, ba_rev_2).right.get
     assert(comm_a2_2.unackedMessages.map(Commitments.msg2String(_)).mkString(" ") === "")
 
     // SCENARIO B1: B did receive sig2

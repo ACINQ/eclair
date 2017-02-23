@@ -3,10 +3,10 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
-import fr.acinq.eclair.payment.{Local, Origin}
+import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown}
+import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
 
 /**
@@ -88,7 +88,7 @@ case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId: Long) extends BitcoinE
  */
 
 sealed trait Command
-final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), origin: Origin = Local, commit: Boolean = false) extends Command
+final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
