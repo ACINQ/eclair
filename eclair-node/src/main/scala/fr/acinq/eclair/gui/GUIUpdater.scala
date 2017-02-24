@@ -107,7 +107,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         override def run = mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
       })
 
-    case ChannelDiscovered(channelAnnouncement) =>
+    case ChannelDiscovered(channelAnnouncement, _) =>
       log.debug(s"peer channel discovered with channel id = ${channelAnnouncement.channelId}")
       mainController.allChannelsList.add(new PeerChannel(channelAnnouncement))
       Platform.runLater(new Runnable() {

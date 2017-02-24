@@ -96,7 +96,7 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.channelId))
       // TODO: check feature bit set
       log.info(s"added channel channelId=${c.channelId}")
-      context.system.eventStream.publish(ChannelDiscovered(c))
+      context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
       val stash1 = if (awaiting == Set(c)) {
         stash.foreach(self ! _)
         Nil

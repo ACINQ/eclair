@@ -32,7 +32,7 @@ class RouterSpec extends BaseRouterSpec {
     watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), true, chan_ac))
     watcher.expectMsgType[WatchSpent]
 
-    eventListener.expectMsg(ChannelDiscovered(chan_ac))
+    eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
   }
 
   test("properly announce lost channels and nodes") { case (router, watcher) =>
