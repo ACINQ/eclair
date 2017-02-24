@@ -3,7 +3,8 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.Features.Unset
+import fr.acinq.eclair.{Features, Globals}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -56,6 +57,12 @@ object Helpers {
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
+    }
+
+    def announceChannel(localLocalFeatures: BinaryData, remoteLocalFeature: BinaryData): Boolean = {
+      val localChannelPublic = Features.channelPublic(localLocalFeatures)
+      val remoteChannelPublic = Features.channelPublic(remoteLocalFeature)
+      if (localChannelPublic == Unset || remoteChannelPublic == Unset) false else true
     }
 
   }

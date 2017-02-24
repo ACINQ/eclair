@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, ScriptElt}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
@@ -67,20 +67,26 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
 
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
       import fr.acinq.eclair.Features._
-      log.info(s"$remoteNodeId has features: channelPublic=${isChannelPublic(remoteInit.localFeatures)} initialRoutingSync=${requiresInitialRoutingSync(remoteInit.localFeatures)}")
-      if (Features.requiresInitialRoutingSync(remoteInit.localFeatures)) {
-        router ! SendRoutingState(transport)
+      log.info(s"$remoteNodeId has features: channelPublic=${channelPublic(remoteInit.localFeatures)} initialRoutingSync=${initialRoutingSync(remoteInit.localFeatures)}")
+      if (Features.areFeaturesCompatible(Globals.local_features, remoteInit.localFeatures)) {
+        if (Features.initialRoutingSync(remoteInit.localFeatures) != Unset) {
+          router ! SendRoutingState(transport)
+        }
+        // let's bring existing/requested channels online
+        val channels = offlineChannels.map {
+          case BrandNewChannel(c) =>
+            self ! c
+            None
+          case HotChannel(channelId, channel) =>
+            channel ! INPUT_RECONNECTED(transport)
+            Some((channelId -> channel))
+        }.flatten.toMap
+        goto(CONNECTED) using ConnectedData(transport, remoteInit, channels)
+      } else {
+        log.warning(s"incompatible features, disconnecting")
+        transport ! PoisonPill
+        stay
       }
-      // let's bring existing/requested channels online
-      val channels = offlineChannels.map {
-        case BrandNewChannel(c) =>
-          self ! c
-          None
-        case HotChannel(channelId, channel) =>
-          channel ! INPUT_RECONNECTED(transport)
-          Some((channelId -> channel))
-      }.flatten.toMap
-      goto(CONNECTED) using ConnectedData(transport, remoteInit, channels)
 
     case Event(Terminated(actor), InitializingData(transport, channels)) if actor == transport =>
       log.warning(s"lost connection to $remoteNodeId")

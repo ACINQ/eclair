@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.Features.Unset
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
@@ -332,7 +333,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Register.createAlias(remoteNodeId, d.channelId)
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
-      if (Features.isChannelPublic(params.localParams.localFeatures) && Features.isChannelPublic(params.remoteParams.localFeatures)) {
+      if (Funding.announceChannel(params.localParams.localFeatures, params.remoteParams.localFeatures)) {
         val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
         val annSignatures = AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
         remote ! annSignatures
@@ -805,7 +806,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(INPUT_RECONNECTED(r), d: DATA_NORMAL) if d.commitments.localCommit.index == 0 && d.commitments.remoteCommit.index == 0 && d.commitments.remoteChanges.proposed.size == 0 && d.commitments.remoteNextCommitInfo.isRight =>
       remote = r
       // this is a brand new channel
-      if (Features.isChannelPublic(d.params.localParams.localFeatures) && Features.isChannelPublic(d.params.remoteParams.localFeatures)) {
+      if (Funding.announceChannel(d.params.localParams.localFeatures, d.params.remoteParams.localFeatures)) {
         val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
         val annSignatures = AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
         remote ! annSignatures
