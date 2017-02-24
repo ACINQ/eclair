@@ -10,7 +10,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
-import fr.acinq.eclair.gui.stages.NotificationsStage
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
@@ -26,11 +25,9 @@ class Handlers(setup: Setup) extends Logging {
   import setup._
 
   private var notifsController:Option[NotificationsController] = None
-  private var notifsStage:Option[NotificationsStage] = None
 
-  def initNotifications (controller: NotificationsController, stage: NotificationsStage) = {
+  def initNotifications (controller: NotificationsController) = {
     notifsController = Option(controller)
-    notifsStage = Option(stage)
   }
 
   def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
@@ -97,6 +94,6 @@ class Handlers(setup: Setup) extends Logging {
     * @param showAppName true if you want the notification title to be preceded by "Eclair - ". True by default
     */
   def notification (title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true) = {
-    notifsController.map(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType, notifsStage))
+    notifsController.map(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType))
   }
 }

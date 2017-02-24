@@ -9,7 +9,6 @@ import javafx.scene.image.Image
 import javafx.scene.layout.{GridPane, VBox}
 import javafx.util.Duration
 
-import fr.acinq.eclair.gui.stages.NotificationsStage
 import grizzled.slf4j.Logging
 
 sealed trait NotificationType
@@ -35,7 +34,7 @@ class NotificationsController extends Logging {
     * @param body Body of the notification
     * @param notificationType type of the notification (error, warning, success, info...)
     */
-  def addNotification (title: String, body: String, notificationType: NotificationType, stage: Option[NotificationsStage]) = {
+  def addNotification (title: String, body: String, notificationType: NotificationType) = {
 
     val loader = new FXMLLoader(getClass.getResource("/gui/main/notificationPane.fxml"))
     val notifPaneController = new NotificationPaneController

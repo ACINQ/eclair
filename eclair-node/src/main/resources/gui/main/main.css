@@ -97,7 +97,7 @@
 
 .notifications-box {
     -fx-background-color: transparent;
-    -fx-padding: 2em;
+    -fx-padding: 0;
 }
 .notification-pane.grid {
     -fx-background-color: #252525;

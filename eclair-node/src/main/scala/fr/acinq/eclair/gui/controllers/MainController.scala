@@ -14,7 +14,7 @@ import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, VBox}
 import javafx.scene.paint.Color
 import javafx.stage.FileChooser.ExtensionFilter
-import javafx.stage.{FileChooser, Stage, WindowEvent}
+import javafx.stage._
 import javafx.util.Callback
 
 import fr.acinq.eclair.gui.Handlers
@@ -281,13 +281,16 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     Platform.runLater(new Runnable() {
       override def run = {
         // create scene
-        val scene = new Scene(root)
-        scene.setFill(Color.TRANSPARENT)
-        val notifsStage = new NotificationsStage
-        notifsStage.setScene(scene)
-        notifsStage.initOwner(stage)
-        handlers.initNotifications(notifsController, notifsStage)
-        notifsStage.show
+        val popup = new Popup
+        popup.setAutoFix(false)
+        val margin = 10
+        val width = 300
+        popup.setWidth(margin + width)
+        popup.getContent.add(root)
+        // positioning the popup @ TOP RIGHT of screen
+        val screenBounds = Screen.getPrimary.getVisualBounds
+        popup.show(stage, screenBounds.getMaxX - (margin + width), screenBounds.getMinY + margin)
+        handlers.initNotifications(notifsController)
       }
     })
     notifsController
