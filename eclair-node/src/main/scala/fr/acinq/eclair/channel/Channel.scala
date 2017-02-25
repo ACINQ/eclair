@@ -249,7 +249,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array,
             unackedMessages = Nil,
-            commitInput, ShaChain.init, channelId = 0) // TODO: we will compute the channelId at the next step, so we temporarily put 0
+            commitInput, ShaChain.init, channelId = temporaryChannelId) // TODO: we will compute the channelId at the next step, so we temporarily put 0
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId, params, commitments, None, Right(fundingSigned))
       }
@@ -282,7 +282,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             unackedMessages = Nil,
-            commitInput, ShaChain.init, channelId = 0)
+            commitInput, ShaChain.init, channelId = temporaryChannelId)
           context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId, params, commitments, None, Left(fundingCreated))
@@ -310,8 +310,8 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(params, commitments.copy(channelId = channelId), fundingLocked)
 
     // TODO: not implemented, maybe should be done with a state timer and not a blockchain watch?
-    case Event(BITCOIN_FUNDING_TIMEOUT, _) =>
-      remote ! Error(0, "Funding tx timed out".getBytes)
+    case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      remote ! Error(d.channelId, "Funding tx timed out".getBytes)
       goto(CLOSED)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -934,7 +934,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
   def handleLocalError(cause: Throwable, d: HasCommitments) = {
     log.error(cause, "")
-    remote ! Error(0, cause.getMessage.getBytes)
+    remote ! Error(d.channelId, cause.getMessage.getBytes)
     spendLocalCurrent(d)
   }
 
@@ -1052,7 +1052,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     Helpers.Closing.claimRevokedRemoteCommitTxOutputs(d.commitments, tx) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
-        remote ! Error(0, "Funding tx has been spent".getBytes)
+        remote ! Error(d.channelId, "Funding tx has been spent".getBytes)
 
         // TODO hardcoded mindepth + shouldn't we watch the claim tx instead?
         blockchain ! WatchConfirmed(self, tx.txid, 3, BITCOIN_PENALTY_DONE)
@@ -1082,8 +1082,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     log.error(s"our funding tx ${
       d.commitments.anchorId
     } was spent !!")
-    // TODO! channel id
-    remote ! Error(0, "Funding tx has been spent".getBytes)
+    remote ! Error(d.channelId, "Funding tx has been spent".getBytes)
     // TODO: not enough
     val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
     blockchain ! PublishAsap(commitTx)
