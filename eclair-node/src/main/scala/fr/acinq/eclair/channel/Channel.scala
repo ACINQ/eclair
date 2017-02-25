@@ -296,7 +296,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(msg: FundingLocked, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       log.info(s"received their FundingLocked, deferring message")
-      stay using d.copy(deferred = Some(msg))
+      goto(stateName) using d.copy(deferred = Some(msg))
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId, params, commitments, deferred, lastSent)) =>
       val channelId = toShortId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
@@ -336,8 +336,8 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       if (Funding.announceChannel(params.localParams.localFeatures, params.remoteParams.localFeatures)) {
         val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
         val annSignatures = AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
-        remote ! annSignatures
-        goto(WAIT_FOR_ANN_SIGNATURES) using DATA_WAIT_FOR_ANN_SIGNATURES(params, commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), annSignatures)
+        // FD remote ! annSignatures
+        goto(WAIT_FOR_ANN_SIGNATURES) using DATA_WAIT_FOR_ANN_SIGNATURES(params, commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)).addToUnackedMessages(annSignatures), annSignatures)
       } else {
         log.info(s"channel ${d.channelId} won't be announced")
         goto(NORMAL) using DATA_NORMAL(params, commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), None)
@@ -405,7 +405,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(add: UpdateAddHtlc, d@DATA_NORMAL(params, commitments, _)) =>
       Try(Commitments.receiveAdd(commitments, add)) match {
-        case Success(commitments1) => stay using d.copy(commitments = commitments1)
+        case Success(commitments1) => goto(stateName) using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -421,8 +421,8 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFulfill(fulfill)
-          stay using d.copy(commitments = commitments1)
-        case Success(Left(_)) => stay
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -438,8 +438,8 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
-          stay using d.copy(commitments = commitments1)
-        case Success(Left(_)) => stay
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -447,7 +447,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.info("ignoring CMD_SIGN (nothing to sign)")
-          stay
+          goto(stateName)
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
@@ -457,23 +457,23 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          goto(stateName) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(commit@CommitSig(_, theirSig, theirHtlcSigs), d: DATA_NORMAL) =>
       Try(Commitments.receiveCommit(d.commitments, commit)) match {
         case Success(Right((commitments1, revocation))) =>
-          remote ! revocation
+          // FD remote ! revocation
           log.debug(s"received a new sig, spec:\n${Commitments.specs2String(commitments1)}")
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          stay using d.copy(commitments = commitments1)
+          goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) =>
           // this was an old commit, nothing to do
-          stay
+          goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -493,10 +493,10 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
-          stay using d.copy(commitments = commitments1)
+          goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) =>
           // this was an old revocation, nothing to do
-          stay
+          goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -511,7 +511,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       ourScriptPubKey_opt.getOrElse(d.params.localParams.defaultFinalScriptPubKey) match {
         case finalScriptPubKey if Closing.isValidFinalScriptPubkey(finalScriptPubKey) =>
           val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
-          handleCommandSuccess(sender, localShutdown, d.copy(unackedShutdown = Some(localShutdown)))
+          handleCommandSuccess(sender, localShutdown, d.copy(unackedShutdown = Some(localShutdown), commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ localShutdown)))
         case _ => handleCommandError(sender, new RuntimeException("invalid final script"))
       }
 
@@ -524,19 +524,19 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(commitments)) {
           val (commitments1, commit) = Commitments.sendCommit(d.commitments)
-          remote ! commit
+          // FD remote ! commit
           commitments1
         } else commitments
         val shutdown = Shutdown(d.channelId, params.localParams.defaultFinalScriptPubKey)
-        remote ! shutdown
-        (shutdown, commitments2)
+        // FD remote ! shutdown
+        (shutdown, commitments2.copy(unackedMessages = commitments2.unackedMessages :+ shutdown))
       }) match {
         case Success((localShutdown, commitments3))
           if (commitments3.remoteNextCommitInfo.isRight && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.localCommit.spec.htlcs.size == 0)
             || (commitments3.remoteNextCommitInfo.isLeft && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteNextCommitInfo.left.get.nextRemoteCommit.spec.htlcs.size == 0) =>
           val closingSigned = Closing.makeFirstClosingTx(params, commitments3, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          remote ! closingSigned
-          goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments3, localShutdown, remoteShutdown, closingSigned)
+          // FD remote ! closingSigned
+          goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments3.copy(unackedMessages = commitments3.unackedMessages :+ closingSigned), localShutdown, remoteShutdown, closingSigned)
         case Success((localShutdown, commitments3)) =>
           goto(SHUTDOWN) using DATA_SHUTDOWN(params, commitments3, localShutdown, remoteShutdown)
         case Failure(cause) => handleLocalError(cause, d)
@@ -578,8 +578,8 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFulfill(fulfill)
-          stay using d.copy(commitments = commitments1)
-        case Success(Left(_)) => stay
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -593,8 +593,8 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
-          stay using d.copy(commitments = commitments1)
-        case Success(Left(_)) => stay
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -602,7 +602,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.info("ignoring CMD_SIGN (nothing to sign)")
-          stay
+          goto(stateName)
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
@@ -612,30 +612,30 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          goto(stateName) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d@DATA_SHUTDOWN(params, commitments, localShutdown, remoteShutdown)) =>
       // TODO: we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success(Right((commitments1, revocation))) if commitments1.hasNoPendingHtlcs =>
-          remote ! revocation
+          // FD remote ! revocation
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          remote ! closingSigned
+          // FD remote ! closingSigned
           log.debug(s"received a new sig, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
           goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
         case Success(Right((commitments1, revocation))) =>
-          remote ! revocation
+          // FD remote ! revocation
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
           log.debug(s"received a new sig, spec:\n${Commitments.specs2String(commitments1)}")
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          stay using d.copy(commitments = commitments1)
+          goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) =>
           // this was an old commit, nothing to do
-          stay
+          goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -646,18 +646,18 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Success(Right(commitments1)) if commitments1.hasNoPendingHtlcs =>
           val closingSigned = Closing.makeFirstClosingTx(params, commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
 
-          remote ! closingSigned
+          // FD remote ! closingSigned
           log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
-          goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1, localShutdown, remoteShutdown, closingSigned)
+          goto(NEGOTIATING) using DATA_NEGOTIATING(params, commitments1.copy(unackedMessages = commitments1.unackedMessages :+ closingSigned), localShutdown, remoteShutdown, closingSigned)
         case Success(Right(commitments1)) =>
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
-          stay using d.copy(commitments = commitments1)
+          goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) =>
           // this was an old revocation, nothing to do
-          stay
+          goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -696,7 +696,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             publishMutualClosing(signedClosingTx)
             goto(CLOSING) using DATA_CLOSING(d.commitments, ourSignature = Some(closingSigned), mutualClosePublished = Some(signedClosingTx))
           } else {
-            stay using d.copy(localClosingSigned = closingSigned)
+            goto(stateName) using d.copy(localClosingSigned = closingSigned)
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
@@ -705,7 +705,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == Closing.makeClosingTx(d.params, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(d.localClosingSigned.feeSatoshis))._1.tx.txid =>
       // happens when we agreed on a closeSig, but we don't know it yet: we receive the watcher notification before their ClosingSigned (which will match ours)
-      stay()
+      goto(stateName)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -721,11 +721,11 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.localCommit.publishableTxs.commitTx.tx.txid =>
       // we just initiated a uniclose moments ago and are now receiving the blockchain notification, there is nothing to do
-      stay()
+      goto(stateName)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.mutualClosePublished.map(_.txid) =>
       // we just published a mutual close tx, we are notified but it's alright
-      stay()
+      goto(stateName)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.remoteCommit.txid =>
       // counterparty may attempt to spend its last commit tx at any time
@@ -745,7 +745,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(WatchEventConfirmed(BITCOIN_PENALTY_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
-    case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
+    case Event(e: Error, d: DATA_CLOSING) => goto(stateName) // nothing to do, there is already a spending tx published
   }
 
   when(CLOSED, stateTimeout = 10 seconds) {
@@ -835,7 +835,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
           relayer ! Bind(add, origin)
           sender ! "ok"
-          stay using d.copy(commitments = commitments1)
+          goto(stateName) using d.copy(commitments = commitments1)
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -844,7 +844,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
           sender ! "ok"
-          stay using d.copy(commitments = commitments1)
+          goto(stateName) using d.copy(commitments = commitments1)
         case Failure(cause) => handleCommandError(sender, cause)
       }
   }
@@ -865,11 +865,11 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
     case Event(CMD_GETSTATE, _) =>
       sender ! stateName
-      stay
+      goto(stateName)
 
     case Event(CMD_GETSTATEDATA, _) =>
       sender ! stateData
-      stay
+      goto(stateName)
 
     case Event(CMD_GETINFO, _) =>
       sender ! RES_GETINFO(remoteNodeId, stateData match {
@@ -884,14 +884,27 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case c: DATA_CLOSING => 0L
         case _ => 0L
       }, stateName, stateData)
-      stay
+      goto(stateName)
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentBlockCount(_), _) => stay
+    case Event(CurrentBlockCount(_), _) => goto(stateName)
   }
 
   onTransition {
-    case previousState -> currentState => context.system.eventStream.publish(ChannelChangedState(self, context.parent, remoteNodeId, previousState, currentState, nextStateData))
+    case previousState -> currentState =>
+      if (currentState != previousState) {
+        context.system.eventStream.publish(ChannelChangedState(self, context.parent, remoteNodeId, previousState, currentState, nextStateData))
+      }
+      (stateData, nextStateData) match {
+        case (from: HasCommitments, to: HasCommitments) =>
+          // use the the transition callback to send messages
+          val nextMessages = to.commitments.unackedMessages
+          val currentMessages = from.commitments.unackedMessages
+          val diff = nextMessages.filterNot(c => currentMessages.contains(c))
+          // we only send newly added unacked messages
+          diff.map(msg => remote ! msg)
+        case _ => ()
+      }
   }
 
   /*
@@ -906,17 +919,17 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
    */
 
   def handleCommandSuccess(sender: ActorRef, msg: LightningMessage, newData: Data) = {
-    remote ! msg
+    // FD remote ! msg
     if (sender != self) {
       sender ! "ok"
     }
-    stay using newData
+    goto(stateName) using newData
   }
 
   def handleCommandError(sender: ActorRef, cause: Throwable) = {
     log.error(cause, "")
     sender ! cause.getMessage
-    stay
+    goto(stateName)
   }
 
   def handleLocalError(cause: Throwable, d: HasCommitments) = {

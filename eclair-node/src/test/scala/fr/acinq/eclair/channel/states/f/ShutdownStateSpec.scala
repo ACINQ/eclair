@@ -34,7 +34,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val router = TestProbe()
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref))
-    within(30 seconds) {
+    within(35 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice sends an HTLC to bob
@@ -88,7 +88,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill),
-          unackedMessages = fulfill :: Nil)))
+          unackedMessages = initialState.commitments.unackedMessages :+ fulfill)))
     }
   }
 
@@ -157,7 +157,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
-          unackedMessages = fail :: Nil)))
+          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
     }
   }
 
