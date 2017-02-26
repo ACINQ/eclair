@@ -65,7 +65,7 @@ class Handlers(setup: Setup) extends Logging {
     (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
       Platform.runLater(new Runnable() {
         override def run = {
-          textarea.setText(s"${Globals.Node.id}:$amountMsat:${h.toString()}")
+          textarea.setText(s"${Globals.nodeParams.privateKey.publicKey}:$amountMsat:${h.toString()}")
           textarea.requestFocus
           textarea.selectAll
         }

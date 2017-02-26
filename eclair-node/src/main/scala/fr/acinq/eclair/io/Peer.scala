@@ -57,7 +57,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
       log.info(s"registering as a listener to $transport")
       transport ! Listener(self)
       context watch transport
-      transport ! Init(globalFeatures = Globals.global_features, localFeatures = Globals.local_features)
+      transport ! Init(globalFeatures = Globals.nodeParams.globalFeatures, localFeatures = Globals.nodeParams.localFeatures)
       goto(INITIALIZING) using InitializingData(transport, channels)
   }
 
@@ -68,7 +68,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
       import fr.acinq.eclair.Features._
       log.info(s"$remoteNodeId has features: channelPublic=${channelPublic(remoteInit.localFeatures)} initialRoutingSync=${initialRoutingSync(remoteInit.localFeatures)}")
-      if (Features.areFeaturesCompatible(Globals.local_features, remoteInit.localFeatures)) {
+      if (Features.areFeaturesCompatible(Globals.nodeParams.localFeatures, remoteInit.localFeatures)) {
         if (Features.initialRoutingSync(remoteInit.localFeatures) != Unset) {
           router ! SendRoutingState(transport)
         }
@@ -162,7 +162,7 @@ object Peer {
 
   def props(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(classOf[Peer], remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey)
 
-  def generateKey(keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, keyPath).privateKey
+  def generateKey(keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.extendedPrivateKey, keyPath).privateKey
 
   def makeChannelParams(keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean): LocalParams =
     LocalParams(
@@ -170,18 +170,18 @@ object Peer {
       maxHtlcValueInFlightMsat = Long.MaxValue,
       channelReserveSatoshis = 0,
       htlcMinimumMsat = 0,
-      feeratePerKw = Globals.feeratePerKw,
-      toSelfDelay = Globals.delay_blocks,
+      feeratePerKw = Globals.nodeParams.feeratePerKw,
+      toSelfDelay = Globals.nodeParams.delayBlocks,
       maxAcceptedHtlcs = 100,
       fundingPrivKey = generateKey(keyIndex :: 0L :: Nil),
       revocationSecret = generateKey(keyIndex :: 1L :: Nil),
       paymentKey = generateKey(keyIndex :: 2L :: Nil),
       delayedPaymentKey = generateKey(keyIndex :: 3L :: Nil),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      shaSeed = Globals.Node.seed,
+      shaSeed = Globals.seed, // TODO: we should use a different seed
       isFunder = isFunder,
-      globalFeatures = Globals.global_features,
-      localFeatures = Globals.local_features
+      globalFeatures = Globals.nodeParams.globalFeatures,
+      localFeatures = Globals.nodeParams.localFeatures
     )
 
 }

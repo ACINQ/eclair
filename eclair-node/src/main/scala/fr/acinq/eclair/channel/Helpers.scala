@@ -24,7 +24,7 @@ object Helpers {
 
     def validateParams(channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
       val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-      require(reserveToFundingRatio <= Globals.max_reserve_to_funding_ratio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${Globals.max_reserve_to_funding_ratio}")
+      require(reserveToFundingRatio <= Globals.nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${Globals.nodeParams.maxReserveToFundingRatio}")
     }
 
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {

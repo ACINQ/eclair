@@ -25,14 +25,14 @@ class AnnouncementsSpec extends FunSuite {
 
   test("create valid signed node announcement") {
     val key = randomKey
-    val ann = makeNodeAnnouncement(key, Globals.Node.alias, Globals.Node.color, Globals.Node.address :: Nil, Platform.currentTime / 1000)
+    val ann = makeNodeAnnouncement(key, Globals.nodeParams.alias, Globals.nodeParams.color, Globals.nodeParams.address :: Nil, Platform.currentTime / 1000)
     assert(checkSig(ann))
     assert(checkSig(ann.copy(timestamp = 153)) === false)
   }
 
   test("create valid signed channel update announcement") {
     val key = randomKey
-    val ann = makeChannelUpdate(key, randomKey.publicKey, 45561, Globals.expiry_delta_blocks, Globals.htlc_minimum_msat, Globals.fee_base_msat, Globals.fee_proportional_millionth, Platform.currentTime / 1000)
+    val ann = makeChannelUpdate(key, randomKey.publicKey, 45561, Globals.nodeParams.expiryDeltaBlocks, Globals.nodeParams.htlcMinimumMsat, Globals.nodeParams.feeBaseMsat, Globals.nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
     assert(checkSig(ann, key.publicKey))
     assert(checkSig(ann, randomKey.publicKey) === false)
   }

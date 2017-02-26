@@ -20,7 +20,7 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
 
   def main(peers: Map[PublicKey, ActorRef], connections: Map[PublicKey, ActorRef]): Receive = {
 
-    case NewConnection(Globals.Node.publicKey, _, _) =>
+    case NewConnection(publicKey, _, _) if publicKey == Globals.nodeParams.privateKey.publicKey =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case NewConnection(remoteNodeId, address, newChannel_opt) =>

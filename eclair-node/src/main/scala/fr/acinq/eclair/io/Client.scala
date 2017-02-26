@@ -31,7 +31,7 @@ class Client(switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: Pu
       val connection = sender
       val transport = context.actorOf(Props(
         new TransportHandler[LightningMessage](
-          KeyPair(Globals.Node.publicKey.toBin, Globals.Node.privateKey.toBin),
+          KeyPair(Globals.nodeParams.privateKey.publicKey.toBin, Globals.nodeParams.privateKey.toBin),
           Some(remoteNodeId),
           connection = connection,
           serializer = LightningMessageSerializer)))

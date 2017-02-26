@@ -35,7 +35,7 @@ class Server(switchboard: ActorRef, address: InetSocketAddress) extends Actor wi
       val connection = sender
       val transport = context.actorOf(Props(
         new TransportHandler[LightningMessage](
-          KeyPair(Globals.Node.publicKey.toBin, Globals.Node.privateKey.toBin),
+          KeyPair(Globals.nodeParams.privateKey.publicKey.toBin, Globals.nodeParams.privateKey.toBin),
           None,
           connection = connection,
           serializer = LightningMessageSerializer)))
