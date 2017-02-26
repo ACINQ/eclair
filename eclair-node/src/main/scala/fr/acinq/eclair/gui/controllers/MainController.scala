@@ -89,7 +89,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     initNotifs
 
     // init status bar
-    labelNodeId.setText(s"${Globals.nodeParams.privateKey.publicKey}")
+    labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
     labelApi.setText(s"${setup.config.getInt("eclair.api.port")}")
     labelServer.setText(s"${setup.config.getInt("eclair.server.port")}")
     bitcoinVersion.setText(s"v${setup.bitcoinVersion}")
@@ -98,8 +98,8 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
 
     // init context
     contextMenu = ContextMenuUtils.buildCopyContext(List(
-      new CopyAction("Copy Pubkey", s"${Globals.nodeParams.privateKey.publicKey}"),
-      new CopyAction("Copy URI", s"${Globals.nodeParams.privateKey.publicKey}@${Globals.nodeParams.address.getHostString}:${Globals.nodeParams.address.getPort}" )))
+      new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}"),
+      new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${setup.nodeParams.address.getHostString}:${setup.nodeParams.address.getPort}" )))
 
     // init channels tab
     if (channelBox.getChildren.size() > 0) {

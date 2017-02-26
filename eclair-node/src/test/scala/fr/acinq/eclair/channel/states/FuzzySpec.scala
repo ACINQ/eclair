@@ -32,11 +32,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bob2blockchain = TestProbe()
     val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-a")
     val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-b")
-    val relayerA = system.actorOf(Relayer.props(Globals.nodeParams.privateKey, paymentHandlerA), "relayer-a")
-    val relayerB = system.actorOf(Relayer.props(Globals.nodeParams.privateKey, paymentHandlerB), "relayer-b")
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandlerA), "relayer-a")
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandlerB), "relayer-b")
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, alice2blockchain.ref, router.ref, relayerA))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, bob2blockchain.ref, router.ref, relayerB))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, pipe, alice2blockchain.ref, router.ref, relayerA))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, pipe, bob2blockchain.ref, router.ref, relayerB))
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
       val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
@@ -65,7 +65,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   def buildCmdAdd(paymentHash: BinaryData) = {
     val channelUpdate_ab = ChannelUpdate("00" * 64, 0, 0, "0000", cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7, htlcMinimumMsat = 0)
-    val hops = Hop(Globals.nodeParams.privateKey.publicKey, Globals.nodeParams.privateKey.publicKey, channelUpdate_ab) :: Nil
+    val hops = Hop(Alice.nodeParams.privateKey.publicKey, Bob.nodeParams.privateKey.publicKey, channelUpdate_ab) :: Nil
     // we don't want to be below htlcMinimumMsat
     val amount = Random.nextInt(1000000) + 1000
     PaymentLifecycle.buildCommand(amount, paymentHash, hops, 444000)

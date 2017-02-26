@@ -1,7 +1,8 @@
 package fr.acinq.eclair.router
 
+import fr.acinq.eclair.TestConstants.Alice
+import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
-import fr.acinq.eclair.{Globals, _}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -24,16 +25,14 @@ class AnnouncementsSpec extends FunSuite {
   }
 
   test("create valid signed node announcement") {
-    val key = randomKey
-    val ann = makeNodeAnnouncement(key, Globals.nodeParams.alias, Globals.nodeParams.color, Globals.nodeParams.address :: Nil, Platform.currentTime / 1000)
+    val ann = makeNodeAnnouncement(Alice.nodeParams.privateKey, Alice.nodeParams.alias, Alice.nodeParams.color, Alice.nodeParams.address :: Nil, Platform.currentTime / 1000)
     assert(checkSig(ann))
     assert(checkSig(ann.copy(timestamp = 153)) === false)
   }
 
   test("create valid signed channel update announcement") {
-    val key = randomKey
-    val ann = makeChannelUpdate(key, randomKey.publicKey, 45561, Globals.nodeParams.expiryDeltaBlocks, Globals.nodeParams.htlcMinimumMsat, Globals.nodeParams.feeBaseMsat, Globals.nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
-    assert(checkSig(ann, key.publicKey))
+    val ann = makeChannelUpdate(Alice.nodeParams.privateKey, randomKey.publicKey, 45561, Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+    assert(checkSig(ann, Alice.nodeParams.privateKey.publicKey))
     assert(checkSig(ann, randomKey.publicKey) === false)
   }
 

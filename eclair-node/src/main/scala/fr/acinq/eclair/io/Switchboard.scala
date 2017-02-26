@@ -5,14 +5,14 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi, ScriptElt}
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.{Globals, NodeParams}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 
 /**
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -20,7 +20,7 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
 
   def main(peers: Map[PublicKey, ActorRef], connections: Map[PublicKey, ActorRef]): Receive = {
 
-    case NewConnection(publicKey, _, _) if publicKey == Globals.nodeParams.privateKey.publicKey =>
+    case NewConnection(publicKey, _, _) if publicKey == nodeParams.privateKey.publicKey =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case NewConnection(remoteNodeId, address, newChannel_opt) =>
@@ -31,7 +31,7 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
           connection
         case None =>
           log.info(s"connecting to $remoteNodeId @ $address")
-          val connection = context.actorOf(Client.props(self, address, remoteNodeId, sender))
+          val connection = context.actorOf(Client.props(nodeParams, self, address, remoteNodeId, sender))
           context watch(connection)
           connection
       }
@@ -57,12 +57,12 @@ class Switchboard(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaul
 
   }
 
-  def createPeer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = context.actorOf(Peer.props(remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
+  def createPeer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
 }
 
 object Switchboard {
 
-  def props(watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(classOf[Switchboard], watcher, router, relayer, defaultFinalScriptPubKey)
+  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Switchboard(nodeParams, watcher, router, relayer, defaultFinalScriptPubKey))
 
   // @formatter:off
   case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi)

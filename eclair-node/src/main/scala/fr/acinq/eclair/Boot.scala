@@ -43,7 +43,8 @@ object Boot extends App with Logging {
 class Setup() extends Logging {
 
   logger.info(s"hello!")
-  logger.info(s"nodeid=${Globals.nodeParams.privateKey.publicKey.toBin} alias=${Globals.nodeParams.alias}")
+  val nodeParams = NodeParams.loadFromConfiguration()
+  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   val config = ConfigFactory.load()
 
   implicit lazy val system = ActorSystem()
@@ -89,11 +90,11 @@ class Setup() extends Logging {
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
   val register = system.actorOf(Props(new Register), name = "register")
-  val relayer = system.actorOf(Relayer.props(Globals.nodeParams.privateKey, paymentHandler), name = "relayer")
+  val relayer = system.actorOf(Relayer.props(nodeParams.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(watcher), name = "router")
-  val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.nodeParams.privateKey.publicKey, router), "payment-initiator")
-  val switchboard = system.actorOf(Switchboard.props(watcher, router, relayer, finalScriptPubKey), name = "switchboard")
-  val server = system.actorOf(Server.props(switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
+  val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router), "payment-initiator")
+  val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
+  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
 
   val _setup = this
   val api = new Service {

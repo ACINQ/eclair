@@ -8,12 +8,12 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.wire.LightningMessage
-import fr.acinq.eclair.{Globals, TCPBindError}
+import fr.acinq.eclair.{Globals, NodeParams, TCPBindError}
 
 /**
   * Created by PM on 27/10/2015.
   */
-class Server(switchboard: ActorRef, address: InetSocketAddress) extends Actor with ActorLogging {
+class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -35,7 +35,7 @@ class Server(switchboard: ActorRef, address: InetSocketAddress) extends Actor wi
       val connection = sender
       val transport = context.actorOf(Props(
         new TransportHandler[LightningMessage](
-          KeyPair(Globals.nodeParams.privateKey.publicKey.toBin, Globals.nodeParams.privateKey.toBin),
+          KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
           None,
           connection = connection,
           serializer = LightningMessageSerializer)))
@@ -49,7 +49,7 @@ class Server(switchboard: ActorRef, address: InetSocketAddress) extends Actor wi
 
 object Server {
 
-  def props(switchboard: ActorRef, address: InetSocketAddress): Props = Props(classOf[Server], switchboard, address)
+  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress): Props = Props(new Server(nodeParams, switchboard, address))
 
 }
 

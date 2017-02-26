@@ -52,9 +52,10 @@ class ThroughputSpec extends FunSuite {
           context.become(run(h2r - htlc.paymentHash))
       }
     }), "payment-handler")
-    val relayer = system.actorOf(Relayer.props(Globals.nodeParams.privateKey, paymentHandler))
-    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, relayer), "a")
-    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, relayer), "b")
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandler))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandler))
+    val alice = system.actorOf(Channel.props(Alice.nodeParams, pipe, blockchain, ???, relayerA), "a")
+    val bob = system.actorOf(Channel.props(Bob.nodeParams, pipe, blockchain, ???, relayerB), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     alice ! INPUT_INIT_FUNDER(Bob.id, 0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, bobInit)
