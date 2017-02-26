@@ -205,4 +205,22 @@ class ShaChainSpec extends FunSuite {
       val chain8 = chain7.addHash(BinaryData("a7efbc61aac46d34f77778bac22c8a20c6a46ca460addc49009bda875ec88fa4"), 281474976710648L)
     }
   }
+
+  test("serialize/deserialize with scodec") {
+    val chain = ShaChain.init
+    val chain1 = chain.addHash(BinaryData("7cc854b54e3e0dcdb010d7a3fee464a9687be6e8db3be6854c475621e007a5dc"), 281474976710655L)
+    val chain2 = chain1.addHash(BinaryData("c7518c8ae4660ed02894df8976fa1a3659c1a8b4b5bec0c4b872abeba4cb8964"), 281474976710654L)
+    val chain3 = chain2.addHash(BinaryData("2273e227a5b7449b6e70f1fb4652864038b1cbf9cd7c043a7d6456b7fc275ad8"), 281474976710653L)
+    val chain4 = chain3.addHash(BinaryData("27cddaa5624534cb6cb9d7da077cf2b22ab21e9b506fd4998a51d54502e99116"), 281474976710652L)
+    val chain5 = chain4.addHash(BinaryData("c65716add7aa98ba7acb236352d665cab17345fe45b55fb879ff80e6bd0c41dd"), 281474976710651L)
+    val chain6 = chain5.addHash(BinaryData("969660042a28f32d9be17344e09374b379962d03db1574df5a8a5a47e19ce3f2"), 281474976710650L)
+    val chain7 = chain6.addHash(BinaryData("a5a64476122ca0925fb344bdc1854c1c0a59fc614298e50a33e331980a220f32"), 281474976710649L)
+    val chain8 = chain7.addHash(BinaryData("05cde6323d949933f7f7b78776bcc1ea6d9b31447732e3802e1f7ac44b650e17"), 281474976710648L)
+    Seq(chain, chain1, chain2, chain3, chain4, chain5, chain6, chain7, chain8).map(chain => {
+      val encoded = ShaChain.shaChainCodec.encode(chain)
+      val decoded = ShaChain.shaChainCodec.decode(encoded.toOption.get).toOption.get.value
+      assert(decoded == chain)
+    })
+
+  }
 }
