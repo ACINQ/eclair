@@ -127,6 +127,11 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           context.system.eventStream.publish(ChannelCreated(d.channelId, context.parent, self, d.commitments.localParams, remoteNodeId, Some(d.commitments)))
           Register.createAlias(remoteNodeId, d.commitments.channelId)
+          d match {
+            case closing: DATA_CLOSING if closing.remoteCommitPublished.isDefined =>
+              handleRemoteSpentCurrent(closing.remoteCommitPublished.get.commitTx, closing)
+            case _ => ()
+          }
 
         case _ => ()
       }
@@ -818,14 +823,16 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       remote ! d.lastSent
       goto(WAIT_FOR_FUNDING_SIGNED)
 
-    case Event(INPUT_RECONNECTED(r), DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, _, _, Left(fundingCreated))) =>
+    case Event(INPUT_RECONNECTED(r), DATA_WAIT_FOR_FUNDING_CONFIRMED(_, params, commitments, _, Left(fundingCreated))) =>
       remote = r
       remote ! fundingCreated
+      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
-    case Event(INPUT_RECONNECTED(r), DATA_WAIT_FOR_FUNDING_CONFIRMED(_, _, _, _, Right(fundingSigned))) =>
+    case Event(INPUT_RECONNECTED(r), DATA_WAIT_FOR_FUNDING_CONFIRMED(_, params, commitments, _, Right(fundingSigned))) =>
       remote = r
       remote ! fundingSigned
+      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, params.minimumDepth, BITCOIN_FUNDING_DEPTHOK)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(INPUT_RECONNECTED(r), d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
@@ -949,7 +956,12 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
           val currentMessages = from.commitments.unackedMessages
           val diff = nextMessages.filterNot(c => currentMessages.contains(c))
           // we only send newly added unacked messages
-          diff.map(msg => remote ! msg)
+          if (remote != null) diff.map(msg => remote ! msg)
+
+        case (_, to: HasCommitments) =>
+          val nextChannelId = to.channelId
+          channelDb.put(nextChannelId, ChannelRecord(nextChannelId, ChannelState(remoteNodeId, currentState, nextStateData)))
+
         case _ => ()
       }
   }
