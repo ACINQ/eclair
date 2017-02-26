@@ -22,9 +22,9 @@ object Codecs {
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
 
-  def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data))
+  def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(d => BinaryData(d.toArray), d => ByteVector(d.data))
 
-  def varsizebinarydata: Codec[BinaryData] = variableSizeBytes(uint16, bytes.xmap(d => BinaryData(d.toSeq), d => ByteVector(d.data)))
+  def varsizebinarydata: Codec[BinaryData] = variableSizeBytes(uint16, bytes.xmap(d => BinaryData(d.toArray), d => ByteVector(d.data)))
 
   def listofsignatures: Codec[List[BinaryData]] = listOfN(uint16, signature)
 
