@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, ScriptElt, Transaction}
+import fr.acinq.eclair.db.ChannelState
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
@@ -63,6 +64,7 @@ case object INPUT_NO_MORE_HTLCS
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef)
+case class INPUT_RESTORED(channelId: Long, channelstate: ChannelState)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent

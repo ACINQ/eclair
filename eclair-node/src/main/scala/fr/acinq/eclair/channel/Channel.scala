@@ -8,7 +8,9 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
+import fr.acinq.eclair.crypto.TransportHandler.Serializer
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.db.{ChannelState, JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
@@ -19,16 +21,36 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Left, Success, Try}
 
+case class ChannelRecord(id: Long, state: ChannelState)
 
 /**
   * Created by PM on 20/08/2015.
   */
 
 object Channel {
-  def props(remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(remote, blockchain, router, relayer))
+  def props(remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb) = Props(new Channel(remote, blockchain, router, relayer, db))
+
+  def makeChannelDb(db: SimpleDb): SimpleTypedDb[Long, ChannelRecord] = {
+    def channelid2String(id: Long) = s"channel-$id"
+
+    def string2channelid(s: String) = if (s.startsWith("channel-")) Some(s.stripPrefix("channel-").toLong) else None
+
+    new SimpleTypedDb[Long, ChannelRecord](
+      channelid2String,
+      string2channelid,
+      new Serializer[ChannelRecord] {
+        override def serialize(t: ChannelRecord): BinaryData = JavaSerializer.serialize(t)
+
+        override def deserialize(bin: BinaryData): ChannelRecord = JavaSerializer.deserialize[ChannelRecord](bin)
+      },
+      db
+    )
+  }
 }
 
-class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+  import Channel._
+  val channelDb = makeChannelDb(db)
 
   var remote = r
   var remoteNodeId: PublicKey = null
@@ -96,6 +118,19 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(inputFundee@INPUT_INIT_FUNDEE(remoteNodeId, _, localParams, _), Nothing) if !localParams.isFunder =>
       this.remoteNodeId = remoteNodeId
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
+
+    case Event(INPUT_RESTORED(channelId, cs@ChannelState(remotePubKey, state, data)), _) =>
+      log.info(s"restoring channel $cs")
+      remoteNodeId = remotePubKey
+      data match {
+        case d: HasCommitments =>
+          blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+          context.system.eventStream.publish(ChannelCreated(d.channelId, context.parent, self, d.commitments.localParams, remoteNodeId, Some(d.commitments)))
+          Register.createAlias(remoteNodeId, d.commitments.channelId)
+
+        case _ => ()
+      }
+      goto(OFFLINE) using data
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
@@ -828,6 +863,12 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       }
       goto(NORMAL)
 
+    case Event(INPUT_RECONNECTED(r), d: DATA_NEGOTIATING) =>
+      goto(NEGOTIATING) using (d)
+
+    case Event(INPUT_RECONNECTED(r), d: DATA_CLOSING) =>
+      goto(CLOSING) using (d)
+
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(params, commitments, _)) =>
       log.info(s"we are disconnected so we just include the add in our commitments")
       Try(Commitments.sendAdd(commitments, c)) match {
@@ -897,7 +938,13 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       }
       (stateData, nextStateData) match {
         case (from: HasCommitments, to: HasCommitments) =>
-          // use the the transition callback to send messages
+          // use the the transition callback to store state and send messages
+          val previousChannelId = from.channelId
+          val nextChannelId = to.channelId
+          channelDb.put(nextChannelId, ChannelRecord(nextChannelId, ChannelState(remoteNodeId, currentState, nextStateData)))
+          if (nextChannelId != previousChannelId) {
+            channelDb.delete(previousChannelId)
+          }
           val nextMessages = to.commitments.unackedMessages
           val currentMessages = from.commitments.unackedMessages
           val diff = nextMessages.filterNot(c => currentMessages.contains(c))

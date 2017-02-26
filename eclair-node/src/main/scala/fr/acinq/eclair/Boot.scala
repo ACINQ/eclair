@@ -8,14 +8,17 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
-import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.channel.{Channel, Register}
+import fr.acinq.eclair.crypto.TransportHandler.Serializer
+import fr.acinq.eclair.db.{JavaSerializer, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.gui.FxApp
-import fr.acinq.eclair.io.{Server, Switchboard}
+import fr.acinq.eclair.io.{Peer, PeerRecord, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -59,7 +62,7 @@ class Setup() extends Logging {
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
   val (chain, blockCount, progress) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)
-  assert(chain == "testnet" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
+  assert(chain == "test" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   assert(progress > 0.99, "bitcoind should be synchronized")
   Globals.blockCount.set(blockCount)
   val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
@@ -82,6 +85,16 @@ class Setup() extends Logging {
   }))
   val fatalEventFuture = fatalEventPromise.future
 
+  val db = new SimpleFileDb(config.getString("eclair.db.root"))
+  val peerDb = Peer.makePeerDb(db)
+  val peers = peerDb.values
+
+  val channelDb = Channel.makeChannelDb(db)
+  val channels = channelDb.values
+
+  val routerDb = Router.makeRouterDb(db)
+  val routerStates = routerDb.values
+
   val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
   val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
   val paymentHandler = config.getString("eclair.payment-handler") match {
@@ -90,9 +103,9 @@ class Setup() extends Logging {
   }
   val register = system.actorOf(Props(new Register), name = "register")
   val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "relayer")
-  val router = system.actorOf(Router.props(watcher), name = "router")
+  val router = system.actorOf(Router.props(watcher, db), name = "router")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router), "payment-initiator")
-  val switchboard = system.actorOf(Switchboard.props(watcher, router, relayer, finalScriptPubKey), name = "switchboard")
+  val switchboard = system.actorOf(Switchboard.props(watcher, router, relayer, finalScriptPubKey, db), name = "switchboard")
   val server = system.actorOf(Server.props(switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
 
   val _setup = this
@@ -106,5 +119,11 @@ class Setup() extends Logging {
   }
   Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port")) onFailure {
     case t: Throwable => system.eventStream.publish(HTTPBindError)
+  }
+
+  def boostrap: Unit = {
+    peers.map(rec => switchboard ! rec)
+    channels.map(rec => switchboard ! rec)
+    routerStates.map(rec => router ! rec)
   }
 }

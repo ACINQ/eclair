@@ -33,7 +33,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(_, peer, channel, params, theirNodeId) =>
+    case ChannelCreated(_, peer, channel, params, theirNodeId, commitments_opt) =>
       log.info(s"new channel: $channel")
 
       val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
@@ -43,6 +43,13 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
       channelPaneController.nodeId.setText(s"$theirNodeId")
       channelPaneController.funder.setText(if (params.isFunder) "Yes" else "No")
+      commitments_opt.map(commitments => {
+        val bal = commitments.localCommit.spec.toLocalMsat.toDouble / (commitments.localCommit.spec.toLocalMsat.toDouble + commitments.localCommit.spec.toRemoteMsat.toDouble)
+        channelPaneController.capacity.setText(s"${millisatoshi2millibtc(MilliSatoshi(commitments.localCommit.spec.totalFunds)).amount}")
+        channelPaneController.amountUs.setText(s"${millisatoshi2millibtc(MilliSatoshi(commitments.localCommit.spec.toLocalMsat)).amount}")
+        channelPaneController.balanceBar.setProgress(bal)
+      })
+
       channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
       })

@@ -6,7 +6,8 @@ import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
+import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener, Serializer}
+import fr.acinq.eclair.db.{ChannelState, JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
@@ -34,18 +35,30 @@ case object DISCONNECTED extends State
 case object INITIALIZING extends State
 case object CONNECTED extends State
 
+case class PeerRecord(id: PublicKey, address: Option[InetSocketAddress])
+
 // @formatter:on
 
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
+class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) extends LoggingFSM[State, Data] {
 
   import Peer._
+  val peerDb = makePeerDb(db)
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
 
   when(DISCONNECTED) {
+    case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) if c.state.remotePubKey != remoteNodeId =>
+      log.warning(s"received channel data for the wrong peer ${c.state.remotePubKey}")
+      stay
+
+    case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) =>
+      val (channel, _) = createChannel(null, c.id, false, db)
+      channel ! INPUT_RESTORED(c.id, c.state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(c.id, channel))
+
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels)) =>
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
@@ -97,7 +110,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
     case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val temporaryChannelId = Platform.currentTime
-      val (channel, localParams) = createChannel(transport, temporaryChannelId, funder = true)
+      val (channel, localParams) = createChannel(transport, temporaryChannelId, funder = true, db)
       channel ! INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, remoteInit)
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
@@ -121,7 +134,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"accepting a new channel to $remoteNodeId")
       val temporaryChannelId = msg.temporaryChannelId
-      val (channel, localParams) = createChannel(transport, temporaryChannelId, funder = false)
+      val (channel, localParams) = createChannel(transport, temporaryChannelId, funder = false, db)
       channel ! INPUT_INIT_FUNDEE(remoteNodeId, temporaryChannelId, localParams, remoteInit)
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
@@ -149,9 +162,9 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
       stay using d.copy(channels = channels - channelId)
   }
 
-  def createChannel(transport: ActorRef, temporaryChannelId: Long, funder: Boolean): (ActorRef, LocalParams) = {
+  def createChannel(transport: ActorRef, temporaryChannelId: Long, funder: Boolean, db: SimpleDb): (ActorRef, LocalParams) = {
     val localParams = makeChannelParams(temporaryChannelId, defaultFinalScriptPubKey, funder)
-    val channel = context.actorOf(Channel.props(transport, watcher, router, relayer), s"channel-$temporaryChannelId")
+    val channel = context.actorOf(Channel.props(transport, watcher, router, relayer, db), s"channel-$temporaryChannelId")
     context watch channel
     (channel, localParams)
   }
@@ -160,7 +173,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
 
 object Peer {
 
-  def props(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(classOf[Peer], remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey)
+  def props(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) = Props(classOf[Peer], remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey, db)
 
   def generateKey(keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, keyPath).privateKey
 
@@ -184,4 +197,20 @@ object Peer {
       localFeatures = Globals.local_features
     )
 
+  def makePeerDb(db: SimpleDb): SimpleTypedDb[PublicKey, PeerRecord] = {
+    def peerid2String(id: PublicKey) = s"peer-$id"
+
+    def string2peerid(s: String) = if (s.startsWith("peer-")) Some(PublicKey(BinaryData(s.stripPrefix("peer-")))) else None
+
+    new SimpleTypedDb[PublicKey, PeerRecord](
+      peerid2String,
+      string2peerid,
+      new Serializer[PeerRecord] {
+        override def serialize(t: PeerRecord): BinaryData = JavaSerializer.serialize(t)
+
+        override def deserialize(bin: BinaryData): PeerRecord = JavaSerializer.deserialize[PeerRecord](bin)
+      },
+      db
+    )
+  }
 }

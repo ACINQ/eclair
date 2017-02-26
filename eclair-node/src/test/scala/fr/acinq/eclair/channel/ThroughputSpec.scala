@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.payment.Relayer
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.junit.runner.RunWith
@@ -53,8 +54,8 @@ class ThroughputSpec extends FunSuite {
       }
     }), "payment-handler")
     val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler))
-    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, relayer), "a")
-    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, relayer), "b")
+    val alice = system.actorOf(Channel.props(pipe, blockchain, ???, relayer, new DummyDb()), "a")
+    val bob = system.actorOf(Channel.props(pipe, blockchain, ???, relayer, new DummyDb()), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     alice ! INPUT_INIT_FUNDER(Bob.id, 0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, bobInit)
