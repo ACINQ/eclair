@@ -26,17 +26,20 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 
 class Register extends Actor with ActorLogging {
 
-  context.system.eventStream.subscribe(self, classOf[ChannelCreated])
-  context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = main(Map())
 
   def main(channels: Map[String, ActorRef]): Receive = {
-    case ChannelCreated(temporaryChannelId, _, channel, _, _, _) =>
+    case ChannelCreated(channel, _, _, _, temporaryChannelId) =>
       context.watch(channel)
       context become main(channels + (java.lang.Long.toHexString(temporaryChannelId) -> channel))
 
-    case ChannelChangedState(channel, _, _, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
+    case ChannelRestored(channel, _, _, _, channelId, _) =>
+      context.watch(channel)
+      context become main(channels + (java.lang.Long.toHexString(channelId) -> channel))
+
+    case ChannelStateChanged(channel, _, _, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
       import d.commitments.channelId
       context.watch(channel)
       // channel id switch

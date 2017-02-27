@@ -12,7 +12,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 23/09/2016.
   */
-class ChannelPaneController(theirNodeIdValue: String, val channelParams: LocalParams) extends Logging {
+class ChannelPaneController(theirNodeIdValue: String) extends Logging {
 
   @FXML var channelId: TextField = _
   @FXML var balanceBar: ProgressBar = _

@@ -4,12 +4,12 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.Features.Unset
-import fr.acinq.eclair.{Features, Globals}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{Features, Globals}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -20,12 +20,37 @@ import scala.util.{Failure, Success, Try}
 
 object Helpers {
 
-  object Funding {
+  /**
+    * Depending on the state, returns the current temporaryChannelId or channelId
+    * @param stateData
+    * @return
+    */
+  def getChannelId(stateData: Data): Long = stateData match {
+    case Nothing => ???
+    case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
+    case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.temporaryChannelId
+    case d: HasCommitments => d.channelId
+  }
 
-    def validateParams(channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
-      val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-      require(reserveToFundingRatio <= Globals.max_reserve_to_funding_ratio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${Globals.max_reserve_to_funding_ratio}")
-    }
+  def getLocalParams(stateData: Data): LocalParams = stateData match {
+    case Nothing => ???
+    case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.localParams
+    case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.localParams
+    case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.params.localParams
+    case d: DATA_WAIT_FOR_FUNDING_CREATED => d.params.localParams
+    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.params.localParams
+    case d: HasCommitments => d.commitments.localParams
+  }
+
+  def validateParams(channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+    val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
+    require(reserveToFundingRatio <= Globals.max_reserve_to_funding_ratio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${Globals.max_reserve_to_funding_ratio}")
+  }
+
+  object Funding {
 
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
@@ -202,7 +227,7 @@ object Helpers {
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitTxOutputs(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction): RemoteCommitPublished = {
-      import commitments.{localParams, remoteParams, commitInput}
+      import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")

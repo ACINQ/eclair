@@ -8,11 +8,13 @@ import javafx.scene.layout.VBox
 import javafx.stage.Stage
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, PeerChannel, PeerNode}
 import fr.acinq.eclair.io.Reconnect
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.{Globals, Setup}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
@@ -31,71 +33,72 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
   def receive: Receive = main(Map())
 
+  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: Long): (ChannelPaneController, VBox) = {
+    log.info(s"new channel: $channel")
+    val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
+    val channelPaneController = new ChannelPaneController(s"$remoteNodeId")
+    loader.setController(channelPaneController)
+    val root = loader.load[VBox]
+    channelPaneController.nodeId.setText(s"$remoteNodeId")
+    channelPaneController.channelId.setText(java.lang.Long.toHexString(temporaryChannelId))
+    channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
+    channelPaneController.reconnect.setDisable(!isFunder)
+    channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
+    })
+    channelPaneController.reconnect.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = peer ! Reconnect
+    })
+    (channelPaneController, root)
+  }
+
+  def updateBalance(channelPaneController: ChannelPaneController, commitments: Commitments) = {
+    val spec = commitments.localCommit.spec
+    channelPaneController.capacity.setText(s"${millisatoshi2millibtc(MilliSatoshi(spec.totalFunds)).amount}")
+    channelPaneController.amountUs.setText(s"${millisatoshi2millibtc(MilliSatoshi(spec.toLocalMsat)).amount}")
+    channelPaneController.balanceBar.setProgress(spec.toLocalMsat.toDouble / spec.totalFunds)
+  }
+
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
-    case ChannelCreated(_, peer, channel, params, theirNodeId, commitments_opt) =>
-      log.info(s"new channel: $channel")
-
-      val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
-      val channelPaneController = new ChannelPaneController(theirNodeId.toBin.toString, params)
-      loader.setController(channelPaneController)
-      val root = loader.load[VBox]
-
-      channelPaneController.nodeId.setText(s"$theirNodeId")
-      channelPaneController.funder.setText(if (params.isFunder) "Yes" else "No")
-      commitments_opt.map(commitments => {
-        val bal = commitments.localCommit.spec.toLocalMsat.toDouble / (commitments.localCommit.spec.toLocalMsat.toDouble + commitments.localCommit.spec.toRemoteMsat.toDouble)
-        channelPaneController.capacity.setText(s"${millisatoshi2millibtc(MilliSatoshi(commitments.localCommit.spec.totalFunds)).amount}")
-        channelPaneController.amountUs.setText(s"${millisatoshi2millibtc(MilliSatoshi(commitments.localCommit.spec.toLocalMsat)).amount}")
-        channelPaneController.balanceBar.setProgress(bal)
-      })
-
-      channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
-        override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
-      })
-      channelPaneController.reconnect.setOnAction(new EventHandler[ActionEvent] {
-        override def handle(event: ActionEvent) = peer ! Reconnect
-      })
-
+    case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
+      val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, temporaryChannelId)
       Platform.runLater(new Runnable() {
         override def run = mainController.channelBox.getChildren.addAll(root)
       })
       context.become(main(m + (channel -> channelPaneController)))
 
-    case ChannelIdAssigned(channel, channelId, capacity) =>
-      val channelPane = m(channel)
+    case ChannelRestored(channel, peer, remoteNodeId, isFunder, channelId, currentData) =>
+      val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
+      currentData match {
+        case d: HasCommitments => updateBalance(channelPaneController, d.commitments)
+        case _ => {}
+      }
+      Platform.runLater(new Runnable() {
+        override def run = mainController.channelBox.getChildren.addAll(root)
+      })
+      context.become(main(m + (channel -> channelPaneController)))
+
+    case ChannelIdAssigned(channel, channelId) if m.contains(channel) =>
+      val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
-          channelPane.channelId.setText(s"$channelId")
-          channelPane.capacity.setText(s"${satoshi2millibtc(capacity).amount}")
-          channelPane.funder.getText match {
-            case "Yes" => channelPane.amountUs.setText(s"${satoshi2millibtc(capacity).amount}")
-            case "No" => channelPane.amountUs.setText("0")
-          }
+          channelPaneController.channelId.setText(java.lang.Long.toHexString(channelId))
         }
       })
 
-    case ChannelChangedState(channel, _, _, previousState, currentState, currentData) if m.contains(channel) =>
-      val channelPane = m(channel)
+    case ChannelStateChanged(channel, _, _, _, currentState, _) if m.contains(channel) =>
+      val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
-          if (channelPane.channelParams.isFunder && OFFLINE.equals(currentState)) {
-            channelPane.reconnect.setDisable(false)
-          } else {
-            channelPane.reconnect.setDisable(true)
-          }
-          channelPane.state.setText(currentState.toString)
+          channelPaneController.state.setText(currentState.toString)
         }
       })
 
-    case ChannelSignatureReceived(channel, commitments) =>
-      val channelPane = m(channel)
-      val bal = commitments.localCommit.spec.toLocalMsat.toDouble / (commitments.localCommit.spec.toLocalMsat.toDouble + commitments.localCommit.spec.toRemoteMsat.toDouble)
+    case ChannelSignatureReceived(channel, commitments) if m.contains(channel) =>
+      val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
-        override def run = {
-          channelPane.amountUs.setText(s"${satoshi2millibtc(Satoshi(commitments.localCommit.spec.toLocalMsat / 1000L)).amount}")
-          channelPane.balanceBar.setProgress(bal)
-        }
+        override def run = updateBalance(channelPaneController, commitments)
       })
 
     case NodeDiscovered(nodeAnnouncement) =>

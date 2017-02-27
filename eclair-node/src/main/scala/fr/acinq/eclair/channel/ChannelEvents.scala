@@ -10,10 +10,12 @@ import fr.acinq.bitcoin.{BinaryData, Satoshi}
 
 trait ChannelEvent
 
-case class ChannelCreated(temporaryChannelId: Long, peer: ActorRef, channel: ActorRef, params: LocalParams, remoteNodeId: PublicKey, commitments: Option[Commitments] = None) extends ChannelEvent
+case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: Long) extends ChannelEvent
 
-case class ChannelIdAssigned(channel: ActorRef, channelId: BinaryData, amount: Satoshi) extends ChannelEvent
+case class ChannelRestored(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: Long, currentData: Data) extends ChannelEvent
 
-case class ChannelChangedState(channel: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
+case class ChannelIdAssigned(channel: ActorRef, channelId: Long) extends ChannelEvent
+
+case class ChannelStateChanged(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 
 case class ChannelSignatureReceived(channel: ActorRef, Commitments: Commitments) extends ChannelEvent

@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Features.Unset
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
@@ -49,7 +48,9 @@ object Channel {
 }
 
 class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+
   import Channel._
+
   val channelDb = makeChannelDb(db)
 
   var remote = r
@@ -95,7 +96,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
     case Event(initFunder@INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), Nothing) =>
       this.remoteNodeId = remoteNodeId
-      context.system.eventStream.publish(ChannelCreated(temporaryChannelId, context.parent, self, localParams, remoteNodeId))
+      context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
       val open = OpenChannel(temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
@@ -122,17 +123,16 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(INPUT_RESTORED(channelId, cs@ChannelState(remotePubKey, state, data)), _) =>
       log.info(s"restoring channel $cs")
       remoteNodeId = remotePubKey
+      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, Helpers.getLocalParams(data).isFunder, Helpers.getChannelId(data), data))
       data match {
         case d: HasCommitments =>
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-          context.system.eventStream.publish(ChannelCreated(d.channelId, context.parent, self, d.commitments.localParams, remoteNodeId, Some(d.commitments)))
           Register.createAlias(remoteNodeId, d.commitments.channelId)
           d match {
             case closing: DATA_CLOSING if closing.remoteCommitPublished.isDefined =>
               handleRemoteSpentCurrent(closing.remoteCommitPublished.get.commitTx, closing)
             case _ => ()
           }
-
         case _ => ()
       }
       goto(OFFLINE) using data
@@ -140,13 +140,13 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, _, localParams, remoteInit))) =>
-      Try(Funding.validateParams(open.channelReserveSatoshis, open.fundingSatoshis)) match {
+      Try(Helpers.validateParams(open.channelReserveSatoshis, open.fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           remote ! Error(open.temporaryChannelId, t.getMessage.getBytes)
           goto(CLOSED)
         case Success(_) =>
-          context.system.eventStream.publish(ChannelCreated(open.temporaryChannelId, context.parent, self, localParams, remoteNodeId))
+          context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, false, open.temporaryChannelId))
           // TODO: maybe also check uniqueness of temporary channel id
           val minimumDepth = Globals.mindepth_blocks
           val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
@@ -194,7 +194,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(_, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), open)) =>
-      Try(Funding.validateParams(accept.channelReserveSatoshis, fundingSatoshis)) match {
+      Try(Helpers.validateParams(accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           remote ! Error(temporaryChannelId, t.getMessage.getBytes)
@@ -290,7 +290,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array,
             unackedMessages = Nil,
             commitInput, ShaChain.init, channelId = temporaryChannelId) // TODO: we will compute the channelId at the next step, so we temporarily put 0
-          context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
+          context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId, params, commitments, None, Right(fundingSigned))
       }
 
@@ -323,7 +323,6 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             unackedMessages = Nil,
             commitInput, ShaChain.init, channelId = temporaryChannelId)
-          context.system.eventStream.publish(ChannelIdAssigned(self, commitments.anchorId, Satoshi(params.fundingSatoshis)))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId, params, commitments, None, Left(fundingCreated))
       }
@@ -371,6 +370,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
     case Event(FundingLocked(_, _, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(params, commitments, _)) =>
       log.info(s"channelId=${java.lang.Long.toUnsignedString(d.channelId)}")
       Register.createAlias(remoteNodeId, d.channelId)
+      context.system.eventStream.publish(ChannelIdAssigned(self, d.channelId))
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       if (Funding.announceChannel(params.localParams.localFeatures, params.remoteParams.localFeatures)) {
@@ -941,7 +941,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   onTransition {
     case previousState -> currentState =>
       if (currentState != previousState) {
-        context.system.eventStream.publish(ChannelChangedState(self, context.parent, remoteNodeId, previousState, currentState, nextStateData))
+        context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, previousState, currentState, nextStateData))
       }
       (stateData, nextStateData) match {
         case (from: HasCommitments, to: HasCommitments) =>

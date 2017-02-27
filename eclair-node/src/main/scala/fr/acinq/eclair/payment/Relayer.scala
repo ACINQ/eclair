@@ -33,7 +33,7 @@ case class ForwardFail(fail: UpdateFailHtlc)
   */
 class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor with ActorLogging {
 
-  context.system.eventStream.subscribe(self, classOf[ChannelChangedState])
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = main(Set(), Map())
 
@@ -41,18 +41,18 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
   def main(channels: Set[OutgoingChannel], bindings: Map[DownstreamHtlcId, Origin]): Receive = {
 
-    case ChannelChangedState(channel, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
+    case ChannelStateChanged(channel, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
       import d.commitments.channelId
       log.info(s"adding channel $channelId to available channels")
       context become main(channels + OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings)
 
-    case ChannelChangedState(channel, _, remoteNodeId, _, NEGOTIATING, d: DATA_NEGOTIATING) =>
+    case ChannelStateChanged(channel, _, remoteNodeId, _, NEGOTIATING, d: DATA_NEGOTIATING) =>
       import d.commitments.channelId
       log.info(s"removing channel $channelId from available channels")
       // TODO: cleanup bindings
       context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings)
 
-    case ChannelChangedState(channel, _, remoteNodeId, _, CLOSING, d: DATA_CLOSING) =>
+    case ChannelStateChanged(channel, _, remoteNodeId, _, CLOSING, d: DATA_CLOSING) =>
       import d.commitments.channelId
       log.info(s"removing channel $channelId from available channels")
       // TODO: cleanup bindings
