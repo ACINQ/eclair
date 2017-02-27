@@ -127,16 +127,16 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, params: ChannelParams, pushMsat: Long, remoteFirstPerCommitmentPoint: Point, lastSent: AcceptChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, params: ChannelParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId: Long, params: ChannelParams, commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(params: ChannelParams, commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
-final case class DATA_WAIT_FOR_ANN_SIGNATURES(params: ChannelParams, commitments: Commitments, lastSent: AnnouncementSignatures) extends Data with HasCommitments
-final case class DATA_NORMAL(params: ChannelParams, commitments: Commitments, unackedShutdown: Option[Shutdown]) extends Data with HasCommitments
-final case class DATA_SHUTDOWN(params: ChannelParams, commitments: Commitments,
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: Long, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: Long, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, remoteFirstPerCommitmentPoint: Point, lastSent: AcceptChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId: Long, commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_ANN_SIGNATURES(commitments: Commitments, lastSent: AnnouncementSignatures) extends Data with HasCommitments
+final case class DATA_NORMAL(commitments: Commitments, unackedShutdown: Option[Shutdown]) extends Data with HasCommitments
+final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
-final case class DATA_NEGOTIATING(params: ChannelParams, commitments: Commitments,
+final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
                               ourSignature: Option[ClosingSigned] = None,
@@ -147,11 +147,6 @@ final case class DATA_CLOSING(commitments: Commitments,
                               revokedCommitPublished: Seq[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
   require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || nextRemoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
 }
-
-final case class ChannelParams(localParams: LocalParams,
-                               remoteParams: RemoteParams,
-                               fundingSatoshis: Long,
-                               minimumDepth: Long)
 
 final case class LocalParams(dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: Long,

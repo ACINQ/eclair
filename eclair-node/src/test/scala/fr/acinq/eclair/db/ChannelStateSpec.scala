@@ -71,8 +71,6 @@ object ChannelStateSpec {
     globalFeatures = "foo".getBytes(),
     localFeatures = "bar".getBytes())
 
-  val channelParams = ChannelParams(localParams, remoteParams, 42000, 100)
-
   val openChannel = {
     val open = OpenChannel(temporaryChannelId = 1000,
       fundingSatoshis = 42000,
@@ -124,5 +122,5 @@ object ChannelStateSpec {
     remoteNextHtlcId = 0L,
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = 0L, unackedMessages = Nil)
 
-  val normal = ChannelState(PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey, NORMAL, DATA_NORMAL(ChannelParams(localParams, remoteParams, 42000, 10), commitments, None))
+  val normal = ChannelState(PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey, NORMAL, DATA_NORMAL(commitments, None))
 }
