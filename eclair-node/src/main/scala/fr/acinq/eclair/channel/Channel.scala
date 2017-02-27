@@ -51,8 +51,7 @@ class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef,
 
   import Channel._
 
-  val db = nodeParams.db
-  val channelDb = makeChannelDb(db)
+  val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
   var remote = r
   var remoteNodeId: PublicKey = null
@@ -948,21 +947,21 @@ class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef,
       (stateData, nextStateData) match {
         case (from: HasCommitments, to: HasCommitments) =>
           // use the the transition callback to store state and send messages
-          val previousChannelId = from.channelId
           val nextChannelId = to.channelId
-          channelDb.put(nextChannelId, ChannelRecord(nextChannelId, ChannelState(remoteNodeId, currentState, nextStateData)))
-          if (nextChannelId != previousChannelId) {
-            channelDb.delete(previousChannelId)
+          val toSend = if (remote == null) {
+            Seq()
+          } else {
+            // we only send newly added unacked messages
+            val nextMessages = to.commitments.unackedMessages
+            val currentMessages = from.commitments.unackedMessages
+            nextMessages.filterNot(c => currentMessages.contains(c))
           }
-          val nextMessages = to.commitments.unackedMessages
-          val currentMessages = from.commitments.unackedMessages
-          val diff = nextMessages.filterNot(c => currentMessages.contains(c))
-          // we only send newly added unacked messages
-          if (remote != null) diff.map(msg => remote ! msg)
+
+          forwarder ! StoreAndForward(toSend, remote, nextChannelId, ChannelState(remoteNodeId, currentState, nextStateData))
 
         case (_, to: HasCommitments) =>
           val nextChannelId = to.channelId
-          channelDb.put(nextChannelId, ChannelRecord(nextChannelId, ChannelState(remoteNodeId, currentState, nextStateData)))
+          forwarder ! StoreAndForward(Nil, remote, nextChannelId, ChannelState(remoteNodeId, currentState, nextStateData))
 
         case _ => ()
       }
