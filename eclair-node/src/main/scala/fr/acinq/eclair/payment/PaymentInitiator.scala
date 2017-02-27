@@ -2,11 +2,12 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PublicKey
 
 /**
   * Created by PM on 29/08/2016.
   */
-class PaymentInitiator(sourceNodeId: BinaryData, router: ActorRef) extends Actor with ActorLogging {
+class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef) extends Actor with ActorLogging {
 
   override def receive: Receive = {
     case c: CreatePayment =>
@@ -17,5 +18,5 @@ class PaymentInitiator(sourceNodeId: BinaryData, router: ActorRef) extends Actor
 }
 
 object PaymentInitiator {
-  def props(sourceNodeId: BinaryData, router: ActorRef) = Props(classOf[PaymentInitiator], sourceNodeId, router)
+  def props(sourceNodeId: PublicKey, router: ActorRef) = Props(classOf[PaymentInitiator], sourceNodeId, router)
 }

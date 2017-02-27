@@ -30,7 +30,7 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef) extends LoggingFSM[State, Data] {
 
   import PaymentLifecycle._
 
@@ -76,7 +76,7 @@ class PaymentLifecycle(sourceNodeId: BinaryData, router: ActorRef) extends Loggi
 
 object PaymentLifecycle {
 
-  def props(sourceNodeId: BinaryData, router: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router)
+  def props(sourceNodeId: PublicKey, router: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router)
 
   /**
     *

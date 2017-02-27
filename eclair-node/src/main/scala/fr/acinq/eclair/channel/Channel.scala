@@ -27,7 +27,7 @@ case class ChannelRecord(id: Long, state: ChannelState)
   */
 
 object Channel {
-  def props(remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb) = Props(new Channel(remote, blockchain, router, relayer, db))
+  def props(nodeParams: NodeParams, remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb) = Props(new Channel(nodeParams, remote, blockchain, router, relayer, db))
 
   def makeChannelDb(db: SimpleDb): SimpleTypedDb[Long, ChannelRecord] = {
     def channelid2String(id: Long) = s"channel-$id"
@@ -47,7 +47,7 @@ object Channel {
   }
 }
 
-class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
   import Channel._
 
@@ -141,7 +141,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, _, localParams, remoteInit))) =>
-      Try(Funding.validateParams(open.channelReserveSatoshis, open.fundingSatoshis)) match {
+      Try(Funding.validateParams(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           remote ! Error(open.temporaryChannelId, t.getMessage.getBytes)
@@ -149,7 +149,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
         case Success(_) =>
           context.system.eventStream.publish(ChannelCreated(open.temporaryChannelId, context.parent, self, localParams, remoteNodeId))
           // TODO: maybe also check uniqueness of temporary channel id
-          val minimumDepth = Globals.mindepth_blocks
+          val minimumDepth = nodeParams.minDepthBlocks
           val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
           val accept = AcceptChannel(temporaryChannelId = open.temporaryChannelId,
             dustLimitSatoshis = localParams.dustLimitSatoshis,
@@ -195,7 +195,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(_, temporaryChannelId, fundingSatoshis, pushMsat, localParams, remoteInit), open)) =>
-      Try(Funding.validateParams(accept.channelReserveSatoshis, fundingSatoshis)) match {
+      Try(Funding.validateParams(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           remote ! Error(temporaryChannelId, t.getMessage.getBytes)
@@ -375,7 +375,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       if (Funding.announceChannel(params.localParams.localFeatures, params.remoteParams.localFeatures)) {
-        val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
+        val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, nodeParams.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
         val annSignatures = AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
         // FD remote ! annSignatures
         goto(WAIT_FOR_ANN_SIGNATURES) using DATA_WAIT_FOR_ANN_SIGNATURES(params, commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)).addToUnackedMessages(annSignatures), annSignatures)
@@ -396,10 +396,10 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
   when(WAIT_FOR_ANN_SIGNATURES)(handleExceptions {
     case Event(AnnouncementSignatures(_, remoteNodeSig, remoteBitcoinSig), d@DATA_WAIT_FOR_ANN_SIGNATURES(params, commitments, _)) =>
       log.info(s"announcing channel ${d.channelId} on the network")
-      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
-      val channelAnn = Announcements.makeChannelAnnouncement(d.channelId, Globals.Node.publicKey, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey, d.params.remoteParams.fundingPubKey, localNodeSig, remoteNodeSig, localBitcoinSig, remoteBitcoinSig)
-      val nodeAnn = Announcements.makeNodeAnnouncement(Globals.Node.privateKey, Globals.Node.alias, Globals.Node.color, Globals.Node.address :: Nil, Platform.currentTime / 1000)
-      val channelUpdate = Announcements.makeChannelUpdate(Globals.Node.privateKey, remoteNodeId, d.commitments.channelId, Globals.expiry_delta_blocks, Globals.htlc_minimum_msat, Globals.fee_base_msat, Globals.fee_proportional_millionth, Platform.currentTime / 1000)
+      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, nodeParams.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
+      val channelAnn = Announcements.makeChannelAnnouncement(d.channelId, nodeParams.privateKey.publicKey, remoteNodeId, d.params.localParams.fundingPrivKey.publicKey, d.params.remoteParams.fundingPubKey, localNodeSig, remoteNodeSig, localBitcoinSig, remoteBitcoinSig)
+      val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.commitments.channelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
       router ! channelAnn
       router ! nodeAnn
       router ! channelUpdate
@@ -850,7 +850,7 @@ class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relay
       remote = r
       // this is a brand new channel
       if (Funding.announceChannel(d.params.localParams.localFeatures, d.params.remoteParams.localFeatures)) {
-        val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, Globals.Node.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
+        val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(d.channelId, nodeParams.privateKey, remoteNodeId, d.params.localParams.fundingPrivKey, d.params.remoteParams.fundingPubKey)
         val annSignatures = AnnouncementSignatures(d.channelId, localNodeSig, localBitcoinSig)
         remote ! annSignatures
       } else {

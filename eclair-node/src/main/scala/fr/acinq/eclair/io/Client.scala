@@ -5,7 +5,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Props, _}
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.{Globals, NodeParams}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
@@ -14,7 +14,7 @@ import fr.acinq.eclair.wire.LightningMessage
 /**
   * Created by PM on 27/10/2015.
   */
-class Client(switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef) extends Actor with ActorLogging {
+class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -31,7 +31,7 @@ class Client(switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: Pu
       val connection = sender
       val transport = context.actorOf(Props(
         new TransportHandler[LightningMessage](
-          KeyPair(Globals.Node.publicKey.toBin, Globals.Node.privateKey.toBin),
+          KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
           Some(remoteNodeId),
           connection = connection,
           serializer = LightningMessageSerializer)))
@@ -53,6 +53,6 @@ class Client(switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: Pu
 
 object Client extends App {
 
-  def props(switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef): Props = Props(classOf[Client], switchboard, address, remoteNodeId, origin)
+  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef): Props = Props(new Client(nodeParams, switchboard, address, remoteNodeId, origin))
 
 }

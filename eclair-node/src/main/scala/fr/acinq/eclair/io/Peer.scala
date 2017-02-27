@@ -4,14 +4,14 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
+import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener, Serializer}
 import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Features, Globals}
+import fr.acinq.eclair.{Features, Globals, NodeParams}
 
 import scala.compat.Platform
 
@@ -42,7 +42,7 @@ case class PeerRecord(id: PublicKey, address: Option[InetSocketAddress])
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) extends LoggingFSM[State, Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) extends LoggingFSM[State, Data] {
 
   import Peer._
 
@@ -56,7 +56,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
       stay
 
     case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) =>
-      val (channel, _) = createChannel(null, c.id, false, db)
+      val (channel, _) = createChannel(nodeParams, null, c.id, false, 0, db) // TODO: fixme using a dedicated restore message
       channel ! INPUT_RESTORED(c.id, c.state)
       stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(c.id, channel))
 
@@ -71,7 +71,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
       log.info(s"registering as a listener to $transport")
       transport ! Listener(self)
       context watch transport
-      transport ! Init(globalFeatures = Globals.global_features, localFeatures = Globals.local_features)
+      transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
       goto(INITIALIZING) using InitializingData(transport, channels)
   }
 
@@ -82,7 +82,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
       import fr.acinq.eclair.Features._
       log.info(s"$remoteNodeId has features: channelPublic=${channelPublic(remoteInit.localFeatures)} initialRoutingSync=${initialRoutingSync(remoteInit.localFeatures)}")
-      if (Features.areFeaturesCompatible(Globals.local_features, remoteInit.localFeatures)) {
+      if (Features.areFeaturesCompatible(nodeParams.localFeatures, remoteInit.localFeatures)) {
         if (Features.initialRoutingSync(remoteInit.localFeatures) != Unset) {
           router ! SendRoutingState(transport)
         }
@@ -111,7 +111,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
     case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val temporaryChannelId = Platform.currentTime
-      val (channel, localParams) = createChannel(transport, temporaryChannelId, funder = true, db)
+      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = true, c.fundingSatoshis.toLong, db)
       channel ! INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, remoteInit)
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
@@ -135,7 +135,7 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"accepting a new channel to $remoteNodeId")
       val temporaryChannelId = msg.temporaryChannelId
-      val (channel, localParams) = createChannel(transport, temporaryChannelId, funder = false, db)
+      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = false, fundingSatoshis = msg.fundingSatoshis, db)
       channel ! INPUT_INIT_FUNDEE(remoteNodeId, temporaryChannelId, localParams, remoteInit)
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
@@ -163,9 +163,9 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
       stay using d.copy(channels = channels - channelId)
   }
 
-  def createChannel(transport: ActorRef, temporaryChannelId: Long, funder: Boolean, db: SimpleDb): (ActorRef, LocalParams) = {
-    val localParams = makeChannelParams(temporaryChannelId, defaultFinalScriptPubKey, funder)
-    val channel = context.actorOf(Channel.props(transport, watcher, router, relayer, db), s"channel-$temporaryChannelId")
+  def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean, fundingSatoshis: Long, db: SimpleDb): (ActorRef, LocalParams) = {
+    val localParams = makeChannelParams(nodeParams, temporaryChannelId, defaultFinalScriptPubKey, funder, fundingSatoshis)
+    val channel = context.actorOf(Channel.props(nodeParams, transport, watcher, router, relayer, db), s"channel-$temporaryChannelId")
     context watch channel
     (channel, localParams)
   }
@@ -174,28 +174,28 @@ class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watc
 
 object Peer {
 
-  def props(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) = Props(classOf[Peer], remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey, db)
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey, db))
 
-  def generateKey(keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(Globals.Node.extendedPrivateKey, keyPath).privateKey
+  def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
 
-  def makeChannelParams(keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean): LocalParams =
+  def makeChannelParams(nodeParams: NodeParams, keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams =
     LocalParams(
-      dustLimitSatoshis = 542,
-      maxHtlcValueInFlightMsat = Long.MaxValue,
-      channelReserveSatoshis = 0,
-      htlcMinimumMsat = 0,
-      feeratePerKw = Globals.feeratePerKw,
-      toSelfDelay = Globals.delay_blocks,
-      maxAcceptedHtlcs = 100,
-      fundingPrivKey = generateKey(keyIndex :: 0L :: Nil),
-      revocationSecret = generateKey(keyIndex :: 1L :: Nil),
-      paymentKey = generateKey(keyIndex :: 2L :: Nil),
-      delayedPaymentKey = generateKey(keyIndex :: 3L :: Nil),
+      dustLimitSatoshis = nodeParams.dustLimitSatoshis,
+      maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
+      channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
+      htlcMinimumMsat = nodeParams.htlcMinimumMsat,
+      feeratePerKw = nodeParams.feeratePerKw,
+      toSelfDelay = nodeParams.delayBlocks,
+      maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
+      fundingPrivKey = generateKey(nodeParams, keyIndex :: 0L :: Nil),
+      revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
+      paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
+      delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      shaSeed = Globals.Node.seed,
+      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
-      globalFeatures = Globals.global_features,
-      localFeatures = Globals.local_features
+      globalFeatures = nodeParams.globalFeatures,
+      localFeatures = nodeParams.localFeatures
     )
 
   def makePeerDb(db: SimpleDb): SimpleTypedDb[PublicKey, PeerRecord] = {

@@ -27,7 +27,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
   }
 
   val graph = new SimpleGraph[BinaryData, NamedEdge](classOf[NamedEdge])
-  graph.addVertex(Globals.Node.publicKey)
+  graph.addVertex(setup.nodeParams.privateKey.publicKey)
 
   def receive: Receive = main(Map())
 

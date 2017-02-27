@@ -1,13 +1,14 @@
 package fr.acinq.eclair.channel.states
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.TestConstants
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 
 import scala.util.Random
 
@@ -15,6 +16,31 @@ import scala.util.Random
   * Created by PM on 23/08/2016.
   */
 trait StateTestsHelperMethods extends TestKitBase {
+
+  case class Setup(alice: TestFSMRef[State, Data, Channel],
+                   bob: TestFSMRef[State, Data, Channel],
+                   alice2bob: TestProbe,
+                   bob2alice: TestProbe,
+                   blockchainA: ActorRef,
+                   alice2blockchain: TestProbe,
+                   bob2blockchain: TestProbe,
+                   router: TestProbe,
+                   relayer: TestProbe)
+
+  def init(): Setup = {
+    val alice2bob = TestProbe()
+    val bob2alice = TestProbe()
+    val alice2blockchain = TestProbe()
+    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
+    val bob2blockchain = TestProbe()
+    val relayer = TestProbe()
+    val router = TestProbe()
+    val nodeParamsA = TestConstants.Alice.nodeParams
+    val nodeParamsB = TestConstants.Bob.nodeParams
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
+    Setup(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain, router, relayer)
+  }
 
   def reachNormal(alice: TestFSMRef[State, Data, Channel],
                   bob: TestFSMRef[State, Data, Channel],
