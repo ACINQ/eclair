@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
 
@@ -37,8 +36,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     val router = TestProbe()
     val nodeParamsA = TestConstants.Alice.nodeParams
     val nodeParamsB = TestConstants.Bob.nodeParams
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref))
     Setup(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain, router, relayer)
   }
 

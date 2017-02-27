@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Script}
+import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.io.Peer
 
 /**
@@ -36,7 +37,8 @@ object TestConstants {
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
-      maxReserveToFundingRatio = 0.05)
+      maxReserveToFundingRatio = 0.05,
+      db = new DummyDb())
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -71,7 +73,8 @@ object TestConstants {
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
-      maxReserveToFundingRatio = 0.05)
+      maxReserveToFundingRatio = 0.05,
+      db = new DummyDb)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

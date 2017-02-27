@@ -7,7 +7,6 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
@@ -36,8 +35,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandlerA), "relayer-a")
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandlerB), "relayer-b")
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, pipe, alice2blockchain.ref, router.ref, relayerA, new DummyDb()))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, pipe, bob2blockchain.ref, router.ref, relayerB, new DummyDb()))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, pipe, alice2blockchain.ref, router.ref, relayerA))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, pipe, bob2blockchain.ref, router.ref, relayerB))
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
       val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)

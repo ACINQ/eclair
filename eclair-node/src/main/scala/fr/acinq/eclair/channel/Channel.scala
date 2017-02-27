@@ -27,7 +27,7 @@ case class ChannelRecord(id: Long, state: ChannelState)
   */
 
 object Channel {
-  def props(nodeParams: NodeParams, remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb) = Props(new Channel(nodeParams, remote, blockchain, router, relayer, db))
+  def props(nodeParams: NodeParams, remote: ActorRef, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, remote, blockchain, router, relayer))
 
   def makeChannelDb(db: SimpleDb): SimpleTypedDb[Long, ChannelRecord] = {
     def channelid2String(id: Long) = s"channel-$id"
@@ -47,10 +47,11 @@ object Channel {
   }
 }
 
-class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
   import Channel._
 
+  val db = nodeParams.db
   val channelDb = makeChannelDb(db)
 
   var remote = r

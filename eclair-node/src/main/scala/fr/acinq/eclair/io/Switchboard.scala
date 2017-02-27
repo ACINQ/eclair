@@ -14,9 +14,11 @@ import fr.acinq.eclair.db.{ChannelState, SimpleDb}
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends Actor with ActorLogging {
 
   import Switchboard._
+
+  def db = nodeParams.db
 
   val peerDb = Peer.makePeerDb(db)
 
@@ -74,13 +76,13 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
   def createPeer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = {
     peerDb.put(remoteNodeId, PeerRecord(remoteNodeId, address_opt))
-    context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey, db), name = s"peer-$remoteNodeId")
+    context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
   }
 }
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) = Props(new Switchboard(nodeParams, watcher, router, relayer, defaultFinalScriptPubKey, db))
+  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Switchboard(nodeParams, watcher, router, relayer, defaultFinalScriptPubKey))
 
   // @formatter:off
   case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi)

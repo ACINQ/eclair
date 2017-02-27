@@ -42,10 +42,11 @@ case class PeerRecord(id: PublicKey, address: Option[InetSocketAddress])
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) extends LoggingFSM[State, Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
 
   import Peer._
 
+  val db = nodeParams.db
   val peerDb = makePeerDb(db)
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
@@ -56,7 +57,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay
 
     case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) =>
-      val (channel, _) = createChannel(nodeParams, null, c.id, false, 0, db) // TODO: fixme using a dedicated restore message
+      val (channel, _) = createChannel(nodeParams, null, c.id, false, 0) // TODO: fixme using a dedicated restore message
       channel ! INPUT_RESTORED(c.id, c.state)
       stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(c.id, channel))
 
@@ -111,7 +112,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val temporaryChannelId = Platform.currentTime
-      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = true, c.fundingSatoshis.toLong, db)
+      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = true, c.fundingSatoshis.toLong)
       channel ! INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, remoteInit)
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
@@ -135,7 +136,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"accepting a new channel to $remoteNodeId")
       val temporaryChannelId = msg.temporaryChannelId
-      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = false, fundingSatoshis = msg.fundingSatoshis, db)
+      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = false, fundingSatoshis = msg.fundingSatoshis)
       channel ! INPUT_INIT_FUNDEE(remoteNodeId, temporaryChannelId, localParams, remoteInit)
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
@@ -163,9 +164,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(channels = channels - channelId)
   }
 
-  def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean, fundingSatoshis: Long, db: SimpleDb): (ActorRef, LocalParams) = {
+  def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
     val localParams = makeChannelParams(nodeParams, temporaryChannelId, defaultFinalScriptPubKey, funder, fundingSatoshis)
-    val channel = context.actorOf(Channel.props(nodeParams, transport, watcher, router, relayer, db), s"channel-$temporaryChannelId")
+    val channel = context.actorOf(Channel.props(nodeParams, transport, watcher, router, relayer), s"channel-$temporaryChannelId")
     context watch channel
     (channel, localParams)
   }
@@ -174,7 +175,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
 object Peer {
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey, db))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey))
 
   def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
 
