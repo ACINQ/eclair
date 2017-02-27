@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui.controllers
 
+import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, ContextMenu, ProgressBar, TextField}
@@ -27,17 +28,21 @@ class ChannelPaneController(theirNodeIdValue: String, val channelParams: LocalPa
   var contextMenu: ContextMenu = _
 
   private def buildChannelContextMenu = {
-    contextMenu = ContextMenuUtils.buildCopyContext(List(
-      new CopyAction("Copy Channel Id", channelId.getText),
-      new CopyAction("Copy Node Pubkey", theirNodeIdValue)
-    ))
-    contextMenu.getStyleClass.add("context-channel")
-    channelId.setContextMenu(contextMenu)
-    amountUs.setContextMenu(contextMenu)
-    nodeId.setContextMenu(contextMenu)
-    capacity.setContextMenu(contextMenu)
-    funder.setContextMenu(contextMenu)
-    state.setContextMenu(contextMenu)
+    Platform.runLater(new Runnable() {
+      override def run = {
+        contextMenu = ContextMenuUtils.buildCopyContext(List(
+          new CopyAction("Copy Channel Id", channelId.getText),
+          new CopyAction("Copy Node Pubkey", theirNodeIdValue)
+        ))
+        contextMenu.getStyleClass.add("context-channel")
+        channelId.setContextMenu(contextMenu)
+        amountUs.setContextMenu(contextMenu)
+        nodeId.setContextMenu(contextMenu)
+        capacity.setContextMenu(contextMenu)
+        funder.setContextMenu(contextMenu)
+        state.setContextMenu(contextMenu)
+      }
+    })
   }
 
   @FXML def initialize = {
