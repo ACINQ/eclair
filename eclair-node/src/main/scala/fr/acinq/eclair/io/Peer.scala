@@ -97,7 +97,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val temporaryChannelId = Platform.currentTime
-      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = true)
+      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = true, c.fundingSatoshis.toLong)
       channel ! INPUT_INIT_FUNDER(remoteNodeId, temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, remoteInit)
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
@@ -121,7 +121,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"accepting a new channel to $remoteNodeId")
       val temporaryChannelId = msg.temporaryChannelId
-      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = false)
+      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = false, fundingSatoshis = msg.fundingSatoshis)
       channel ! INPUT_INIT_FUNDEE(remoteNodeId, temporaryChannelId, localParams, remoteInit)
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
@@ -149,8 +149,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(channels = channels - channelId)
   }
 
-  def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean): (ActorRef, LocalParams) = {
-    val localParams = makeChannelParams(nodeParams, temporaryChannelId, defaultFinalScriptPubKey, funder)
+  def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
+    val localParams = makeChannelParams(nodeParams, temporaryChannelId, defaultFinalScriptPubKey, funder, fundingSatoshis)
     val channel = context.actorOf(Channel.props(nodeParams, transport, watcher, router, relayer), s"channel-$temporaryChannelId")
     context watch channel
     (channel, localParams)
@@ -164,11 +164,11 @@ object Peer {
 
   def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
 
-  def makeChannelParams(nodeParams: NodeParams, keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean): LocalParams =
+  def makeChannelParams(nodeParams: NodeParams, keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams =
     LocalParams(
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
-      channelReserveSatoshis = nodeParams.channelReserveSatoshis,
+      channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,
       feeratePerKw = nodeParams.feeratePerKw,
       toSelfDelay = nodeParams.delayBlocks,

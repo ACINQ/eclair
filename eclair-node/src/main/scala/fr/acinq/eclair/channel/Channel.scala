@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Features.Unset
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount

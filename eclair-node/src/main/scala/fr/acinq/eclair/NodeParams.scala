@@ -19,7 +19,6 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       localFeatures: BinaryData,
                       dustLimitSatoshis: Long,
                       maxHtlcValueInFlightMsat: Long,
-                      channelReserveSatoshis: Long,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
                       htlcMinimumMsat: Int,
@@ -28,6 +27,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeratePerKw: Int,
                       feeBaseMsat: Int,
                       feeProportionalMillionth: Int,
+                      reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double)
 
 object NodeParams {
@@ -49,7 +49,6 @@ object NodeParams {
       localFeatures = BinaryData("05"), // channels_public and initial_routing_sync
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,
-      channelReserveSatoshis = 0,
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
@@ -58,6 +57,7 @@ object NodeParams {
       feeratePerKw = 10000,
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
+      reserveToFundingRatio = 0.01, // recommended by BOLT #2
       maxReserveToFundingRatio = 0.05 // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
     )
   }

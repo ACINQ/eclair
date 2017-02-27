@@ -27,7 +27,6 @@ object TestConstants {
       localFeatures = "00", // no announcement
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = 150000000,
-      channelReserveSatoshis = 10000, // Bob will need to keep that much satoshis as direct payment
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
       htlcMinimumMsat = 0,
@@ -36,13 +35,17 @@ object TestConstants {
       feeratePerKw = 10000,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
+      reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       keyIndex = 1,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
-      isFunder = true)
+      isFunder = true,
+      fundingSatoshis).copy(
+      channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
+    )
   }
 
   object Bob {
@@ -59,7 +62,6 @@ object TestConstants {
       localFeatures = "00", // no announcement
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
-      channelReserveSatoshis = 20000, // Alice will need to keep that much satoshis as direct payment
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
       htlcMinimumMsat = 1000,
@@ -68,13 +70,17 @@ object TestConstants {
       feeratePerKw = 10000,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
+      reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       keyIndex = 1,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(15), compressed = true).publicKey)),
-      isFunder = false)
+      isFunder = false,
+      fundingSatoshis).copy(
+      channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment
+    )
   }
 
 }
