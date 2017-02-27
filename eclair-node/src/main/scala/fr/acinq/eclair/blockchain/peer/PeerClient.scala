@@ -16,7 +16,7 @@ class PeerClient extends Actor with ActorLogging {
   val config = ConfigFactory.load().getConfig("eclair.bitcoind")
   val magic = config.getString("network") match {
     case "mainnet" => Message.MagicMain
-    case "testnet" => Message.MagicTestnet3
+    case "test" => Message.MagicTestnet3
     case "regtest" => Message.MagicTestNet
   }
   val peer = new InetSocketAddress(config.getString("host"), config.getInt("port"))
