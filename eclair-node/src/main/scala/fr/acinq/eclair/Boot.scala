@@ -39,6 +39,7 @@ object Boot extends App with Logging {
         logger.error(s"received fatal event $e")
         Platform.exit()
       })
+      s.boostrap
     case _ => Application.launch(classOf[FxApp])
   }
 }
@@ -46,7 +47,8 @@ object Boot extends App with Logging {
 class Setup() extends Logging {
 
   logger.info(s"hello!")
-  logger.info(s"nodeid=${Globals.Node.publicKey.toBin} alias=${Globals.Node.alias}")
+  val nodeParams = NodeParams.loadFromConfiguration()
+  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   val config = ConfigFactory.load()
 
   implicit lazy val system = ActorSystem()
@@ -85,7 +87,7 @@ class Setup() extends Logging {
   }))
   val fatalEventFuture = fatalEventPromise.future
 
-  val db = new SimpleFileDb(config.getString("eclair.db.root"))
+  val db = nodeParams.db
   val peerDb = Peer.makePeerDb(db)
   val peers = peerDb.values
 
@@ -102,11 +104,11 @@ class Setup() extends Logging {
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
   val register = system.actorOf(Props(new Register), name = "register")
-  val relayer = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandler), name = "relayer")
+  val relayer = system.actorOf(Relayer.props(nodeParams.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(watcher, db), name = "router")
-  val paymentInitiator = system.actorOf(PaymentInitiator.props(Globals.Node.publicKey, router), "payment-initiator")
-  val switchboard = system.actorOf(Switchboard.props(watcher, router, relayer, finalScriptPubKey, db), name = "switchboard")
-  val server = system.actorOf(Server.props(switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
+  val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
+  val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router), "payment-initiator")
+  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
 
   val _setup = this
   val api = new Service {

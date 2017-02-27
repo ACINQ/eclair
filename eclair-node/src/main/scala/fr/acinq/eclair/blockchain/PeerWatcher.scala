@@ -81,6 +81,19 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
       }
     }
 
+    case w@WatchConfirmed(channel, txId, minDepth, event) => {
+      client.getTxConfirmations(txId.toString).map {
+        case Some(confirmations) if confirmations >= minDepth =>
+          client.getTransactionShortId(txId.toString).map {
+            // TODO: this is a workaround to not have WatchConfirmed triggered multiple times in testing
+            // the reason is that we cannot do a become(watches - w, ...) because it happens in the future callback
+            case (height, index) => self ! ('trigger, w, WatchEventConfirmed(w.event, height, index))
+          }
+        case _ => ()
+      }
+      addWatch(w, watches, block2tx, lastTxes)
+    }
+      
     case w: Watch => addWatch(w, watches, block2tx, lastTxes)
 
     case PublishAsap(tx) =>

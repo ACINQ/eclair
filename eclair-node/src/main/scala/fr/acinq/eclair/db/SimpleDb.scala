@@ -6,6 +6,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 /**
   * Created by fabrice on 25/02/17.
   */
+
 trait SimpleDb {
   // @formatter:off
   def put(k: String, v: BinaryData) : Unit
@@ -16,7 +17,7 @@ trait SimpleDb {
   // @formatter:on
 }
 
-class SimpleTypedDb[K,V](id2string: K => String, string2id: String => Option[K], serializer: TransportHandler.Serializer[V], db: SimpleDb) {
+class SimpleTypedDb[K, V](id2string: K => String, string2id: String => Option[K], serializer: TransportHandler.Serializer[V], db: SimpleDb) {
   // @formatter:off
   def put(k: K, v: V) = db.put(id2string(k), serializer.serialize(v))
   def get(k: K): Option[V] = db.get(id2string(k)).map(serializer.deserialize)

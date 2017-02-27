@@ -4,12 +4,12 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.Features.Unset
+import fr.acinq.eclair.{Features, NodeParams}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Features, Globals}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -45,9 +45,9 @@ object Helpers {
     case d: HasCommitments => d.commitments.localParams
   }
 
-  def validateParams(channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+  def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
     val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-    require(reserveToFundingRatio <= Globals.max_reserve_to_funding_ratio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${Globals.max_reserve_to_funding_ratio}")
+    require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
   }
 
   object Funding {

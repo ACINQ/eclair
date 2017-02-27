@@ -1,13 +1,10 @@
 package fr.acinq.eclair.channel.states.g
 
-import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.{TestBitcoinClient, TestkitBaseClass}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -23,16 +20,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
   type FixtureParam = Tuple6[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
-    val alice2bob = TestProbe()
-    val bob2alice = TestProbe()
-    val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
-    val bob2blockchain = TestProbe()
-    val relayer = TestProbe()
+    val setup = init()
+    import setup._
     // note that alice.initialFeeRate != bob.initialFeeRate
-    val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       val sender = TestProbe()

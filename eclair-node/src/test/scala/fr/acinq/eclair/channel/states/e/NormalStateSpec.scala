@@ -1,19 +1,17 @@
 package fr.acinq.eclair.channel.states.e
 
-import akka.actor.Props
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
+import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.payment.{Bind, Local, Relayed}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -28,15 +26,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
-    val alice2bob = TestProbe()
-    val bob2alice = TestProbe()
-    val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
-    val bob2blockchain = TestProbe()
-    val relayer = TestProbe()
-    val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(alice2bob.ref, alice2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(bob2alice.ref, bob2blockchain.ref, router.ref, relayer.ref, new DummyDb()))
+    val setup = init()
+    import setup._
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
       awaitCond(alice.stateName == NORMAL)

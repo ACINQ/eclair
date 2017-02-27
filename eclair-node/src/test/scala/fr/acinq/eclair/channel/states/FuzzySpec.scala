@@ -7,7 +7,6 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
@@ -33,11 +32,11 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bob2blockchain = TestProbe()
     val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-a")
     val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-b")
-    val relayerA = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandlerA), "relayer-a")
-    val relayerB = system.actorOf(Relayer.props(Globals.Node.privateKey, paymentHandlerB), "relayer-b")
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandlerA), "relayer-a")
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandlerB), "relayer-b")
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, alice2blockchain.ref, router.ref, relayerA, new DummyDb()))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(pipe, bob2blockchain.ref, router.ref, relayerB, new DummyDb()))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, pipe, alice2blockchain.ref, router.ref, relayerA))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, pipe, bob2blockchain.ref, router.ref, relayerB))
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
       val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
@@ -66,7 +65,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   def buildCmdAdd(paymentHash: BinaryData) = {
     val channelUpdate_ab = ChannelUpdate("00" * 64, 0, 0, "0000", cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7, htlcMinimumMsat = 0)
-    val hops = Hop(Globals.Node.publicKey, Globals.Node.publicKey, channelUpdate_ab) :: Nil
+    val hops = Hop(Alice.nodeParams.privateKey.publicKey, Bob.nodeParams.privateKey.publicKey, channelUpdate_ab) :: Nil
     // we don't want to be below htlcMinimumMsat
     val amount = Random.nextInt(1000000) + 1000
     PaymentLifecycle.buildCommand(amount, paymentHash, hops, 444000)
