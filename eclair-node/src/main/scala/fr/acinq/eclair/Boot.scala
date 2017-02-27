@@ -39,6 +39,7 @@ object Boot extends App with Logging {
         logger.error(s"received fatal event $e")
         Platform.exit()
       })
+      s.boostrap
     case _ => Application.launch(classOf[FxApp])
   }
 }

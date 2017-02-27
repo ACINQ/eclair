@@ -44,6 +44,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       channelPaneController.nodeId.setText(s"$theirNodeId")
       channelPaneController.funder.setText(if (params.isFunder) "Yes" else "No")
       commitments_opt.map(commitments => {
+        channelPaneController.channelId.setText(s"${commitments.channelId}")
         val bal = commitments.localCommit.spec.toLocalMsat.toDouble / (commitments.localCommit.spec.toLocalMsat.toDouble + commitments.localCommit.spec.toRemoteMsat.toDouble)
         channelPaneController.capacity.setText(s"${millisatoshi2millibtc(MilliSatoshi(commitments.localCommit.spec.totalFunds)).amount}")
         channelPaneController.amountUs.setText(s"${millisatoshi2millibtc(MilliSatoshi(commitments.localCommit.spec.toLocalMsat)).amount}")

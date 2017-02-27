@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener, Serializer}
-import fr.acinq.eclair.db.{ChannelState, JavaSerializer, SimpleDb, SimpleTypedDb}
+import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
@@ -45,6 +45,7 @@ case class PeerRecord(id: PublicKey, address: Option[InetSocketAddress])
 class Peer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData, db: SimpleDb) extends LoggingFSM[State, Data] {
 
   import Peer._
+
   val peerDb = makePeerDb(db)
 
   startWith(DISCONNECTED, DisconnectedData(Nil))

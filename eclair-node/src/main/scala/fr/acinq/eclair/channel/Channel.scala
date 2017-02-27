@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Features.Unset
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
@@ -49,7 +48,9 @@ object Channel {
 }
 
 class Channel(val r: ActorRef, val blockchain: ActorRef, router: ActorRef, relayer: ActorRef, db: SimpleDb)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+
   import Channel._
+
   val channelDb = makeChannelDb(db)
 
   var remote = r

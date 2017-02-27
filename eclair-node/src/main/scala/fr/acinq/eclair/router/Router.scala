@@ -39,9 +39,11 @@ case class SendRoutingState(to: ActorRef)
 class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
 
   import Router._
+
   val routerDb = makeRouterDb(db)
 
   import ExecutionContext.Implicits.global
+
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
   def receive: Receive = main(State.empty)
@@ -54,12 +56,15 @@ class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
                   stash: Seq[RoutingMessage]) = {
     log.info(s"current status channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
     val state = State(nodes, channels, updates, rebroadcast, awaiting, stash)
-    routerDb.put("router.state", state)
+    routerDb.put("router.state", state.fixme)
     main(state)
   }
 
   def main(state: State): Receive = {
-    case newState: State => context become main(newState)
+    case newState: State =>
+      newState.nodes.values.map(n => self ! n)
+      newState.channels.values.map(c => self ! c)
+      context become main(newState)
 
     case SendRoutingState(remote) =>
       import state._
@@ -82,7 +87,7 @@ class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
       log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
       watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
       val state1 = state.copy(awaiting = awaiting + c)
-      routerDb.put("router.state", state1)
+      routerDb.put("router.state", state1.fixme)
       context become main(state1)
 
 
@@ -135,7 +140,7 @@ class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
 
     case n: NodeAnnouncement if state.awaiting.size > 0 =>
       val state1 = state.copy(stash = state.stash :+ n)
-      routerDb.put("router.state", state1)
+      routerDb.put("router.state", state1.fixme)
       context become main(state1)
 
     case n: NodeAnnouncement if !state.channels.values.exists(c => c.nodeId1 == n.nodeId || c.nodeId2 == n.nodeId) =>
@@ -185,7 +190,7 @@ class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
       rebroadcast.foreach(context.actorSelection(Register.actorPathToPeers) ! _)
       val state1 = State(nodes, channels, updates, Nil, awaiting, stash)
-      routerDb.put("router.state", state1)
+      routerDb.put("router.state", state1.fixme)
       context become main(state1)
 
     case 'nodes => sender ! state.nodes.values
@@ -221,6 +226,7 @@ object Router {
     )
 
   }
+
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")
     // the least significant bit tells us if it is node1 or node2
@@ -288,10 +294,12 @@ object Router {
                    awaiting: Set[ChannelAnnouncement],
                    stash: Seq[RoutingMessage]) {
     // see http://stackoverflow.com/questions/32900862/map-can-not-be-serializable-in-scala :(
-    def fixme = this.copy(nodes = nodes.map(identity), channels = channels.map(identity), updates = updates.map(identity))
+    // we alse remove transient fields (awaiting and stash)
+    def fixme = this.copy(nodes = nodes.map(identity), channels = channels.map(identity), updates = updates.map(identity), awaiting = Set(), stash = Seq())
   }
 
   object State {
     val empty = State(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil, awaiting = Set(), stash = Nil)
   }
+
 }
