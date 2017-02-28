@@ -79,7 +79,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill),
-          unackedMessages = fulfill :: Nil)))
+          unackedMessages = initialState.commitments.unackedMessages :+ fulfill)))
     }
   }
 
@@ -148,7 +148,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
-          unackedMessages = fail :: Nil)))
+          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
     }
   }
 

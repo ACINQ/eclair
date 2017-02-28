@@ -49,6 +49,8 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
+
+  def addToUnackedMessages(message: LightningMessage) : Commitments = this.copy(unackedMessages = unackedMessages :+ message)
 }
 
 object Commitments extends Logging {
@@ -427,6 +429,7 @@ object Commitments extends Logging {
     case _: CommitSig => s"sig"
     case _: RevokeAndAck => s"rev"
     case _: Error => s"err"
+    case _: FundingLocked => s"funding_locked"
     case _ => "???"
   }
 

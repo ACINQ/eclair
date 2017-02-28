@@ -6,7 +6,8 @@ import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
+import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener, Serializer}
+import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
@@ -34,6 +35,8 @@ case object DISCONNECTED extends State
 case object INITIALIZING extends State
 case object CONNECTED extends State
 
+case class PeerRecord(id: PublicKey, address: Option[InetSocketAddress])
+
 // @formatter:on
 
 /**
@@ -43,9 +46,21 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   import Peer._
 
+  val db = nodeParams.db
+  val peerDb = makePeerDb(db)
+
   startWith(DISCONNECTED, DisconnectedData(Nil))
 
   when(DISCONNECTED) {
+    case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) if c.state.remotePubKey != remoteNodeId =>
+      log.warning(s"received channel data for the wrong peer ${c.state.remotePubKey}")
+      stay
+
+    case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) =>
+      val (channel, _) = createChannel(nodeParams, null, c.id, false, 0) // TODO: fixme using a dedicated restore message
+      channel ! INPUT_RESTORED(c.id, c.state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(c.id, channel))
+
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels)) =>
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
@@ -184,4 +199,20 @@ object Peer {
       localFeatures = nodeParams.localFeatures
     )
 
+  def makePeerDb(db: SimpleDb): SimpleTypedDb[PublicKey, PeerRecord] = {
+    def peerid2String(id: PublicKey) = s"peer-$id"
+
+    def string2peerid(s: String) = if (s.startsWith("peer-")) Some(PublicKey(BinaryData(s.stripPrefix("peer-")))) else None
+
+    new SimpleTypedDb[PublicKey, PeerRecord](
+      peerid2String,
+      string2peerid,
+      new Serializer[PeerRecord] {
+        override def serialize(t: PeerRecord): BinaryData = JavaSerializer.serialize(t)
+
+        override def deserialize(bin: BinaryData): PeerRecord = JavaSerializer.deserialize[PeerRecord](bin)
+      },
+      db
+    )
+  }
 }

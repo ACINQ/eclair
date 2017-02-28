@@ -10,6 +10,8 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.TransportHandler.Serializer
+import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
@@ -34,14 +36,17 @@ case class SendRoutingState(to: ActorRef)
   * Created by PM on 24/05/2016.
   */
 
-class Router(watcher: ActorRef) extends Actor with ActorLogging {
+class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
 
   import Router._
 
+  val routerDb = makeRouterDb(db)
+
   import ExecutionContext.Implicits.global
+
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
-  def receive: Receive = main(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil, awaiting = Set(), stash = Nil)
+  def receive: Receive = main(State.empty)
 
   def mainWithLog(nodes: Map[BinaryData, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
@@ -50,18 +55,19 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
                   awaiting: Set[ChannelAnnouncement],
                   stash: Seq[RoutingMessage]) = {
     log.info(s"current status channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
-    main(nodes, channels, updates, rebroadcast, awaiting, stash)
+    val state = State(nodes, channels, updates, rebroadcast, awaiting, stash)
+    routerDb.put("router.state", state.fixme)
+    main(state)
   }
 
-  def main(
-            nodes: Map[BinaryData, NodeAnnouncement],
-            channels: Map[Long, ChannelAnnouncement],
-            updates: Map[ChannelDesc, ChannelUpdate],
-            rebroadcast: Seq[RoutingMessage],
-            awaiting: Set[ChannelAnnouncement],
-            stash: Seq[RoutingMessage]): Receive = {
+  def main(state: State): Receive = {
+    case newState: State =>
+      newState.nodes.values.map(n => self ! n)
+      newState.channels.values.map(c => self ! c)
+      context become main(newState)
 
     case SendRoutingState(remote) =>
+      import state._
       log.info(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
       channels.values.foreach(remote ! _)
       updates.values.foreach(remote ! _)
@@ -72,19 +78,24 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       log.error(s"bad signature for announcement $c")
       sender ! Error(0, "bad announcement sig!!!".getBytes())
 
-    case c: ChannelAnnouncement if channels.containsKey(c.channelId) =>
+    case c: ChannelAnnouncement if state.channels.containsKey(c.channelId) =>
       log.debug(s"ignoring $c (duplicate)")
 
     case c: ChannelAnnouncement =>
+      import state._
       val (blockHeight, txIndex, outputIndex) = fromShortId(c.channelId)
       log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
       watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
-      context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
+      val state1 = state.copy(awaiting = awaiting + c)
+      routerDb.put("router.state", state1.fixme)
+      context become main(state1)
+
 
     case GetTxResponse(tx, isSpendable, c: ChannelAnnouncement) if !isSpendable =>
       log.debug(s"ignoring $c (funding tx spent)")
 
     case GetTxResponse(tx, _, c: ChannelAnnouncement) =>
+      import state._
       // TODO: check sigs
       // TODO: blacklist if already received same channel id and different node ids
       val (_, _, outputIndex) = fromShortId(c.channelId)
@@ -108,7 +119,8 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       log.error(s"bad signature for announcement $n")
       sender ! Error(0, "bad announcement sig!!!".getBytes())
 
-    case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId), tx) if channels.containsKey(channelId) =>
+    case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId), tx) if state.channels.containsKey(channelId) =>
+      import state._
       val lostChannel = channels(channelId)
       log.info(s"funding tx of channelId=$channelId has been spent by txid=${tx.txid}")
       log.info(s"removed channel channelId=$channelId")
@@ -126,37 +138,42 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
       context become mainWithLog(nodes -- lostNodes, channels - channelId, updates.filterKeys(_.id != channelId), rebroadcast, awaiting, stash)
 
-    case n: NodeAnnouncement if awaiting.size > 0 =>
-      context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ n)
+    case n: NodeAnnouncement if state.awaiting.size > 0 =>
+      val state1 = state.copy(stash = state.stash :+ n)
+      routerDb.put("router.state", state1.fixme)
+      context become main(state1)
 
-    case n: NodeAnnouncement if !channels.values.exists(c => c.nodeId1 == n.nodeId || c.nodeId2 == n.nodeId) =>
+    case n: NodeAnnouncement if !state.channels.values.exists(c => c.nodeId1 == n.nodeId || c.nodeId2 == n.nodeId) =>
       log.debug(s"ignoring $n (no related channel found)")
 
-    case n: NodeAnnouncement if nodes.containsKey(n.nodeId) && nodes(n.nodeId).timestamp >= n.timestamp =>
+    case n: NodeAnnouncement if state.nodes.containsKey(n.nodeId) && state.nodes(n.nodeId).timestamp >= n.timestamp =>
       log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
 
-    case n: NodeAnnouncement if nodes.containsKey(n.nodeId) =>
+    case n: NodeAnnouncement if state.nodes.containsKey(n.nodeId) =>
+      import state._
       log.info(s"updated node nodeId=${n.nodeId}")
       context.system.eventStream.publish(NodeUpdated(n))
       context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
 
     case n: NodeAnnouncement =>
+      import state._
       log.info(s"added node nodeId=${n.nodeId}")
       context.system.eventStream.publish(NodeDiscovered(n))
       context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
 
-    case u: ChannelUpdate if awaiting.size > 0 =>
-      context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ u)
+    case u: ChannelUpdate if state.awaiting.size > 0 =>
+      context become main(state.copy(stash = state.stash :+ u))
 
-    case u: ChannelUpdate if !channels.contains(u.channelId) =>
+    case u: ChannelUpdate if !state.channels.contains(u.channelId) =>
       log.debug(s"ignoring $u (no related channel found)")
 
-    case u: ChannelUpdate if !Announcements.checkSig(u, getDesc(u, channels(u.channelId)).a) =>
+    case u: ChannelUpdate if !Announcements.checkSig(u, getDesc(u, state.channels(u.channelId)).a) =>
       // TODO: (dirty) this will make the origin channel close the connection
       log.error(s"bad signature for announcement $u")
       sender ! Error(0, "bad announcement sig!!!".getBytes())
 
     case u: ChannelUpdate =>
+      import state._
       val channel = channels(u.channelId)
       val desc = getDesc(u, channel)
       if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
@@ -165,23 +182,26 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
         context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
       }
 
-    case 'tick_broadcast if rebroadcast.size == 0 =>
+    case 'tick_broadcast if state.rebroadcast.size == 0 =>
     // no-op
 
     case 'tick_broadcast =>
+      import state._
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
       rebroadcast.foreach(context.actorSelection(Register.actorPathToPeers) ! _)
-      context become main(nodes, channels, updates, Nil, awaiting, stash)
+      val state1 = State(nodes, channels, updates, Nil, awaiting, stash)
+      routerDb.put("router.state", state1.fixme)
+      context become main(state1)
 
-    case 'nodes => sender ! nodes.values
+    case 'nodes => sender ! state.nodes.values
 
-    case 'channels => sender ! channels.values
+    case 'channels => sender ! state.channels.values
 
-    case 'updates => sender ! updates.values
+    case 'updates => sender ! state.updates.values
 
-    case 'dot => graph2dot(nodes, channels) pipeTo sender
+    case 'dot => graph2dot(state.nodes, state.channels) pipeTo sender
 
-    case RouteRequest(start, end) => findRoute(start, end, updates).map(RouteResponse(_)) pipeTo sender
+    case RouteRequest(start, end) => findRoute(start, end, state.updates).map(RouteResponse(_)) pipeTo sender
 
     case other => log.warning(s"unhandled message $other")
   }
@@ -190,7 +210,22 @@ class Router(watcher: ActorRef) extends Actor with ActorLogging {
 
 object Router {
 
-  def props(watcher: ActorRef) = Props(classOf[Router], watcher)
+  def props(watcher: ActorRef, db: SimpleDb) = Props(classOf[Router], watcher, db)
+
+  def makeRouterDb(db: SimpleDb) = {
+    // we use a single key: router.state
+    new SimpleTypedDb[String, State](
+      _ => "router.state",
+      s => if (s == "router.state") Some("router.state") else None,
+      new Serializer[State] {
+        override def serialize(t: State): BinaryData = JavaSerializer.serialize(t.fixme)
+
+        override def deserialize(bin: BinaryData): State = JavaSerializer.deserialize[State](bin)
+      },
+      db
+    )
+
+  }
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")
@@ -251,4 +286,20 @@ object Router {
     }
 
   }
+
+  case class State(nodes: Map[BinaryData, NodeAnnouncement],
+                   channels: Map[Long, ChannelAnnouncement],
+                   updates: Map[ChannelDesc, ChannelUpdate],
+                   rebroadcast: Seq[RoutingMessage],
+                   awaiting: Set[ChannelAnnouncement],
+                   stash: Seq[RoutingMessage]) {
+    // see http://stackoverflow.com/questions/32900862/map-can-not-be-serializable-in-scala :(
+    // we alse remove transient fields (awaiting and stash)
+    def fixme = this.copy(nodes = nodes.map(identity), channels = channels.map(identity), updates = updates.map(identity), awaiting = Set(), stash = Seq())
+  }
+
+  object State {
+    val empty = State(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil, awaiting = Set(), stash = Nil)
+  }
+
 }

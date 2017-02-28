@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.Features.Unset
-import fr.acinq.eclair.{Features, Globals, NodeParams}
+import fr.acinq.eclair.{Features, NodeParams}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -20,12 +20,37 @@ import scala.util.{Failure, Success, Try}
 
 object Helpers {
 
-  object Funding {
+  /**
+    * Depending on the state, returns the current temporaryChannelId or channelId
+    * @param stateData
+    * @return
+    */
+  def getChannelId(stateData: Data): Long = stateData match {
+    case Nothing => ???
+    case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
+    case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.temporaryChannelId
+    case d: HasCommitments => d.channelId
+  }
 
-    def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
-      val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-      require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
-    }
+  def getLocalParams(stateData: Data): LocalParams = stateData match {
+    case Nothing => ???
+    case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.localParams
+    case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.localParams
+    case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.localParams
+    case d: DATA_WAIT_FOR_FUNDING_CREATED => d.localParams
+    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.localParams
+    case d: HasCommitments => d.commitments.localParams
+  }
+
+  def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+    val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
+    require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
+  }
+
+  object Funding {
 
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
       val fundingScript = multiSig2of2(fundingPubkey1, fundingPubkey2)
@@ -36,25 +61,26 @@ object Helpers {
     /**
       * Creates both sides's first commitment transaction
       *
-      * @param params
+      * @param localParams
+      * @param remoteParams
       * @param pushMsat
       * @param fundingTxHash
       * @param fundingTxOutputIndex
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(params: ChannelParams, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
-      val toLocalMsat = if (params.localParams.isFunder) params.fundingSatoshis * 1000 - pushMsat else pushMsat
-      val toRemoteMsat = if (params.localParams.isFunder) pushMsat else params.fundingSatoshis * 1000 - pushMsat
+    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+      val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
+      val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 
       // local and remote feerate are the same at this point (funder gets to choose the initial feerate)
-      val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
-      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = params.remoteParams.feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
+      val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
+      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = remoteParams.feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
 
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(params.fundingSatoshis), params.localParams.fundingPrivKey.publicKey, params.remoteParams.fundingPubKey)
-      val localPerCommitmentPoint = Generators.perCommitPoint(params.localParams.shaSeed, 0)
-      val (localCommitTx, _, _) = Commitments.makeLocalTxs(0, params.localParams, params.remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
-      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, params.localParams, params.remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)
+      val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
+      val (localCommitTx, _, _) = Commitments.makeLocalTxs(0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
@@ -79,34 +105,34 @@ object Helpers {
       }
     }
 
-    def makeFirstClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
+    def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
       logger.info(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
       import commitments._
       val closingFee = {
         // this is just to estimate the weight
         val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
-        Transactions.weight2fee(params.localParams.feeratePerKw, closingWeight)
+        Transactions.weight2fee(commitments.localParams.feeratePerKw, closingWeight)
       }
-      val (_, closingSigned) = makeClosingTx(params, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      val (_, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
       closingSigned
     }
 
-    def makeClosingTx(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi): (ClosingTx, ClosingSigned) = {
+    def makeClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi): (ClosingTx, ClosingSigned) = {
       import commitments._
       require(isValidFinalScriptPubkey(localScriptPubkey), "invalid localScriptPubkey")
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
-      val localClosingSig = Transactions.sign(closingTx, params.localParams.fundingPrivKey)
+      val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
       (closingTx, closingSigned)
     }
 
-    def checkClosingSignature(params: ChannelParams, commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
+    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
       import commitments._
-      val (closingTx, closingSigned) = makeClosingTx(params, commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
       val signedClosingTx = Transactions.addSigs(closingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
@@ -202,7 +228,7 @@ object Helpers {
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitTxOutputs(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction): RemoteCommitPublished = {
-      import commitments.{localParams, remoteParams, commitInput}
+      import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")

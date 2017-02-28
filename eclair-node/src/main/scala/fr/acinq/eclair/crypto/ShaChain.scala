@@ -1,6 +1,8 @@
 package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.wire.Codecs
+import scodec.Codec
 
 import scala.annotation.tailrec
 
@@ -20,7 +22,7 @@ object ShaChain {
     * @param index 64-bit integer
     * @return a binary representation of index as a sequence of 64 booleans. Each bool represents a move down the tree
     */
-  def moves(index: Long): Seq[Boolean] = for (i <- 63 to 0 by -1) yield (index & (1L << i)) != 0
+  def moves(index: Long): Vector[Boolean] = (for (i <- 63 to 0 by -1) yield (index & (1L << i)) != 0).toVector
 
   /**
     *
@@ -39,7 +41,7 @@ object ShaChain {
 
   def shaChainFromSeed(hash: BinaryData, index: Long) = derive(Node(hash, 0, None), index).value
 
-  type Index = Seq[Boolean]
+  type Index = Vector[Boolean]
 
   val empty = ShaChain(Map.empty[Index, BinaryData])
 
@@ -93,6 +95,26 @@ object ShaChain {
       }
     }
   }
+
+
+  val shaChainCodec: Codec[ShaChain] =  {
+    import scodec.Codec
+    import scodec.bits.BitVector
+    import scodec.codecs._
+
+    // codec for a single map entry (i.e. Vector[Boolean] -> BinaryData
+    val entryCodec = vectorOfN(uint16, bool) ~ Codecs.varsizebinarydata
+
+    // codec for a Map[Vector[Boolean], BinaryData]: write all k ->v pairs using the codec defined above
+    val mapCodec: Codec[Map[Vector[Boolean], BinaryData]] = Codec[Map[Vector[Boolean], BinaryData]] (
+      (m: Map[Vector[Boolean], BinaryData]) => vectorOfN(uint16, entryCodec).encode(m.toVector),
+      (b: BitVector) => vectorOfN(uint16, entryCodec).decode(b).map(_.map(_.toMap))
+    )
+
+    // our shachain codec
+    (("knownHashes" | mapCodec) :: ("lastIndex" | optional(bool, int64))).as[ShaChain]
+  }
+
 }
 
 /**
@@ -102,7 +124,7 @@ object ShaChain {
   * @param lastIndex   index of the last known hash. Hashes are supposed to be added in reverse order i.e.
   *                    from 0xFFFFFFFFFFFFFFFF down to 0
   */
-case class ShaChain(knownHashes: Map[Seq[Boolean], BinaryData], lastIndex: Option[Long] = None) {
+case class ShaChain(knownHashes: Map[Vector[Boolean], BinaryData], lastIndex: Option[Long] = None) {
   def addHash(hash: BinaryData, index: Long): ShaChain = ShaChain.addHash(this, hash, index)
 
   def getHash(index: Long) = ShaChain.getHash(this, index)

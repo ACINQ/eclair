@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpent}
+import fr.acinq.eclair.db.{DummyDb, SimpleDb}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -67,7 +68,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
     within(30 seconds) {
       // first we set up the router
       val watcher = TestProbe()
-      val router = system.actorOf(Router.props(watcher.ref))
+      val router = system.actorOf(Router.props(watcher.ref, new DummyDb))
       // we announce channels
       router ! chan_ab
       router ! chan_bc

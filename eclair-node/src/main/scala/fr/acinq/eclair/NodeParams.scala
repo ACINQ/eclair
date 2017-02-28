@@ -6,6 +6,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.eclair.db.{SimpleDb, SimpleFileDb}
 
 /**
   * Created by PM on 26/02/2017.
@@ -28,7 +29,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeBaseMsat: Int,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
-                      maxReserveToFundingRatio: Double)
+                      maxReserveToFundingRatio: Double,
+                      db: SimpleDb)
 
 object NodeParams {
 
@@ -38,7 +40,7 @@ object NodeParams {
     val seed: BinaryData = config.getString("node.seed")
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-
+    val db = new SimpleFileDb(config.getString("db.root"))
     NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -58,7 +60,8 @@ object NodeParams {
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
       reserveToFundingRatio = 0.01, // recommended by BOLT #2
-      maxReserveToFundingRatio = 0.05 // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
+      maxReserveToFundingRatio = 0.05, // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
+      db = db
     )
   }
 }

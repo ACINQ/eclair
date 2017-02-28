@@ -49,7 +49,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         commitments = initialState.commitments.copy(
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-          unackedMessages = htlc :: Nil
+          unackedMessages = initialState.commitments.unackedMessages :+ htlc
         )))
       relayer.expectMsg(Bind(htlc, origin = Local(sender.ref)))
     }
@@ -84,7 +84,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         commitments = initialState.commitments.copy(
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
-          unackedMessages = htlc :: Nil)))
+          unackedMessages = initialState.commitments.unackedMessages :+ htlc)))
       relayer.expectMsg(Bind(htlc, origin = Relayed(originHtlc)))
     }
   }
