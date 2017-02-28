@@ -10,12 +10,11 @@ import javafx.stage.Stage
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, PeerChannel, PeerNode}
 import fr.acinq.eclair.io.Reconnect
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
-import fr.acinq.eclair.transactions.CommitmentSpec
-import fr.acinq.eclair.{Globals, Setup}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
 
@@ -42,7 +41,6 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
     channelPaneController.nodeId.setText(s"$remoteNodeId")
     channelPaneController.channelId.setText(java.lang.Long.toHexString(temporaryChannelId))
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
-    channelPaneController.reconnect.setDisable(!isFunder)
     channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
     })
@@ -75,7 +73,9 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         case _ => {}
       }
       Platform.runLater(new Runnable() {
-        override def run = mainController.channelBox.getChildren.addAll(root)
+        override def run = {
+          mainController.channelBox.getChildren.addAll(root)
+        }
       })
       context.become(main(m + (channel -> channelPaneController)))
 
@@ -87,10 +87,12 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         }
       })
 
-    case ChannelStateChanged(channel, _, _, _, currentState, _) if m.contains(channel) =>
+    case ChannelStateChanged(channel, _, _, _, currentState, currentData) if m.contains(channel) =>
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
+          // enable reconnect if channel OFFLINE and this node is the funder of the channel
+          channelPaneController.reconnect.setDisable(!(OFFLINE == currentState && "Yes".equals(channelPaneController.funder.getText)))
           channelPaneController.state.setText(currentState.toString)
         }
       })
