@@ -30,7 +30,7 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
     case StoreAndForward(messages, destination, channelId, channelState) if channelId != currentChannelId =>
       log.info(s"channel changed id: $currentChannelId -> $channelId")
       channelDb.put(channelId, ChannelRecord(channelId, channelState))
-      db.delete(currentChannelId.toString)
+      channelDb.delete(currentChannelId)
       messages.foreach(message => destination forward message)
       context become main(channelId)
     case StoreAndForward(messages, destination, channelId, channelState) =>

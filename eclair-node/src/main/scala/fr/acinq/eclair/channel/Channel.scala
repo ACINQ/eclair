@@ -125,17 +125,39 @@ class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef,
       remoteNodeId = remotePubKey
       context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, Helpers.getLocalParams(data).isFunder, Helpers.getChannelId(data), data))
       data match {
+        // no need to go OFFLINE, we can directly switch to CLOSING
+        case closing: DATA_CLOSING if closing.localCommitPublished.isDefined =>
+          spendLocalCurrent(closing)
+
+        case closing: DATA_CLOSING if closing.mutualClosePublished.isDefined =>
+          publishMutualClosing(closing.mutualClosePublished.get)
+          goto(CLOSING) using closing
+
+        case closing: DATA_CLOSING if closing.remoteCommitPublished.isDefined =>
+          handleRemoteSpentCurrent(closing.remoteCommitPublished.get.commitTx, closing)
+          goto(CLOSING) using closing
+
+        case closing: DATA_CLOSING if closing.nextRemoteCommitPublished.isDefined =>
+          handleRemoteSpentNext(closing.nextRemoteCommitPublished.get.commitTx, closing)
+          goto(CLOSING) using closing
+
+        case closing: DATA_CLOSING if !closing.revokedCommitPublished.isEmpty =>
+          closing.revokedCommitPublished.map(revokedCommitPublished => {
+            handleRemoteSpentOther(revokedCommitPublished.commitTx, closing)
+          })
+          goto(CLOSING) using closing
+
+        case closing: DATA_CLOSING =>
+          goto(CLOSING) using closing
+
         case d: HasCommitments =>
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           Register.createAlias(remoteNodeId, d.commitments.channelId)
-          d match {
-            case closing: DATA_CLOSING if closing.remoteCommitPublished.isDefined =>
-              handleRemoteSpentCurrent(closing.remoteCommitPublished.get.commitTx, closing)
-            case _ => ()
-          }
-        case _ => ()
+          goto(OFFLINE) using data
+
+        case unexpected => log.error(s"restoring channel with unexpected state: $unexpected")
+          goto(OFFLINE) using unexpected
       }
-      goto(OFFLINE) using data
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
@@ -885,6 +907,12 @@ class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef,
           goto(stateName) using d.copy(commitments = commitments1)
         case Failure(cause) => handleCommandError(sender, cause)
       }
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) => handleRemoteSpentOther(tx, d)
   }
 
   when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds) {
