@@ -15,7 +15,8 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.CreatePayment
 import grizzled.slf4j.Logging
 
-import scala.util.{Failure, Success, Try}
+import scala.concurrent.Future
+import scala.util.{Failure, Success}
 
 /**
   * Created by PM on 16/08/2016.
@@ -34,16 +35,14 @@ class Handlers(setup: Setup) extends Logging {
     hostPort match {
       case GUIValidators.hostRegex(remoteNodeId, host, port) =>
         logger.info(s"opening a channel with remoteNodeId=$remoteNodeId")
-        Try((setup.switchboard ? NewConnection(PublicKey(remoteNodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(fundingSatoshis, pushMsat)))).mapTo[String].onComplete {
-          case Success(s) => {}
-          case Failure(t) =>
+        (for {
+          address <- Future { new InetSocketAddress(host, port.toInt) }
+          pubkey <- Future { PublicKey(remoteNodeId) }
+          conn <- setup.switchboard ? NewConnection(pubkey, address, Some(NewChannel(fundingSatoshis, pushMsat)))
+        } yield conn) onFailure {
+          case t =>
             val message = s"$host:$port\nCause: ${t.getMessage}"
             notification("Connection failed", message, NOTIFICATION_ERROR)
-        }) match {
-          case Success(s) => {}
-          case Failure(t) => {
-            notification("Connection failed", "The pubkey might be incorrect.", NOTIFICATION_ERROR)
-          }
         }
       case _ => {}
     }
