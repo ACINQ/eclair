@@ -2,39 +2,72 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.db.ChannelState
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.db.Dbs
+import fr.acinq.eclair.wire.{LightningMessage, Error}
 
 /**
   * Created by fabrice on 27/02/17.
   */
 
-case class StoreAndForward(messages: Seq[LightningMessage], destination: ActorRef, channelId: Long, channelState: ChannelState)
-
-object StoreAndForward {
-  def apply(message: LightningMessage, destination: ActorRef, channelId: Long, channelState: ChannelState) = new StoreAndForward(Seq(message), destination, channelId, channelState)
-}
+case class StoreAndForward(previousState: State, nextState: State, previousData: Data, currentData: Data)
 
 class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
-  val db = nodeParams.db
-  val channelDb = Channel.makeChannelDb(db)
+
+  val channelDb = Dbs.makeChannelDb(nodeParams.db)
 
   def receive = {
-    case StoreAndForward(messages, destination, channelId, channelState) =>
-      channelDb.put(channelId, ChannelRecord(channelId, channelState))
-      messages.foreach(message => destination forward message)
-      context become main(channelId)
+    case destination: ActorRef => context become main(destination)
   }
 
-  def main(currentChannelId: Long): Receive = {
-    case StoreAndForward(messages, destination, channelId, channelState) if channelId != currentChannelId =>
-      log.info(s"channel changed id: $currentChannelId -> $channelId")
-      channelDb.put(channelId, ChannelRecord(channelId, channelState))
-      channelDb.delete(currentChannelId)
-      messages.foreach(message => destination forward message)
-      context become main(channelId)
-    case StoreAndForward(messages, destination, channelId, channelState) =>
-      channelDb.put(channelId, ChannelRecord(channelId, channelState))
-      messages.foreach(message => destination forward message)
+  def main(destination: ActorRef): Receive = {
+
+    case destination: ActorRef => context become main(destination)
+
+    case error: Error => destination ! error
+
+    case StoreAndForward(previousState, nextState, previousData, nextData) =>
+      val outgoing = Forwarder.extractOutgoingMessages(previousState, nextState, previousData, nextData)
+      if (outgoing.size > 0) {
+        log.debug(s"sending ${outgoing.map(_.getClass.getSimpleName).mkString(" ")}")
+        outgoing.foreach(destination forward _)
+      }
+      val (previousId, nextId) = (Helpers.getChannelId(previousData), Helpers.getChannelId(nextData))
+      channelDb.put(nextId, nextData)
+      if (previousId != nextId) {
+        channelDb.delete(previousId)
+      }
   }
+}
+
+object Forwarder {
+
+  def extractOutgoingMessages(previousState: State, nextState: State, previousData: Data, currentData: Data): Seq[LightningMessage] = {
+    previousState match {
+      case OFFLINE =>
+        (previousData, currentData) match {
+          case (_, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.left.toSeq ++ d.lastSent.right.toSeq
+          case (_, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_ANN_SIGNATURES) => d.lastSent :: Nil
+          case (_: HasCommitments, d2: HasCommitments)=> d2.commitments.unackedMessages
+          case _ => Nil
+        }
+      case _ =>
+        (previousData, currentData) match {
+          case (_, Nothing) => Nil
+          case (_, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
+          case (_, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_CREATED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
+          case (_, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_ANN_SIGNATURES) => d.lastSent :: Nil
+          case (_, d: DATA_CLOSING) => Nil
+          case (d1: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages diff d1.commitments.unackedMessages
+          case (_, _: HasCommitments) => ??? // eg: goto(CLOSING)
+        }
+    }
+  }
+
 }

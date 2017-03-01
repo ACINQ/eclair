@@ -36,13 +36,13 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     // we just bypass the relayer for this test
     val relayer = paymentHandler
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, pipe, blockchainA, router.ref, relayer))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, pipe, blockchainB, router.ref, relayer))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Bob.id, blockchainA, router.ref, relayer))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, Alice.id, blockchainB, router.ref, relayer))
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
-    alice ! INPUT_INIT_FUNDER(Bob.id, 0, 2000000, 1000000000, Alice.channelParams, bobInit)
-    bob ! INPUT_INIT_FUNDEE(Alice.id, 0, Bob.channelParams, aliceInit)
+    alice ! INPUT_INIT_FUNDER(0, 2000000, 1000000000, Alice.channelParams, pipe, bobInit)
+    bob ! INPUT_INIT_FUNDEE(0, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {
       awaitCond(alice.stateName == NORMAL)

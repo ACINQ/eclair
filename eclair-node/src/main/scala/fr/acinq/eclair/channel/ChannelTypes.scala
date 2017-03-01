@@ -56,8 +56,8 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(remoteNodeId: PublicKey, temporaryChannelId: Long, fundingSatoshis: Long, pushMsat: Long, localParams: LocalParams, remoteInit: Init)
-case class INPUT_INIT_FUNDEE(remoteNodeId: PublicKey, temporaryChannelId: Long, localParams: LocalParams, remoteInit: Init)
+case class INPUT_INIT_FUNDER(temporaryChannelId: Long, fundingSatoshis: Long, pushMsat: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
+case class INPUT_INIT_FUNDEE(temporaryChannelId: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_NO_MORE_HTLCS
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
@@ -133,13 +133,13 @@ final case class DATA_WAIT_FOR_FUNDING_SIGNED(temporaryChannelId: Long, localPar
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId: Long, commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_ANN_SIGNATURES(commitments: Commitments, lastSent: AnnouncementSignatures) extends Data with HasCommitments
-final case class DATA_NORMAL(commitments: Commitments, unackedShutdown: Option[Shutdown]) extends Data with HasCommitments
+final case class DATA_NORMAL(commitments: Commitments) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
-                              ourSignature: Option[ClosingSigned] = None,
+                              /*ourSignature: Option[ClosingSigned] = None,*/
                               mutualClosePublished: Option[Transaction] = None,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,

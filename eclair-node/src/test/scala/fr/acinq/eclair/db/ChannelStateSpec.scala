@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
@@ -91,7 +92,7 @@ object ChannelStateSpec {
     ChannelState(
       PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey,
       WAIT_FOR_ACCEPT_CHANNEL,
-      DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey, 42, 10000, 1000000, localParams, Init("foo".getBytes, "bar".getBytes)), open))
+      DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(42, 10000, 1000000, localParams, null, Init("foo".getBytes, "bar".getBytes)), open))
   }
 
   val paymentPreimages = Seq(
@@ -122,5 +123,5 @@ object ChannelStateSpec {
     remoteNextHtlcId = 0L,
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = 0L, unackedMessages = Nil)
 
-  val normal = ChannelState(PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey, NORMAL, DATA_NORMAL(commitments, None))
+  val normal = ChannelState(PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey, NORMAL, DATA_NORMAL(commitments))
 }

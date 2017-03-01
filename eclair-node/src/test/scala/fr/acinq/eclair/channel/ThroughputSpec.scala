@@ -54,12 +54,12 @@ class ThroughputSpec extends FunSuite {
     }), "payment-handler")
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandler))
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandler))
-    val alice = system.actorOf(Channel.props(Alice.nodeParams, pipe, blockchain, ???, relayerA), "a")
-    val bob = system.actorOf(Channel.props(Bob.nodeParams, pipe, blockchain, ???, relayerB), "b")
+    val alice = system.actorOf(Channel.props(Alice.nodeParams, Bob.id, blockchain, ???, relayerA), "a")
+    val bob = system.actorOf(Channel.props(Bob.nodeParams, Alice.id, blockchain, ???, relayerB), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER(Bob.id, 0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, bobInit)
-    bob ! INPUT_INIT_FUNDEE(Alice.id, 0, Bob.channelParams, aliceInit)
+    alice ! INPUT_INIT_FUNDER(0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, pipe, bobInit)
+    bob ! INPUT_INIT_FUNDEE(0, Bob.channelParams, pipe, aliceInit)
 
     val latch = new CountDownLatch(2)
     val listener = system.actorOf(Props(new Actor {

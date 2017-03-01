@@ -51,6 +51,8 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
   def addToUnackedMessages(message: LightningMessage) : Commitments = this.copy(unackedMessages = unackedMessages :+ message)
+
+  def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst{ case d: Shutdown => d}
 }
 
 object Commitments extends Logging {

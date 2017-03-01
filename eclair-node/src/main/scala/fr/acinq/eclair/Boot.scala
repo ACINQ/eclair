@@ -16,7 +16,7 @@ import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.{Channel, Register}
 import fr.acinq.eclair.crypto.TransportHandler.Serializer
-import fr.acinq.eclair.db.{JavaSerializer, SimpleFileDb, SimpleTypedDb}
+import fr.acinq.eclair.db.{Dbs, JavaSerializer, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.io.{Peer, PeerRecord, Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -91,7 +91,7 @@ class Setup() extends Logging {
   val peerDb = Peer.makePeerDb(db)
   val peers = peerDb.values
 
-  val channelDb = Channel.makeChannelDb(db)
+  val channelDb = Dbs.makeChannelDb(db)
   val channels = channelDb.values
 
   val routerDb = Router.makeRouterDb(db)

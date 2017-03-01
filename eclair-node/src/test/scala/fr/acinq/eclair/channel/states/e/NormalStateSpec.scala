@@ -179,7 +179,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.unackedShutdown().isDefined)
 
       // actual test starts here
       sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
@@ -832,12 +832,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_CLOSE (no pending htlcs)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.unackedShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.unackedShutdown.isDefined)
     }
   }
 
@@ -867,19 +867,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.unackedShutdown.isDefined)
     }
   }
 
   test("recv CMD_CLOSE (two in a row)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isEmpty)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.unackedShutdown.isEmpty)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == NORMAL)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].unackedShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.unackedShutdown.isDefined)
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("closing already in progress")
     }
