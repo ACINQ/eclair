@@ -41,7 +41,7 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      routerDb = Dbs.makeRouterDb(db))
+      announcementsDb = Dbs.makeAnnouncementDb(db))
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -80,7 +80,7 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      routerDb = Dbs.makeRouterDb(db))
+      announcementsDb = Dbs.makeAnnouncementDb(db))
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

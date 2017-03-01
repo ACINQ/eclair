@@ -44,19 +44,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
 
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
-  def saveState(nodes: Map[BinaryData, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], rebroadcast: Seq[RoutingMessage]): Unit = {
-    nodeParams.routerDb.put("router.state", State(nodes, channels, updates, rebroadcast).fixme)
-  }
-
-  def receive: Receive = {
-    case state: State =>
-      import state._
-      state.nodes.values.map(n => self ! n)
-      state.channels.values.map(c => self ! c)
-      context become main(nodes, channels, updates, rebroadcast, Set(), Seq())
-
-    case other => log.warning(s"unhandled message $other, router has not been initialized yet")
-  }
+  def receive: Receive = main(Map(), Map(), Map(), Nil, Set(), Nil)
 
   def mainWithLog(nodes: Map[BinaryData, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
@@ -95,7 +83,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
       context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
 
-
     case GetTxResponse(tx, isSpendable, c: ChannelAnnouncement) if !isSpendable =>
       log.debug(s"ignoring $c (funding tx spent)")
 
@@ -116,6 +103,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         stash.foreach(self ! _)
         Nil
       } else stash
+      nodeParams.announcementsDb.put(s"ann-channel-${c.channelId}", c)
       context become mainWithLog(nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
 
     case n: NodeAnnouncement if !Announcements.checkSig(n) =>
@@ -139,6 +127,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       }
 
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
+      nodeParams.announcementsDb.delete(s"ann-channel-$channelId")
+      lostNodes.foreach(id => nodeParams.announcementsDb.delete(s"ann-node-$id"))
       context become mainWithLog(nodes -- lostNodes, channels - channelId, updates.filterKeys(_.id != channelId), rebroadcast, awaiting, stash)
 
     case n: NodeAnnouncement if awaiting.size > 0 =>
@@ -153,13 +143,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
     case n: NodeAnnouncement if nodes.containsKey(n.nodeId) =>
       log.info(s"updated node nodeId=${n.nodeId}")
       context.system.eventStream.publish(NodeUpdated(n))
-      saveState(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
+      nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
       context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
 
     case n: NodeAnnouncement =>
       log.info(s"added node nodeId=${n.nodeId}")
       context.system.eventStream.publish(NodeDiscovered(n))
-      saveState(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n)
+      nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
       context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
 
     case u: ChannelUpdate if awaiting.size > 0 =>
@@ -179,7 +169,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
         log.debug(s"ignoring $u (old timestamp or duplicate)")
       } else {
-        saveState(nodes, channels, updates + (desc -> u), rebroadcast :+ u)
+        nodeParams.announcementsDb.put(s"ann-update-${u.channelId}-${u.flags}", u)
         context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
       }
 
@@ -189,7 +179,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
     case 'tick_broadcast =>
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
       rebroadcast.foreach(context.actorSelection(Register.actorPathToPeers) ! _)
-      saveState(nodes, channels, updates, Nil)
       context become main(nodes, channels, updates, Nil, awaiting, stash)
 
     case 'nodes => sender ! nodes.values
@@ -271,17 +260,8 @@ object Router {
 
   }
 
-  case class State(nodes: Map[BinaryData, NodeAnnouncement],
-                   channels: Map[Long, ChannelAnnouncement],
-                   updates: Map[ChannelDesc, ChannelUpdate],
-                   rebroadcast: Seq[RoutingMessage]) {
-    // see http://stackoverflow.com/questions/32900862/map-can-not-be-serializable-in-scala :(
-    // we alse remove transient fields (awaiting and stash)
-    def fixme = this.copy(nodes = nodes.map(identity), channels = channels.map(identity), updates = updates.map(identity))
-  }
-
-  object State {
-    val empty = State(nodes = Map(), channels = Map(), updates = Map(), rebroadcast = Nil)
-  }
+  case class RouterState(nodes: Iterable[NodeAnnouncement],
+                         channels: Iterable[ChannelAnnouncement],
+                         updates: Iterable[ChannelUpdate])
 
 }

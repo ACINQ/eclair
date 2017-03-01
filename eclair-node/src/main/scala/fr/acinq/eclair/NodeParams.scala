@@ -9,7 +9,8 @@ import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel.Data
 import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.io.PeerRecord
-import fr.acinq.eclair.router.Router.State
+import fr.acinq.eclair.router.Router.RouterState
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, LightningMessage, NodeAnnouncement}
 
 /**
   * Created by PM on 26/02/2017.
@@ -35,7 +36,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       maxReserveToFundingRatio: Double,
                       channelsDb: SimpleTypedDb[Long, Data],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
-                      routerDb: SimpleTypedDb[String, State])
+                      announcementsDb: SimpleTypedDb[String, LightningMessage])
 
 object NodeParams {
 
@@ -68,7 +69,7 @@ object NodeParams {
       maxReserveToFundingRatio = 0.05, // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      routerDb = Dbs.makeRouterDb(db)
+      announcementsDb = Dbs.makeAnnouncementDb(db)
     )
   }
 }

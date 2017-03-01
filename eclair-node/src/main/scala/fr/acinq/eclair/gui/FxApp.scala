@@ -42,7 +42,6 @@ class FxApp extends Application with Logging {
           val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
-          setup.boostrap
 
           import scala.concurrent.ExecutionContext.Implicits.global
           setup.fatalEventFuture onSuccess {
@@ -83,6 +82,7 @@ class FxApp extends Application with Logging {
               splashStage.close
               primaryStage.setScene(scene)
               primaryStage.show
+              setup.boostrap
             }
           })
         } catch {

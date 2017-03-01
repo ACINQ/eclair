@@ -4,8 +4,8 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Data
 import fr.acinq.eclair.crypto.TransportHandler.Serializer
-import fr.acinq.eclair.io.PeerRecord
-import fr.acinq.eclair.router.Router.State
+import fr.acinq.eclair.io.{LightningMessageSerializer, PeerRecord}
+import fr.acinq.eclair.wire.LightningMessage
 
 /**
   * Created by PM on 28/02/2017.
@@ -29,19 +29,14 @@ object Dbs {
     )
   }
 
-  def makeRouterDb(db: SimpleDb): SimpleTypedDb[String, State] = {
+  def makeAnnouncementDb(db: SimpleDb): SimpleTypedDb[String, LightningMessage] = {
     // we use a single key: router.state
-    new SimpleTypedDb[String, State](
-      _ => "router.state",
-      s => if (s == "router.state") Some("router.state") else None,
-      new Serializer[State] {
-        override def serialize(t: State): BinaryData = JavaSerializer.serialize(t.fixme)
-
-        override def deserialize(bin: BinaryData): State = JavaSerializer.deserialize[State](bin)
-      },
+    new SimpleTypedDb[String, LightningMessage](
+      s => s,
+      s => if (s.startsWith("ann-")) Some(s) else None,
+      LightningMessageSerializer,
       db
     )
-
   }
 
   def makePeerDb(db: SimpleDb): SimpleTypedDb[PublicKey, PeerRecord] = {

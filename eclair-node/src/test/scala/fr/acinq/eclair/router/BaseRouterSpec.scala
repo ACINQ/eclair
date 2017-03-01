@@ -70,7 +70,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       // first we set up the router
       val watcher = TestProbe()
       val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
-      router ! Router.State.empty
       // we announce channels
       router ! chan_ab
       router ! chan_bc

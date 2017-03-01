@@ -18,6 +18,7 @@ import fr.acinq.eclair.gui.FxApp
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JString
 
@@ -110,9 +111,15 @@ class Setup() extends Logging {
     case t: Throwable => system.eventStream.publish(HTTPBindError)
   }
 
-  def boostrap: Unit = {
-    nodeParams.peersDb.values.foreach(rec => switchboard ! rec)
-    nodeParams.channelsDb.values.foreach(rec => switchboard ! rec)
-    router ! nodeParams.routerDb.get("router.state").getOrElse(Router.State.empty)
-  }
+  val tasks = new Thread(new Runnable() {
+    override def run(): Unit = {
+      nodeParams.peersDb.values.foreach(rec => switchboard ! rec)
+      nodeParams.channelsDb.values.foreach(rec => switchboard ! rec)
+      nodeParams.announcementsDb.values.collect { case ann: ChannelAnnouncement => router ! ann }
+      nodeParams.announcementsDb.values.collect { case ann: NodeAnnouncement => router ! ann }
+      nodeParams.announcementsDb.values.collect { case ann: ChannelUpdate => router ! ann }
+    }
+  })
+
+  def boostrap: Unit = tasks.start()
 }
