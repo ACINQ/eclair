@@ -798,6 +798,11 @@ class Channel(nodeParams: NodeParams, val r: ActorRef, val blockchain: ActorRef,
     case Event(WatchEventConfirmed(BITCOIN_PENALTY_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
     case Event(e: Error, d: DATA_CLOSING) => goto(stateName) // nothing to do, there is already a spending tx published
+
+    case Event(INPUT_DISCONNECTED, _) =>
+      // stay in CLOSING state, no need to switch to OFFLINE
+      remote = null
+      goto(CLOSING)
   }
 
   when(CLOSED, stateTimeout = 10 seconds) {
