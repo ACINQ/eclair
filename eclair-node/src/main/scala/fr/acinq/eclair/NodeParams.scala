@@ -3,11 +3,11 @@ package fr.acinq.eclair
 import java.net.InetSocketAddress
 
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel.Data
-import fr.acinq.eclair.db.{Dbs, SimpleDb, SimpleFileDb, SimpleTypedDb}
+import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.io.PeerRecord
 import fr.acinq.eclair.router.Router.State
 

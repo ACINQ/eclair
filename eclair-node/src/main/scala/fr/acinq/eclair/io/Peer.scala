@@ -34,7 +34,7 @@ case object DISCONNECTED extends State
 case object INITIALIZING extends State
 case object CONNECTED extends State
 
-case class PeerRecord(id: PublicKey, address: Option[InetSocketAddress])
+case class PeerRecord(id: PublicKey, address: InetSocketAddress)
 
 // @formatter:on
 
@@ -73,6 +73,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
+      // we store the ip upon successful connection
+      address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
       import fr.acinq.eclair.Features._
       log.info(s"$remoteNodeId has features: channelPublic=${channelPublic(remoteInit.localFeatures)} initialRoutingSync=${initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areFeaturesCompatible(nodeParams.localFeatures, remoteInit.localFeatures)) {

@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
@@ -19,21 +19,20 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
   def receive: Receive = main(Map(), Map())
 
-
   def main(peers: Map[PublicKey, ActorRef], connections: Map[PublicKey, ActorRef]): Receive = {
 
-    case PeerRecord(publicKey, address) if peers.contains(publicKey) => ()
+    case PeerRecord(remoteNodeId, address) =>
+      val peer = createOrGetPeer(peers, remoteNodeId, Some(address))
+      context become main(peers + (remoteNodeId -> peer), connections)
 
-    case PeerRecord(publicKey, address) =>
-      val peer = createPeer(publicKey, address)
-      context become main(peers + (publicKey -> peer), connections)
-
-    case channelState: HasCommitments if !peers.contains(channelState.commitments.remoteParams.nodeId) =>
-      log.warning(s"received channel data for unknown peer ${channelState.commitments.remoteParams.nodeId}")
-
-    case channelState: HasCommitments => peers(channelState.commitments.remoteParams.nodeId) forward channelState
+    case channelState: HasCommitments =>
+      val remoteNodeId = channelState.commitments.remoteParams.nodeId
+      val peer = createOrGetPeer(peers, remoteNodeId, None)
+      peer forward channelState
+      context become main(peers + (remoteNodeId -> peer), connections)
 
     case NewConnection(publicKey, _, _) if publicKey == nodeParams.privateKey.publicKey =>
+      sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case NewConnection(remoteNodeId, address, newChannel_opt) =>
       val connection = connections.get(remoteNodeId) match {
@@ -47,10 +46,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
           context watch (connection)
           connection
       }
-      val peer = peers.get(remoteNodeId) match {
-        case Some(peer) => peer
-        case None => createPeer(remoteNodeId, Some(address))
-      }
+      val peer = createOrGetPeer(peers, remoteNodeId, Some(address))
       newChannel_opt.foreach(peer forward _)
       context become main(peers + (remoteNodeId -> peer), connections + (remoteNodeId -> connection))
 
@@ -59,8 +55,14 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       val remoteNodeId = connections.find(_._2 == actor).get._1
       context become main(peers, connections - remoteNodeId)
 
+    case Terminated(actor) if peers.values.toSet.contains(actor) =>
+      log.info(s"$actor is dead, removing from peers/connections/db")
+      val remoteNodeId = peers.find(_._2 == actor).get._1
+      nodeParams.peersDb.delete(remoteNodeId)
+      context become main(peers - remoteNodeId, connections - remoteNodeId)
+
     case h@HandshakeCompleted(_, remoteNodeId) =>
-      val peer = peers.getOrElse(remoteNodeId, createPeer(remoteNodeId, None))
+      val peer = createOrGetPeer(peers, remoteNodeId, None)
       peer forward h
       context become main(peers + (remoteNodeId -> peer), connections)
 
@@ -69,9 +71,14 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
   }
 
-  def createPeer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = {
-    nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address_opt))
-    context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
+  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = {
+    peers.get(remoteNodeId) match {
+      case Some(peer) => peer
+      case None =>
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
+        context watch (peer)
+        peer
+    }
   }
 }
 
