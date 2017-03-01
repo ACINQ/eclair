@@ -22,7 +22,6 @@ case object Reconnect
 
 sealed trait OfflineChannel
 case class BrandNewChannel(c: NewChannel) extends OfflineChannel
-//case class ColdChannel(f: File) extends OfflineChannel
 case class HotChannel(channelId: Long, a: ActorRef) extends OfflineChannel
 
 sealed trait Data
@@ -46,26 +45,19 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   import Peer._
 
-  val db = nodeParams.db
-  val peerDb = makePeerDb(db)
-
   startWith(DISCONNECTED, DisconnectedData(Nil))
 
   when(DISCONNECTED) {
-    case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) if c.state.remotePubKey != remoteNodeId =>
-      log.warning(s"received channel data for the wrong peer ${c.state.remotePubKey}")
-      stay
-
-    case Event(c: ChannelRecord, d@DisconnectedData(offlineChannels)) =>
-      val (channel, _) = createChannel(nodeParams, null, c.id, false, 0) // TODO: fixme using a dedicated restore message
-      channel ! INPUT_RESTORED(c.id, c.state)
-      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(c.id, channel))
+    case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.channelId, channel))
 
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels)) =>
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
     case Event(Reconnect, _) if address_opt.isDefined =>
-      context.parent ! NewConnection(remoteNodeId, address_opt.get, None)
+      context.parent forward NewConnection(remoteNodeId, address_opt.get, None)
       stay
 
     case Event(HandshakeCompleted(transport, _), DisconnectedData(channels)) =>
@@ -166,9 +158,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
     val localParams = makeChannelParams(nodeParams, temporaryChannelId, defaultFinalScriptPubKey, funder, fundingSatoshis)
-    val channel = context.actorOf(Channel.props(nodeParams, remoteNodeId, watcher, router, relayer), s"channel-$temporaryChannelId")
-    context watch channel
+    val channel = spawnChannel(nodeParams, transport)
     (channel, localParams)
+  }
+
+  def spawnChannel(nodeParams: NodeParams, transport: ActorRef): ActorRef = {
+    val channel = context.actorOf(Channel.props(nodeParams, remoteNodeId, watcher, router, relayer), s"channel-${context.children.size}")
+    context watch channel
+    channel
   }
 
 }
@@ -181,6 +178,7 @@ object Peer {
 
   def makeChannelParams(nodeParams: NodeParams, keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams =
     LocalParams(
+      nodeId = nodeParams.privateKey.publicKey,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
@@ -198,21 +196,4 @@ object Peer {
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures
     )
-
-  def makePeerDb(db: SimpleDb): SimpleTypedDb[PublicKey, PeerRecord] = {
-    def peerid2String(id: PublicKey) = s"peer-$id"
-
-    def string2peerid(s: String) = if (s.startsWith("peer-")) Some(PublicKey(BinaryData(s.stripPrefix("peer-")))) else None
-
-    new SimpleTypedDb[PublicKey, PeerRecord](
-      peerid2String,
-      string2peerid,
-      new Serializer[PeerRecord] {
-        override def serialize(t: PeerRecord): BinaryData = JavaSerializer.serialize(t)
-
-        override def deserialize(bin: BinaryData): PeerRecord = JavaSerializer.deserialize[PeerRecord](bin)
-      },
-      db
-    )
-  }
 }

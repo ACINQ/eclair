@@ -36,8 +36,8 @@ class Handlers(setup: Setup) extends Logging {
       case GUIValidators.hostRegex(remoteNodeId, host, port) =>
         logger.info(s"opening a channel with remoteNodeId=$remoteNodeId")
         (for {
-          address <- Future { new InetSocketAddress(host, port.toInt) }
-          pubkey <- Future { PublicKey(remoteNodeId) }
+          address <- Future(new InetSocketAddress(host, port.toInt))
+          pubkey = PublicKey(remoteNodeId)
           conn <- setup.switchboard ? NewConnection(pubkey, address, Some(NewChannel(fundingSatoshis, pushMsat)))
         } yield conn) onFailure {
           case t =>

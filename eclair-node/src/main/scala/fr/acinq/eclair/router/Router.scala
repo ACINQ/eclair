@@ -36,18 +36,16 @@ case class SendRoutingState(to: ActorRef)
   * Created by PM on 24/05/2016.
   */
 
-class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
+class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with ActorLogging {
 
   import Router._
-
-  val routerDb = makeRouterDb(db)
 
   import ExecutionContext.Implicits.global
 
   context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
 
   def saveState(nodes: Map[BinaryData, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], rebroadcast: Seq[RoutingMessage]): Unit = {
-    routerDb.put("router.state", State(nodes, channels, updates, rebroadcast).fixme)
+    nodeParams.routerDb.put("router.state", State(nodes, channels, updates, rebroadcast).fixme)
   }
 
   def receive: Receive = {
@@ -211,22 +209,7 @@ class Router(watcher: ActorRef, db: SimpleDb) extends Actor with ActorLogging {
 
 object Router {
 
-  def props(watcher: ActorRef, db: SimpleDb) = Props(classOf[Router], watcher, db)
-
-  def makeRouterDb(db: SimpleDb) = {
-    // we use a single key: router.state
-    new SimpleTypedDb[String, State](
-      _ => "router.state",
-      s => if (s == "router.state") Some("router.state") else None,
-      new Serializer[State] {
-        override def serialize(t: State): BinaryData = JavaSerializer.serialize(t.fixme)
-
-        override def deserialize(bin: BinaryData): State = JavaSerializer.deserialize[State](bin)
-      },
-      db
-    )
-
-  }
+  def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")

@@ -12,7 +12,7 @@ trait ChannelEvent
 
 case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: Long) extends ChannelEvent
 
-case class ChannelRestored(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: Long, currentData: Data) extends ChannelEvent
+case class ChannelRestored(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: Long, currentData: HasCommitments) extends ChannelEvent
 
 case class ChannelIdAssigned(channel: ActorRef, channelId: Long) extends ChannelEvent
 

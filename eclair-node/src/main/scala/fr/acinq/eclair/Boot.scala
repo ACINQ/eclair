@@ -8,17 +8,14 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
-import fr.acinq.eclair.channel.{Channel, Register}
-import fr.acinq.eclair.crypto.TransportHandler.Serializer
-import fr.acinq.eclair.db.{Dbs, JavaSerializer, SimpleFileDb, SimpleTypedDb}
+import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.gui.FxApp
-import fr.acinq.eclair.io.{Peer, PeerRecord, Server, Switchboard}
+import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -87,16 +84,6 @@ class Setup() extends Logging {
   }))
   val fatalEventFuture = fatalEventPromise.future
 
-  val db = nodeParams.db
-  val peerDb = Peer.makePeerDb(db)
-  val peers = peerDb.values
-
-  val channelDb = Dbs.makeChannelDb(db)
-  val channels = channelDb.values
-
-  val routerDb = Router.makeRouterDb(db)
-  val routerState = routerDb.get("router.state").getOrElse(Router.State.empty)
-
   val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
   val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
   val paymentHandler = config.getString("eclair.payment-handler") match {
@@ -105,7 +92,7 @@ class Setup() extends Logging {
   }
   val register = system.actorOf(Props(new Register), name = "register")
   val relayer = system.actorOf(Relayer.props(nodeParams.privateKey, paymentHandler), name = "relayer")
-  val router = system.actorOf(Router.props(watcher, db), name = "router")
+  val router = system.actorOf(Router.props(nodeParams, watcher), name = "router")
   val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router), "payment-initiator")
   val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
@@ -124,8 +111,8 @@ class Setup() extends Logging {
   }
 
   def boostrap: Unit = {
-    peers.map(rec => switchboard ! rec)
-    channels.map(rec => switchboard ! rec)
-    router ! routerState
+    nodeParams.peersDb.values.foreach(rec => switchboard ! rec)
+    nodeParams.channelsDb.values.foreach(rec => switchboard ! rec)
+    router ! nodeParams.routerDb.get("router.state").getOrElse(Router.State.empty)
   }
 }

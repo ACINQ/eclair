@@ -13,8 +13,6 @@ case class StoreAndForward(previousState: State, nextState: State, previousData:
 
 class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
-  val channelDb = Dbs.makeChannelDb(nodeParams.db)
-
   def receive = {
     case destination: ActorRef => context become main(destination)
   }
@@ -32,9 +30,9 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
         outgoing.foreach(destination forward _)
       }
       val (previousId, nextId) = (Helpers.getChannelId(previousData), Helpers.getChannelId(nextData))
-      channelDb.put(nextId, nextData)
+      nodeParams.channelsDb.put(nextId, nextData)
       if (previousId != nextId) {
-        channelDb.delete(previousId)
+        nodeParams.channelsDb.delete(previousId)
       }
   }
 }
@@ -45,8 +43,7 @@ object Forwarder {
     previousState match {
       case OFFLINE =>
         (previousData, currentData) match {
-          case (_, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
-          case (_, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.left.toSeq ++ d.lastSent.right.toSeq
+          case (_, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toSeq // NB: if we re-send the message and the other party didn't receive it they will return an error (see #120)
           case (_, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
           case (_, d: DATA_WAIT_FOR_ANN_SIGNATURES) => d.lastSent :: Nil
           case (_: HasCommitments, d2: HasCommitments)=> d2.commitments.unackedMessages

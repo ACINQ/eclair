@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Script}
-import fr.acinq.eclair.db.DummyDb
+import fr.acinq.eclair.db.{Dbs, DummyDb}
 import fr.acinq.eclair.io.Peer
 
 /**
@@ -18,6 +18,7 @@ object TestConstants {
     val seed = BinaryData("01" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+    val db = new DummyDb()
     val nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -38,7 +39,9 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
-      db = new DummyDb())
+      channelsDb = Dbs.makeChannelDb(db),
+      peersDb = Dbs.makePeerDb(db),
+      routerDb = Dbs.makeRouterDb(db))
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -54,6 +57,7 @@ object TestConstants {
     val seed = BinaryData("02" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+    val db = new DummyDb()
     val nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -74,7 +78,9 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
-      db = new DummyDb)
+      channelsDb = Dbs.makeChannelDb(db),
+      peersDb = Dbs.makePeerDb(db),
+      routerDb = Dbs.makeRouterDb(db))
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

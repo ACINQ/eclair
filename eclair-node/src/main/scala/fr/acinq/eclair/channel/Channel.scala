@@ -8,7 +8,6 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
-import fr.acinq.eclair.db.ChannelState
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
@@ -19,7 +18,6 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Left, Success, Try}
 
-case class ChannelRecord(id: Long, state: ChannelState)
 
 /**
   * Created by PM on 20/08/2015.
@@ -97,10 +95,11 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       forwarder ! remote
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
 
-    case Event(INPUT_RESTORED(channelId, cs@ChannelState(remotePubKey, state, data)), _) =>
-      log.info(s"restoring channel $cs")
-      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, Helpers.getLocalParams(data).isFunder, Helpers.getChannelId(data), data))
+    case Event(INPUT_RESTORED(data), _) =>
+      log.info(s"restoring channel $data")
+      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data))
       data match {
+        //NB: order matters!
         case closing: DATA_CLOSING =>
           closing.mutualClosePublished.map(doPublish(_))
           closing.localCommitPublished.foreach(doPublish(_))
@@ -113,11 +112,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case d: HasCommitments =>
           // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           Register.createAlias(remoteNodeId, d.commitments.channelId)
-          goto(OFFLINE) using data
-
-        case unexpected => log.error(s"restoring channel with unexpected state: $unexpected")
-          goto(OFFLINE) using unexpected
+          goto(OFFLINE) using d
       }
   })
 
@@ -148,6 +145,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             firstPerCommitmentPoint = firstPerCommitmentPoint)
           forwarder ! accept
           val remoteParams = RemoteParams(
+            nodeId = remoteNodeId,
             dustLimitSatoshis = open.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = open.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
@@ -183,6 +181,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case _ =>
           // TODO: check equality of temporaryChannelId? or should be done upstream
           val remoteParams = RemoteParams(
+            nodeId = remoteNodeId,
             dustLimitSatoshis = accept.dustLimitSatoshis,
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
@@ -318,7 +317,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_CONFIRMED(temporaryChannelId, commitments, deferred, lastSent)) =>
       val channelId = toShortId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
-      blockchain ! WatchLost(self, commitments.anchorId, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+      blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
       val nextPerCommitmentPoint = Generators.perCommitPoint(commitments.localParams.shaSeed, 1)
       val fundingLocked = FundingLocked(temporaryChannelId, channelId, nextPerCommitmentPoint)
       deferred.map(self ! _)
@@ -763,9 +762,20 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   }
 
   when(OFFLINE) {
-    case Event(INPUT_RECONNECTED(r), d: Data) =>
+    case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
       forwarder ! r
-      goto(Helpers.data2State(d))
+      d match {
+        case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
+          // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
+          blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          goto(WAIT_FOR_FUNDING_CONFIRMED)
+        case _: DATA_WAIT_FOR_FUNDING_LOCKED => goto(WAIT_FOR_FUNDING_LOCKED)
+        case _: DATA_WAIT_FOR_ANN_SIGNATURES => goto(WAIT_FOR_ANN_SIGNATURES)
+        case _: DATA_NORMAL => goto(NORMAL)
+        case _: DATA_SHUTDOWN => goto(SHUTDOWN)
+        case _: DATA_NEGOTIATING => goto(NEGOTIATING)
+        case _: DATA_CLOSING => goto(CLOSING)
+      }
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments)) =>
       log.info(s"we are disconnected so we just include the add in our commitments")
@@ -994,7 +1004,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
     // shouldn't we watch the claim tx instead?
     blockchain ! WatchConfirmed(self, revokedCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, BITCOIN_PENALTY_DONE)
-    
+
     revokedCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     revokedCommitPublished.mainPenaltyTx.foreach(tx => blockchain ! PublishAsap(tx))
     revokedCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
@@ -1004,7 +1014,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
   def handleInformationLeak(d: HasCommitments) = {
     // this is never supposed to happen !!
-    log.error(s"our funding tx ${d.commitments.anchorId} was spent !!")
+    log.error(s"our funding tx ${d.commitments.commitInput.outPoint.txid} was spent !!")
     forwarder ! Error(d.channelId, "Funding tx has been spent".getBytes)
 
     // let's try to spend our current local tx

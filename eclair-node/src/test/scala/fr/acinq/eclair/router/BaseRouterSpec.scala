@@ -5,6 +5,7 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
+import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpent}
 import fr.acinq.eclair.db.{DummyDb, SimpleDb}
 import fr.acinq.eclair.router.Announcements._
@@ -68,7 +69,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
     within(30 seconds) {
       // first we set up the router
       val watcher = TestProbe()
-      val router = system.actorOf(Router.props(watcher.ref, new DummyDb))
+      val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
       router ! Router.State.empty
       // we announce channels
       router ! chan_ab

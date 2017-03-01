@@ -2,13 +2,12 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi, ScriptElt}
-import fr.acinq.eclair.channel.ChannelRecord
-import fr.acinq.eclair.{Globals, NodeParams}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.db.{ChannelState, SimpleDb}
 
 /**
   * Ties network connections to peers.
@@ -17,10 +16,6 @@ import fr.acinq.eclair.db.{ChannelState, SimpleDb}
 class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends Actor with ActorLogging {
 
   import Switchboard._
-
-  def db = nodeParams.db
-
-  val peerDb = Peer.makePeerDb(db)
 
   def receive: Receive = main(Map(), Map())
 
@@ -33,10 +28,10 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       val peer = createPeer(publicKey, address)
       context become main(peers + (publicKey -> peer), connections)
 
-    case ChannelRecord(id, ChannelState(remotePubKey, _, _)) if !peers.contains(remotePubKey) =>
-      log.warning(s"received channel data for unknown peer $remotePubKey")
+    case channelState: HasCommitments if !peers.contains(channelState.commitments.remoteParams.nodeId) =>
+      log.warning(s"received channel data for unknown peer ${channelState.commitments.remoteParams.nodeId}")
 
-    case channelRecord: ChannelRecord => peers(channelRecord.state.remotePubKey) forward channelRecord
+    case channelState: HasCommitments => peers(channelState.commitments.remoteParams.nodeId) forward channelState
 
     case NewConnection(publicKey, _, _) if publicKey == nodeParams.privateKey.publicKey =>
 
@@ -75,7 +70,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
   }
 
   def createPeer(remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = {
-    peerDb.put(remoteNodeId, PeerRecord(remoteNodeId, address_opt))
+    nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address_opt))
     context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
   }
 }

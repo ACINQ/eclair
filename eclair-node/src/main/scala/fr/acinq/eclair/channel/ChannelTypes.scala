@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
-import fr.acinq.eclair.db.ChannelState
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
@@ -63,7 +62,7 @@ case object INPUT_NO_MORE_HTLCS
 case object INPUT_CLOSE_COMPLETE_TIMEOUT
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef)
-case class INPUT_RESTORED(channelId: Long, channelstate: ChannelState)
+case class INPUT_RESTORED(data: HasCommitments)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
@@ -139,7 +138,6 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
-                              /*ourSignature: Option[ClosingSigned] = None,*/
                               mutualClosePublished: Option[Transaction] = None,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
@@ -148,7 +146,8 @@ final case class DATA_CLOSING(commitments: Commitments,
   require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || nextRemoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
 }
 
-final case class LocalParams(dustLimitSatoshis: Long,
+final case class LocalParams(nodeId: PublicKey,
+                             dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: Long,
                              channelReserveSatoshis: Long,
                              htlcMinimumMsat: Long,
@@ -165,7 +164,8 @@ final case class LocalParams(dustLimitSatoshis: Long,
                              globalFeatures: BinaryData,
                              localFeatures: BinaryData)
 
-final case class RemoteParams(dustLimitSatoshis: Long,
+final case class RemoteParams(nodeId: PublicKey,
+                              dustLimitSatoshis: Long,
                               maxHtlcValueInFlightMsat: Long,
                               channelReserveSatoshis: Long,
                               htlcMinimumMsat: Long,

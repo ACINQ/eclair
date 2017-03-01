@@ -20,22 +20,6 @@ import scala.util.{Failure, Success, Try}
 
 object Helpers {
 
-  def data2State(stateData: Data): State = stateData match {
-    case Nothing => WAIT_FOR_INIT_INTERNAL
-    case _: DATA_WAIT_FOR_OPEN_CHANNEL => WAIT_FOR_OPEN_CHANNEL
-    case _: DATA_WAIT_FOR_ACCEPT_CHANNEL => WAIT_FOR_ACCEPT_CHANNEL
-    case _: DATA_WAIT_FOR_FUNDING_INTERNAL => WAIT_FOR_FUNDING_INTERNAL
-    case _: DATA_WAIT_FOR_FUNDING_CREATED => WAIT_FOR_FUNDING_CREATED
-    case _: DATA_WAIT_FOR_FUNDING_SIGNED => WAIT_FOR_FUNDING_SIGNED
-    case _: DATA_WAIT_FOR_FUNDING_CONFIRMED => WAIT_FOR_FUNDING_CONFIRMED
-    case _: DATA_WAIT_FOR_FUNDING_LOCKED => WAIT_FOR_FUNDING_LOCKED
-    case _: DATA_WAIT_FOR_ANN_SIGNATURES => WAIT_FOR_ANN_SIGNATURES
-    case _: DATA_NORMAL => NORMAL
-    case _: DATA_SHUTDOWN => SHUTDOWN
-    case _: DATA_NEGOTIATING => NEGOTIATING
-    case _: DATA_CLOSING => CLOSING
-  }
-
   /**
     * Depending on the state, returns the current temporaryChannelId or channelId
     * @param stateData
@@ -49,16 +33,6 @@ object Helpers {
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.temporaryChannelId
     case d: HasCommitments => d.channelId
-  }
-
-  def getLocalParams(stateData: Data): LocalParams = stateData match {
-    case Nothing => ???
-    case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.localParams
-    case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.localParams
-    case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.localParams
-    case d: DATA_WAIT_FOR_FUNDING_CREATED => d.localParams
-    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.localParams
-    case d: HasCommitments => d.commitments.localParams
   }
 
   def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {

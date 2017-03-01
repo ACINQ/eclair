@@ -38,7 +38,6 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        unackedMessages: Seq[LightningMessage],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: Long) {
-  def anchorId: BinaryData = commitInput.outPoint.txid
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 

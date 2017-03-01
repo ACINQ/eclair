@@ -4,9 +4,12 @@ import java.net.InetSocketAddress
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.eclair.db.{SimpleDb, SimpleFileDb}
+import fr.acinq.eclair.channel.Data
+import fr.acinq.eclair.db.{Dbs, SimpleDb, SimpleFileDb, SimpleTypedDb}
+import fr.acinq.eclair.io.PeerRecord
+import fr.acinq.eclair.router.Router.State
 
 /**
   * Created by PM on 26/02/2017.
@@ -30,7 +33,9 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      db: SimpleDb)
+                      channelsDb: SimpleTypedDb[Long, Data],
+                      peersDb: SimpleTypedDb[PublicKey, PeerRecord],
+                      routerDb: SimpleTypedDb[String, State])
 
 object NodeParams {
 
@@ -61,7 +66,9 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
       reserveToFundingRatio = 0.01, // recommended by BOLT #2
       maxReserveToFundingRatio = 0.05, // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
-      db = db
+      channelsDb = Dbs.makeChannelDb(db),
+      peersDb = Dbs.makePeerDb(db),
+      routerDb = Dbs.makeRouterDb(db)
     )
   }
 }

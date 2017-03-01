@@ -1,16 +1,14 @@
 package fr.acinq.eclair.db
 
-import java.net.InetSocketAddress
-
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
-import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{CommitSig, Init, OpenChannel, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{CommitSig, UpdateAddHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -23,23 +21,17 @@ class ChannelStateSpec extends FunSuite {
 
   import ChannelStateSpec._
 
-  test("basic serialization test") {
-    val data = openChannel
-    val bin = ChannelState.serializer.serialize(data)
-    val check = ChannelState.serializer.deserialize(bin)
-    assert(data == check)
-  }
-
   test("basic serialization test (NORMAL)") {
     val data = normal
-    val bin = ChannelState.serializer.serialize(data)
-    val check = ChannelState.serializer.deserialize(bin)
+    val bin = JavaSerializer.serialize(data)
+    val check = JavaSerializer.deserialize[DATA_NORMAL](bin)
     assert(data == check)
   }
 }
 
 object ChannelStateSpec {
   val localParams = LocalParams(
+    nodeId = randomKey.publicKey,
     dustLimitSatoshis = Satoshi(546).toLong,
     maxHtlcValueInFlightMsat = 50,
     channelReserveSatoshis = 10000,
@@ -58,6 +50,7 @@ object ChannelStateSpec {
     localFeatures = "bar".getBytes())
 
   val remoteParams = RemoteParams(
+    nodeId = randomKey.publicKey,
     dustLimitSatoshis = Satoshi(546).toLong,
     maxHtlcValueInFlightMsat = 50,
     channelReserveSatoshis = 10000,
@@ -71,29 +64,6 @@ object ChannelStateSpec {
     delayedPaymentBasepoint = Scalar(BinaryData("04" * 32)).toPoint,
     globalFeatures = "foo".getBytes(),
     localFeatures = "bar".getBytes())
-
-  val openChannel = {
-    val open = OpenChannel(temporaryChannelId = 1000,
-      fundingSatoshis = 42000,
-      pushMsat = 0,
-      dustLimitSatoshis = localParams.dustLimitSatoshis,
-      maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
-      channelReserveSatoshis = localParams.channelReserveSatoshis,
-      htlcMinimumMsat = localParams.htlcMinimumMsat,
-      feeratePerKw = localParams.feeratePerKw,
-      toSelfDelay = localParams.toSelfDelay,
-      maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
-      fundingPubkey = localParams.fundingPrivKey.publicKey,
-      revocationBasepoint = localParams.revocationSecret.toPoint,
-      paymentBasepoint = localParams.paymentKey.toPoint,
-      delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
-      firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0))
-
-    ChannelState(
-      PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey,
-      WAIT_FOR_ACCEPT_CHANNEL,
-      DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(42, 10000, 1000000, localParams, null, Init("foo".getBytes, "bar".getBytes)), open))
-  }
 
   val paymentPreimages = Seq(
     BinaryData("0000000000000000000000000000000000000000000000000000000000000000"),
@@ -123,5 +93,5 @@ object ChannelStateSpec {
     remoteNextHtlcId = 0L,
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = 0L, unackedMessages = Nil)
 
-  val normal = ChannelState(PrivateKey(BinaryData("01" * 32) :+ 1.toByte).publicKey, NORMAL, DATA_NORMAL(commitments))
+  val normal = DATA_NORMAL(commitments)
 }
