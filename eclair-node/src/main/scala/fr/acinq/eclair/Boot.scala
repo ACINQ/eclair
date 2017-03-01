@@ -95,7 +95,7 @@ class Setup() extends Logging {
   val channels = channelDb.values
 
   val routerDb = Router.makeRouterDb(db)
-  val routerStates = routerDb.values
+  val routerState = routerDb.get("router.state").getOrElse(Router.State.empty)
 
   val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
   val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
@@ -126,6 +126,6 @@ class Setup() extends Logging {
   def boostrap: Unit = {
     peers.map(rec => switchboard ! rec)
     channels.map(rec => switchboard ! rec)
-    routerStates.map(rec => router ! rec)
+    router ! routerState
   }
 }
