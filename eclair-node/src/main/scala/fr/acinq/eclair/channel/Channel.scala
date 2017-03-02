@@ -834,11 +834,11 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   }
 
   onTransition {
-    case previousState -> currentState =>
-      if (currentState != previousState) {
-        context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, previousState, currentState, nextStateData))
+    case state -> nextState =>
+      if (nextState != state) {
+        context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, nextStateData))
       }
-      forwarder ! StoreAndForward(previousState, currentState, stateData, nextStateData)
+      forwarder ! StoreAndForward(nextStateData, Helpers.extractOutgoingMessages(state, nextState, stateData, nextStateData))
   }
 
   /*

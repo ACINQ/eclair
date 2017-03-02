@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -38,6 +38,34 @@ object Helpers {
   def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
     val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
     require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
+  }
+
+  def extractOutgoingMessages(currentState: State, nextState: State, currentData: Data, nextData: Data): Seq[LightningMessage] = {
+    currentState match {
+      case OFFLINE =>
+        (currentData, nextData) match {
+          case (_, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toSeq // NB: if we re-send the message and the other party didn't receive it they will return an error (see #120)
+          case (_, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_ANN_SIGNATURES) => d.lastSent :: Nil
+          case (_: HasCommitments, d2: HasCommitments)=> d2.commitments.unackedMessages
+          case _ => Nil
+        }
+      case _ =>
+        (currentData, nextData) match {
+          case (_, Nothing) => Nil
+          case (_, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
+          case (_, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_CREATED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
+          case (_, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
+          case (_, d: DATA_WAIT_FOR_ANN_SIGNATURES) => d.lastSent :: Nil
+          case (_, d: DATA_CLOSING) => Nil
+          case (d1: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages diff d1.commitments.unackedMessages
+          case (_, _: HasCommitments) => ??? // eg: goto(CLOSING)
+        }
+    }
   }
 
   object Funding {
