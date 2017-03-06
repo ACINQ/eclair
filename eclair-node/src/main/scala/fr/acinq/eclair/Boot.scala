@@ -95,7 +95,7 @@ class Setup() extends Logging {
   val relayer = system.actorOf(Relayer.props(nodeParams.privateKey, paymentHandler), name = "relayer")
   val router = system.actorOf(Router.props(nodeParams, watcher), name = "router")
   val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
-  val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router), "payment-initiator")
+  val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator")
   val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
 
   val _setup = this

@@ -113,7 +113,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
-          Register.createAlias(remoteNodeId, d.commitments.channelId)
           goto(OFFLINE) using d
       }
   })
@@ -345,7 +344,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(FundingLocked(_, _, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(commitments, _)) =>
       log.info(s"channelId=${java.lang.Long.toUnsignedString(d.channelId)}")
-      Register.createAlias(remoteNodeId, d.channelId)
       context.system.eventStream.publish(ChannelIdAssigned(self, d.channelId))
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
