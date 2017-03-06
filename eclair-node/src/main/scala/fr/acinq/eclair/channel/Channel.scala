@@ -546,6 +546,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
           // we give 3 seconds for the router-watcher roundtrip
           context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
+          context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
           goto(NORMAL) using d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages.filterNot(_ == localAnnSigs)))
         case None =>
