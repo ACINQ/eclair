@@ -30,7 +30,7 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends LoggingFSM[State, Data] {
 
   import PaymentLifecycle._
 
@@ -47,6 +47,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef) extends Loggin
       val firstHop = hops.head
       val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
       // TODO: context.actorSelection(Register.actorPathToChannel(firstHop.lastUpdate.shortChannelId)) ! cmd
+      register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
     case Event(f@Failure(t), WaitingForRoute(s, _)) =>
@@ -70,13 +71,17 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef) extends Loggin
       val reason = new String(fail.reason)
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
-  }
 
+    case Event(failure: Failure, WaitingForComplete(s, cmd)) => {
+      s ! failure
+      stop(FSM.Failure(failure.cause))
+    }
+  }
 }
 
 object PaymentLifecycle {
 
-  def props(sourceNodeId: PublicKey, router: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router)
+  def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
 
   /**
     *

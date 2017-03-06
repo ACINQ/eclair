@@ -1,8 +1,10 @@
 package fr.acinq.eclair.channel
 
+import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorPath, ActorRef, ActorSystem, Props, Terminated}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 
 /**
   * Created by PM on 26/01/2016.
@@ -38,30 +40,28 @@ class Register extends Actor with ActorLogging {
       context become main(channels - channelId, shortIds - shortChannelId)
 
     case 'channels => sender ! channels
+
+    case Forward(channelId, msg) =>
+      channels.get(channelId) match {
+        case Some(channel) => channel ! msg
+        case None => Failure(new RuntimeException(s"channel $channelId not found"))
+      }
+
+    case ForwardShortId(shortChannelId, msg) =>
+      shortIds.get(shortChannelId).flatMap(channels.get(_)) match {
+        case Some(channel) => channel ! msg
+        case None => Failure(new RuntimeException(s"channel $shortChannelId not found"))
+      }
   }
 }
 
 object Register {
 
-  /**
-    * Once it reaches NORMAL state, channel creates a [[fr.acinq.eclair.channel.AliasActor]]
-    * which name is counterparty_id-anchor_id
-    */
-  def createAlias(nodeId: PublicKey, channelId: BinaryData)(implicit context: ActorContext) =
-    context.actorOf(Props(new AliasActor(context.self)), name = s"${nodeId.toBin}-$channelId")
-
-  def actorPathToChannels(system: ActorSystem): ActorPath =
-    system / "switchboard" / "peer-*" / "*"
-
-  def actorPathToChannel(system: ActorSystem, channelId: BinaryData): ActorPath =
-    system / "switchboard" / "peer-*" / "*" / s"*-$channelId"
-
-  def actorPathToChannel(channelId: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToChannel(context.system, channelId)
-
   def actorPathToPeers()(implicit context: ActorContext): ActorPath =
     context.system / "switchboard" / "peer-*"
 
-  def actorPathToPeer(system: ActorSystem, nodeId: PublicKey): ActorPath =
-    system / "switchboard" / s"peer-${nodeId.toBin}"
+  case class Forward(channelId: BinaryData, message: Any)
+
+  case class ForwardShortId(shortChannelId: Long, message: Any)
 
 }

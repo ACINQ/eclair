@@ -19,7 +19,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   Globals.blockCount.set(initialBlockCount)
 
   test("payment failed (route not found)") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -35,7 +35,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment failed (htlc failed)") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
 
@@ -54,7 +54,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
   }
 
   test("payment succeeded") { case (router, _) =>
-    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router))
+    val paymentFSM = system.actorOf(PaymentLifecycle.props(a, router, TestProbe().ref))
     val monitor = TestProbe()
     val sender = TestProbe()
     val eventListener = TestProbe()
