@@ -33,7 +33,7 @@ case class PeerNode(id: StringProperty, alias: StringProperty, rgbColor: StringP
 }
 
 case class PeerChannel(id: LongProperty, nodeId1: StringProperty, nodeId2: StringProperty) {
-  def this(ca: ChannelAnnouncement) = this(new SimpleLongProperty(ca.channelId), new SimpleStringProperty(ca.nodeId1.toString), new SimpleStringProperty(ca.nodeId2.toString))
+  def this(ca: ChannelAnnouncement) = this(new SimpleLongProperty(ca.shortChannelId), new SimpleStringProperty(ca.nodeId1.toString), new SimpleStringProperty(ca.nodeId2.toString))
 }
 
 /**

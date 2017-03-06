@@ -14,7 +14,7 @@ import scala.util.{Failure, Success, Try}
 
 // @formatter:off
 
-case class OutgoingChannel(channelId: Long, channel: ActorRef, nodeAddress: BinaryData)
+case class OutgoingChannel(channelId: BinaryData, channel: ActorRef, nodeAddress: BinaryData)
 
 sealed trait Origin
 case class Local(sender: ActorRef) extends Origin
@@ -37,7 +37,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
   override def receive: Receive = main(Set(), Map())
 
-  case class DownstreamHtlcId(channelId: Long, htlcId: Long)
+  case class DownstreamHtlcId(channelId: BinaryData, htlcId: Long)
 
   def main(channels: Set[OutgoingChannel], bindings: Map[DownstreamHtlcId, Origin]): Receive = {
 

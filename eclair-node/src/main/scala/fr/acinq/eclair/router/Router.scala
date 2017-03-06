@@ -12,6 +12,7 @@ import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchS
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.Serializer
 import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
+import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
@@ -70,15 +71,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       nodes.values.foreach(remote ! _)
 
     case c: ChannelAnnouncement if !Announcements.checkSigs(c) =>
-      // TODO: (dirty) this will make the origin channel close the connection
       log.error(s"bad signature for announcement $c")
-      sender ! Error(0, "bad announcement sig!!!".getBytes())
+      sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
 
-    case c: ChannelAnnouncement if channels.containsKey(c.channelId) =>
+    case c: ChannelAnnouncement if channels.containsKey(c.shortChannelId) =>
       log.debug(s"ignoring $c (duplicate)")
 
     case c: ChannelAnnouncement =>
-      val (blockHeight, txIndex, outputIndex) = fromShortId(c.channelId)
+      val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
       log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
       watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
       context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
@@ -89,37 +89,37 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
     case GetTxResponse(tx, _, c: ChannelAnnouncement) =>
       // TODO: check sigs
       // TODO: blacklist if already received same channel id and different node ids
-      val (_, _, outputIndex) = fromShortId(c.channelId)
+      val (_, _, outputIndex) = fromShortId(c.shortChannelId)
       // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2
       require(tx.txOut.size >= outputIndex + 1, s"tx $tx does not have outputIndex=$outputIndex")
       val output = tx.txOut(outputIndex)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       require(fundingOutputScript == output.publicKeyScript, s"funding script mismatch: actual=${output.publicKeyScript} expected=${fundingOutputScript}")
-      watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.channelId))
+      watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
       // TODO: check feature bit set
-      log.info(s"added channel channelId=${c.channelId}")
+      log.info(s"added channel channelId=${c.shortChannelId}")
       context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
       val stash1 = if (awaiting == Set(c)) {
         stash.foreach(self ! _)
         Nil
       } else stash
-      nodeParams.announcementsDb.put(s"ann-channel-${c.channelId}", c)
-      context become mainWithLog(nodes, channels + (c.channelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
+      nodeParams.announcementsDb.put(s"ann-channel-${c.shortChannelId}", c)
+      context become mainWithLog(nodes, channels + (c.shortChannelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
 
     case n: NodeAnnouncement if !Announcements.checkSig(n) =>
       // TODO: (dirty) this will make the origin channel close the connection
       log.error(s"bad signature for announcement $n")
-      sender ! Error(0, "bad announcement sig!!!".getBytes())
+      sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
 
-    case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId), tx) if channels.containsKey(channelId) =>
-      val lostChannel = channels(channelId)
-      log.info(s"funding tx of channelId=$channelId has been spent by txid=${tx.txid}")
-      log.info(s"removed channel channelId=$channelId")
-      context.system.eventStream.publish(ChannelLost(channelId))
+    case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId), tx) if channels.containsKey(shortChannelId) =>
+      val lostChannel = channels(shortChannelId)
+      log.info(s"funding tx of channelId=$shortChannelId has been spent by txid=${tx.txid}")
+      log.info(s"removed channel channelId=$shortChannelId")
+      context.system.eventStream.publish(ChannelLost(shortChannelId))
 
       def isNodeLost(nodeId: BinaryData): Option[BinaryData] = {
         // has nodeId still open channels?
-        if ((channels - channelId).values.filter(c => c.nodeId1 == nodeId || c.nodeId2 == nodeId).isEmpty) {
+        if ((channels - shortChannelId).values.filter(c => c.nodeId1 == nodeId || c.nodeId2 == nodeId).isEmpty) {
           context.system.eventStream.publish(NodeLost(nodeId))
           log.info(s"removed node nodeId=$nodeId")
           Some(nodeId)
@@ -127,9 +127,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       }
 
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
-      nodeParams.announcementsDb.delete(s"ann-channel-$channelId")
+      nodeParams.announcementsDb.delete(s"ann-channel-$shortChannelId")
       lostNodes.foreach(id => nodeParams.announcementsDb.delete(s"ann-node-$id"))
-      context become mainWithLog(nodes -- lostNodes, channels - channelId, updates.filterKeys(_.id != channelId), rebroadcast, awaiting, stash)
+      context become mainWithLog(nodes -- lostNodes, channels - shortChannelId, updates.filterKeys(_.id != shortChannelId), rebroadcast, awaiting, stash)
 
     case n: NodeAnnouncement if awaiting.size > 0 =>
       context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ n)
@@ -155,21 +155,21 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
     case u: ChannelUpdate if awaiting.size > 0 =>
       context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ u)
 
-    case u: ChannelUpdate if !channels.contains(u.channelId) =>
+    case u: ChannelUpdate if !channels.contains(u.shortChannelId) =>
       log.debug(s"ignoring $u (no related channel found)")
 
-    case u: ChannelUpdate if !Announcements.checkSig(u, getDesc(u, channels(u.channelId)).a) =>
+    case u: ChannelUpdate if !Announcements.checkSig(u, getDesc(u, channels(u.shortChannelId)).a) =>
       // TODO: (dirty) this will make the origin channel close the connection
       log.error(s"bad signature for announcement $u")
-      sender ! Error(0, "bad announcement sig!!!".getBytes())
+      sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
 
     case u: ChannelUpdate =>
-      val channel = channels(u.channelId)
+      val channel = channels(u.shortChannelId)
       val desc = getDesc(u, channel)
       if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
         log.debug(s"ignoring $u (old timestamp or duplicate)")
       } else {
-        nodeParams.announcementsDb.put(s"ann-update-${u.channelId}-${u.flags}", u)
+        nodeParams.announcementsDb.put(s"ann-update-${u.shortChannelId}-${u.flags}", u)
         context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
       }
 
@@ -203,7 +203,7 @@ object Router {
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")
     // the least significant bit tells us if it is node1 or node2
-    if (u.flags.data(1) % 2 == 0) ChannelDesc(u.channelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.channelId, channel.nodeId2, channel.nodeId1)
+    if (u.flags.data(1) % 2 == 0) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
   }
 
   def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {

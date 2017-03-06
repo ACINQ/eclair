@@ -25,13 +25,13 @@ object Helpers {
     * @param stateData
     * @return
     */
-  def getChannelId(stateData: Data): Long = stateData match {
-    case Nothing => -1
+  def getChannelId(stateData: Data): BinaryData = stateData match {
+    case Nothing => BinaryData("00" * 32)
     case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
     case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
-    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
     case d: HasCommitments => d.channelId
   }
 

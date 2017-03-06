@@ -6,14 +6,13 @@ import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener, Serializer}
-import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
+import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Features, Globals, NodeParams}
+import fr.acinq.eclair.{Features, NodeParams}
 
-import scala.compat.Platform
+import scala.util.Random
 
 // @formatter:off
 
@@ -22,12 +21,12 @@ case object Reconnect
 
 sealed trait OfflineChannel
 case class BrandNewChannel(c: NewChannel) extends OfflineChannel
-case class HotChannel(channelId: Long, a: ActorRef) extends OfflineChannel
+case class HotChannel(channelId: BinaryData, a: ActorRef) extends OfflineChannel
 
 sealed trait Data
 case class DisconnectedData(offlineChannels: Seq[OfflineChannel]) extends Data
 case class InitializingData(transport: ActorRef, offlineChannels: Seq[OfflineChannel]) extends Data
-case class ConnectedData(transport: ActorRef, remoteInit: Init, channels: Map[Long, ActorRef]) extends Data
+case class ConnectedData(transport: ActorRef, remoteInit: Init, channels: Map[BinaryData, ActorRef]) extends Data
 
 sealed trait State
 case object DISCONNECTED extends State
@@ -103,19 +102,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   when(CONNECTED) {
-    case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
-      log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
-      val temporaryChannelId = Platform.currentTime
-      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = true, c.fundingSatoshis.toLong)
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, transport, remoteInit)
-      stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
-    case Event(msg@FundingLocked(previousId, nextId, _), d@ConnectedData(_, _, channels)) if channels.contains(previousId) =>
-      log.info(s"channel id switch: previousId=$previousId nextId=$nextId")
-      val channel = channels(previousId)
-      channel forward msg
-      //TODO: what if nextIds are different
-      stay using d.copy(channels = channels - previousId + (nextId -> channel))
+    case Event(err@Error(channelId, reason), ConnectedData(transport, _, channels)) if channelId == CHANNELID_ZERO =>
+      log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
+      channels.values.foreach(_ forward err)
+      transport ! PoisonPill
+      stay
 
     case Event(msg: HasTemporaryChannelId, ConnectedData(_, _, channels)) if channels.contains(msg.temporaryChannelId) =>
       val channel = channels(msg.temporaryChannelId)
@@ -127,10 +119,21 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       channel forward msg
       stay
 
-    case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) =>
+    case Event(ChannelIdAssigned(channel, temporaryChannelId, channelId), d@ConnectedData(_, _, channels)) if channels.contains(temporaryChannelId) =>
+      log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
+      stay using d.copy(channels = channels - temporaryChannelId + (channelId -> channel))
+
+    case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
+      log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
+      val (channel, localParams) = createChannel(nodeParams, transport, funder = true, c.fundingSatoshis.toLong)
+      val temporaryChannelId = randomTemporaryChannelId
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, transport, remoteInit)
+      stay using d.copy(channels = channels + (temporaryChannelId -> channel))
+
+    case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) if !channels.contains(msg.temporaryChannelId) =>
       log.info(s"accepting a new channel to $remoteNodeId")
+      val (channel, localParams) = createChannel(nodeParams, transport, funder = false, fundingSatoshis = msg.fundingSatoshis)
       val temporaryChannelId = msg.temporaryChannelId
-      val (channel, localParams) = createChannel(nodeParams, transport, temporaryChannelId, funder = false, fundingSatoshis = msg.fundingSatoshis)
       channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, transport, remoteInit)
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
@@ -152,14 +155,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       val channelId = channels.find(_._2 == actor).get._1
       log.info(s"channel closed: channelId=$channelId")
       if (channels.size == 1) {
-        log.info(s"that was the last channel open, closing the connection")
+        log.info(s"that was the last open channel, closing the connection")
         transport ! PoisonPill
+        // NB: we could terminate the peer, but it would create a race issue with concurrent NewChannel requests that would go to DeadLetters without switchboard being aware
+        // for now we just leave it as-is
       }
       stay using d.copy(channels = channels - channelId)
+
   }
 
-  def createChannel(nodeParams: NodeParams, transport: ActorRef, temporaryChannelId: Long, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
-    val localParams = makeChannelParams(nodeParams, temporaryChannelId, defaultFinalScriptPubKey, funder, fundingSatoshis)
+  def createChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
+    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
     val channel = spawnChannel(nodeParams, transport)
     (channel, localParams)
   }
@@ -174,11 +180,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
 object Peer {
 
+  val CHANNELID_ZERO = BinaryData("00" * 32)
+
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey))
 
   def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
 
-  def makeChannelParams(nodeParams: NodeParams, keyIndex: Long, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams =
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
+    // all secrets are generated from the main seed
+    val keyIndex = Random.nextInt(1000).toLong
     LocalParams(
       nodeId = nodeParams.privateKey.publicKey,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
@@ -196,6 +206,12 @@ object Peer {
       shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures
-    )
+      localFeatures = nodeParams.localFeatures)
+  }
+
+  def randomTemporaryChannelId: BinaryData = {
+    val bin = Array.fill[Byte](32)(0)
+    Random.nextBytes(bin)
+    bin
+  }
 }

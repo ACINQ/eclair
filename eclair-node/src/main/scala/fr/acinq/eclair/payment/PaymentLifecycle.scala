@@ -46,7 +46,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef) extends Loggin
     case Event(RouteResponse(hops), WaitingForRoute(s, c)) =>
       val firstHop = hops.head
       val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
-      context.actorSelection(Register.actorPathToChannel(firstHop.lastUpdate.channelId)) ! cmd
+      // TODO: context.actorSelection(Register.actorPathToChannel(firstHop.lastUpdate.shortChannelId)) ! cmd
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
 
     case Event(f@Failure(t), WaitingForRoute(s, _)) =>

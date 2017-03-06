@@ -92,7 +92,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
   test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! Error(0, "oops".getBytes())
+      alice ! Error("00" * 32, "oops".getBytes())
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)

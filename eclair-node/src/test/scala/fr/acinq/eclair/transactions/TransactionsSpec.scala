@@ -49,10 +49,10 @@ class TransactionsSpec extends FunSuite {
   test("compute fees") {
     // see BOLT #3 specs
     val htlcs = Set(
-      Htlc(OUT, UpdateAddHtlc(0, 0, MilliSatoshi(5000000).amount, 552, Hash.Zeroes, BinaryData("")), None),
-      Htlc(OUT, UpdateAddHtlc(0, 0, MilliSatoshi(1000000).amount, 553, Hash.Zeroes, BinaryData("")), None),
-      Htlc(IN, UpdateAddHtlc(0, 0, MilliSatoshi(7000000).amount, 550, Hash.Zeroes, BinaryData("")), None),
-      Htlc(IN, UpdateAddHtlc(0, 0, MilliSatoshi(800000).amount, 551, Hash.Zeroes, BinaryData("")), None)
+      Htlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, 552, Hash.Zeroes, BinaryData("")), None),
+      Htlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, 553, Hash.Zeroes, BinaryData("")), None),
+      Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, 550, Hash.Zeroes, BinaryData("")), None),
+      Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, 551, Hash.Zeroes, BinaryData("")), None)
     )
     val spec = CommitmentSpec(htlcs, feeRatePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
     val fee = Transactions.commitTxFee(Satoshi(546), spec)
@@ -105,7 +105,7 @@ class TransactionsSpec extends FunSuite {
       // ClaimHtlcSuccessTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = BinaryData("42" * 32)
-      val htlc = UpdateAddHtlc(0, 0, Satoshi(20000).amount * 1000, expiry = 400144, sha256(paymentPreimage), BinaryData(""))
+      val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, expiry = 400144, sha256(paymentPreimage), BinaryData(""))
       val pubKeyScript = write(pay2wsh(htlcOffered(localPaymentPriv.publicKey, remotePaymentPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, finalPubKeyScript, htlc, feeRatePerKw)
@@ -118,7 +118,7 @@ class TransactionsSpec extends FunSuite {
       // ClaimHtlcTimeoutTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = BinaryData("42" * 32)
-      val htlc = UpdateAddHtlc(0, 0, Satoshi(20000).amount * 1000, expiry = 400144, sha256(paymentPreimage), BinaryData(""))
+      val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, expiry = 400144, sha256(paymentPreimage), BinaryData(""))
       val pubKeyScript = write(pay2wsh(htlcReceived(localPaymentPriv.publicKey, remotePaymentPriv.publicKey, ripemd160(htlc.paymentHash), htlc.expiry)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, finalPubKeyScript, htlc, feeRatePerKw)
@@ -141,9 +141,9 @@ class TransactionsSpec extends FunSuite {
     val feeRatePerKw = 1000
 
     val paymentPreimage1 = BinaryData("11" * 32)
-    val htlc1 = UpdateAddHtlc(0, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, 300, sha256(paymentPreimage1), BinaryData(""))
+    val htlc1 = UpdateAddHtlc("00" * 32, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, 300, sha256(paymentPreimage1), BinaryData(""))
     val paymentPreimage2 = BinaryData("22" * 32)
-    val htlc2 = UpdateAddHtlc(0, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, 300, sha256(paymentPreimage2), BinaryData(""))
+    val htlc2 = UpdateAddHtlc("00" * 32, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, 300, sha256(paymentPreimage2), BinaryData(""))
     val spec = CommitmentSpec(
       htlcs = Set(
         Htlc(OUT, htlc1, None),
@@ -249,7 +249,7 @@ class TransactionsSpec extends FunSuite {
   }
 
   def htlc(direction: Direction, amount: Satoshi): Htlc =
-    Htlc(direction, UpdateAddHtlc(0, 0, amount.amount * 1000, 144, "00" * 32, ""), None)
+    Htlc(direction, UpdateAddHtlc("00" * 32, 0, amount.amount * 1000, 144, "00" * 32, ""), None)
 
   test("BOLT 2 fee tests") {
 

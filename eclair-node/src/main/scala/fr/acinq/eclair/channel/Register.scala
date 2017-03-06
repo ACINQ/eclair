@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorContext, ActorLogging, ActorPath, ActorRef, ActorSystem, Props, Terminated}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 
 /**
@@ -26,24 +27,23 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 
 class Register extends Actor with ActorLogging {
 
-  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+  context.system.eventStream.subscribe(self, classOf[ChannelCreated])
+  context.system.eventStream.subscribe(self, classOf[ChannelRestored])
+  context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
 
   override def receive: Receive = main(Map())
 
-  def main(channels: Map[String, ActorRef]): Receive = {
+  def main(channels: Map[BinaryData, ActorRef]): Receive = {
     case ChannelCreated(channel, _, _, _, temporaryChannelId) =>
       context.watch(channel)
-      context become main(channels + (java.lang.Long.toHexString(temporaryChannelId) -> channel))
+      context become main(channels + (temporaryChannelId -> channel))
 
     case ChannelRestored(channel, _, _, _, channelId, _) =>
       context.watch(channel)
-      context become main(channels + (java.lang.Long.toHexString(channelId) -> channel))
+      context become main(channels + (channelId -> channel))
 
-    case ChannelStateChanged(channel, _, _, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
-      import d.commitments.channelId
-      context.watch(channel)
-      // channel id switch
-      context become main(channels + (java.lang.Long.toHexString(channelId) -> channel) - java.lang.Long.toHexString(d.lastSent.temporaryChannelId))
+    case ChannelIdAssigned(channel, temporaryChannelId, channelId) =>
+      context become main(channels + (channelId -> channel) - temporaryChannelId)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1
@@ -59,16 +59,16 @@ object Register {
     * Once it reaches NORMAL state, channel creates a [[fr.acinq.eclair.channel.AliasActor]]
     * which name is counterparty_id-anchor_id
     */
-  def createAlias(nodeId: PublicKey, channelId: Long)(implicit context: ActorContext) =
-    context.actorOf(Props(new AliasActor(context.self)), name = s"${nodeId.toBin}-${java.lang.Long.toHexString(channelId)}")
+  def createAlias(nodeId: PublicKey, channelId: BinaryData)(implicit context: ActorContext) =
+    context.actorOf(Props(new AliasActor(context.self)), name = s"${nodeId.toBin}-$channelId")
 
   def actorPathToChannels(system: ActorSystem): ActorPath =
     system / "switchboard" / "peer-*" / "*"
 
-  def actorPathToChannel(system: ActorSystem, channelId: Long): ActorPath =
-    system / "switchboard" / "peer-*" / "*" / s"*-${java.lang.Long.toHexString(channelId)}"
+  def actorPathToChannel(system: ActorSystem, channelId: BinaryData): ActorPath =
+    system / "switchboard" / "peer-*" / "*" / s"*-$channelId"
 
-  def actorPathToChannel(channelId: Long)(implicit context: ActorContext): ActorPath = actorPathToChannel(context.system, channelId)
+  def actorPathToChannel(channelId: BinaryData)(implicit context: ActorContext): ActorPath = actorPathToChannel(context.system, channelId)
 
   def actorPathToPeers()(implicit context: ActorContext): ActorPath =
     context.system / "switchboard" / "peer-*"

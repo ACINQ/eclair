@@ -45,7 +45,6 @@ object TestConstants {
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
-      keyIndex = 1,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       isFunder = true,
       fundingSatoshis).copy(
@@ -84,7 +83,6 @@ object TestConstants {
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
-      keyIndex = 1,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(15), compressed = true).publicKey)),
       isFunder = false,
       fundingSatoshis).copy(

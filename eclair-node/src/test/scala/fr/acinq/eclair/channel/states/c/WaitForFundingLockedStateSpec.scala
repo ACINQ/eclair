@@ -9,7 +9,6 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
-import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
@@ -25,16 +24,11 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
   override def withFixture(test: OneArgTest) = {
     val setup = init()
     import setup._
-    val (aliceParams, bobParams) = if (test.tags.contains("public")) {
-      (Alice.channelParams.copy(localFeatures = "01"), Bob.channelParams.copy(localFeatures = "01"))
-    } else {
-      (Alice.channelParams, Bob.channelParams)
-    }
-    val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
-    val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
+    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
+    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(0, TestConstants.fundingSatoshis, TestConstants.pushMsat, aliceParams, alice2bob.ref, bobInit)
-      bob ! INPUT_INIT_FUNDEE(0, bobParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, alice2bob.ref, bobInit)
+      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
@@ -71,27 +65,6 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv FundingLocked (with announcement)", Tag("public")) { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
-    within(30 seconds) {
-      bob2alice.expectMsgType[FundingLocked]
-      bob2alice.forward(alice)
-      awaitCond(alice.stateName == WAIT_FOR_ANN_SIGNATURES)
-      alice2bob.expectMsgType[AnnouncementSignatures]
-    }
-  }
-
-  test("recv FundingLocked (channel id mismatch") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
-    within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
-      val fundingLocked = bob2alice.expectMsgType[FundingLocked]
-      alice ! fundingLocked.copy(channelId = 42)
-      alice2bob.expectMsgType[Error]
-      awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(PublishAsap(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
-    }
-  }
-
   test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       // bob publishes his commitment tx
@@ -115,7 +88,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
   test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _, router) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! Error(0, "oops".getBytes)
+      alice ! Error("00" * 32, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)

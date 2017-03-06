@@ -96,7 +96,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! Error(0, "oops".getBytes)
+      alice ! Error("00" * 32, "oops".getBytes)
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)
@@ -114,7 +114,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! Error(0, "oops".getBytes())
+      alice ! Error("00" * 32, "oops".getBytes())
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
       awaitCond(alice.stateName == CLOSING)

@@ -39,8 +39,8 @@ class RelayerSpec extends TestkitBaseClass {
   // node c is the next node in the route
   val nodeId_a = PublicKey(a)
   val nodeId_c = PublicKey(c)
-  val channelId_ab = 981408633
-  val channelId_bc = 237534
+  val channelId_ab = "65514354" * 8
+  val channelId_bc = "64864544" * 8
 
   test("add a channel") { case (relayer, _) =>
     val sender = TestProbe()

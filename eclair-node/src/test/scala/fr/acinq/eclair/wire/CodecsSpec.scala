@@ -137,23 +137,23 @@ class CodecsSpec extends FunSuite {
 
   test("encode/decode all channel messages") {
 
-    val open = OpenChannel(2, 3, 4, 5, 6, 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5))
-    val accept = AcceptChannel(2, 3, 4, 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5))
-    val funding_created = FundingCreated(2, bin(32, 0), 3, randomSignature)
-    val funding_signed = FundingSigned(2, randomSignature)
-    val funding_locked = FundingLocked(1, 2, point(2))
-    val update_fee = UpdateFee(1, 2)
-    val shutdown = Shutdown(1, bin(47, 0))
-    val closing_signed = ClosingSigned(1, 2, randomSignature)
-    val update_add_htlc = UpdateAddHtlc(1, 2, 3, 4, bin(32, 0), bin(1254, 0))
-    val update_fulfill_htlc = UpdateFulfillHtlc(1, 2, bin(32, 0))
-    val update_fail_htlc = UpdateFailHtlc(1, 2, bin(154, 0))
-    val commit_sig = CommitSig(1, randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
-    val revoke_and_ack = RevokeAndAck(1, scalar(0), point(1), randomSignature :: randomSignature :: randomSignature :: randomSignature :: randomSignature :: Nil)
+    val open = OpenChannel(randomBytes(32), 3, 4, 5, 6, 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5))
+    val accept = AcceptChannel(randomBytes(32), 3, 4, 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5))
+    val funding_created = FundingCreated(randomBytes(32), bin(32, 0), 3, randomSignature)
+    val funding_signed = FundingSigned(randomBytes(32), randomSignature)
+    val funding_locked = FundingLocked(randomBytes(32), point(2))
+    val update_fee = UpdateFee(randomBytes(32), 2)
+    val shutdown = Shutdown(randomBytes(32), bin(47, 0))
+    val closing_signed = ClosingSigned(randomBytes(32), 2, randomSignature)
+    val update_add_htlc = UpdateAddHtlc(randomBytes(32), 2, 3, 4, bin(32, 0), bin(1254, 0))
+    val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes(32), 2, bin(32, 0))
+    val update_fail_htlc = UpdateFailHtlc(randomBytes(32), 2, bin(154, 0))
+    val commit_sig = CommitSig(randomBytes(32), randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
+    val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1), randomSignature :: randomSignature :: randomSignature :: randomSignature :: randomSignature :: Nil)
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, 1, bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
     val node_announcement = NodeAnnouncement(randomSignature, 1, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias", bin(0, 0), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val channel_update = ChannelUpdate(randomSignature, 1, 2, bin(2, 2), 3, 4, 5, 6)
-    val announcement_signatures = AnnouncementSignatures(1, randomSignature, randomSignature)
+    val announcement_signatures = AnnouncementSignatures(randomBytes(32), 42, randomSignature, randomSignature)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::

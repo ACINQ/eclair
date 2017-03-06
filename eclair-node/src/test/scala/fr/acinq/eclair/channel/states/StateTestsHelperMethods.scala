@@ -47,11 +47,17 @@ trait StateTestsHelperMethods extends TestKitBase {
                   bob2alice: TestProbe,
                   blockchainA: ActorRef,
                   alice2blockchain: TestProbe,
-                  bob2blockchain: TestProbe): Unit = {
-    val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
-    val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER(0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, alice2bob.ref, bobInit)
-    bob ! INPUT_INIT_FUNDEE(0, Bob.channelParams, bob2alice.ref, aliceInit)
+                  bob2blockchain: TestProbe,
+                  tags: Set[String] = Set.empty): Unit = {
+    val (aliceParams, bobParams) = if (tags.contains("channels_public")) {
+      (Alice.channelParams.copy(localFeatures = "01"), Bob.channelParams.copy(localFeatures = "01"))
+    } else {
+      (Alice.channelParams, Bob.channelParams)
+    }
+    val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
+    val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
+    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, aliceParams, alice2bob.ref, bobInit)
+    bob ! INPUT_INIT_FUNDEE("00" * 32, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]

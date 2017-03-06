@@ -47,7 +47,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    sender.send(paymentFSM, UpdateFailHtlc(0, 0, "some reason".getBytes))
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, "some reason".getBytes))
 
     val res = sender.expectMsgType[Failure]
     assert(res.cause.getMessage === "some reason")
@@ -68,7 +68,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
     val Transition(_, WAITING_FOR_ROUTE, WAITING_FOR_PAYMENT_COMPLETE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    sender.send(paymentFSM, UpdateFulfillHtlc(0, 0, "42" * 32))
+    sender.send(paymentFSM, UpdateFulfillHtlc("00" * 32, 0, "42" * 32))
 
     val res = sender.expectMsgType[String]
     assert(res === "sent")
