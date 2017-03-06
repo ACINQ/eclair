@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel.states.a
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.db.DummyDb
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
@@ -26,8 +25,8 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER(0, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, alice2bob.ref, bobInit)
-      bob ! INPUT_INIT_FUNDEE(0, Bob.channelParams, bob2alice.ref, aliceInit)
+      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, alice2bob.ref, bobInit)
+      bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
       awaitCond(bob.stateName == WAIT_FOR_OPEN_CHANNEL)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))
@@ -55,7 +54,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
 
   test("recv Error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      bob ! Error(0, "oops".getBytes())
+      bob ! Error("00" * 32, "oops".getBytes())
       awaitCond(bob.stateName == CLOSED)
     }
   }

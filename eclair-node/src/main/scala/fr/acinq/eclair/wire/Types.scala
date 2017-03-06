@@ -15,18 +15,18 @@ sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
-sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: Long } // <- not in the spec
-sealed trait HasChannelId extends LightningMessage { def channelId: Long } // <- not in the spec
+sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: BinaryData } // <- not in the spec
+sealed trait HasChannelId extends LightningMessage { def channelId: BinaryData } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
 // @formatter:on
 
 case class Init(globalFeatures: BinaryData,
                 localFeatures: BinaryData) extends SetupMessage
 
-case class Error(channelId: Long,
+case class Error(channelId: BinaryData,
                  data: BinaryData) extends SetupMessage with HasChannelId
 
-case class OpenChannel(temporaryChannelId: Long,
+case class OpenChannel(temporaryChannelId: BinaryData,
                        fundingSatoshis: Long,
                        pushMsat: Long,
                        dustLimitSatoshis: Long,
@@ -42,7 +42,7 @@ case class OpenChannel(temporaryChannelId: Long,
                        delayedPaymentBasepoint: Point,
                        firstPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
 
-case class AcceptChannel(temporaryChannelId: Long,
+case class AcceptChannel(temporaryChannelId: BinaryData,
                          dustLimitSatoshis: Long,
                          maxHtlcValueInFlightMsat: Long,
                          channelReserveSatoshis: Long,
@@ -56,57 +56,61 @@ case class AcceptChannel(temporaryChannelId: Long,
                          delayedPaymentBasepoint: Point,
                          firstPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
 
-case class FundingCreated(temporaryChannelId: Long,
-                          txid: BinaryData,
-                          outputIndex: Int,
+case class FundingCreated(temporaryChannelId: BinaryData,
+                          fundingTxid: BinaryData,
+                          fundingOutputIndex: Int,
                           signature: BinaryData) extends ChannelMessage with HasTemporaryChannelId
 
-case class FundingSigned(temporaryChannelId: Long,
-                         signature: BinaryData) extends ChannelMessage with HasTemporaryChannelId
+case class FundingSigned(channelId: BinaryData,
+                         signature: BinaryData) extends ChannelMessage with HasChannelId
 
-case class FundingLocked(temporaryChannelId: Long,
-                         channelId: Long,
-                         nextPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
+case class FundingLocked(channelId: BinaryData,
+                         nextPerCommitmentPoint: Point) extends ChannelMessage with HasChannelId
 
-case class Shutdown(channelId: Long,
+case class Shutdown(channelId: BinaryData,
                     scriptPubKey: BinaryData) extends ChannelMessage with HasChannelId
 
-case class ClosingSigned(channelId: Long,
+case class ClosingSigned(channelId: BinaryData,
                          feeSatoshis: Long,
                          signature: BinaryData) extends ChannelMessage with HasChannelId
 
-case class UpdateAddHtlc(channelId: Long,
+case class UpdateAddHtlc(channelId: BinaryData,
                          id: Long,
                          amountMsat: Long,
                          expiry: Long,
                          paymentHash: BinaryData,
                          onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
-case class UpdateFulfillHtlc(channelId: Long,
+case class UpdateFulfillHtlc(channelId: BinaryData,
                              id: Long,
                              paymentPreimage: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
-case class UpdateFailHtlc(channelId: Long,
+case class UpdateFailHtlc(channelId: BinaryData,
                           id: Long,
                           reason: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
-case class CommitSig(channelId: Long,
+case class CommitSig(channelId: BinaryData,
                      signature: BinaryData,
                      htlcSignatures: List[BinaryData]) extends HtlcMessage with HasChannelId
 
-case class RevokeAndAck(channelId: Long,
+case class RevokeAndAck(channelId: BinaryData,
                         perCommitmentSecret: Scalar,
                         nextPerCommitmentPoint: Point,
                         htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage with HasChannelId
 
-case class UpdateFee(channelId: Long,
+case class UpdateFee(channelId: BinaryData,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
+
+case class AnnouncementSignatures(channelId: BinaryData,
+                                  shortChannelId: Long,
+                                  nodeSignature: BinaryData,
+                                  bitcoinSignature: BinaryData) extends RoutingMessage with HasChannelId
 
 case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                nodeSignature2: BinaryData,
                                bitcoinSignature1: BinaryData,
                                bitcoinSignature2: BinaryData,
-                               channelId: Long,
+                               shortChannelId: Long,
                                nodeId1: BinaryData,
                                nodeId2: BinaryData,
                                bitcoinKey1: BinaryData,
@@ -122,17 +126,13 @@ case class NodeAnnouncement(signature: BinaryData,
                             addresses: List[InetSocketAddress]) extends RoutingMessage
 
 case class ChannelUpdate(signature: BinaryData,
-                         channelId: Long,
+                         shortChannelId: Long,
                          timestamp: Long,
                          flags: BinaryData,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
-
-case class AnnouncementSignatures(channelId: Long,
-                                  nodeSignature: BinaryData,
-                                  bitcoinSignature: BinaryData) extends RoutingMessage with HasChannelId
 
 case class PerHopPayload(amt_to_forward: Long,
                          outgoing_cltv_value: Int)

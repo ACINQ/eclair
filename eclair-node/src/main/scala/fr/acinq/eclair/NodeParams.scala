@@ -34,7 +34,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      channelsDb: SimpleTypedDb[Long, Data],
+                      channelsDb: SimpleTypedDb[BinaryData, Data],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
                       announcementsDb: SimpleTypedDb[String, LightningMessage])
 

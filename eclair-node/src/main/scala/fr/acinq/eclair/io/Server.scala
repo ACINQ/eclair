@@ -3,12 +3,13 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.wire.LightningMessage
-import fr.acinq.eclair.{Globals, NodeParams, TCPBindError}
+import fr.acinq.eclair.{NodeParams, TCPBindError}
 
 /**
   * Created by PM on 27/10/2015.
@@ -18,7 +19,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Bind(self, address)
+  IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil)
 
   def receive() = main(Set())
 

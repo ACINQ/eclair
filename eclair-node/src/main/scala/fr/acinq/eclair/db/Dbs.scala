@@ -12,12 +12,12 @@ import fr.acinq.eclair.wire.LightningMessage
   */
 object Dbs {
 
-  def makeChannelDb(db: SimpleDb): SimpleTypedDb[Long, Data] = {
-    def channelid2String(id: Long) = s"channel-$id"
+  def makeChannelDb(db: SimpleDb): SimpleTypedDb[BinaryData, Data] = {
+    def channelid2String(id: BinaryData) = s"channel-$id"
 
-    def string2channelid(s: String) = if (s.startsWith("channel-")) Some(s.stripPrefix("channel-").toLong) else None
+    def string2channelid(s: String) = if (s.startsWith("channel-")) Some(BinaryData(s.stripPrefix("channel-"))) else None
 
-    new SimpleTypedDb[Long, Data](
+    new SimpleTypedDb[BinaryData, Data](
       channelid2String,
       string2channelid,
       new Serializer[Data] {

@@ -93,11 +93,11 @@ object Codecs {
       ("localFeatures" | varsizebinarydata)).as[Init]
 
   val errorCodec: Codec[Error] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("data" | varsizebinarydata)).as[Error]
 
   val openChannelCodec: Codec[OpenChannel] = (
-    ("temporaryChannelId" | int64) ::
+    ("temporaryChannelId" | binarydata(32)) ::
       ("fundingSatoshis" | uint64) ::
       ("pushMsat" | uint64) ::
       ("dustLimitSatoshis" | uint64) ::
@@ -114,7 +114,7 @@ object Codecs {
       ("firstPerCommitmentPoint" | point)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
-    ("temporaryChannelId" | int64) ::
+    ("temporaryChannelId" | binarydata(32)) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
@@ -129,31 +129,30 @@ object Codecs {
       ("firstPerCommitmentPoint" | point)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
-    ("temporaryChannelId" | int64) ::
-      ("txid" | binarydata(32)) ::
-      ("outputIndex" | uint8) ::
+    ("temporaryChannelId" | binarydata(32)) ::
+      ("fundingTxid" | binarydata(32)) ::
+      ("fundingOutputIndex" | uint8) ::
       ("signature" | signature)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
-    ("temporaryChannelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("signature" | signature)).as[FundingSigned]
 
   val fundingLockedCodec: Codec[FundingLocked] = (
-    ("temporaryChannelId" | int64) ::
-      ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("nextPerCommitmentPoint" | point)).as[FundingLocked]
 
   val shutdownCodec: Codec[wire.Shutdown] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("scriptPubKey" | varsizebinarydata)).as[Shutdown]
 
   val closingSignedCodec: Codec[ClosingSigned] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("feeSatoshis" | uint64) ::
       ("signature" | signature)).as[ClosingSigned]
 
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("id" | uint64) ::
       ("amountMsat" | uint32) ::
       ("expiry" | uint32) ::
@@ -161,22 +160,22 @@ object Codecs {
       ("onionRoutingPacket" | binarydata(1254))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("id" | uint64) ::
       ("paymentPreimage" | binarydata(32))).as[UpdateFulfillHtlc]
 
   val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("id" | uint64) ::
       ("reason" | binarydata(154))).as[UpdateFailHtlc]
 
   val commitSigCodec: Codec[CommitSig] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("signature" | signature) ::
       ("htlcSignatures" | listofsignatures)).as[CommitSig]
 
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("perCommitmentSecret" | scalar) ::
       ("nextPerCommitmentPoint" | point) ::
       ("padding" | ignore(8 * 3)) ::
@@ -184,11 +183,17 @@ object Codecs {
     ).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (
-    ("channelId" | int64) ::
+    ("channelId" | binarydata(32)) ::
       ("feeratePerKw" | uint32)).as[UpdateFee]
 
+  val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
+    ("channelId" | binarydata(32)) ::
+    ("shortChannelId" | int64) ::
+      ("nodeSignature" | signature) ::
+      ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
+
   val channelAnnouncementWitnessCodec = (
-      ("channelId" | int64) ::
+      ("shortChannelId" | int64) ::
       ("nodeId1" | binarydata(33)) ::
       ("nodeId2" | binarydata(33)) ::
       ("bitcoinKey1" | binarydata(33)) ::
@@ -214,7 +219,7 @@ object Codecs {
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   val channelUpdateWitnessCodec = (
-      ("channelId" | int64) ::
+      ("shortChannelId" | int64) ::
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::
       ("cltvExpiryDelta" | uint16) ::
@@ -225,11 +230,6 @@ object Codecs {
   val channelUpdateCodec: Codec[ChannelUpdate] = (
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
-
-  val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
-    ("channelId" | int64) ::
-      ("nodeSignature" | signature) ::
-      ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)

@@ -32,14 +32,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
   def receive: Receive = main(Map())
 
-  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: Long): (ChannelPaneController, VBox) = {
+  def createChannelPanel(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, temporaryChannelId: BinaryData): (ChannelPaneController, VBox) = {
     log.info(s"new channel: $channel")
     val loader = new FXMLLoader(getClass.getResource("/gui/main/channelPane.fxml"))
     val channelPaneController = new ChannelPaneController(s"$remoteNodeId")
     loader.setController(channelPaneController)
     val root = loader.load[VBox]
     channelPaneController.nodeId.setText(s"$remoteNodeId")
-    channelPaneController.channelId.setText(java.lang.Long.toHexString(temporaryChannelId))
+    channelPaneController.channelId.setText(s"$temporaryChannelId")
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
     channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
@@ -79,11 +79,11 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
       context.become(main(m + (channel -> channelPaneController)))
 
-    case ChannelIdAssigned(channel, channelId) if m.contains(channel) =>
+    case ChannelIdAssigned(channel, temporaryChannelId, channelId) if m.contains(channel) =>
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
-          channelPaneController.channelId.setText(java.lang.Long.toHexString(channelId))
+          channelPaneController.channelId.setText(s"$channelId")
         }
       })
 
@@ -120,16 +120,16 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case ChannelDiscovered(channelAnnouncement, _) =>
-      log.debug(s"peer channel discovered with channel id = ${channelAnnouncement.channelId}")
+      log.debug(s"peer channel discovered with channel id = ${channelAnnouncement.shortChannelId}")
       mainController.allChannelsList.add(new PeerChannel(channelAnnouncement))
       Platform.runLater(new Runnable() {
         override def run = mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
       })
 
-    case ChannelLost(channelId) =>
-      log.debug(s"peer channel lost with channel id = ${channelId}")
+    case ChannelLost(shortChannelId) =>
+      log.debug(s"peer channel lost with channel id = ${shortChannelId}")
       mainController.allChannelsList.removeIf(new Predicate[PeerChannel] {
-        override def test(pc: PeerChannel) = pc.id.get == channelId
+        override def test(pc: PeerChannel) = pc.id.get == shortChannelId
       })
       Platform.runLater(new Runnable() {
         override def run = mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
