@@ -1051,7 +1051,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
-      assert(amountClaimed == Satoshi(815760))
+      assert(amountClaimed == Satoshi(814920))
 
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
@@ -1114,7 +1114,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
-      assert(amountClaimed == Satoshi(822900))
+      assert(amountClaimed == Satoshi(822340))
 
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)

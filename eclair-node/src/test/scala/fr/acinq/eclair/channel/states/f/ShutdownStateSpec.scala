@@ -390,7 +390,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat = 1000000 - 200000 = 800000 (because fees)
-      assert(amountClaimed == Satoshi(774630))
+      assert(amountClaimed == Satoshi(774070))
 
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
@@ -438,7 +438,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         claimHtlcTx.txOut(0).amount
       }).sum
       // htlc will timeout and be eventually refunded so we have a little less than fundingSatoshis - pushMsat - htlc1 = 1000000 - 200000 - 300 000 = 500000 (because fees)
-      assert(amountClaimed == Satoshi(481510))
+      assert(amountClaimed == Satoshi(481230))
 
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
       alice2blockchain.expectNoMsg(1 second)

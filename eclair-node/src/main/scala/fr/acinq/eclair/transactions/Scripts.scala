@@ -181,15 +181,21 @@ object Scripts {
   def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
     ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
 
-  def htlcOffered(localPubkey: PublicKey, remotePubkey: PublicKey, paymentHash: BinaryData) = {
+  def htlcOffered(localPubkey: PublicKey, remotePubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
-    OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
-    OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
-    OP_NOTIF ::
-      OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+    // To you with revocation key
+    OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
+    OP_IF ::
+        OP_CHECKSIG ::
     OP_ELSE ::
-      OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-      OP_CHECKSIG ::
+        OP_PUSHDATA(remotePubkey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+        OP_NOTIF ::
+            // To me via HTLC-timeout transaction (timelocked).
+            OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+        OP_ELSE ::
+            OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
+            OP_CHECKSIG ::
+        OP_ENDIF ::
     OP_ENDIF :: Nil
     // @formatter:on
   }
@@ -207,15 +213,23 @@ object Scripts {
   def witnessClaimHtlcSuccessFromCommitTx(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
     ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
 
-  def htlcReceived(localKey: PublicKey, remotePubkey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
+  def htlcReceived(localKey: PublicKey, remotePubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
-    OP_PUSHDATA(remotePubkey) :: OP_SWAP ::
-    OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+    // To you with revocation key
+    OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
     OP_IF ::
-      OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-      OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
+        OP_CHECKSIG ::
     OP_ELSE ::
-      OP_DROP :: encodeNumber(lockTime) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP :: OP_CHECKSIG ::
+        OP_PUSHDATA(remotePubkey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+        OP_IF ::
+            // To me via HTLC-success transaction.
+            OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
+            OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
+        OP_ELSE ::
+            // To you after timeout.
+            OP_DROP :: encodeNumber(lockTime) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::
+            OP_CHECKSIG ::
+        OP_ENDIF ::
     OP_ENDIF :: Nil
     // @formatter:on
   }

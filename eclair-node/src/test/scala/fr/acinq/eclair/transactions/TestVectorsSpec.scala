@@ -12,7 +12,6 @@ import org.scalatest.junit.JUnitRunner
 
 import scala.io.Source
 
-@RunWith(classOf[JUnitRunner])
 class TestVectorsSpec extends FunSuite {
 
   val results = collection.mutable.HashMap.empty[String, Map[String, String]]
@@ -148,8 +147,8 @@ class TestVectorsSpec extends FunSuite {
     Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(4000000).amount, 504, Crypto.sha256(paymentPreimages(4)), BinaryData("")), None)
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
-    case OUT => Scripts.htlcOffered(Local.public_key, Remote.public_key, Crypto.ripemd160(htlc.add.paymentHash))
-    case IN => Scripts.htlcReceived(Local.public_key, Remote.public_key, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.expiry)
+    case OUT => Scripts.htlcOffered(Local.public_key, Remote.public_key, Local.revocation_key, Crypto.ripemd160(htlc.add.paymentHash))
+    case IN => Scripts.htlcReceived(Local.public_key, Remote.public_key, Local.revocation_key, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.expiry)
   })
 
   def dir2string(dir: Direction) = dir match {
