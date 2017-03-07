@@ -4,7 +4,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.Script.{pay2wpkh, pay2wsh, write}
-import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, Hash, MilliBtc, MilliSatoshi, Protocol, Satoshi, Script, Transaction, TxOut, millibtc2satoshi}
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.transactions.Scripts.{htlcOffered, htlcReceived, toLocalDelayed}
 import fr.acinq.eclair.transactions.Transactions.{addSigs, _}
@@ -14,8 +14,6 @@ import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
 import scala.io.Source
-import scala.util.matching.Regex
-import scala.util.matching.Regex.MatchIterator
 import scala.util.{Failure, Random, Success, Try}
 
 /**
@@ -236,6 +234,33 @@ class TransactionsSpec extends FunSuite {
       assert(checkSpendable(signed).isSuccess)
     }
 
+    {
+      // remote spends offered HTLC output with revocation key
+      val script = Scripts.htlcOffered(localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc1.paymentHash))
+      val index = commitTx.tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wsh(script)))
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx.tx, index), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(commitTx.tx.txOut(index).amount, Script.pay2wpkh(remotePaymentPriv.publicKey)) :: Nil,
+        lockTime = 0)
+      val sig = Transaction.signInput(tx, 0, script, SIGHASH_ALL, commitTx.tx.txOut(index).amount, SigVersion.SIGVERSION_WITNESS_V0, localRevocationPriv)
+      val tx1 = tx.updateWitness(0, ScriptWitness(sig :: localRevocationPriv.publicKey.toBin :: Script.write(script) :: Nil))
+      Transaction.correctlySpends(tx1, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
+
+    {
+      // remote spends received HTLC output with revocation key
+      val script = Scripts.htlcReceived(localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localRevocationPriv.publicKey, Crypto.ripemd160(htlc2.paymentHash), htlc2.expiry)
+      val index = commitTx.tx.txOut.indexWhere(_.publicKeyScript == Script.write(Script.pay2wsh(script)))
+      val tx = Transaction(
+        version = 2,
+        txIn = TxIn(OutPoint(commitTx.tx, index), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+        txOut = TxOut(commitTx.tx.txOut(index).amount, Script.pay2wpkh(remotePaymentPriv.publicKey)) :: Nil,
+        lockTime = 0)
+      val sig = Transaction.signInput(tx, 0, script, SIGHASH_ALL, commitTx.tx.txOut(index).amount, SigVersion.SIGVERSION_WITNESS_V0, localRevocationPriv)
+      val tx1 = tx.updateWitness(0, ScriptWitness(sig :: localRevocationPriv.publicKey.toBin :: Script.write(script) :: Nil))
+      Transaction.correctlySpends(tx1, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+    }
   }
 
   /*def randombytes(len: Int): BinaryData = {
