@@ -831,6 +831,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   }
 
   onTransition {
+    case WAIT_FOR_INIT_INTERNAL -> OFFLINE =>
+      context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, WAIT_FOR_INIT_INTERNAL, OFFLINE, nextStateData))
     case state -> nextState =>
       if (nextState != state) {
         context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, nextStateData))
