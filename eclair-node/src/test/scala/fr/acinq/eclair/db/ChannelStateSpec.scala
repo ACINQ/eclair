@@ -93,5 +93,5 @@ object ChannelStateSpec {
     remoteNextHtlcId = 0L,
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, unackedMessages = Nil)
 
-  val normal = DATA_NORMAL(commitments)
+  val normal = DATA_NORMAL(commitments, Some(42))
 }
