@@ -223,9 +223,10 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         fundingOutputIndex = fundingTxOutputIndex,
         signature = localSigOfRemoteTx
       )
-      context.parent ! ChannelIdAssigned(self, temporaryChannelId, fundingTx.hash) // we notify the peer asap so it knows how to route messages
-      context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, fundingTx.hash))
-      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(fundingTx.hash, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), fundingCreated)
+      val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
+      context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+      context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
+      goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), fundingCreated)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -251,11 +252,11 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Success(_) =>
           log.info(s"signing remote tx: $remoteCommitTx")
           val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
+          val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
           val fundingSigned = FundingSigned(
-            channelId = fundingTxHash,
+            channelId = channelId,
             signature = localSigOfRemoteTx
           )
-          //forwarder ! fundingSigned
 
           // watch the funding tx transaction
           val commitInput = localCommitTx.input
@@ -268,9 +269,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(null), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array,
             unackedMessages = Nil,
-            commitInput, ShaChain.init, channelId = fundingTxHash)
-          context.parent ! ChannelIdAssigned(self, temporaryChannelId, fundingTxHash) // we notify the peer asap so it knows how to route messages
-          context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, fundingTxHash))
+            commitInput, ShaChain.init, channelId = channelId)
+          context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+          context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, Right(fundingSigned))
       }
