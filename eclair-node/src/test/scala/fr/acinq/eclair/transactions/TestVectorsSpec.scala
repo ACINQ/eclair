@@ -326,7 +326,7 @@ class TestVectorsSpec extends FunSuite {
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8006d00700000000000022002083975515b28ad8c03b0915cae90787ff5f1a0ad8f313806a71ef6152fd5ecc78d007000000000000220020edcdff3e4bb6b538c0ee9639f56dfc4f222e5077bface165abc48764160da0c2b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de843110f5946a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100b42a3229202c8c5ddbff95efa6aa2d48c39b57d437ad4a8b2a917d11a3ca55ff02205bb9c65d06656222ced3bfd804145f658d1fa11804b20ef44962a9ea547bd6b701483045022100a9976e89763982487b7ff07a26347d398b9f19c0fb01046c8a787d7cd6068f440220224138e065ed31f248fd2756d3e209c0cab69ea5e1ede66d019e18072267284f01475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
 
     val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
     assert(htlcTxs.map(_.tx).toSet == check)
@@ -368,7 +368,7 @@ class TestVectorsSpec extends FunSuite {
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
-    assert(Transaction.write(commitTx.tx) == BinaryData("02000000000101bef67e4e2fb9ddeeb3461973cd4c62abb35050b1add772995b820b584a488489000000000038b02b8004b80b000000000000220020311b8632d824446eb4104b5eac4c95ea8efc3f84f7863b772586c57b62450312a00f00000000000022002022ca70b9138696c383f9da5e3250280d26b993e13eb55f19cd841d7dc966d3c8c0c62d0000000000160014ccf1af2f2aabee14bb40fa3851ab2301de84311051976a00000000002200204adb4e2f00643db396dd120d4e7dc17625f5f2c11a40d857accc862d6b7dd80e0400483045022100e0b270640f8fd88e51f75c5142443b943e6a349671fa7eae0325bdaff86a87c40220009796bfc452cb6c49a3286defea2ac8efaf4721bcc643eb92a7e93bb9c5b4d30148304502210085ef217e4ee408810c1be4994bb671b2c4868c37169a3d853f8f122bdfb87be9022003188677686ebf025849b67ad49babff11325b5255fe9b608fbfac16722e47a401475221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae3e195220"))
+    assert(commitTx.tx == Transaction.read(results(name)("output commit_tx")))
 
     val check = (0 to 4).map(i => results(name).get(s"output htlc_success_tx $i").toSeq ++ results(name).get(s"output htlc_timeout_tx $i").toSeq).flatten.toSet.map { s: String => Transaction.read(s) }
     assert(htlcTxs.map(_.tx).toSet == check)
