@@ -380,7 +380,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
           relayer ! Bind(add, origin)
           if (do_commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, add, d.copy(commitments = commitments1))
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -394,7 +394,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
           if (do_commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -411,7 +411,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       Try(Commitments.sendFail(d.commitments, c)) match {
         case Success((commitments1, fail)) =>
           if (do_commit) self ! CMD_SIGN
-          handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -433,7 +433,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
-              handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
+              handleCommandSuccess(sender, d.copy(commitments = commitments1))
             case Failure(cause) => handleCommandError(sender, cause)
           }
         case Left(waitForRevocation) =>
@@ -480,22 +480,19 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleLocalError(cause, d)
       }
 
-    case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) if d.commitments.unackedShutdown().isDefined =>
-      handleCommandError(sender, new RuntimeException("closing already in progress"))
+    case Event(CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
+      val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
+      if (d.commitments.unackedShutdown().isDefined)
+        handleCommandError(sender, new RuntimeException("closing already in progress"))
+      else if (Commitments.localHasChanges(d.commitments))
+      // TODO: simplistic behavior, we could also sign-then-close
+        handleCommandError(sender, new RuntimeException("cannot close when there are pending changes"))
+      else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
+        handleCommandError(sender, new RuntimeException("invalid final script"))
+      else
+        handleCommandSuccess(sender, d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ Shutdown(d.channelId, localScriptPubKey))))
 
-    case Event(c@CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) if Commitments.localHasChanges(d.commitments) =>
-      // TODO: simplistic behavior, we could maybe sign+close
-      handleCommandError(sender, new RuntimeException("cannot close when there are pending changes"))
-
-    case Event(CMD_CLOSE(ourScriptPubKey_opt), d: DATA_NORMAL) =>
-      ourScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey) match {
-        case finalScriptPubKey if Closing.isValidFinalScriptPubkey(finalScriptPubKey) =>
-          val localShutdown = Shutdown(d.channelId, finalScriptPubKey)
-          handleCommandSuccess(sender, localShutdown, d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ localShutdown)))
-        case _ => handleCommandError(sender, new RuntimeException("invalid final script"))
-      }
-
-    case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments)) if commitments.remoteChanges.proposed.size > 0 =>
+    case Event(Shutdown(_, _), d@DATA_NORMAL(commitments)) if commitments.remoteChanges.proposed.size > 0 =>
       handleLocalError(new RuntimeException("it is illegal to send a shutdown while having unsigned changes"), d)
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments)) =>
@@ -523,13 +520,13 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) =>
-        val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
-        val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey)
-        val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
-        goto(NORMAL) using d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ annSignatures))
+      val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
+      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey)
+      val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
+      goto(NORMAL) using d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ annSignatures))
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) =>
-      d.commitments.unackedMessages.collectFirst({case ann: AnnouncementSignatures => ann}) match {
+      d.commitments.unackedMessages.collectFirst({ case ann: AnnouncementSignatures => ann }) match {
         case Some(localAnnSigs) =>
           require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
           log.info(s"announcing channel ${d.channelId} on the network")
@@ -579,7 +576,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fulfill)) => handleCommandSuccess(sender, fulfill, d.copy(commitments = commitments1))
+        case Success((commitments1, fulfill)) => handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -594,7 +591,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
-        case Success((commitments1, fail)) => handleCommandSuccess(sender, fail, d.copy(commitments = commitments1))
+        case Success((commitments1, fail)) => handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -616,7 +613,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
-              handleCommandSuccess(sender, commit, d.copy(commitments = commitments1))
+              handleCommandSuccess(sender, d.copy(commitments = commitments1))
             case Failure(cause) => handleCommandError(sender, cause)
           }
         case Left(waitForRevocation) =>
@@ -851,7 +848,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
 
-  def handleCommandSuccess(sender: ActorRef, msg: LightningMessage, newData: Data) = {
+  def handleCommandSuccess(sender: ActorRef, newData: Data) = {
     if (sender != self) {
       sender ! "ok"
     }
