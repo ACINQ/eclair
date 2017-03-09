@@ -52,7 +52,7 @@ object NodeParams {
       privateKey = extendedPrivateKey.privateKey,
       alias = config.getString("node.alias").take(32),
       color = (config.getInt("node.color.r").toByte, config.getInt("node.color.g").toByte, config.getInt("node.color.b").toByte),
-      address = new InetSocketAddress(config.getString("server.host"), config.getInt("server.port")),
+      address = new InetSocketAddress(config.getString("server.public-ip"), config.getInt("server.port")),
       globalFeatures = BinaryData(""),
       localFeatures = BinaryData("05"), // channels_public and initial_routing_sync
       dustLimitSatoshis = 542,

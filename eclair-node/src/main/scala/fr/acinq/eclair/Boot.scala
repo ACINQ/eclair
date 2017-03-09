@@ -72,7 +72,6 @@ class Setup() extends Logging {
   // TODO: we should use p2wpkh instead of p2pkh as soon as bitcoind supports it
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-  val socket = new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))
 
   val fatalEventPromise = Promise[FatalEvent]()
   system.actorOf(Props(new Actor {
@@ -96,7 +95,7 @@ class Setup() extends Logging {
   val router = system.actorOf(Router.props(nodeParams, watcher), name = "router")
   val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator")
-  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.host"), config.getInt("eclair.server.port"))), "server")
+  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.binding-ip"), config.getInt("eclair.server.port"))), "server")
 
   val _setup = this
   val api = new Service {
@@ -107,7 +106,7 @@ class Setup() extends Logging {
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
     override val system: ActorSystem = _setup.system
   }
-  Http().bindAndHandle(api.route, config.getString("eclair.api.host"), config.getInt("eclair.api.port")) onFailure {
+  Http().bindAndHandle(api.route, config.getString("eclair.api.binding-ip"), config.getInt("eclair.api.port")) onFailure {
     case t: Throwable => system.eventStream.publish(HTTPBindError)
   }
 
