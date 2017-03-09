@@ -63,10 +63,10 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
 
     case w@WatchSpent(channel, txid, outputIndex, event) =>
       // we need to check if the tx was already spent
-      client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).map {
+      client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
         case false =>
           log.warning(s"tx $txid has already been spent!!!")
-          client.getTxBlockHash(txid.toString()).map {
+          client.getTxBlockHash(txid.toString()).collect {
             case Some(blockhash) =>
               log.warning(s"getting all transactions since blockhash=$blockhash")
               client.getTxsSinceBlockHash(blockhash).map {
