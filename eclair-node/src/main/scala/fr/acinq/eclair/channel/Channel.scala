@@ -784,6 +784,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
+    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(new RuntimeException("can't do a mutual close while disconnected, doing an unilateral close instead"), d)
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
