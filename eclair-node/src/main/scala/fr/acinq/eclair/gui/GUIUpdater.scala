@@ -12,9 +12,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, PeerChannel, PeerNode}
+import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
 import fr.acinq.eclair.io.Reconnect
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
 
@@ -117,15 +118,15 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
     case NodeDiscovered(nodeAnnouncement) =>
       log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
-      mainController.networkNodesList.add(new PeerNode(nodeAnnouncement))
+      mainController.networkNodesList.add(nodeAnnouncement)
       Platform.runLater(new Runnable() {
         override def run = mainController.networkNodesTab.setText(s"Nodes (${mainController.networkNodesList.size})")
       })
 
     case NodeLost(nodeId) =>
       log.debug(s"peer node lost with node id=${nodeId}")
-      mainController.networkNodesList.removeIf(new Predicate[PeerNode] {
-        override def test(pn: PeerNode) = nodeId.equals(pn.id)
+      mainController.networkNodesList.removeIf(new Predicate[NodeAnnouncement] {
+        override def test(na: NodeAnnouncement) = na.nodeId.equals(nodeId)
       })
       Platform.runLater(new Runnable() {
         override def run = mainController.networkNodesTab.setText(s"Nodes (${mainController.networkNodesList.size})")
@@ -133,15 +134,15 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
 
     case ChannelDiscovered(channelAnnouncement, _) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
-      mainController.networkChannelsList.add(new PeerChannel(channelAnnouncement))
+      mainController.networkChannelsList.add(channelAnnouncement)
       Platform.runLater(new Runnable() {
         override def run = mainController.networkChannelsTab.setText(s"Channels (${mainController.networkChannelsList.size})")
       })
 
     case ChannelLost(shortChannelId) =>
       log.debug(s"peer channel lost with channel id=${shortChannelId}")
-      mainController.networkChannelsList.removeIf(new Predicate[PeerChannel] {
-        override def test(pc: PeerChannel) = pc.id.get == shortChannelId
+      mainController.networkChannelsList.removeIf(new Predicate[ChannelAnnouncement] {
+        override def test(ca: ChannelAnnouncement) = ca.shortChannelId == shortChannelId
       })
       Platform.runLater(new Runnable() {
         override def run = mainController.networkChannelsTab.setText(s"Channels (${mainController.networkChannelsList.size})")

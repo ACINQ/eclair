@@ -1,40 +1,26 @@
 package fr.acinq.eclair.gui.controllers
 
-import java.net.InetSocketAddress
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.collections.{FXCollections, ObservableList}
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.{FXML, FXMLLoader}
-import javafx.scene.{Parent, Scene}
+import javafx.scene.Parent
 import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, VBox}
-import javafx.scene.paint.Color
 import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
 import javafx.util.Callback
 
+import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
-import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
-//
-case class PeerNode(id: StringProperty, alias: StringProperty, rgbColor: StringProperty, addresses: List[InetSocketAddress]) {
-  def this(na: NodeAnnouncement) = {
-    this(new SimpleStringProperty(na.nodeId.toString), new SimpleStringProperty(na.alias),
-      new SimpleStringProperty("rgb(" + new Integer(na.rgbColor._1 & 0xFF) + "," + new Integer(na.rgbColor._2 & 0xFF) + "," + new Integer(na.rgbColor._3 & 0xFF) + ")"),
-      na.addresses)
-  }
-}
-
-case class PeerChannel(id: LongProperty, nodeId1: StringProperty, nodeId2: StringProperty) {
-  def this(ca: ChannelAnnouncement) = this(new SimpleLongProperty(ca.shortChannelId), new SimpleStringProperty(ca.nodeId1.toString), new SimpleStringProperty(ca.nodeId2.toString))
-}
 
 /**
   * Created by DPA on 22/09/2016.
@@ -62,20 +48,21 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val networkNodesList:ObservableList[PeerNode] = FXCollections.observableArrayList[PeerNode]()
+  val networkNodesList:ObservableList[NodeAnnouncement] = FXCollections.observableArrayList[NodeAnnouncement]()
   @FXML var networkNodesTab: Tab = _
-  @FXML var networkNodesTable: TableView[PeerNode] = _
-  @FXML var networkNodesIdColumn: TableColumn[PeerNode, String] = _
-  @FXML var networkNodesAliasColumn: TableColumn[PeerNode, String] = _
-  @FXML var networkNodesRGBColumn: TableColumn[PeerNode, String] = _
+  @FXML var networkNodesTable: TableView[NodeAnnouncement] = _
+  @FXML var networkNodesIdColumn: TableColumn[NodeAnnouncement, String] = _
+  @FXML var networkNodesAliasColumn: TableColumn[NodeAnnouncement, String] = _
+  @FXML var networkNodesRGBColumn: TableColumn[NodeAnnouncement, String] = _
+  @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList:ObservableList[PeerChannel] = FXCollections.observableArrayList[PeerChannel]()
+  val networkChannelsList:ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
   @FXML var networkChannelsTab: Tab = _
-  @FXML var networkChannelsTable: TableView[PeerChannel] = _
-  @FXML var networkChannelsIdColumn: TableColumn[PeerChannel, Number] = _
-  @FXML var networkChannelsNode1Column: TableColumn[PeerChannel, String] = _
-  @FXML var networkChannelsNode2Column: TableColumn[PeerChannel, String] = _
+  @FXML var networkChannelsTable: TableView[ChannelAnnouncement] = _
+  @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, Number] = _
+  @FXML var networkChannelsNode1Column: TableColumn[ChannelAnnouncement, String] = _
+  @FXML var networkChannelsNode2Column: TableColumn[ChannelAnnouncement, String] = _
 
   /**
     * Initialize the main window.
@@ -121,18 +108,23 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
 
     // init all nodes
     networkNodesTable.setItems(networkNodesList)
-    networkNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.id
+    networkNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
+      def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.nodeId.toString)
     })
-    networkNodesAliasColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.alias
+    networkNodesAliasColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
+      def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.alias)
     })
-    networkNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.rgbColor
+    networkNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
+      def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(
+        s"rgb(${new Integer(pn.getValue.rgbColor._1 & 0xFF)}, ${new Integer(pn.getValue.rgbColor._2 & 0xFF)}, ${new Integer(pn.getValue.rgbColor._3 & 0xFF)}")
     })
-    networkNodesRGBColumn.setCellFactory(new Callback[TableColumn[PeerNode, String], TableCell[PeerNode, String]]() {
-      def call(pn: TableColumn[PeerNode, String]) = {
-        new TableCell[PeerNode, String] () {
+    networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
+      def call(pn: CellDataFeatures[NodeAnnouncement, String]) =
+        new SimpleStringProperty(s"${pn.getValue.addresses.head.getHostString}:${pn.getValue.addresses.head.getPort}")
+    })
+    networkNodesRGBColumn.setCellFactory(new Callback[TableColumn[NodeAnnouncement, String], TableCell[NodeAnnouncement, String]]() {
+      def call(pn: TableColumn[NodeAnnouncement, String]) = {
+        new TableCell[NodeAnnouncement, String] () {
           override def updateItem(item: String, empty: Boolean): Unit = {
             super.updateItem(item, empty)
             setStyle("-fx-background-color:" + item)
@@ -140,37 +132,37 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
         }
       }
     })
-    networkNodesTable.setRowFactory(new Callback[TableView[PeerNode], TableRow[PeerNode]]() {
-      override def call(table: TableView[PeerNode]): TableRow[PeerNode] = setupPeerNodeContextMenu
+    networkNodesTable.setRowFactory(new Callback[TableView[NodeAnnouncement], TableRow[NodeAnnouncement]]() {
+      override def call(table: TableView[NodeAnnouncement]): TableRow[NodeAnnouncement] = setupPeerNodeContextMenu
     })
 
     // init all channels
     networkChannelsTable.setItems(networkChannelsList)
-    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, Number], ObservableValue[Number]]() {
-      def call(pc: CellDataFeatures[PeerChannel, Number]) = pc.getValue.id
+    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, Number], ObservableValue[Number]]() {
+      def call(pc: CellDataFeatures[ChannelAnnouncement, Number]) = new SimpleLongProperty(pc.getValue.shortChannelId)
     })
-    networkChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue.nodeId1
+    networkChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.nodeId1.toString)
     })
-    networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue.nodeId2
+    networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.nodeId2.toString)
     })
-    networkChannelsTable.setRowFactory(new Callback[TableView[PeerChannel], TableRow[PeerChannel]]() {
-      override def call(table: TableView[PeerChannel]): TableRow[PeerChannel] = setupPeerChannelContextMenu
+    networkChannelsTable.setRowFactory(new Callback[TableView[ChannelAnnouncement], TableRow[ChannelAnnouncement]]() {
+      override def call(table: TableView[ChannelAnnouncement]): TableRow[ChannelAnnouncement] = setupPeerChannelContextMenu
     })
   }
 
   /**
-    * Create a row for a PeerNode with Copy context actions.
+    * Create a row for a node with context actions (copy node uri and id).
     * @return TableRow the created row
     */
-  private def setupPeerNodeContextMenu(): TableRow[PeerNode] = {
-    val row = new TableRow[PeerNode]
+  private def setupPeerNodeContextMenu(): TableRow[NodeAnnouncement] = {
+    val row = new TableRow[NodeAnnouncement]
     val rowContextMenu = new ContextMenu
     val copyPubkey = new MenuItem("Copy Pubkey")
     copyPubkey.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pn) => ContextMenuUtils.copyToClipboard(pn.id.getValue)
+        case Some(pn) => ContextMenuUtils.copyToClipboard(pn.nodeId.toString)
         case None =>
       }
     })
@@ -178,7 +170,7 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     copyURI.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
         case Some(pn) => ContextMenuUtils.copyToClipboard(
-          if (pn.addresses.nonEmpty) s"${pn.id.getValue}@${pn.addresses.head.getHostString}:${pn.addresses.head.getPort}"
+          if (pn.addresses.nonEmpty) s"${pn.nodeId.toString}@${pn.addresses.head.getHostString}:${pn.addresses.head.getPort}"
           else "no URI Known")
         case None =>
       }
@@ -192,27 +184,27 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     * Create a row for a PeerChannel with Copy context actions.
     * @return TableRow the created row
     */
-  private def setupPeerChannelContextMenu(): TableRow[PeerChannel] = {
-    val row = new TableRow[PeerChannel]
+  private def setupPeerChannelContextMenu(): TableRow[ChannelAnnouncement] = {
+    val row = new TableRow[ChannelAnnouncement]
     val rowContextMenu = new ContextMenu
     val copyChannelId = new MenuItem("Copy Channel Id")
     copyChannelId.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.id.getValue.toString)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.shortChannelId.toString)
         case None =>
       }
     })
     val copyNode1 = new MenuItem("Copy Node 1")
     copyNode1.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId1.getValue)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId1.toString)
         case None =>
       }
     })
     val copyNode2 = new MenuItem("Copy Node 2")
     copyNode2.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId2.getValue)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId2.toString)
         case None =>
       }
     })
