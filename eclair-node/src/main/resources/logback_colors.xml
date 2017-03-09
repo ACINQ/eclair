@@ -54,6 +54,15 @@
         </encoder>
     </appender>
 
+    <appender name="MAGENTA" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <encoder>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %magenta(%msg) %ex{12}%n
+            </pattern>
+        </encoder>
+    </appender>
+
     <logger name="fr.acinq.eclair.io.Peer" level="DEBUG" additivity="false">
         <appender-ref ref="RED"/>
     </logger>
@@ -72,6 +81,10 @@
 
     <logger name="fr.acinq.eclair.router" level="DEBUG" additivity="false">
         <appender-ref ref="CYAN"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.gui" level="DEBUG" additivity="false">
+        <appender-ref ref="MAGENTA"/>
     </logger>
 
     <root level="INFO">

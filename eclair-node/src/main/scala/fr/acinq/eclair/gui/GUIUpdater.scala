@@ -115,14 +115,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case NodeDiscovered(nodeAnnouncement) =>
-      log.debug(s"peer node discovered with node id = ${nodeAnnouncement.nodeId}")
+      log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
       mainController.allNodesList.add(new PeerNode(nodeAnnouncement))
       Platform.runLater(new Runnable() {
         override def run = mainController.allNodesTab.setText(s"Nodes (${mainController.allNodesList.size})")
       })
 
     case NodeLost(nodeId) =>
-      log.debug(s"peer node lost with node id = ${nodeId}")
+      log.debug(s"peer node lost with node id=${nodeId}")
       mainController.allNodesList.removeIf(new Predicate[PeerNode] {
         override def test(pn: PeerNode) = nodeId.equals(pn.id)
       })
@@ -131,14 +131,14 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       })
 
     case ChannelDiscovered(channelAnnouncement, _) =>
-      log.debug(s"peer channel discovered with channel id = ${channelAnnouncement.shortChannelId}")
+      log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
       mainController.allChannelsList.add(new PeerChannel(channelAnnouncement))
       Platform.runLater(new Runnable() {
         override def run = mainController.allChannelsTab.setText(s"Channels (${mainController.allChannelsList.size})")
       })
 
     case ChannelLost(shortChannelId) =>
-      log.debug(s"peer channel lost with channel id = ${shortChannelId}")
+      log.debug(s"peer channel lost with channel id=${shortChannelId}")
       mainController.allChannelsList.removeIf(new Predicate[PeerChannel] {
         override def test(pc: PeerChannel) = pc.id.get == shortChannelId
       })
