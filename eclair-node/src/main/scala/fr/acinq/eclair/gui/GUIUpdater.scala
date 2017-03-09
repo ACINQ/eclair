@@ -95,6 +95,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
         override def run = {
           // enable reconnect if channel OFFLINE and this node is the funder of the channel
           channelPaneController.reconnect.setDisable(!(OFFLINE == currentState && "Yes".equals(channelPaneController.funder.getText)))
+          channelPaneController.close.setText( if (OFFLINE == currentState) "Force close" else "Close")
           channelPaneController.state.setText(currentState.toString)
         }
       })
