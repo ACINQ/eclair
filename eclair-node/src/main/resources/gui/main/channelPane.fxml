@@ -3,7 +3,7 @@
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
 <?import java.net.URL?>
-<VBox styleClass="channel" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
+<VBox fx:id="root" styleClass="channel" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
       onContextMenuRequested="#openChannelContext">
     <children>
         <GridPane styleClass="grid" prefWidth="400.0">

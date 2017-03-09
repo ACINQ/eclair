@@ -7,7 +7,7 @@ import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
 import javafx.stage.Stage
 
-import akka.actor.{Actor, ActorLogging, ActorRef}
+import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.Setup
@@ -60,6 +60,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
   def main(m: Map[ActorRef, ChannelPaneController]): Receive = {
 
     case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
+      context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, temporaryChannelId)
       Platform.runLater(new Runnable() {
         override def run = mainController.channelBox.getChildren.addAll(root)
@@ -67,6 +68,7 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       context.become(main(m + (channel -> channelPaneController)))
 
     case ChannelRestored(channel, peer, remoteNodeId, isFunder, channelId, currentData) =>
+      context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
       currentData match {
         case d: HasCommitments => updateBalance(channelPaneController, d.commitments)
@@ -101,6 +103,15 @@ class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Set
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = updateBalance(channelPaneController, commitments)
+      })
+
+    case Terminated(actor) if m.contains(actor) =>
+      val channelPaneController = m(actor)
+      log.debug(s"channel=${channelPaneController.channelId.getText} to be removed from gui")
+      Platform.runLater(new Runnable() {
+        override def run = {
+          mainController.channelBox.getChildren.remove(channelPaneController.root)
+        }
       })
 
     case NodeDiscovered(nodeAnnouncement) =>

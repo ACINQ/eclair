@@ -5,8 +5,8 @@ import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, ContextMenu, ProgressBar, TextField}
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
+import javafx.scene.layout.VBox
 
-import fr.acinq.eclair.channel.LocalParams
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import grizzled.slf4j.Logging
 
@@ -15,6 +15,7 @@ import grizzled.slf4j.Logging
   */
 class ChannelPaneController(theirNodeIdValue: String) extends Logging {
 
+  @FXML var root: VBox = _
   @FXML var channelId: TextField = _
   @FXML var balanceBar: ProgressBar = _
   @FXML var amountUs: TextField = _
