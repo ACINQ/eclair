@@ -30,36 +30,36 @@
                         </StackPane>
                     </content>
                 </Tab>
-                <Tab text="All Nodes" fx:id="allNodesTab">
+                <Tab text="All Nodes" fx:id="networkNodesTab">
                     <content>
                         <VBox spacing="10.0" styleClass="grid">
                             <children>
                                 <Label text="Nodes in network"/>
                                 <!--<TextField fx:id="peersNodesSearch" promptText="Filter by node id..."/>-->
-                                <TableView fx:id="allNodesTable" minHeight="50.0" prefHeight="5000.0">
+                                <TableView fx:id="networkNodesTable" minHeight="50.0" prefHeight="5000.0">
                                     <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
                                     <columns>
-                                        <TableColumn fx:id="allNodesRGBColumn" minWidth="20.0" prefWidth="20.0" maxWidth="20.0" text="" sortable="false"/>
-                                        <TableColumn fx:id="allNodesAliasColumn" minWidth="80.0" prefWidth="180.0" maxWidth="300.0" text="Alias"/>
-                                        <TableColumn fx:id="allNodesIdColumn" text="Node Id"/>
+                                        <TableColumn fx:id="networkNodesRGBColumn" minWidth="20.0" prefWidth="20.0" maxWidth="20.0" text="" sortable="false"/>
+                                        <TableColumn fx:id="networkNodesAliasColumn" minWidth="80.0" prefWidth="180.0" maxWidth="300.0" text="Alias"/>
+                                        <TableColumn fx:id="networkNodesIdColumn" text="Node Id"/>
                                     </columns>
                                 </TableView>
                             </children>
                         </VBox>
                     </content>
                 </Tab>
-                <Tab text="All Channels" fx:id="allChannelsTab">
+                <Tab text="All Channels" fx:id="networkChannelsTab">
                     <content>
                         <VBox spacing="10.0" styleClass="grid">
                             <children>
                                 <Label text="Channels in network"/>
                                 <!--<TextField fx:id="peersChannelsSearch" promptText="Filter by channel id..."/>-->
-                                <TableView fx:id="allChannelsTable" minHeight="50.0" prefHeight="5000.0">
+                                <TableView fx:id="networkChannelsTable" minHeight="50.0" prefHeight="5000.0">
                                     <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
                                     <columns>
-                                        <TableColumn fx:id="allChannelsIdColumn" minWidth="120.0" prefWidth="170.0" maxWidth="300.0" text="Channel Id"/>
-                                        <TableColumn fx:id="allChannelsNode1Column" text="Node 1"/>
-                                        <TableColumn fx:id="allChannelsNode2Column" text="Node 2"/>
+                                        <TableColumn fx:id="networkChannelsIdColumn" minWidth="120.0" prefWidth="170.0" maxWidth="300.0" text="Channel Id"/>
+                                        <TableColumn fx:id="networkChannelsNode1Column" text="Node 1"/>
+                                        <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
                                     </columns>
                                 </TableView>
                             </children>

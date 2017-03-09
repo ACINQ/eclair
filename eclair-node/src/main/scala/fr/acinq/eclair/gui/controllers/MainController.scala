@@ -62,20 +62,20 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val allNodesList:ObservableList[PeerNode] = FXCollections.observableArrayList[PeerNode]()
-  @FXML var allNodesTab: Tab = _
-  @FXML var allNodesTable: TableView[PeerNode] = _
-  @FXML var allNodesIdColumn: TableColumn[PeerNode, String] = _
-  @FXML var allNodesAliasColumn: TableColumn[PeerNode, String] = _
-  @FXML var allNodesRGBColumn: TableColumn[PeerNode, String] = _
+  val networkNodesList:ObservableList[PeerNode] = FXCollections.observableArrayList[PeerNode]()
+  @FXML var networkNodesTab: Tab = _
+  @FXML var networkNodesTable: TableView[PeerNode] = _
+  @FXML var networkNodesIdColumn: TableColumn[PeerNode, String] = _
+  @FXML var networkNodesAliasColumn: TableColumn[PeerNode, String] = _
+  @FXML var networkNodesRGBColumn: TableColumn[PeerNode, String] = _
 
   // all channels
-  val allChannelsList:ObservableList[PeerChannel] = FXCollections.observableArrayList[PeerChannel]()
-  @FXML var allChannelsTab: Tab = _
-  @FXML var allChannelsTable: TableView[PeerChannel] = _
-  @FXML var allChannelsIdColumn: TableColumn[PeerChannel, Number] = _
-  @FXML var allChannelsNode1Column: TableColumn[PeerChannel, String] = _
-  @FXML var allChannelsNode2Column: TableColumn[PeerChannel, String] = _
+  val networkChannelsList:ObservableList[PeerChannel] = FXCollections.observableArrayList[PeerChannel]()
+  @FXML var networkChannelsTab: Tab = _
+  @FXML var networkChannelsTable: TableView[PeerChannel] = _
+  @FXML var networkChannelsIdColumn: TableColumn[PeerChannel, Number] = _
+  @FXML var networkChannelsNode1Column: TableColumn[PeerChannel, String] = _
+  @FXML var networkChannelsNode2Column: TableColumn[PeerChannel, String] = _
 
   /**
     * Initialize the main window.
@@ -120,17 +120,17 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     })
 
     // init all nodes
-    allNodesTable.setItems(allNodesList)
-    allNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
+    networkNodesTable.setItems(networkNodesList)
+    networkNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.id
     })
-    allNodesAliasColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
+    networkNodesAliasColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.alias
     })
-    allNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
+    networkNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerNode, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[PeerNode, String]) = pn.getValue.rgbColor
     })
-    allNodesRGBColumn.setCellFactory(new Callback[TableColumn[PeerNode, String], TableCell[PeerNode, String]]() {
+    networkNodesRGBColumn.setCellFactory(new Callback[TableColumn[PeerNode, String], TableCell[PeerNode, String]]() {
       def call(pn: TableColumn[PeerNode, String]) = {
         new TableCell[PeerNode, String] () {
           override def updateItem(item: String, empty: Boolean): Unit = {
@@ -140,22 +140,22 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
         }
       }
     })
-    allNodesTable.setRowFactory(new Callback[TableView[PeerNode], TableRow[PeerNode]]() {
+    networkNodesTable.setRowFactory(new Callback[TableView[PeerNode], TableRow[PeerNode]]() {
       override def call(table: TableView[PeerNode]): TableRow[PeerNode] = setupPeerNodeContextMenu
     })
 
     // init all channels
-    allChannelsTable.setItems(allChannelsList)
-    allChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, Number], ObservableValue[Number]]() {
+    networkChannelsTable.setItems(networkChannelsList)
+    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, Number], ObservableValue[Number]]() {
       def call(pc: CellDataFeatures[PeerChannel, Number]) = pc.getValue.id
     })
-    allChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
+    networkChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue.nodeId1
     })
-    allChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
+    networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[PeerChannel, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[PeerChannel, String]) = pc.getValue.nodeId2
     })
-    allChannelsTable.setRowFactory(new Callback[TableView[PeerChannel], TableRow[PeerChannel]]() {
+    networkChannelsTable.setRowFactory(new Callback[TableView[PeerChannel], TableRow[PeerChannel]]() {
       override def call(table: TableView[PeerChannel]): TableRow[PeerChannel] = setupPeerChannelContextMenu
     })
   }
