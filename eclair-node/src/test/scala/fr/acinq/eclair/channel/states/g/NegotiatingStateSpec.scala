@@ -45,6 +45,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       alice2bob.forward(bob)
       val bob2aliceCloseSig = bob2alice.expectMsgType[ClosingSigned]
       assert(2 * aliceCloseSig.feeSatoshis == bob2aliceCloseSig.feeSatoshis)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.unackedShutdown() === None)
     }
   }
 

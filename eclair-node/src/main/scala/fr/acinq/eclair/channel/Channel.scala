@@ -644,8 +644,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(msg: RevokeAndAck, d@DATA_SHUTDOWN(commitments, localShutdown, remoteShutdown)) =>
       // we received a revocation because we sent a signature
-      // => all our changes have been acked
-      Try(Commitments.receiveRevocation(d.commitments, msg)) match {
+      // => all our changes have been acked including the shutdown message
+      Try(Commitments.receiveRevocation(commitments, msg)) match {
         case Success(Right(commitments1)) if commitments1.hasNoPendingHtlcs =>
           val closingSigned = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
@@ -677,24 +677,17 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
   when(NEGOTIATING)(handleExceptions {
 
-    case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) if remoteClosingFee == d.localClosingSigned.feeSatoshis =>
-      Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
-        case Success(signedClosingTx) => handleMutualClose(signedClosingTx, d)
-        case Failure(cause) =>
-          log.error(cause, "cannot verify their close signature")
-          throw new RuntimeException("cannot verify their close signature", cause)
-      }
-
     case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
+        case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.feeSatoshis => handleMutualClose(signedClosingTx, d.copy(commitments = Commitments.acknowledgeShutdown(d.commitments)))
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.feeSatoshis), Satoshi(remoteClosingFee))
           val (_, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
           forwarder ! closingSigned
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
-            handleMutualClose(signedClosingTx, d)
+            handleMutualClose(signedClosingTx, d.copy(commitments = Commitments.acknowledgeShutdown(d.commitments)))
           } else {
-            goto(stateName) using d.copy(localClosingSigned = closingSigned)
+            goto(stateName) using d.copy(localClosingSigned = closingSigned, commitments = Commitments.acknowledgeShutdown(d.commitments))
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")

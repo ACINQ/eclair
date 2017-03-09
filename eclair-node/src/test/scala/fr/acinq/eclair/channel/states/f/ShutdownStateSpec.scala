@@ -281,6 +281,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice.stateName == SHUTDOWN)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 1)
+      assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.unackedShutdown() === None)
     }
   }
 
@@ -308,7 +309,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       fulfillHtlc(1, "22" * 32, bob, alice, bob2alice, alice2bob)
       crossSign(bob, alice, bob2alice, alice2bob)
       // actual test starts here
-      bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
     }
   }

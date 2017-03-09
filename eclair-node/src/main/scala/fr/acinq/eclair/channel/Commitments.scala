@@ -402,6 +402,8 @@ object Commitments extends Logging {
         }
     }
 
+  def acknowledgeShutdown(commitments: Commitments) = commitments.copy(unackedMessages = commitments.unackedMessages.diff(commitments.unackedShutdown().toSeq))
+
   def makeLocalTxs(commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, localPerCommitmentPoint)
     val localDelayedPubkey = Generators.derivePubKey(localParams.delayedPaymentKey.toPoint, localPerCommitmentPoint)
