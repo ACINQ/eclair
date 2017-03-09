@@ -40,6 +40,17 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
+  def getTxsSinceBlockHash(blockHash: String, previous: Seq[Transaction] = Nil)(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
+    for {
+      (nextblockhash_opt, txids) <- client.invoke("getblock", blockHash).map(json => ((json \ "nextblockhash").extractOpt[String], (json \ "tx").extract[List[String]]))
+      next <- Future.sequence(txids.map(getTransaction(_)))
+      res <- nextblockhash_opt match {
+        case Some(nextBlockHash) => getTxsSinceBlockHash(nextBlockHash, previous ++ next)
+        case None => Future.successful(previous ++ next)
+      }
+    } yield res
+
+
   /**
     * *used in interop test*
     * tell bitcoind to sent bitcoins from a specific local account

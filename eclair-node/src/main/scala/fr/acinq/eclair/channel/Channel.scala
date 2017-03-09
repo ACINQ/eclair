@@ -829,7 +829,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       if (nextState != state) {
         context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, nextStateData))
       }
-      forwarder ! StoreAndForward(nextStateData, Helpers.extractOutgoingMessages(state, nextState, stateData, nextStateData))
+      forwarder ! StoreAndForward(nextState, nextStateData, Helpers.extractOutgoingMessages(state, nextState, stateData, nextStateData))
   }
 
   /*
