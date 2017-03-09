@@ -36,7 +36,7 @@ class Register extends Actor with ActorLogging {
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1
-      val shortChannelId = shortIds.find(_._2 == channelId).get._1
+      val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(0L)
       context become main(channels - channelId, shortIds - shortChannelId)
 
     case 'channels => sender ! channels
@@ -44,13 +44,13 @@ class Register extends Actor with ActorLogging {
     case Forward(channelId, msg) =>
       channels.get(channelId) match {
         case Some(channel) => channel ! msg
-        case None => Failure(new RuntimeException(s"channel $channelId not found"))
+        case None => sender ! Failure(new RuntimeException(s"channel $channelId not found"))
       }
 
     case ForwardShortId(shortChannelId, msg) =>
       shortIds.get(shortChannelId).flatMap(channels.get(_)) match {
         case Some(channel) => channel ! msg
-        case None => Failure(new RuntimeException(s"channel $shortChannelId not found"))
+        case None => sender ! Failure(new RuntimeException(s"channel $shortChannelId not found"))
       }
   }
 }
