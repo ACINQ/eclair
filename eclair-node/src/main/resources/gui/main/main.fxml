@@ -5,6 +5,7 @@
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 <?import java.net.URL?>
+<?import javafx.scene.shape.Rectangle?>
 <BorderPane fx:id="root" minHeight="300.0" styleClass="root" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <center>
         <TabPane tabClosingPolicy="UNAVAILABLE" BorderPane.alignment="CENTER">
@@ -82,6 +83,13 @@
                             </image>
                         </ImageView>
                         <Label fx:id="labelNodeId" text="N/A"/>
+                    </children>
+                </HBox>
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="90.0">
+                    <children>
+                        <Separator orientation="VERTICAL"/>
+                        <Rectangle fx:id="rectRGB" width="7" height="7" fill="transparent" />
+                        <Label fx:id="labelAlias" text="N/A" textAlignment="RIGHT"/>
                     </children>
                 </HBox>
                 <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="90.0">

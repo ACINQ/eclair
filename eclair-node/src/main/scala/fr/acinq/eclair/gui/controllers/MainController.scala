@@ -11,6 +11,8 @@ import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.{BorderPane, VBox}
+import javafx.scene.paint.Color
+import javafx.scene.shape.Rectangle
 import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
 import javafx.util.Callback
@@ -37,6 +39,8 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
 
   // status bar elements
   @FXML var labelNodeId: Label = _
+  @FXML var rectRGB: Rectangle = _
+  @FXML var labelAlias: Label = _
   @FXML var labelApi: Label = _
   @FXML var labelServer: Label = _
   @FXML var bitcoinVersion: Label = _
@@ -77,6 +81,8 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
 
     // init status bar
     labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
+    labelAlias.setText(s"${setup.nodeParams.alias}")
+    rectRGB.setFill(Color.rgb(setup.nodeParams.color._1 & 0xFF, setup.nodeParams.color._2 & 0xFF, setup.nodeParams.color._3 & 0xFF))
     labelApi.setText(s"${setup.config.getInt("eclair.api.port")}")
     labelServer.setText(s"${setup.config.getInt("eclair.server.port")}")
     bitcoinVersion.setText(s"v${setup.bitcoinVersion}")
