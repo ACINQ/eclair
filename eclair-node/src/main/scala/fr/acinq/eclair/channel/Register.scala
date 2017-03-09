@@ -43,13 +43,13 @@ class Register extends Actor with ActorLogging {
 
     case Forward(channelId, msg) =>
       channels.get(channelId) match {
-        case Some(channel) => channel ! msg
+        case Some(channel) => channel forward msg
         case None => sender ! Failure(new RuntimeException(s"channel $channelId not found"))
       }
 
     case ForwardShortId(shortChannelId, msg) =>
       shortIds.get(shortChannelId).flatMap(channels.get(_)) match {
-        case Some(channel) => channel ! msg
+        case Some(channel) => channel forward msg
         case None => sender ! Failure(new RuntimeException(s"channel $shortChannelId not found"))
       }
   }
