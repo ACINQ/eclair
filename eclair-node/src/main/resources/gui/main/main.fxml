@@ -42,7 +42,7 @@
                                         <TableColumn fx:id="networkNodesRGBColumn" minWidth="20.0" prefWidth="20.0" maxWidth="20.0" text="" sortable="false"/>
                                         <TableColumn fx:id="networkNodesAliasColumn" minWidth="80.0" prefWidth="180.0" maxWidth="300.0" text="Alias"/>
                                         <TableColumn fx:id="networkNodesIdColumn" text="Node Id"/>
-                                        <TableColumn fx:id="networkNodesIPColumn" text="IP"/>
+                                        <TableColumn fx:id="networkNodesIPColumn" minWidth="150.0" prefWidth="250.0" maxWidth="300.0" text="IP"/>
                                     </columns>
                                 </TableView>
                             </children>
