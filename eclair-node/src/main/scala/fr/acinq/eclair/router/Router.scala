@@ -1,6 +1,6 @@
 package fr.acinq.eclair.router
 
-import java.io.{BufferedWriter, StringWriter}
+import java.io.StringWriter
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import akka.pattern.pipe
@@ -10,8 +10,6 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.TransportHandler.Serializer
-import fr.acinq.eclair.db.{JavaSerializer, SimpleDb, SimpleTypedDb}
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -70,46 +68,41 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       updates.values.foreach(remote ! _)
       nodes.values.foreach(remote ! _)
 
-    case c: ChannelAnnouncement if !Announcements.checkSigs(c) =>
-      log.error(s"bad signature for announcement $c")
-      sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-
-    case c: ChannelAnnouncement if channels.containsKey(c.shortChannelId) =>
-      log.debug(s"ignoring $c (duplicate)")
-
     case c: ChannelAnnouncement =>
-      val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
-      log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
-      watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
-      context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
+      if (!Announcements.checkSigs(c)) {
+        log.error(s"bad signature for announcement $c")
+        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+      } else if (channels.containsKey(c.shortChannelId)) {
+        log.debug(s"ignoring $c (duplicate)")
+      } else {
+        val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
+        log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
+        watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
+        context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
+      }
 
-    case GetTxResponse(tx, isSpendable, c: ChannelAnnouncement) if !isSpendable =>
-      log.debug(s"ignoring $c (funding tx spent)")
-
-    case GetTxResponse(tx, _, c: ChannelAnnouncement) =>
-      // TODO: check sigs
-      // TODO: blacklist if already received same channel id and different node ids
-      val (_, _, outputIndex) = fromShortId(c.shortChannelId)
-      // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2
-      require(tx.txOut.size >= outputIndex + 1, s"tx $tx does not have outputIndex=$outputIndex")
-      val output = tx.txOut(outputIndex)
-      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
-      require(fundingOutputScript == output.publicKeyScript, s"funding script mismatch: actual=${output.publicKeyScript} expected=${fundingOutputScript}")
-      watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
-      // TODO: check feature bit set
-      log.info(s"added channel channelId=${c.shortChannelId}")
-      context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
+    case GetTxResponse(tx, isSpendable, c: ChannelAnnouncement) =>
+      if (isSpendable) {
+        // TODO: blacklist if already received same channel id and different node ids
+        val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+        // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2
+        require(tx.txOut.size >= outputIndex + 1, s"tx $tx does not have outputIndex=$outputIndex")
+        val output = tx.txOut(outputIndex)
+        val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+        require(fundingOutputScript == output.publicKeyScript, s"funding script mismatch: actual=${output.publicKeyScript} expected=${fundingOutputScript}")
+        watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
+        // TODO: check feature bit set
+        log.info(s"added channel channelId=${c.shortChannelId}")
+        context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
+        nodeParams.announcementsDb.put(s"ann-channel-${c.shortChannelId}", c)
+      } else {
+        log.debug(s"ignoring $c (funding tx spent)")
+      }
       val stash1 = if (awaiting == Set(c)) {
         stash.foreach(self ! _)
         Nil
       } else stash
-      nodeParams.announcementsDb.put(s"ann-channel-${c.shortChannelId}", c)
       context become mainWithLog(nodes, channels + (c.shortChannelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
-
-    case n: NodeAnnouncement if !Announcements.checkSig(n) =>
-      // TODO: (dirty) this will make the origin channel close the connection
-      log.error(s"bad signature for announcement $n")
-      sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
 
     case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId), tx) if channels.containsKey(shortChannelId) =>
       val lostChannel = channels(shortChannelId)
@@ -131,46 +124,46 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       lostNodes.foreach(id => nodeParams.announcementsDb.delete(s"ann-node-$id"))
       context become mainWithLog(nodes -- lostNodes, channels - shortChannelId, updates.filterKeys(_.id != shortChannelId), rebroadcast, awaiting, stash)
 
-    case n: NodeAnnouncement if awaiting.size > 0 =>
-      context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ n)
-
-    case n: NodeAnnouncement if !channels.values.exists(c => c.nodeId1 == n.nodeId || c.nodeId2 == n.nodeId) =>
-      log.debug(s"ignoring $n (no related channel found)")
-
-    case n: NodeAnnouncement if nodes.containsKey(n.nodeId) && nodes(n.nodeId).timestamp >= n.timestamp =>
-      log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
-
-    case n: NodeAnnouncement if nodes.containsKey(n.nodeId) =>
-      log.info(s"updated node nodeId=${n.nodeId}")
-      context.system.eventStream.publish(NodeUpdated(n))
-      nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
-      context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
-
     case n: NodeAnnouncement =>
-      log.info(s"added node nodeId=${n.nodeId}")
-      context.system.eventStream.publish(NodeDiscovered(n))
-      nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
-      context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
-
-    case u: ChannelUpdate if awaiting.size > 0 =>
-      context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ u)
-
-    case u: ChannelUpdate if !channels.contains(u.shortChannelId) =>
-      log.debug(s"ignoring $u (no related channel found)")
-
-    case u: ChannelUpdate if !Announcements.checkSig(u, getDesc(u, channels(u.shortChannelId)).a) =>
-      // TODO: (dirty) this will make the origin channel close the connection
-      log.error(s"bad signature for announcement $u")
-      sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+      if (!Announcements.checkSig(n)) {
+        log.error(s"bad signature for announcement $n")
+        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+      } else if (awaiting.size > 0) {
+        context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ n)
+      } else if (!channels.values.exists(c => c.nodeId1 == n.nodeId || c.nodeId2 == n.nodeId)) {
+        log.debug(s"ignoring $n (no related channel found)")
+      } else if (nodes.containsKey(n.nodeId) && nodes(n.nodeId).timestamp >= n.timestamp) {
+        log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
+      } else if (nodes.containsKey(n.nodeId)) {
+        log.info(s"updated node nodeId=${n.nodeId}")
+        context.system.eventStream.publish(NodeUpdated(n))
+        nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
+        context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
+      } else {
+        log.info(s"added node nodeId=${n.nodeId}")
+        context.system.eventStream.publish(NodeDiscovered(n))
+        nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
+        context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
+      }
 
     case u: ChannelUpdate =>
-      val channel = channels(u.shortChannelId)
-      val desc = getDesc(u, channel)
-      if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
-        log.debug(s"ignoring $u (old timestamp or duplicate)")
+      if (awaiting.size > 0) {
+        context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ u)
+      } else if (!channels.contains(u.shortChannelId)) {
+        log.debug(s"ignoring $u (no related channel found)")
+      } else if (!Announcements.checkSig(u, getDesc(u, channels(u.shortChannelId)).a)) {
+        // TODO: (dirty) this will make the origin channel close the connection
+        log.error(s"bad signature for announcement $u")
+        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
       } else {
-        nodeParams.announcementsDb.put(s"ann-update-${u.shortChannelId}-${u.flags}", u)
-        context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
+        val channel = channels(u.shortChannelId)
+        val desc = getDesc(u, channel)
+        if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
+          log.debug(s"ignoring $u (old timestamp or duplicate)")
+        } else {
+          nodeParams.announcementsDb.put(s"ann-update-${u.shortChannelId}-${u.flags}", u)
+          context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
+        }
       }
 
     case 'tick_broadcast if rebroadcast.size == 0 =>
@@ -259,9 +252,5 @@ object Router {
     }
 
   }
-
-  case class RouterState(nodes: Iterable[NodeAnnouncement],
-                         channels: Iterable[ChannelAnnouncement],
-                         updates: Iterable[ChannelUpdate])
 
 }

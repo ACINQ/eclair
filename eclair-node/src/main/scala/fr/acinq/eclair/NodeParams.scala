@@ -9,8 +9,7 @@ import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel.Data
 import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.io.PeerRecord
-import fr.acinq.eclair.router.Router.RouterState
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, LightningMessage, NodeAnnouncement}
+import fr.acinq.eclair.wire.LightningMessage
 
 /**
   * Created by PM on 26/02/2017.
