@@ -8,10 +8,14 @@ import javafx.scene.input.KeyCode.{ENTER, TAB}
 import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
 
+import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
 import grizzled.slf4j.Logging
+
+import scala.util.{Failure, Success, Try}
 
 
 /**
@@ -61,11 +65,16 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
   @FXML def handleSend(event: ActionEvent) = {
     if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
       val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
-      if (GUIValidators.validate(amount, paymentRequestError, "Amount must be numeric", GUIValidators.amountRegex)
-        && GUIValidators.validate(paymentRequestError, "Amount must be greater than 0", amount.toLong > 0)
-        && GUIValidators.validate(paymentRequestError, "Amount must be less than 4 294 967 295 mSat (~0.042 BTC)", amount.toLong < 4294967295L)) {
-        handlers.send(nodeId, hash, amount)
-        stage.close()
+      Try(amount.toLong) match {
+        case Success(amountLong) =>
+          if (GUIValidators.validate(paymentRequestError, "Amount must be greater than 0", amountLong > 0)
+            && GUIValidators.validate(paymentRequestError, "Amount must be less than 4 294 967 295 mSat (~0.042 BTC)", amountLong < 4294967295L)) {
+            Try (handlers.send(PublicKey(nodeId), BinaryData(hash), amountLong)) match {
+              case Success(s) => stage.close
+              case Failure(f) => GUIValidators.validate(paymentRequestError, s"Invalid Payment Request: ${f.getMessage}", false)
+            }
+          }
+        case Failure(f) => GUIValidators.validate(paymentRequestError, s"Amount must be numeric", false)
       }
     }
   }
