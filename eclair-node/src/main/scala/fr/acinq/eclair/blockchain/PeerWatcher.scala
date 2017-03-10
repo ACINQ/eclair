@@ -26,6 +26,7 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
 
     case NewTransaction(tx) =>
+      log.debug(s"analyzing tx ${tx.txid}: ${Transaction.write(tx)}")
       watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! ('trigger, w, WatchEventSpent(event, tx))
@@ -47,11 +48,15 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
               }
           }
       }
+      // NB: this is a safety measure, because sometimes we seem to not receive NewTransactions directly from bitcoind
+      block.tx.foreach(tx => self ! NewTransaction(tx))
 
     case ('trigger, w: Watch, e: WatchEvent) if watches.contains(w) =>
       log.info(s"triggering $w")
       w.channel ! e
-      context.become(watching(watches - w, block2tx))
+      // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
+      // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
+      if (!w.isInstanceOf[WatchSpent]) context.become(watching(watches - w, block2tx))
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
@@ -75,7 +80,6 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
           }
       }
       addWatch(w, watches, block2tx)
-
 
     case w@WatchConfirmed(channel, txId, minDepth, event) =>
       client.getTxConfirmations(txId.toString).map {

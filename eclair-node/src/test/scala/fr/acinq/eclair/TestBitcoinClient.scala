@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient.SignTransactionResponse
 import fr.acinq.eclair.blockchain.peer.{NewBlock, NewTransaction}
@@ -20,7 +20,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
   import scala.concurrent.ExecutionContext.Implicits.global
 
   system.scheduler.schedule(100 milliseconds, 100 milliseconds, new Runnable {
-    override def run(): Unit = system.eventStream.publish(NewBlock(null)) // blocks are not actually interpreted
+    override def run(): Unit = system.eventStream.publish(NewBlock(Block(null, Seq.empty))) // blocks are not actually interpreted
   })
 
   override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
