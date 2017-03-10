@@ -3,8 +3,8 @@ package fr.acinq.eclair.blockchain
 import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Globals
-import fr.acinq.eclair.blockchain.peer.{BlockchainEvent, CurrentBlockCount, NewBlock, NewTransaction}
+import fr.acinq.eclair.{Globals, NodeParams}
+import fr.acinq.eclair.blockchain.peer._
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 
@@ -37,6 +37,11 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
         case count =>
           Globals.blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
+      }
+      client.estimateSmartFee(NodeParams.loadFromConfiguration().smartfeeNBlocks).map {
+        case feerate =>
+          Globals.feeratePerKw.set(feerate)
+          context.system.eventStream.publish(CurrentFeerate(feerate))
       }
       // TODO: beware of the herd effect
       watches.collect {

@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
 
 import scala.util.Random
 
@@ -27,6 +27,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                    relayer: TestProbe)
 
   def init(): Setup = {
+    Globals.feeratePerKw.set(TestConstants.feeratePerKw)
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
@@ -56,7 +57,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     }
     val aliceInit = Init(aliceParams.globalFeatures, aliceParams.localFeatures)
     val bobInit = Init(bobParams.globalFeatures, bobParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, aliceParams, alice2bob.ref, bobInit)
+    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, aliceParams, alice2bob.ref, bobInit)
     bob ! INPUT_INIT_FUNDEE("00" * 32, bobParams, bob2alice.ref, aliceInit)
     alice2bob.expectMsgType[OpenChannel]
     alice2bob.forward(bob)

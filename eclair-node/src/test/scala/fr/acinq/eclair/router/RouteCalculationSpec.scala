@@ -2,13 +2,11 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.{Globals, _}
 import fr.acinq.eclair.wire.ChannelUpdate
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
-import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration._
 

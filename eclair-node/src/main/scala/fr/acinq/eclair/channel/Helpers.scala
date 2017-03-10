@@ -4,12 +4,13 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.Features.Unset
+import fr.acinq.eclair.Globals.Constants.{UPDATE_FEE_MAX_DIFF_RATIO, UPDATE_FEE_MIN_DIFF_RATIO}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Features, NodeParams}
+import fr.acinq.eclair.{Features, Globals, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -61,6 +62,14 @@ object Helpers {
     }
   }
 
+  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long): Boolean =
+  // negative feerate can happen in regtest mode
+    networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
+
+  def feeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Boolean =
+  // negative feerate can happen in regtest mode
+    remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > UPDATE_FEE_MAX_DIFF_RATIO
+
   object Funding {
 
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
@@ -80,14 +89,25 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 
-      // we use the funder's feerate
-      val feeratePerKw = if (localParams.isFunder) localParams.feeratePerKw else remoteParams.feeratePerKw
-      val localSpec = CommitmentSpec(Set.empty[Htlc], feeratePerKw = feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
-      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeratePerKw = feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
+      val localSpec = CommitmentSpec(Set.empty[Htlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
+      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
+
+      // TODO: should we check the fees sooner in the process?
+      if (!localParams.isFunder) {
+        // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
+        val localFeeratePerKw = Globals.feeratePerKw.get()
+        if (feeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw)) {
+          throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
+        }
+        val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
+        val reserve = Satoshi(localParams.channelReserveSatoshis)
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec)
+        require(toRemote >= reserve + fees, s"remote cannot pay the fees for the initial commit tx: toRemote=$toRemote reserve=$reserve fees=$fees")
+      }
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)

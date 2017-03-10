@@ -77,7 +77,7 @@ object Transactions {
     val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
     spec.htlcs
       .filter(_.direction == OUT)
-      .filter(htlc => MilliSatoshi(htlc.add.amountMsat).compare(dustLimit + htlcTimeoutFee) >= 0)
+      .filter(htlc => MilliSatoshi(htlc.add.amountMsat) >= (dustLimit + htlcTimeoutFee))
       .toSeq
   }
 
@@ -85,7 +85,7 @@ object Transactions {
     val htlcSuccessFee = weight2fee(spec.feeratePerKw, htlcSuccessWeight)
     spec.htlcs
       .filter(_.direction == IN)
-      .filter(htlc => MilliSatoshi(htlc.add.amountMsat).compare(dustLimit + htlcSuccessFee) >= 0)
+      .filter(htlc => MilliSatoshi(htlc.add.amountMsat) >= (dustLimit + htlcSuccessFee))
       .toSeq
   }
 
@@ -139,14 +139,13 @@ object Transactions {
 
     val commitFee = commitTxFee(localDustLimit, spec)
 
-    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = (MilliSatoshi(spec.toLocalMsat), MilliSatoshi(spec.toRemoteMsat)) match {
-      case (local, remote) if localIsFunder && local.compare(commitFee) < 0 => (Satoshi(0), millisatoshi2satoshi(remote)) //TODO: check: can't pay fees! (will happen when UpdateFee is implemented)
-      case (local, remote) if localIsFunder && local.compare(commitFee) >= 0 => (local - commitFee, millisatoshi2satoshi(remote))
-      case (local, remote) if !localIsFunder && remote.compare(commitFee) < 0 => (millisatoshi2satoshi(local), Satoshi(0)) //TODO: check: can't pay fees! (will happen when UpdateFee is implemented)
-      case (local, remote) if !localIsFunder && remote.compare(commitFee) >= 0 => (millisatoshi2satoshi(local), remote - commitFee)
-    }
-    val toLocalDelayedOutput_opt = if (toLocalAmount.compare(localDustLimit) >= 0) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)))) else None
-    val toRemoteOutput_opt = if (toRemoteAmount.compare(localDustLimit) >= 0) Some(TxOut(toRemoteAmount, pay2wpkh(remotePubkey))) else None
+    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = localIsFunder match {
+      case true => (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)) - commitFee, millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)))
+      case false => (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)), millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)) - commitFee)
+    } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
+
+    val toLocalDelayedOutput_opt = if (toLocalAmount >= localDustLimit) Some(TxOut(toLocalAmount, pay2wsh(toLocalDelayed(localRevocationPubkey, toLocalDelay, localDelayedPubkey)))) else None
+    val toRemoteOutput_opt = if (toRemoteAmount >= localDustLimit) Some(TxOut(toRemoteAmount, pay2wpkh(remotePubkey))) else None
 
     val htlcOfferedOutputs = trimOfferedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcOffered(localPubKey, remotePubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash)))))
@@ -293,15 +292,13 @@ object Transactions {
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.size == 0, "there shouldn't be any pending htlcs")
 
-    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = (MilliSatoshi(spec.toLocalMsat), MilliSatoshi(spec.toRemoteMsat)) match {
-      case (local, remote) if localIsFunder && local.compare(closingFee) <= 0 => ??? //TODO: check: can't pay fees! (will happen when UpdateFee is implemented)
-      case (local, remote) if localIsFunder && local.compare(closingFee) > 0 => (local - closingFee, millisatoshi2satoshi(remote))
-      case (local, remote) if !localIsFunder && remote.compare(closingFee) <= 0 => ??? //TODO: check: can't pay fees! (will happen when UpdateFee is implemented)
-      case (local, remote) if !localIsFunder && remote.compare(closingFee) > 0 => (millisatoshi2satoshi(local), remote - closingFee)
-    }
+    val (toLocalAmount: Satoshi, toRemoteAmount: Satoshi) = localIsFunder match {
+      case true => (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)) - closingFee, millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)))
+      case false => (millisatoshi2satoshi(MilliSatoshi(spec.toLocalMsat)), millisatoshi2satoshi(MilliSatoshi(spec.toRemoteMsat)) - closingFee)
+    } // NB: we don't care if values are < 0, they will be trimmed if they are < dust limit anyway
 
-    val toLocalOutput_opt = if (toLocalAmount.compare(dustLimit) > 0) Some(TxOut(toLocalAmount, localScriptPubKey)) else None
-    val toRemoteOutput_opt = if (toRemoteAmount.compare(dustLimit) > 0) Some(TxOut(toRemoteAmount, remoteScriptPubKey)) else None
+    val toLocalOutput_opt = if (toLocalAmount >= dustLimit) Some(TxOut(toLocalAmount, localScriptPubKey)) else None
+    val toRemoteOutput_opt = if (toRemoteAmount >= dustLimit) Some(TxOut(toRemoteAmount, remoteScriptPubKey)) else None
 
     val tx = Transaction(
       version = 2,

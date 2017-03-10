@@ -144,7 +144,7 @@ object Commitments extends Logging {
         }
 
         // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
-        val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
+        val fees = if (commitments1.localParams.isFunder) 0 else Transactions.commitTxFee(Satoshi(commitments1.localParams.dustLimitSatoshis), reduced).amount
         val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
         if (missing < 0) {
           throw new RuntimeException(s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.localParams.channelReserveSatoshis} fees=$fees")
@@ -214,6 +214,63 @@ object Commitments extends Logging {
       }
     }
 
+  def sendFee(commitments: Commitments, cmd: CMD_UPDATE_FEE): (Commitments, UpdateFee) = {
+    if (!commitments.localParams.isFunder) {
+      throw new RuntimeException(s"only the funder should send update_fee messages")
+    }
+    // let's compute the current commitment *as seen by them* with this change taken into account
+    val fee = UpdateFee(commitments.channelId, cmd.feeratePerKw)
+    val commitments1 = addLocalProposal(commitments, fee)
+    val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
+
+    // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+    // we look from remote's point of view, so if local is funder remote doesn't pay the fees
+    val fees = Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
+    val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
+    if (missing < 0) {
+      throw new RuntimeException(s"can't pay the fee: missing=${-1 * missing} reserve=${commitments1.localParams.channelReserveSatoshis} fees=$fees")
+    }
+
+    (commitments1, fee)
+  }
+
+  def isOldFee(commitments: Commitments, fee: UpdateFee): Boolean =
+    commitments.remoteChanges.proposed.contains(fee) ||
+      commitments.remoteChanges.signed.contains(fee) ||
+      commitments.remoteChanges.acked.contains(fee)
+
+  def receiveFee(commitments: Commitments, fee: UpdateFee): Commitments =
+    isOldFee(commitments, fee) match {
+      case true => commitments
+      case false =>
+        if (commitments.localParams.isFunder) {
+          throw new RuntimeException(s"only the funder should send update_fee messages")
+        }
+
+        val localFeeratePerKw = Globals.feeratePerKw.get()
+        if (Helpers.feeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw)) {
+          throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${fee.feeratePerKw} localFeeratePerKw=$localFeeratePerKw")
+        }
+
+        // NB: we check that the funder can afford this new fee even if spec allows to do it at next signature
+        // It is easier to do it here because under certain (race) conditions spec allows a lower-than-normal fee to be paid,
+        // and it would be tricky to check if the conditions are met at signing
+        // (it also means that we need to check the fee of the initial commitment tx somewhere)
+
+        // let's compute the current commitment *as seen by us* including this change
+        val commitments1 = addRemoteProposal(commitments, fee)
+        val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
+
+        // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
+        val fees = Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount
+        val missing = reduced.toRemoteMsat / 1000 - commitments1.localParams.channelReserveSatoshis - fees
+        if (missing < 0) {
+          throw new RuntimeException(s"can't pay the fee: missing=${-1 * missing} reserve=${commitments1.localParams.channelReserveSatoshis} fees=$fees")
+        }
+
+        commitments1
+    }
+
   def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.size > 0 || commitments.localChanges.proposed.size > 0
 
   def remoteHasChanges(commitments: Commitments): Boolean = commitments.localChanges.acked.size > 0 || commitments.remoteChanges.proposed.size > 0
@@ -229,9 +286,6 @@ object Commitments extends Logging {
         throw new RuntimeException("cannot sign when there are no changes")
       case Right(remoteNextPerCommitmentPoint) =>
         // remote commitment will includes all local changes + remote acked changes
-        if (remoteCommit.spec.htlcs.size == 2 && localChanges.proposed.size >= 1) {
-          val a = 1
-        }
         val spec = CommitmentSpec.reduce(remoteCommit.spec, remoteChanges.acked, localChanges.proposed)
         val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = makeRemoteTxs(remoteCommit.index + 1, localParams, remoteParams, commitInput, remoteNextPerCommitmentPoint, spec)
         val sig = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)

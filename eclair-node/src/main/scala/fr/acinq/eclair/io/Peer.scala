@@ -10,7 +10,7 @@ import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Features, NodeParams}
+import fr.acinq.eclair.{Features, Globals, NodeParams}
 
 import scala.util.Random
 
@@ -140,7 +140,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val (channel, localParams) = createChannel(nodeParams, transport, funder = true, c.fundingSatoshis.toLong)
       val temporaryChannelId = randomTemporaryChannelId
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, localParams, transport, remoteInit)
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, Globals.feeratePerKw.get, localParams, transport, remoteInit)
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) if !channels.contains(msg.temporaryChannelId) =>
@@ -208,7 +208,6 @@ object Peer {
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,
-      feeratePerKw = nodeParams.feeratePerKw,
       toSelfDelay = nodeParams.delayBlocks,
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       fundingPrivKey = generateKey(nodeParams, keyIndex :: 0L :: Nil),
