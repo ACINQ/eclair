@@ -184,7 +184,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   def spawnChannel(nodeParams: NodeParams, transport: ActorRef): ActorRef = {
-    val channel = context.actorOf(Channel.props(nodeParams, remoteNodeId, watcher, router, relayer), s"channel-${context.children.size}")
+    val channel = context.actorOf(Channel.props(nodeParams, remoteNodeId, watcher, router, relayer))
     context watch channel
     channel
   }
