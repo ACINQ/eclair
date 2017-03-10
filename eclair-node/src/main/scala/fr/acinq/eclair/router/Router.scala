@@ -94,7 +94,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         // TODO: check feature bit set
         log.info(s"added channel channelId=${c.shortChannelId}")
         context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
-        nodeParams.announcementsDb.put(s"ann-channel-${c.shortChannelId}", c)
+        nodeParams.announcementsDb.put(channelKey(c.shortChannelId), c)
       } else {
         log.debug(s"ignoring $c (funding tx spent)")
       }
@@ -109,7 +109,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       log.info(s"funding tx of channelId=$shortChannelId has been spent by txid=${tx.txid}")
       log.info(s"removed channel channelId=$shortChannelId")
       context.system.eventStream.publish(ChannelLost(shortChannelId))
-
       def isNodeLost(nodeId: BinaryData): Option[BinaryData] = {
         // has nodeId still open channels?
         if ((channels - shortChannelId).values.filter(c => c.nodeId1 == nodeId || c.nodeId2 == nodeId).isEmpty) {
@@ -118,9 +117,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
           Some(nodeId)
         } else None
       }
-
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
-      nodeParams.announcementsDb.delete(s"ann-channel-$shortChannelId")
+      nodeParams.announcementsDb.delete(channelKey(shortChannelId))
+      updates.values.filter(_.shortChannelId == shortChannelId).foreach(u => nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags)))
       lostNodes.foreach(id => nodeParams.announcementsDb.delete(s"ann-node-$id"))
       context become mainWithLog(nodes -- lostNodes, channels - shortChannelId, updates.filterKeys(_.id != shortChannelId), rebroadcast, awaiting, stash)
 
@@ -137,12 +136,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       } else if (nodes.containsKey(n.nodeId)) {
         log.info(s"updated node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeUpdated(n))
-        nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
+        nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
         context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
       } else {
         log.info(s"added node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeDiscovered(n))
-        nodeParams.announcementsDb.put(s"ann-node-${n.nodeId}", n)
+        nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
         context become mainWithLog(nodes + (n.nodeId -> n), channels, updates, rebroadcast :+ n, awaiting, stash)
       }
 
@@ -161,7 +160,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         if (updates.contains(desc) && updates(desc).timestamp >= u.timestamp) {
           log.debug(s"ignoring $u (old timestamp or duplicate)")
         } else {
-          nodeParams.announcementsDb.put(s"ann-update-${u.shortChannelId}-${u.flags}", u)
+          nodeParams.announcementsDb.put(channelUpdateKey(u.shortChannelId, u.flags), u)
           context become mainWithLog(nodes, channels, updates + (desc -> u), rebroadcast :+ u, awaiting, stash)
         }
       }
@@ -190,6 +189,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
 }
 
 object Router {
+
+  // TODO: temporary, required because we stored all three types of announcements in the same key-value database
+  // @formatter:off
+  def nodeKey(nodeId: BinaryData) = s"ann-node-$nodeId"
+  def channelKey(shortChannelId: Long) = s"ann-channel-$shortChannelId"
+  def channelUpdateKey(shortChannelId: Long, flags: BinaryData) = s"ann-update-$shortChannelId-$flags"
+  // @formatter:on
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
