@@ -748,6 +748,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
     case Event(StateTimeout, _) =>
       log.info("shutting down")
       stop(FSM.Normal)
+
+    case Event(INPUT_DISCONNECTED, _) => stay
   }
 
   when(OFFLINE) {
@@ -813,19 +815,19 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(CMD_GETSTATE, _) =>
       sender ! stateName
-      goto(stateName)
+      stay
 
     case Event(CMD_GETSTATEDATA, _) =>
       sender ! stateData
-      goto(stateName)
+      stay
 
     case Event(CMD_GETINFO, _) =>
       val channelId = Helpers.getChannelId(stateData)
       sender ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
-      goto(stateName)
+      stay
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentBlockCount(_), _) => goto(stateName)
+    case Event(CurrentBlockCount(_), _) => stay
   }
 
   onTransition {
