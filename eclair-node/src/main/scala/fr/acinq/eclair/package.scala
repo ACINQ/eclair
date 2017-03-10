@@ -9,6 +9,13 @@ import scala.util.Random
 
 package object eclair {
 
+  def toLongId(fundingTxHash: BinaryData, fundingOutputIndex: Int): BinaryData = {
+    require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")
+    require(fundingTxHash.size == 32, "fundingTxHash must be of length 32B")
+    val channelId = fundingTxHash.take(30) :+ (fundingTxHash.data(30) ^ (fundingOutputIndex >> 8)).toByte :+ (fundingTxHash.data(31) ^ fundingOutputIndex).toByte
+    BinaryData(channelId)
+  }
+
   /**
     * Creates a unique index assigned to a channel (== an unspent multisig 2-of-2 output)
     * @param blockHeight

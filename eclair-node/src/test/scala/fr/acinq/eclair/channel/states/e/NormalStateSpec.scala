@@ -1266,7 +1266,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val annB = bob2alice.expectMsgType[AnnouncementSignatures]
       // actual test starts here
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = Some(annB.shortChannelId)))
     }
   }
 
