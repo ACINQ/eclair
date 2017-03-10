@@ -72,43 +72,44 @@
         </TabPane>
     </center>
     <bottom>
-        <HBox styleClass="status-bar">
+        <HBox styleClass="status-bar" spacing="10">
             <children>
                 <HBox alignment="CENTER_LEFT" HBox.hgrow="ALWAYS" onContextMenuRequested="#openNodeIdContext">
                     <children>
-                        <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true"
-                                   preserveRatio="true">
-                            <image>
-                                <Image url="@../commons/images/eclair-shape.png"/>
-                            </image>
+                        <ImageView fitHeight="16.0" fitWidth="27.0" opacity="0.52" pickOnBounds="true" preserveRatio="true">
+                            <image><Image url="@../commons/images/eclair-shape.png"/></image>
                         </ImageView>
                         <Label fx:id="labelNodeId" text="N/A"/>
                     </children>
                 </HBox>
-                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="90.0">
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="SOMETIMES" minWidth="80.0">
                     <children>
                         <Separator orientation="VERTICAL"/>
                         <Rectangle fx:id="rectRGB" width="7" height="7" fill="transparent" />
-                        <Label fx:id="labelAlias" text="N/A" textAlignment="RIGHT"/>
+                        <Label fx:id="labelAlias" text="N/A"/>
                     </children>
                 </HBox>
-                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="90.0">
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="75.0">
                     <children>
                         <Separator orientation="VERTICAL"/>
                         <Label text="HTTP" styleClass="badge, badge-http"/>
-                        <Label fx:id="labelApi" styleClass="value" text="N/A" textAlignment="RIGHT"/>
+                        <Label fx:id="labelApi" styleClass="value" text="N/A"/>
                     </children>
                 </HBox>
-                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="90.0">
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="75.0">
                     <children>
                         <Separator orientation="VERTICAL"/>
-                        <Label text="TCP" styleClass="badge, badge-tcp" />
-                        <Label fx:id="labelServer" text="N/A" textAlignment="RIGHT"/>
+                        <Label text="TCP" styleClass="badge, badge-tcp"/>
+                        <Label fx:id="labelServer" text="N/A"/>
                     </children>
                 </HBox>
-                <HBox alignment="CENTER_RIGHT" HBox.hgrow="SOMETIMES" minWidth="215.0">
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="6.0">
                     <children>
                         <Separator orientation="VERTICAL"/>
+                    </children>
+                </HBox>
+                <HBox alignment="CENTER_RIGHT" HBox.hgrow="SOMETIMES" minWidth="195.0">
+                    <children>
                         <Label text="Bitcoin-core" textAlignment="RIGHT" textOverrun="CLIP"/>
                         <Label fx:id="bitcoinVersion" text="N/A" textOverrun="CLIP"/>
                         <Label fx:id="bitcoinChain" styleClass="chain" text="(N/A)" textOverrun="CLIP"/>

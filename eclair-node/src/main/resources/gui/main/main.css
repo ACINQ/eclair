@@ -7,11 +7,11 @@
 	-fx-border-color: rgb(181,181,181);
 }
 .status-bar .separator:vertical {
-	-fx-padding: 0 5px;
+	-fx-padding: -.5em 9px -.5em 0;
 }
 
 .status-bar .separator:vertical .line {
-	-fx-background-color: rgb(200,200,200);
+	-fx-background-color: rgb(210,210,210);
 	-fx-border-width: 0 1px 0 0;
 	-fx-border-insets: 0;
 }

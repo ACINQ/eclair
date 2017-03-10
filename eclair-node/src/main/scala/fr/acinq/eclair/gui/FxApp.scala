@@ -70,7 +70,7 @@ class FxApp extends Application with Logging {
               val scene = new Scene(mainRoot)
 
               primaryStage.setTitle("Eclair")
-              primaryStage.setMinWidth(550)
+              primaryStage.setMinWidth(570)
               primaryStage.setWidth(650)
               primaryStage.setMinHeight(400)
               primaryStage.setHeight(400)
