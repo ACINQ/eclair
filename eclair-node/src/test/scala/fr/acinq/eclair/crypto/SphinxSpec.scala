@@ -125,7 +125,7 @@ class SphinxSpec extends FunSuite {
     val error0 = FailureMessage.createPacket(sharedsecrets.last, failure)
 
     // error packet received by the origin node
-    val error = sharedsecrets.dropRight(1).reverse.foldLeft(error0) { case (packet, secret) => FailureMessage.forwardPacket(secret, packet) }
+    val error = sharedsecrets.dropRight(1).reverse.foldLeft(error0)(FailureMessage.forwardPacket)
 
     val Some((secret, failure1)) = FailureMessage.parsePacket(error, sharedsecrets)
     assert(secret == sharedsecrets.last)

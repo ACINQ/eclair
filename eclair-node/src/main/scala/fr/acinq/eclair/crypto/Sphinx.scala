@@ -4,12 +4,11 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream, Output
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Protocol}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
 import fr.acinq.eclair.wire.{ChannelUpdate, Codecs}
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
-import sun.corba.SharedSecrets
 
 import scala.annotation.tailrec
 
@@ -294,7 +293,7 @@ object Sphinx {
       val um = generateKey("um", sharedSecret)
       val padlen = 128 - message.length
       val payload = Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN) ++ message ++ Protocol.writeUInt16(padlen, ByteOrder.BIG_ENDIAN) ++ zeroes(padlen)
-      forwardPacket(sharedSecret, Sphinx.mac(um, payload) ++ payload)
+      forwardPacket(Sphinx.mac(um, payload) ++ payload, sharedSecret)
     }
 
     def extractFailureMessage(packet: BinaryData): BinaryData = {
@@ -306,15 +305,21 @@ object Sphinx {
 
     /**
       *
-      * @param sharedSecret destination node's shared secret
       * @param packet       error packet
+      * @param sharedSecret destination node's shared secret
       * @return an obfuscated error packet that can be sent to the destination node
       */
-    def forwardPacket(sharedSecret: BinaryData, packet: BinaryData): BinaryData = {
+    def forwardPacket(packet: BinaryData, sharedSecret: BinaryData): BinaryData = {
       val filler = generateFiller("ammag", Seq(sharedSecret), MacLength + 132, 1)
       xor(packet, filler)
     }
 
+    /**
+      *
+      * @param sharedSecret this node's share secret
+      * @param packet       error packet
+      * @return true if the packet's mac is valid, which means that it has been properly de-obfuscated
+      */
     def checkMac(sharedSecret: BinaryData, packet: BinaryData): Boolean = {
       val (mac, payload) = packet.splitAt(MacLength)
       val um = generateKey("um", sharedSecret)
@@ -322,16 +327,18 @@ object Sphinx {
     }
 
     /**
+      * Parse and deobfuscate an error packet. Node shared secrets are applied until the packet's MAC becomes valid,
+      * which means that it was sent by the corresponding node.
       *
       * @param packet        error packet
       * @param sharedSecrets nodes shared secrets
-      * @return Some(secret, failure message) if the origin of the packet could be identified and the packet deobfuscated, none otherwise
+      * @return Some(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, none otherwise
       */
     @tailrec
     def parsePacket(packet: BinaryData, sharedSecrets: Seq[BinaryData]): Option[(BinaryData, BinaryData)] = {
       if (sharedSecrets.isEmpty) None
       else {
-        val packet1 = forwardPacket(sharedSecrets.head, packet)
+        val packet1 = forwardPacket(packet, sharedSecrets.head)
         if (checkMac(sharedSecrets.head, packet1)) Some(sharedSecrets.head, extractFailureMessage(packet1)) else parsePacket(packet1, sharedSecrets.tail)
       }
     }
