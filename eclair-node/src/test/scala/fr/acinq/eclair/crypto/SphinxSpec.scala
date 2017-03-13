@@ -62,11 +62,7 @@ class SphinxSpec extends FunSuite {
   hop_ephemeral_pubkey[4] = 0x03a214ebd875aab6ddfd77f22c5e7311d7f77f17a169e599f157bbcdae8bf071f4
   */
   test("generate ephemereal keys and secrets") {
-    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
-    val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
-    val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
-
-    val (ephkeys, sharedsecrets) = computeEphemerealPublicKeys(sessionKey, publicKeys.tail, Seq(ephemerealPublicKey0), Seq(blindingFactor0), Seq(secret0))
+    val (ephkeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     assert(ephkeys(0) == PublicKey(BinaryData("0x02eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619")))
     assert(sharedsecrets(0) == BinaryData("0x53eb63ea8a3fec3b3cd433b85cd62a4b145e1dda09391b348c4e1cd36a03ea66"))
     assert(ephkeys(1) == PublicKey(BinaryData("0x028f9438bfbf7feac2e108d677e3a82da596be706cc1cf342b75c7b7e22bf4e6e2")))
@@ -84,11 +80,7 @@ class SphinxSpec extends FunSuite {
   hop_filler = 0x2e86897a3ae52daba4a5940cfc305ae15e9a0f8a8ac1033a15d8a14819acab6503c9df44cdaaf30629283e3458844a44a5c4bfdebdcb15fd3edb8e286124d7b47fa7a56bcc5655d2ad9809f108f238e5
    */
   test("generate filler") {
-    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
-    val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
-    val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
-
-    val (_, sharedsecrets) = computeEphemerealPublicKeys(sessionKey, publicKeys.tail, Seq(ephemerealPublicKey0), Seq(blindingFactor0), Seq(secret0))
+    val (_, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), 40, 20)
     assert(filler == BinaryData("0x80b23adf2c3947dab3b92bb1c5f70fa32f866cc09aff45c5bc4da1ed291660791aa9a1c5d28fbf8f4ecb4bf7c0a9454c82923e24c7fd0d192ea8e2ead1f17388341f313915949b602d5de1f5cb94b77d42c7dfe84edc13cf9acf541e8243989d967e7d568f26f9209bb52d9f90bfa902f3ec6e3ae9d6215c432206cd3132b69257408002aa020f2fbae32a2d5abee0a3c9fd56329b033939cd6366fbb339aa14"))
 
@@ -110,11 +102,7 @@ class SphinxSpec extends FunSuite {
   }
 
   test("generate last packet") {
-    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
-    val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
-    val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
-
-    val (ephemerealPublicKeys, sharedsecrets) = computeEphemerealPublicKeys(sessionKey, publicKeys.tail, Seq(ephemerealPublicKey0), Seq(blindingFactor0), Seq(secret0))
+    val (ephemerealPublicKeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), 40, 20)
     val hopFiller = generateFiller("gamma", sharedsecrets.dropRight(1), 20, 20)
 
@@ -127,5 +115,20 @@ class SphinxSpec extends FunSuite {
 
     val packet = makePacket(sessionKey, publicKeys, payloads, associatedData)
     assert(packet == BinaryData("0x0102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866195fcf66568cad9ad9d61c8b05ffeb2ef00bf32dbff12a026817cd410d83bd65c4fc27db8a75033c527e678028eb2b95f58d04baa9986e83030fb5577e0543f62394cca6d995cf368aface565d15e778db79b7ff43a21abbd556d1e1b33753959a62e6bcb5220cda916d603c2702554c4dc17a8896af5d54c7815efcd093a0f6bad14a4d7622df88ee7cd1fe512882beb43b81f7cf3e7e633262538a7eca5f76f8434bd2215c7dda800d49ef34caf74bb4f1064f72e28fa39de96ff993cf51e26512faa0e98fa387f517c3bc4a65f6d8ca27af1d81025a85edf9e3ea7f580854c5d3ce537b955ff216c7a88dfc0bb795bfdf053300c70a1f6f23126c83b3c96a806e0cda3c3bb5cf1c57e77e25aafd117f2c559c914797cdd27440d7d033ef987178e337a899b597a34cd6f471ce40ca44b234fa0730603b1d4ad215bce719d02b98882268551912ce1f14a3a8c968649b09fb9acf69f48046e2464536d734f705e2d4a996c176786ec437b5d0f62731b251c56f67ae4169167fab24673af60d88d3252bf38f8c1ebd85986bbe25f7f0a4399d947d5b15b7ad9050b3a4f67b0720e372a56fa2da6468ec436ca7425bfedccb4186dbbc28663941a2b5473ff853dbfce8327ffb1209940d5b3c9f8d6643d11238da66e35715b5d5410b93bb5c9ed25e7695c3d2a8073e7e5373dcbdab46c50aba3d238573b333b68bdf1c209933e75e27960fc78880e8429a88c24878c2abd541a0afd0e0c364517e0e8064a94ff1cde8885b19d60d30304c5f7bbc7afa64befbdd2095b47730fdcc6aacd6cf927b6c981efad29de9c575c8663b545dc57e7dbc1b7a09bf6584d5c5b1e748c0300903d09b8b33adf548b0f4a9198c7b0f5c4b4c0e3af9fcc9af4860a23aec993996e36aefff3157259147f0536ea64d23329178f3dd95e37e0019e5ab4654325b59544bf3caa891617b59978b3d21785d36166721358a99c90bd2b8364c475b7f8058219269e561303dfd1d84042543e85d954bcd5eeb4ff897aeb2988ed3d905b3c73377be03ef8817d8595f2596e7afa6a0aa121b176738fd578be920b9cf778bd92808e5bd3d8d0decd00bdc2560a22921f138af042f38c923693494237844c13c85b4d0235c462af39d519d4fbb0309805fff51a51d2a1675eb1be407e116535f455d966fc5a33d05d1b7b7aa4cee07f1bfff801a9bd08a9c6e730771a4bf6a646c2f9e2a90bda866a6fecb3e79981f0048309aac743972adda805075163ed26a5af81bc8fe32606fc23d362dd240c5b601b78cfb31fc350de0cacc356fd62dbf6d6fcdaed073647490573c6eca5432b566cde10369f984b036310991b8965d71c85a667ee5b1d2d043aa4e4d239fda39474626a7840708cb9b7a5311d6f187f8f485ec91e5768007db224e38ff189dd809b1604cf067fa3fd54fee9c9176396cef8664557e2550f89858071da37a96c17c2a5c1e73feeab9b09d32ba7efbc6b18f9b1c4d85abb2dfb4648e0e6b12a3dd9fe96e6e5317ffe32c7b4b3796e8599b7a4caf4ad1b980350b8e7c8544871d7702f3e8c0a265bd658389fde9850570877856e66e29e16bdd9f2a6f6106e454e531d8b7062d3086b8c61f88677bfdb5e0b8bb6654e206e2123edb48d2b18c4316ab393ae41e570e144af52a7e5d3515260b387750e205596828940376ae31e55476b7fa3d5d4abf2ab586ece8acf42c4b2ca0c4"))
+  }
+
+  test("generate return messages") {
+    val failure = FailureMessage.encode(42, "foo".getBytes())
+    val (ephkeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
+
+    // error packet created by the last node
+    val error0 = FailureMessage.createPacket(sharedsecrets.last, failure)
+
+    // error packet received by the origin node
+    val error = sharedsecrets.dropRight(1).reverse.foldLeft(error0) { case (packet, secret) => FailureMessage.forwardPacket(secret, packet) }
+
+    val Some((secret, failure1)) = FailureMessage.parsePacket(error, sharedsecrets)
+    assert(secret == sharedsecrets.last)
+    assert(failure1 == failure)
   }
 }
