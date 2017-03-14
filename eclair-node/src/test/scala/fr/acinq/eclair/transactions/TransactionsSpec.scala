@@ -261,13 +261,8 @@ class TransactionsSpec extends FunSuite {
       val tx1 = tx.updateWitness(0, ScriptWitness(sig :: localRevocationPriv.publicKey.toBin :: Script.write(script) :: Nil))
       Transaction.correctlySpends(tx1, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     }
-  }
 
-  /*def randombytes(len: Int): BinaryData = {
-    val bytes = Array.fill[Byte](len)(0)
-    Random.nextBytes(bytes)
-    bytes
-  }*/
+  }
 
   def checkSuccessOrFailTest[T](input: Try[T]) = input match {
     case Success(_) => ()

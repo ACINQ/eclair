@@ -66,7 +66,7 @@ object Helpers {
   // negative feerate can happen in regtest mode
     networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
 
-  def feeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Boolean =
+  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Boolean =
   // negative feerate can happen in regtest mode
     remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > UPDATE_FEE_MAX_DIFF_RATIO
 
@@ -100,7 +100,7 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
         val localFeeratePerKw = Globals.feeratePerKw.get()
-        if (feeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw)) {
+        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw)) {
           throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
         }
         val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
@@ -138,14 +138,15 @@ object Helpers {
     }
 
     def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
-      logger.info(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
+      logger.debug(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
       import commitments._
       val closingFee = {
-        // this is just to estimate the weight
+        // this is just to estimate the weight, it depends on size of the pubkey scripts
         val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
-        // for now we use the current commit's fee rate, it should be up-to-date
-        val feeratePerKw = localCommit.spec.feeratePerKw
+        // we use our local fee estimate
+        val feeratePerKw = Globals.feeratePerKw.get()
+        logger.info(s"using feeratePerKw=$feeratePerKw for closing tx")
         Transactions.weight2fee(feeratePerKw, closingWeight)
       }
       val (_, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
@@ -161,19 +162,20 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
+      logger.debug(s"closingTx=${Transaction.write(closingTx.tx)}")
       (closingTx, closingSigned)
     }
 
-    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
+    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, remoteClosingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
       import commitments._
-      val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
       val signedClosingTx = Transactions.addSigs(closingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
 
     def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = {
       ((localClosingFee + remoteClosingFee) / 4) * 2 match {
-        case value if value == localClosingFee => value + Satoshi(2)
+        case value if value == localClosingFee => value + Satoshi(2) // TODO: why +2 sat?
         case value => value
       }
     }

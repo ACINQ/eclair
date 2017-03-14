@@ -248,7 +248,7 @@ object Commitments extends Logging {
         }
 
         val localFeeratePerKw = Globals.feeratePerKw.get()
-        if (Helpers.feeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw)) {
+        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw)) {
           throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${fee.feeratePerKw} localFeeratePerKw=$localFeeratePerKw")
         }
 
@@ -455,8 +455,6 @@ object Commitments extends Logging {
             throw new RuntimeException("received unexpected RevokeAndAck message")
         }
     }
-
-  def acknowledgeShutdown(commitments: Commitments) = commitments.copy(unackedMessages = commitments.unackedMessages.diff(commitments.unackedShutdown().toSeq))
 
   def makeLocalTxs(commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localPubkey = Generators.derivePubKey(localParams.paymentKey.toPoint, localPerCommitmentPoint)

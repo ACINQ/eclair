@@ -537,7 +537,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
-        case false if Helpers.feeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
           handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
         case _ => stay
       }
@@ -710,7 +710,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
-        case false if Helpers.feeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
           handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
         case _ => stay
       }
@@ -728,16 +728,24 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   when(NEGOTIATING)(handleExceptions {
 
     case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
+      // at this point commitments.unackedMessages may contain:
+      // - Shutdown, but it is acknowledged since we just received ClosingSigned
+      // - ClosingSigned, but they are never acknowledged and spec says we only need to re-send the last one
+      // this means that we can just set commitments.unackedMessages to the last sent ClosingSigned
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
-        case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.feeSatoshis => handleMutualClose(signedClosingTx, d.copy(commitments = Commitments.acknowledgeShutdown(d.commitments)))
+        case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.feeSatoshis =>
+          // see note above
+          val commitments1 = d.commitments.copy(unackedMessages = d.localClosingSigned :: Nil)
+          handleMutualClose(signedClosingTx, d.copy(commitments = commitments1))
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.feeSatoshis), Satoshi(remoteClosingFee))
           val (_, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
-          forwarder ! closingSigned
+          // see note above
+          val commitments1 = d.commitments.copy(unackedMessages = closingSigned :: Nil)
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
-            handleMutualClose(signedClosingTx, d.copy(commitments = Commitments.acknowledgeShutdown(d.commitments)))
+            handleMutualClose(signedClosingTx, d.copy(commitments = commitments1))
           } else {
-            goto(stateName) using d.copy(localClosingSigned = closingSigned, commitments = Commitments.acknowledgeShutdown(d.commitments))
+            goto(NEGOTIATING) using d.copy(localClosingSigned = closingSigned, commitments = commitments1)
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
