@@ -49,9 +49,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  def addToUnackedMessages(message: LightningMessage) : Commitments = this.copy(unackedMessages = unackedMessages :+ message)
+  def addToUnackedMessages(message: LightningMessage): Commitments = this.copy(unackedMessages = unackedMessages :+ message)
 
-  def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst{ case d: Shutdown => d}
+  def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst { case d: Shutdown => d }
 }
 
 object Commitments extends Logging {
@@ -79,7 +79,7 @@ object Commitments extends Logging {
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion.onionPacket)
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
@@ -194,7 +194,7 @@ object Commitments extends Logging {
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
       case Some(htlc) =>
-        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, BinaryData(cmd.reason.getBytes("UTF-8")))
+        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, cmd.reason)
         val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")

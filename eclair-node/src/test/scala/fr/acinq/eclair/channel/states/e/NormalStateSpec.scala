@@ -760,7 +760,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason".getBytes()))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(
@@ -776,7 +776,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val r: BinaryData = "11" * 32
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-      sender.send(bob, CMD_FAIL_HTLC(42, "some reason"))
+      sender.send(bob, CMD_FAIL_HTLC(42, "some reason".getBytes()))
       sender.expectMsg("unknown htlc id=42")
       assert(initialState == bob.stateData)
     }
@@ -788,7 +788,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
 
-      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason"))
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason".getBytes()))
       sender.expectMsg("ok")
       val fulfill = bob2alice.expectMsgType[UpdateFailHtlc]
 

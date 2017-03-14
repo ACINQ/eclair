@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.{BinaryData, ScriptWitness, Transaction}
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.ParsedPacket
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
@@ -61,26 +62,30 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
     case ForwardAdd(add) =>
       Try(Sphinx.parsePacket(nodeSecret, add.paymentHash, add.onionRoutingPacket))
         .map {
-          case (payload, nextNodeAddress, nextPacket) => (Codecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextNodeAddress, nextPacket)
+          case ParsedPacket(payload, nextNodeAddress, nextPacket, sharedSecret) => (Codecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextNodeAddress, nextPacket, sharedSecret)
         } match {
-        case Success((_, nextNodeAddress, _)) if nextNodeAddress.forall(_ == 0) =>
+        case Success((_, nextNodeAddress, _, sharedSecret)) if nextNodeAddress.forall(_ == 0) =>
           log.info(s"we are the final recipient of htlc #${add.id}")
           context.system.eventStream.publish(PaymentReceived(self, add.paymentHash))
           paymentHandler forward add
-        case Success((Attempt.Successful(DecodeResult(payload, _)), nextNodeAddress, nextPacket)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
+        case Success((Attempt.Successful(DecodeResult(payload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
           val downstream = channels.find(_.nodeAddress == nextNodeAddress).get.channel
           log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
-          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
+          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, Sphinx.OnionPacket(nextPacket, Seq(sharedSecret)), upstream_opt = Some(add), commit = true)
           context become main(channels, bindings)
-        case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _)) =>
+        case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")
-          sender ! CMD_FAIL_HTLC(add.id, "route error", commit = true)
-        case Success((Attempt.Failure(cause), _, _)) =>
+          val failure = FailureMessage.unknown_next_peer
+          val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+          sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
+        case Success((Attempt.Failure(cause), _, _, sharedSecret)) =>
           log.error(s"couldn't parse payload: $cause")
-          sender ! CMD_FAIL_HTLC(add.id, "payload parsing error", commit = true)
+          val failure = FailureMessage.permanent_node_failure
+          val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+          sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
         case Failure(t) =>
           log.error(t, "couldn't parse onion: ")
-          sender ! CMD_FAIL_HTLC(add.id, "onion parsing error", commit = true)
+          sender ! CMD_FAIL_HTLC(add.id, "onion parsing error".getBytes(), commit = true)
       }
 
     case Bind(downstream, origin) =>
@@ -108,13 +113,17 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       bindings.get(DownstreamHtlcId(fail.channelId, fail.id)) match {
         case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
           val upstream = channels.find(_.channelId == origin.channelId).get.channel
-          // TODO: fix new String(fail.reason)
-          upstream ! CMD_FAIL_HTLC(origin.id, new String(fail.reason), commit = true)
-          upstream ! CMD_SIGN
+
+          // obfuscate the error packet with the upstream node's shared secret
+          val sharedSecret = Sphinx.parsePacket(nodeSecret, origin.paymentHash, origin.onionRoutingPacket).sharedSecret
+          val reason1 = Sphinx.forwardErrorPacket(fail.reason, sharedSecret)
+
+          upstream ! CMD_FAIL_HTLC(origin.id, reason1, commit = true)
         case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
         case Some(Local(sender)) =>
           log.info(s"we were the origin payer for htlc #${fail.id}")
+
           sender ! fail
         case None =>
           log.warning(s"no origin found for htlc ${fail.channelId}/${fail.id}")

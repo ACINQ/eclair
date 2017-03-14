@@ -142,7 +142,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(bob, CMD_FAIL_HTLC(1, "some reason"))
+      sender.send(bob, CMD_FAIL_HTLC(1, "some reason".getBytes()))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(
@@ -156,7 +156,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(bob, CMD_FAIL_HTLC(42, "some reason"))
+      sender.send(bob, CMD_FAIL_HTLC(42, "some reason".getBytes()))
       sender.expectMsg("unknown htlc id=42")
       assert(initialState == bob.stateData)
     }
