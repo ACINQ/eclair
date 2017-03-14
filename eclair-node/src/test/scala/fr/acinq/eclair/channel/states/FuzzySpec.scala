@@ -28,7 +28,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
   override def withFixture(test: OneArgTest) = {
     val pipe = system.actorOf(Props(new Pipe()))
     val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
     val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-a")
     val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-b")
@@ -45,15 +44,15 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit)
       bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
+      val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
+      val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
+      alice ! dummyFundingTx
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.forward(blockchainA)
       alice2blockchain.expectMsgType[PublishAsap]
-      alice2blockchain.forward(blockchainA)
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
+      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
       bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
       alice2blockchain.expectMsgType[WatchLost]
       bob2blockchain.expectMsgType[WatchLost]

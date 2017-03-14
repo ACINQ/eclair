@@ -14,6 +14,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def beforeAll {
     Globals.blockCount.set(400000)
+    Globals.feeratePerKw.set(TestConstants.feeratePerKw)
   }
 
   override def afterEach() {
@@ -26,6 +27,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
+    Globals.feeratePerKw.set(0)
   }
 
 }
