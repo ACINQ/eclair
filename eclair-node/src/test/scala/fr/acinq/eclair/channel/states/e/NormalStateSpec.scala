@@ -30,7 +30,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain, test.tags)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, test.tags)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
     }

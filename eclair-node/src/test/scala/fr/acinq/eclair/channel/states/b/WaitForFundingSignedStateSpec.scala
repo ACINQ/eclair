@@ -20,7 +20,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
+  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
@@ -34,16 +34,17 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
+      val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
+      val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
+      alice ! dummyFundingTx
       alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
     }
-    test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
+    test((alice, alice2bob, bob2alice, alice2blockchain))
   }
 
-  test("recv FundingSigned with valid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingSigned with valid signature") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
     within(30 seconds) {
       bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
@@ -54,7 +55,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv FundingSigned with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv FundingSigned with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
     within(30 seconds) {
       // sending an invalid sig
       alice ! FundingSigned("00" * 32, BinaryData("00" * 64))
@@ -63,7 +64,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSED)

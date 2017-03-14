@@ -2,13 +2,15 @@ package fr.acinq.eclair.channel.states
 
 import akka.actor.{ActorRef, Props}
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
 
+import scala.concurrent.Future
 import scala.util.Random
 
 /**
@@ -20,7 +22,6 @@ trait StateTestsHelperMethods extends TestKitBase {
                    bob: TestFSMRef[State, Data, Channel],
                    alice2bob: TestProbe,
                    bob2alice: TestProbe,
-                   blockchainA: ActorRef,
                    alice2blockchain: TestProbe,
                    bob2blockchain: TestProbe,
                    router: TestProbe,
@@ -31,7 +32,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
@@ -39,14 +39,13 @@ trait StateTestsHelperMethods extends TestKitBase {
     val nodeParamsB = TestConstants.Bob.nodeParams
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
-    Setup(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain, router, relayer)
+    Setup(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayer)
   }
 
   def reachNormal(alice: TestFSMRef[State, Data, Channel],
                   bob: TestFSMRef[State, Data, Channel],
                   alice2bob: TestProbe,
                   bob2alice: TestProbe,
-                  blockchainA: ActorRef,
                   alice2blockchain: TestProbe,
                   bob2blockchain: TestProbe,
                   tags: Set[String] = Set.empty): Unit = {
@@ -63,19 +62,19 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
-    alice2blockchain.expectMsgType[MakeFundingTx]
-    alice2blockchain.forward(blockchainA)
+    val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
+    val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
+    alice ! dummyFundingTx
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingSigned]
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.forward(blockchainA)
     alice2blockchain.expectMsgType[PublishAsap]
-    alice2blockchain.forward(blockchainA)
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
+    alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
     bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
     alice2blockchain.expectMsgType[WatchLost]
     bob2blockchain.expectMsgType[WatchLost]
@@ -85,6 +84,15 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
+  }
+
+  def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
+    val anchorTx = Transaction(version = 1,
+      txIn = Seq.empty[TxIn],
+      txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
+      lockTime = 0
+    )
+    MakeFundingTxResponse(anchorTx, 0)
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {

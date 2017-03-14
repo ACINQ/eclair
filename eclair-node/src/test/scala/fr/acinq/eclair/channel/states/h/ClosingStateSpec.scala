@@ -24,7 +24,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
 
       val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
         val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)

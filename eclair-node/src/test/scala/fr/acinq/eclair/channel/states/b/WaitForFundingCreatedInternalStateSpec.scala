@@ -19,7 +19,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
+  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
@@ -35,26 +35,27 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
       bob2alice.forward(alice)
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     }
-    test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
+    test((alice, alice2bob, bob2alice, alice2blockchain))
   }
 
-  test("recv funding transaction") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
+  test("recv funding transaction") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
     within(30 seconds) {
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchain)
+      val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
+      val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
+      alice ! dummyFundingTx
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
       alice2bob.expectMsgType[FundingCreated]
     }
   }
 
-  test("recv Error") { case (bob, alice2bob, bob2alice, _, _) =>
+  test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSED)

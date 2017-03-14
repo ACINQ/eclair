@@ -23,7 +23,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))

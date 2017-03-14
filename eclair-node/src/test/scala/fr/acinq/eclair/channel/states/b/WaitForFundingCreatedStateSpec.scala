@@ -40,8 +40,9 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchainA)
+      val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
+      val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
+      alice ! dummyFundingTx
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))

@@ -18,7 +18,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, ActorRef]
+  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
@@ -32,10 +32,10 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       alice2bob.forward(bob)
       awaitCond(alice.stateName == WAIT_FOR_ACCEPT_CHANNEL)
     }
-    test((alice, alice2bob, bob2alice, alice2blockchain, blockchainA))
+    test((alice, alice2bob, bob2alice, alice2blockchain))
   }
 
-  test("recv AcceptChannel") { case (alice, _, bob2alice, _, _) =>
+  test("recv AcceptChannel") { case (alice, _, bob2alice, _) =>
     within(30 seconds) {
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
@@ -43,7 +43,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv AcceptChannel (reserve too high)") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv AcceptChannel (reserve too high)") { case (alice, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       val accept = bob2alice.expectMsgType[AcceptChannel]
       // 30% is huge, recommended ratio is 1%
@@ -66,14 +66,14 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }*/
 
-  test("recv Error") { case (bob, alice2bob, bob2alice, _, _) =>
+  test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _, _) =>
+  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSED)
