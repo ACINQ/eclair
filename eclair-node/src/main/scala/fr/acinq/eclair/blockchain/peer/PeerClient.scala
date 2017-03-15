@@ -5,15 +5,14 @@ import java.net.InetSocketAddress
 import akka.actor._
 import akka.io.Tcp.Connected
 import akka.pattern.{Backoff, BackoffSupervisor}
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.Config
 import fr.acinq.bitcoin._
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class PeerClient extends Actor with ActorLogging {
+class PeerClient(config: Config) extends Actor with ActorLogging {
 
-  val config = ConfigFactory.load().getConfig("eclair.bitcoind")
   val magic = config.getString("network") match {
     case "mainnet" => Message.MagicMain
     case "test" => Message.MagicTestnet3
@@ -73,6 +72,10 @@ class PeerClient extends Actor with ActorLogging {
     case Message(magic, command, payload) =>
       log.debug(s"received unknown $command ${toHexString(payload)}")
   }
+}
+
+object PeerClient {
+  def props(config: Config) = Props(new PeerClient(config))
 }
 
 object PeerClientTest extends App {

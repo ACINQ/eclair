@@ -100,7 +100,7 @@ class Setup(datadir: String) extends Logging {
   }))
   val fatalEventFuture = fatalEventPromise.future
 
-  val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
+  val peer = system.actorOf(PeerClient.props(config.getConfig("bitcoind")), "bitcoin-peer")
   val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
   val paymentHandler = config.getString("payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
