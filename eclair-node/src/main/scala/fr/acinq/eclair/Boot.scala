@@ -1,5 +1,6 @@
 package fr.acinq.eclair
 
+import java.io.File
 import java.net.InetSocketAddress
 import javafx.application.{Application, Platform}
 
@@ -7,6 +8,10 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
+import ch.qos.logback.classic.encoder.PatternLayoutEncoder
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.classic.{Logger, LoggerContext}
+import ch.qos.logback.core.FileAppender
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
@@ -21,31 +26,43 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JString
+import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Promise}
+
+case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"), ".eclair"), headless: Boolean = false)
 
 /**
   * Created by PM on 25/01/2016.
   */
 object Boot extends App with Logging {
-  args.toList match {
-    case "headless" :: rest =>
-      val s = new Setup()
+
+  val parser = new scopt.OptionParser[CmdLineConfig]("scopt") {
+    head("scopt", "3.x")
+    opt[File]("datadir").optional().valueName("<file>").action((x, c) => c.copy(datadir = x)).text("optional data directory, default is ~/.eclair")
+    opt[Unit]("headless").optional().action((_, c) => c.copy(headless = true)).text("runs eclair without a gui")
+  }
+  parser.parse(args, CmdLineConfig()) match {
+    case Some(config) if config.headless =>
+      val s = new Setup(config.datadir.getAbsolutePath)
       import ExecutionContext.Implicits.global
       s.fatalEventFuture.map(e => {
         logger.error(s"received fatal event $e")
         Platform.exit()
       })
       s.boostrap
-    case _ => Application.launch(classOf[FxApp])
+    case Some(config) => Application.launch(classOf[FxApp], config.datadir.getAbsolutePath)
+    case None => Platform.exit()
   }
 }
 
-class Setup() extends Logging {
+class Setup(datadir: String) extends Logging {
+
+  LogSetup.logTo(datadir)
 
   logger.info(s"hello!")
-  val nodeParams = NodeParams.loadFromConfiguration()
+  val nodeParams = NodeParams.loadFromConfiguration(new File(datadir))
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   val config = ConfigFactory.load()
 
@@ -121,4 +138,21 @@ class Setup() extends Logging {
   })
 
   def boostrap: Unit = tasks.start()
+}
+
+object LogSetup {
+  def logTo(datadir: String) = {
+    val lc = LoggerFactory.getILoggerFactory().asInstanceOf[LoggerContext]
+    val ple = new PatternLayoutEncoder()
+    ple.setPattern("%d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n")
+    ple.setContext(lc)
+    ple.start()
+    val fileAppender = new FileAppender[ILoggingEvent]()
+    fileAppender.setFile(new File(datadir, "eclair.log").getPath)
+    fileAppender.setEncoder(ple)
+    fileAppender.setContext(lc)
+    fileAppender.start()
+    val logger = LoggerFactory.getLogger("ROOT").asInstanceOf[Logger]
+    logger.addAppender(fileAppender)
+  }
 }

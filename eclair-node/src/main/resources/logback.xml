@@ -1,21 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<configuration scan="true" debug="false">
+<configuration debug="false">
 
-    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.out</target>
+    <!--appender name="FILE" class="ch.qos.logback.core.FileAppender">
+        <file>${user.home}/.eclair/eclair.log</file>
+        <append>true</append>
         <encoder>
-            <pattern>${HOSTNAME} %d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n</pattern>
+            <pattern>%d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n</pattern>
         </encoder>
-    </appender>
+    </appender-->
 
     <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
     <logger name="fr.acinq.eclair.channel.Register" level="DEBUG"/>
-    <logger name="fr.acinq.eclair.crypto.TransportHandler" level="INFO"/>
     <logger name="fr.acinq.eclair.router" level="DEBUG"/>
-    <logger name="fr.acinq.eclair.gui" level="DEBUG"/>
 
     <root level="INFO">
-        <appender-ref ref="CONSOLE"/>
+        <!--appender-ref ref="FILE"/-->
     </root>
 
 </configuration>

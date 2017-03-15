@@ -32,11 +32,14 @@ class FxApp extends Application with Logging {
     splashStage.getIcons.add(icon)
     splashStage.show
 
+    // TODO: hacky
+    val datadir = getParameters.getUnnamed.get(0)
+
     new Thread(new Runnable {
       override def run(): Unit = {
 
         try {
-          val setup = new Setup
+          val setup = new Setup(datadir)
           val handlers = new Handlers(setup)
           val controller = new MainController(handlers, primaryStage, setup, getHostServices)
           val guiUpdater = setup.system.actorOf(Props(classOf[GUIUpdater], primaryStage, controller, setup), "gui-updater")

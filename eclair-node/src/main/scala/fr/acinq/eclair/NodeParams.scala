@@ -1,6 +1,8 @@
 package fr.acinq.eclair
 
+import java.io.File
 import java.net.InetSocketAddress
+import java.nio.file.{Files, Paths}
 
 import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -39,18 +41,36 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
 
 object NodeParams {
 
-  def loadFromConfiguration(): NodeParams = {
-    val config = ConfigFactory.load().getConfig("eclair")
+  def loadFromConfiguration(datadir: File): NodeParams = {
+    /**
+      * Order of precedence for the configuration parameters:
+      * 1) Java environment variables (-D...)
+      * 2) Configuration file eclair.conf
+      * 3) default values in application.conf
+      */
+    val config = ConfigFactory.parseProperties(System.getProperties)
+      .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
+      .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-    val seed: BinaryData = config.getString("node.seed")
+    val seedPath = Paths.get(datadir.getAbsolutePath, "seed.dat")
+    val seed: BinaryData = Files.exists(seedPath) match {
+      case true => Files.readAllBytes(seedPath)
+      case false =>
+        val seed = randomKey.toBin
+        Files.write(seedPath, seed)
+        seed
+    }
+
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val db = new SimpleFileDb(config.getString("db.root"))
+    val db = new SimpleFileDb(datadir)
+    val color = BinaryData(config.getString("node-color"))
+    require(color.size == 3, "color should be a 3-bytes hex buffer")
     NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
-      alias = config.getString("node.alias").take(32),
-      color = (config.getInt("node.color.r").toByte, config.getInt("node.color.g").toByte, config.getInt("node.color.b").toByte),
+      alias = config.getString("node-alias").take(32),
+      color = (color.data(0), color.data(1), color.data(2)),
       address = new InetSocketAddress(config.getString("server.public-ip"), config.getInt("server.port")),
       globalFeatures = BinaryData(""),
       localFeatures = BinaryData("05"), // channels_public and initial_routing_sync

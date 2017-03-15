@@ -135,6 +135,11 @@
             </exclusions>
         </dependency>
         <dependency>
+            <groupId>com.github.scopt</groupId>
+            <artifactId>scopt_${scala.version.short}</artifactId>
+            <version>3.5.0</version>
+        </dependency>
+        <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
             <groupId>com.google.code.findbugs</groupId>
             <artifactId>jsr305</artifactId>
