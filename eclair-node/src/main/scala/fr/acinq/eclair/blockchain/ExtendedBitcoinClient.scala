@@ -190,21 +190,22 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     * @return the current number of blocks in the active chain
     */
   def getBlockCount(implicit ec: ExecutionContext): Future[Long] =
-    client.invoke("getblockcount") .map(json => {
-      val JDouble(feerate) = json \ "feerate"
-      Btc(feerate).toLong
-    })
+    client.invoke("getblockcount") collect {
+      case JInt(count) => count.toLong
+    }
 
   /**
     * We need this to keep commitment tx fees in sync with the state of the network
+    *
     * @param nBlocks number of blocks until tx is confirmed
     * @param ec
     * @return the current
     */
   def estimateSmartFee(nBlocks: Int)(implicit ec: ExecutionContext): Future[Long] =
-    client.invoke("estimatesmartfee") collect {
-      case JInt(count) => count.toLong
-    }
+    client.invoke("estimatesmartfee", nBlocks).map(json => {
+      val JDouble(feerate) = json \ "feerate"
+      Btc(feerate).toLong
+    })
 }
 
 object ExtendedBitcoinClient {
