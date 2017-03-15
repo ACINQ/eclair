@@ -118,7 +118,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             case n: DATA_NORMAL =>
               // publish ShortChannelIdAssigned event if possible
               n.shortChannelId.foreach(shortChannelId => context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId)))
-            case _ => ()
+
 
           }
           goto(OFFLINE) using d
@@ -382,10 +382,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
-      // TODO: use dynamic fees
-      // TODO: d.shortChannelId.getOrElse(0) is ugly but it should never happen
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.shortChannelId.getOrElse(0), nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
-      Try(Commitments.sendAdd(commitments, c, channelUpdate)) match {
+      Try(Commitments.sendAdd(commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
           relayer ! Bind(add, origin)
@@ -845,9 +842,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
       log.info(s"we are disconnected so we just include the add in our commitments")
-      // TODO: use dynamic fees
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.shortChannelId.get, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
-      Try(Commitments.sendAdd(commitments, c, channelUpdate)) match {
+      Try(Commitments.sendAdd(commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
           relayer ! Bind(add, origin)

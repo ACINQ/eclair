@@ -74,10 +74,9 @@ object Commitments extends Logging {
     *
     * @param commitments   current commitments
     * @param cmd           add HTLC command
-    * @param channelUpdate latest channel update message
     * @return either Left(failure) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC, channelUpdate: ChannelUpdate): Either[BinaryData, (Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[BinaryData, (Commitments, UpdateAddHtlc)] = {
     if (System.getProperty("failhtlc") == "yes") {
       return Left(FailureMessage.incorrect_payment_amount)
     }
@@ -112,7 +111,7 @@ object Commitments extends Logging {
     val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount else 0
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
-      return Left(FailureMessage.insufficient_fee(cmd.amountMsat, channelUpdate))
+      return Left(FailureMessage.temporary_channel_failure)
     }
 
     Right(commitments1, add)
