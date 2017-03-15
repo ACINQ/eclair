@@ -74,18 +74,18 @@ object Commitments extends Logging {
     *
     * @param commitments   current commitments
     * @param cmd           add HTLC command
-    * @return either Left(failure) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
+    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[BinaryData, (Commitments, UpdateAddHtlc)] = {
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[(BinaryData, String), (Commitments, UpdateAddHtlc)] = {
     if (System.getProperty("failhtlc") == "yes") {
-      return Left(FailureMessage.incorrect_payment_amount)
+      return Left(FailureMessage.incorrect_payment_amount -> "debug-mode triggered failure")
     }
 
     val blockCount = Globals.blockCount.get()
     require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
 
     if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
-      return Left(FailureMessage.incorrect_payment_amount)
+      return Left(FailureMessage.incorrect_payment_amount -> s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -96,14 +96,13 @@ object Commitments extends Logging {
     val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
       // TODO: this should be a specific UPDATE error
-      return Left(FailureMessage.temporary_channel_failure)
+      return Left(FailureMessage.temporary_channel_failure -> s"reached counterparty's in-flight htlcs value limit: value=$htlcValueInFlight max=${commitments1.remoteParams.maxHtlcValueInFlightMsat}")
     }
 
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
     if (acceptedHtlcs > commitments1.remoteParams.maxAcceptedHtlcs) {
-      // TODO: this should be a specific UPDATE error
-      return Left(FailureMessage.temporary_channel_failure)
+      return Left(FailureMessage.temporary_channel_failure -> s"reached counterparty's max accepted htlc count limit: value=$acceptedHtlcs max=${commitments1.remoteParams.maxAcceptedHtlcs}")
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -111,7 +110,7 @@ object Commitments extends Logging {
     val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount else 0
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
-      return Left(FailureMessage.temporary_channel_failure)
+      return Left(FailureMessage.temporary_channel_failure -> s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.remoteParams.channelReserveSatoshis} fees=$fees")
     }
 
     Right(commitments1, add)

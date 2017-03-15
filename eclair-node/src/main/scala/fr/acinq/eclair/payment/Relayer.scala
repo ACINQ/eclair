@@ -22,6 +22,7 @@ case class Local(sender: ActorRef) extends Origin
 case class Relayed(upstream: UpdateAddHtlc) extends Origin
 
 case class Bind(add: UpdateAddHtlc, origin: Origin)
+case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
 case class ForwardFail(fail: UpdateFailHtlc)
@@ -169,7 +170,4 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
 object Relayer {
   def props(nodeSecret: PrivateKey, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeSecret: PrivateKey, paymentHandler)
-
-  case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
-
 }

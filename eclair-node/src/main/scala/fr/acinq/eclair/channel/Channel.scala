@@ -7,8 +7,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
-import fr.acinq.eclair.payment.Relayer.AddHtlcFailed
+import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
@@ -388,9 +387,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           relayer ! Bind(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
-        case Success(Left(failure)) =>
-          sender ! Relayer.AddHtlcFailed(c, failure)
-          stay()
+        case Success(Left((failure, errorMessage))) =>
+          relayer ! AddHtlcFailed(c, failure)
+          handleCommandError(sender, new RuntimeException(errorMessage))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -848,9 +847,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           relayer ! Bind(add, origin)
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(failure)) =>
-          sender ! Relayer.AddHtlcFailed(c, failure)
-          stay() // nothing to do, not state to update or save
+        case Success(Left((failure, errorMessage))) =>
+          relayer ! AddHtlcFailed(c, failure)
+          handleCommandError(sender, new RuntimeException(errorMessage))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
