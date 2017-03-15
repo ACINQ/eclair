@@ -60,12 +60,15 @@ object NodeParams {
         Files.write(seedPath, seed)
         seed
     }
-
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val db = new SimpleFileDb(datadir)
+
+    val dbPath = Paths.get(datadir.getAbsolutePath, "db")
+    val db = new SimpleFileDb(dbPath.toFile)
+
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
+
     NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
