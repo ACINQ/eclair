@@ -12,7 +12,6 @@ import ch.qos.logback.classic.encoder.PatternLayoutEncoder
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.{Logger, LoggerContext}
 import ch.qos.logback.core.FileAppender
-import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
@@ -71,10 +70,10 @@ class Setup(datadir: String) extends Logging {
   implicit val timeout = Timeout(30 seconds)
 
   val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
-    user = config.getString("eclair.bitcoind.rpcuser"),
-    password = config.getString("eclair.bitcoind.rpcpassword"),
-    host = config.getString("eclair.bitcoind.host"),
-    port = config.getInt("eclair.bitcoind.rpcport")))
+    user = config.getString("bitcoind.rpcuser"),
+    password = config.getString("bitcoind.rpcpassword"),
+    host = config.getString("bitcoind.host"),
+    port = config.getInt("bitcoind.rpcport")))
 
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
@@ -103,7 +102,7 @@ class Setup(datadir: String) extends Logging {
 
   val peer = system.actorOf(Props[PeerClient], "bitcoin-peer")
   val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
-  val paymentHandler = config.getString("eclair.payment-handler") match {
+  val paymentHandler = config.getString("payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
   }
@@ -112,7 +111,7 @@ class Setup(datadir: String) extends Logging {
   val router = system.actorOf(Router.props(nodeParams, watcher), name = "router")
   val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
   val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator")
-  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("eclair.server.binding-ip"), config.getInt("eclair.server.port"))), "server")
+  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))), "server")
 
   val _setup = this
   val api = new Service {
@@ -123,7 +122,7 @@ class Setup(datadir: String) extends Logging {
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
     override val system: ActorSystem = _setup.system
   }
-  Http().bindAndHandle(api.route, config.getString("eclair.api.binding-ip"), config.getInt("eclair.api.port")) onFailure {
+  Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")) onFailure {
     case t: Throwable => system.eventStream.publish(HTTPBindError)
   }
 
