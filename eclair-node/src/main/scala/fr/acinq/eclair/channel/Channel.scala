@@ -114,6 +114,13 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          d match {
+            case n: DATA_NORMAL =>
+              // publish ShortChannelIdAssigned event if possible
+              n.shortChannelId.foreach(shortChannelId => context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId)))
+            case _ => ()
+
+          }
           goto(OFFLINE) using d
       }
   })
@@ -831,8 +838,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
             blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
           }
-          // publish ShortChannelIdAssigned event if possible
-          d1.shortChannelId.foreach(shortChannelId => context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId)))
           goto(NORMAL)
         case _: DATA_SHUTDOWN => goto(SHUTDOWN)
         case _: DATA_NEGOTIATING => goto(NEGOTIATING)
