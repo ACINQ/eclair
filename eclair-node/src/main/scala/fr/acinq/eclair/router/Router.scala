@@ -82,7 +82,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       }
 
     case GetTxResponse(tx, isSpendable, c: ChannelAnnouncement) =>
-      if (isSpendable) {
+      val channels1 = if (isSpendable) {
         // TODO: blacklist if already received same channel id and different node ids
         val (_, _, outputIndex) = fromShortId(c.shortChannelId)
         // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2
@@ -95,14 +95,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         log.info(s"added channel channelId=${c.shortChannelId}")
         context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
         nodeParams.announcementsDb.put(channelKey(c.shortChannelId), c)
+        channels + (c.shortChannelId -> c)
       } else {
         log.debug(s"ignoring $c (funding tx spent)")
+        nodeParams.announcementsDb.delete(channelKey(c.shortChannelId))
+        channels
       }
       val stash1 = if (awaiting == Set(c)) {
         stash.foreach(self ! _)
         Nil
       } else stash
-      context become mainWithLog(nodes, channels + (c.shortChannelId -> c), updates, rebroadcast :+ c, awaiting - c, stash1)
+      context become mainWithLog(nodes, channels1, updates, rebroadcast :+ c, awaiting - c, stash1)
 
     case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId), tx) if channels.containsKey(shortChannelId) =>
       val lostChannel = channels(shortChannelId)
