@@ -3,10 +3,11 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxIn}
+import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxIn}
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
@@ -210,7 +211,7 @@ class RelayerSpec extends TestkitBaseClass {
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion.onionPacket)
     sender.send(relayer, Bind(add_bc, Relayed(add_ab)))
-    val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = "some reason".getBytes())
+    val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), FailureMessage.temporary_channel_failure))
     sender.send(relayer, ForwardFail(fail_cb))
 
     val fulfill_ba = channel_ab.expectMsgType[CMD_FAIL_HTLC]

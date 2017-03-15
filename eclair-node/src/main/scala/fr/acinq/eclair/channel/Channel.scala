@@ -376,7 +376,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
       // TODO: use dynamic fees
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.shortChannelId.get, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+      // TODO: d.shortChannelId.getOrElse(0) is ugly but it should never happen
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.shortChannelId.getOrElse(0), nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
       Try(Commitments.sendAdd(commitments, c, channelUpdate)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
@@ -384,7 +385,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Success(Left(failure)) =>
-          relayer ! Relayer.AddHtlcFailed(c, failure)
+          sender ! Relayer.AddHtlcFailed(c, failure)
           stay()
         case Failure(cause) => handleCommandError(sender, cause)
       }

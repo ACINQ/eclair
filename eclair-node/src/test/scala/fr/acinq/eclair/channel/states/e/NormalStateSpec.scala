@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{Bind, Local, Relayed}
+import fr.acinq.eclair.payment.{Bind, Local, Relayed, Relayer}
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
@@ -103,7 +103,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(50, "11" * 32, 400144))
-      sender.expectMsg("counterparty requires a minimum htlc value of 1000 msat")
+      sender.expectMsgType[Relayer.AddHtlcFailed]
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -112,7 +112,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144))
-      sender.expectMsg("insufficient funds: missing=1376443 reserve=20000 fees=8960")
+      sender.expectMsgType[Relayer.AddHtlcFailed]
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -130,7 +130,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(1000000, "44" * 32, 400144))
-      sender.expectMsg("insufficient funds: missing=1000 reserve=20000 fees=12400")
+      sender.expectMsgType[Relayer.AddHtlcFailed]
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -145,7 +145,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(500000000, "33" * 32, 400144))
-      sender.expectMsg("insufficient funds: missing=332400 reserve=20000 fees=12400")
+      sender.expectMsgType[Relayer.AddHtlcFailed]
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -154,7 +154,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(bob, CMD_ADD_HTLC(151000000, "11" * 32, 400144))
-      sender.expectMsg("reached counterparty's in-flight htlcs value limit: value=151000000 max=150000000")
+      sender.expectMsgType[Relayer.AddHtlcFailed]
       bob2alice.expectNoMsg(200 millis)
     }
   }
@@ -169,7 +169,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         alice2bob.expectMsgType[UpdateAddHtlc]
       }
       sender.send(alice, CMD_ADD_HTLC(10000000, "33" * 32, 400144))
-      sender.expectMsg("reached counterparty's max accepted htlc count limit: value=31 max=30")
+      val cmdFailed = sender.expectMsgType[Relayer.AddHtlcFailed]
+      assert(cmdFailed.failure == FailureMessage.temporary_channel_failure)
       alice2bob.expectNoMsg(200 millis)
     }
   }
