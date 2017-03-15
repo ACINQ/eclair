@@ -66,8 +66,14 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, cmd)) =>
-      // TODO: fix new String(fail.reason)
-      val reason = new String(fail.reason)
+      val reason: String = Sphinx.parseErrorPacket(fail.reason, cmd.onion.sharedSecrets) match {
+        case None =>
+          log.warning(s"cannot parse returned error ${fail.reason}")
+          "payment failed"
+        case Some((pubkey, failureMessage)) =>
+          log.info(s"payment failure: $pubkey, $failureMessage")
+          s"payment failed at $pubkey, cause: $failureMessage"
+      }
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 

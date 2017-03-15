@@ -34,6 +34,8 @@ case class ForwardFail(fail: UpdateFailHtlc)
   */
 class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor with ActorLogging {
 
+  import Relayer._
+
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   override def receive: Receive = main(Set(), Map())
@@ -71,7 +73,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         case Success((Attempt.Successful(DecodeResult(payload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
           val downstream = channels.find(_.nodeAddress == nextNodeAddress).get.channel
           log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
-          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, Sphinx.OnionPacket(nextPacket, Seq(sharedSecret)), upstream_opt = Some(add), commit = true)
+          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, Sphinx.OnionPacket(nextPacket, Nil), upstream_opt = Some(add), commit = true)
           context become main(channels, bindings)
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")
@@ -95,6 +97,13 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       }
       context become main(channels, bindings + (DownstreamHtlcId(downstream.channelId, downstream.id) -> origin))
 
+    case AddHtlcFailed(CMD_ADD_HTLC(_, _, _, onion, Some(updateAddHtlc), _), failure) if channels.exists(_.channelId == updateAddHtlc.channelId) =>
+      val upstream = channels.find(_.channelId == updateAddHtlc.channelId).get.channel
+      // create an error packet using the upstream node's shared secret
+      val sharedSecret = Sphinx.parsePacket(nodeSecret, updateAddHtlc.paymentHash, updateAddHtlc.onionRoutingPacket).sharedSecret
+      val errorPacket = Sphinx.createErrorPacket(sharedSecret, failure)
+      upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, errorPacket, commit = true)
+
     case ForwardFulfill(fulfill) =>
       bindings.get(DownstreamHtlcId(fulfill.channelId, fulfill.id)) match {
         case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
@@ -102,9 +111,9 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           upstream ! CMD_FULFILL_HTLC(origin.id, fulfill.paymentPreimage, commit = true)
         case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case Some(Local(sender)) =>
+        case Some(Local(origin)) =>
           log.info(s"we were the origin payer for htlc #${fulfill.id}")
-          sender ! fulfill
+          origin ! fulfill
         case None =>
           log.warning(s"no origin found for htlc ${fulfill.channelId}/${fulfill.id}")
       }
@@ -121,10 +130,9 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           upstream ! CMD_FAIL_HTLC(origin.id, reason1, commit = true)
         case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case Some(Local(sender)) =>
+        case Some(Local(origin)) =>
           log.info(s"we were the origin payer for htlc #${fail.id}")
-
-          sender ! fail
+          origin ! fail
         case None =>
           log.warning(s"no origin found for htlc ${fail.channelId}/${fail.id}")
       }
@@ -161,4 +169,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
 object Relayer {
   def props(nodeSecret: PrivateKey, paymentHandler: ActorRef) = Props(classOf[Relayer], nodeSecret: PrivateKey, paymentHandler)
+
+  case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
+
 }

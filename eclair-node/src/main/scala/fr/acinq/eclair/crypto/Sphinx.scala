@@ -242,7 +242,7 @@ object Sphinx {
     * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
     *                      packet. Empty if you're just forwarding the packet to the next node
     */
-  case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[BinaryData] = Nil)
+  case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)] = Nil)
 
   /**
     * Builds an encrypted onion packet that contains payloads and routing information for all nodes in the list
@@ -270,8 +270,18 @@ object Sphinx {
     }
 
     val packet = loop(publicKeys, payloads.dropRight(1), ephemerealPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
-    OnionPacket(packet, sharedsecrets)
+    OnionPacket(packet, sharedsecrets.zip(publicKeys))
   }
+
+  /*
+    error packet format:
+    +----------------+----------------------------------+-----------------+----------------------+-----+
+    | HMAC(20 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+    +----------------+----------------------------------+-----------------+----------------------+-----+
+    with failure message length + pad length = 128
+   */
+  val ErrorPacketLength = MacLength + 128 + 2 + 2
+
 
   /**
     *
@@ -281,13 +291,20 @@ object Sphinx {
     * @return an error packet that can be sent to the destination node
     */
   def createErrorPacket(sharedSecret: BinaryData, message: BinaryData): BinaryData = {
+    require(message.length <= 128, s"error message length is ${message.length}, it must be less than 128")
     val um = Sphinx.generateKey("um", sharedSecret)
     val padlen = 128 - message.length
     val payload = Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN) ++ message ++ Protocol.writeUInt16(padlen, ByteOrder.BIG_ENDIAN) ++ Sphinx.zeroes(padlen)
     forwardErrorPacket(Sphinx.mac(um, payload) ++ payload, sharedSecret)
   }
 
+  /**
+    *
+    * @param packet error packet
+    * @return the failure message that is embedded in the error packet
+    */
   def extractFailureMessage(packet: BinaryData): BinaryData = {
+    require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
     val len = Protocol.uint16(payload, ByteOrder.BIG_ENDIAN)
     require((len >= 0) && (len <= 128), "message length must be less than 128")
@@ -301,7 +318,8 @@ object Sphinx {
     * @return an obfuscated error packet that can be sent to the destination node
     */
   def forwardErrorPacket(packet: BinaryData, sharedSecret: BinaryData): BinaryData = {
-    val filler = Sphinx.generateFiller("ammag", Seq(sharedSecret), Sphinx.MacLength + 132, 1)
+    require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
+    val filler = Sphinx.generateFiller("ammag", Seq(sharedSecret), ErrorPacketLength, 1)
     Sphinx.xor(packet, filler)
   }
 
@@ -326,13 +344,14 @@ object Sphinx {
     * @return Some(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, none otherwise
     */
   @tailrec
-  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[BinaryData]): Option[(BinaryData, BinaryData)] = {
-    if (sharedSecrets.isEmpty) None
-    else {
-      val packet1 = forwardErrorPacket(packet, sharedSecrets.head)
-      if (checkMac(sharedSecrets.head, packet1)) Some(sharedSecrets.head, extractFailureMessage(packet1)) else parseErrorPacket(packet1, sharedSecrets.tail)
+  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Option[(PublicKey, BinaryData)] = {
+    require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
+    sharedSecrets match {
+      case Nil => None
+      case (secret, pubkey) :: tail =>
+        val packet1 = forwardErrorPacket(packet, secret)
+        if (checkMac(secret, packet1)) Some(pubkey, extractFailureMessage(packet1)) else parseErrorPacket(packet1, tail)
     }
   }
-
 }
 

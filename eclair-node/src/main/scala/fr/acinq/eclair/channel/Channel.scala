@@ -7,7 +7,8 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
+import fr.acinq.eclair.payment.Relayer.AddHtlcFailed
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
@@ -374,12 +375,17 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
-      Try(Commitments.sendAdd(commitments, c)) match {
-        case Success((commitments1, add)) =>
+      // TODO: use dynamic fees
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.shortChannelId.get, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+      Try(Commitments.sendAdd(commitments, c, channelUpdate)) match {
+        case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
           relayer ! Bind(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Success(Left(failure)) =>
+          relayer ! Relayer.AddHtlcFailed(c, failure)
+          stay()
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -824,6 +830,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
             blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
           }
+          // publish ShortChannelIdAssigned event if possible
+          d1.shortChannelId.foreach(shortChannelId => context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId)))
           goto(NORMAL)
         case _: DATA_SHUTDOWN => goto(SHUTDOWN)
         case _: DATA_NEGOTIATING => goto(NEGOTIATING)
@@ -831,12 +839,17 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
       log.info(s"we are disconnected so we just include the add in our commitments")
-      Try(Commitments.sendAdd(commitments, c)) match {
-        case Success((commitments1, add)) =>
+      // TODO: use dynamic fees
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, d.shortChannelId.get, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+      Try(Commitments.sendAdd(commitments, c, channelUpdate)) match {
+        case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
           relayer ! Bind(add, origin)
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(failure)) =>
+          sender ! Relayer.AddHtlcFailed(c, failure)
+          stay() // nothing to do, not state to update or save
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
