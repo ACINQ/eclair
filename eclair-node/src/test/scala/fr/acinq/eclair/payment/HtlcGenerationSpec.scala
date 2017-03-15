@@ -79,15 +79,15 @@ class HtlcGenerationSpec extends FunSuite {
 
   test("build a command including the onion") {
 
-    val add = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+    val (add, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
 
     assert(add.amountMsat > finalAmountMsat)
     assert(add.expiry === currentBlockCount + defaultHtlcExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.onionPacket.length === 1254)
+    assert(add.onion.length === 1254)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, address_c, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion.onionPacket)
+    val ParsedPacket(bin_b, address_c, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
     val payload_b = Codecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
     assert(address_c === c.hash160)
     assert(packet_c.size === 1254)
@@ -115,15 +115,15 @@ class HtlcGenerationSpec extends FunSuite {
   }
 
   test("build a command with no hops") {
-    val add = buildCommand(finalAmountMsat, paymentHash, hops.take(1), currentBlockCount)
+    val (add, _) = buildCommand(finalAmountMsat, paymentHash, hops.take(1), currentBlockCount)
 
     assert(add.amountMsat === finalAmountMsat)
     assert(add.expiry === currentBlockCount + defaultHtlcExpiry)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.onionPacket.size === 1254)
+    assert(add.onion.size === 1254)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, address_null, packet_random, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion.onionPacket)
+    val ParsedPacket(bin_b, address_null, packet_random, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
     assert(bin_b === BinaryData("00" * 20))
     assert(address_null === BinaryData("00" * 20))
     assert(packet_random.size === 1254)

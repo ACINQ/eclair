@@ -74,7 +74,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         case Success((Attempt.Successful(DecodeResult(payload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
           val downstream = channels.find(_.nodeAddress == nextNodeAddress).get.channel
           log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
-          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, Sphinx.OnionPacket(nextPacket, Nil), upstream_opt = Some(add), commit = true)
+          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
           context become main(channels, bindings)
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")

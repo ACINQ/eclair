@@ -18,7 +18,7 @@ case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId
 sealed trait Data
 case object WaitingForRequest extends Data
 case class WaitingForRoute(sender: ActorRef, c: CreatePayment) extends Data
-case class WaitingForComplete(sender: ActorRef,c: CMD_ADD_HTLC) extends Data
+case class WaitingForComplete(sender: ActorRef, c: CMD_ADD_HTLC, sharedSecrets: Seq[(BinaryData, PublicKey)]) extends Data
 
 sealed trait State
 case object WAITING_FOR_REQUEST extends State
@@ -45,9 +45,9 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(hops), WaitingForRoute(s, c)) =>
       val firstHop = hops.head
-      val cmd = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
+      val (cmd, sharedSecrets) = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd)
+      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd, sharedSecrets)
 
     case Event(f@Failure(t), WaitingForRoute(s, _)) =>
       s ! f
@@ -57,16 +57,16 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event("ok", _) => stay()
 
-    case Event(reason: String, WaitingForComplete(s, _)) =>
+    case Event(reason: String, WaitingForComplete(s, _, _)) =>
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 
-    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, cmd)) =>
+    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, cmd, _)) =>
       s ! "sent"
       stop(FSM.Normal)
 
-    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, cmd)) =>
-      val reason: String = Sphinx.parseErrorPacket(fail.reason, cmd.onion.sharedSecrets) match {
+    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, cmd, sharedSecrets)) =>
+      val reason: String = Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
         case None =>
           log.warning(s"cannot parse returned error ${fail.reason}")
           "payment failed"
@@ -77,7 +77,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 
-    case Event(failure: Failure, WaitingForComplete(s, cmd)) => {
+    case Event(failure: Failure, WaitingForComplete(s, cmd, _)) => {
       s ! failure
       stop(FSM.Failure(failure.cause))
     }
@@ -134,12 +134,12 @@ object PaymentLifecycle {
   // TODO: set correct initial expiry
   val defaultHtlcExpiry = 10
 
-  def buildCommand(finalAmountMsat: Long, paymentHash: BinaryData, hops: Seq[Hop], currentBlockCount: Int): CMD_ADD_HTLC = {
+  def buildCommand(finalAmountMsat: Long, paymentHash: BinaryData, hops: Seq[Hop], currentBlockCount: Int): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildRoute(finalAmountMsat, hops.drop(1), currentBlockCount)
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)
-    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion, upstream_opt = None, commit = true)
+    CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, onion.onionPacket, upstream_opt = None, commit = true) -> onion.sharedSecrets
   }
 
 }

@@ -242,7 +242,7 @@ object Sphinx {
     * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
     *                      packet. Empty if you're just forwarding the packet to the next node
     */
-  case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)] = Nil)
+  case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)])
 
   /**
     * Builds an encrypted onion packet that contains payloads and routing information for all nodes in the list

@@ -49,9 +49,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
-    val WaitingForComplete(_, add) = paymentFSM.stateData
+    val WaitingForComplete(_, add, sharedSecrets) = paymentFSM.stateData
 
-    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(add.onion.sharedSecrets(0)._1, FailureMessage.temporary_channel_failure)))
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets(0)._1, FailureMessage.temporary_channel_failure)))
 
     val res = sender.expectMsgType[Failure]
   }
