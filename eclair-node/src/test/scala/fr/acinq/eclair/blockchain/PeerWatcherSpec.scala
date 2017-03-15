@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{TestConstants, randomKey}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions
 import org.junit.runner.RunWith
@@ -33,7 +33,7 @@ class PeerWatcherSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
     val (chain, blockCount, progress) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)
     assert(chain == "regtest")
 
-    val watcher = system.actorOf(PeerWatcher.props(bitcoin_client))
+    val watcher = system.actorOf(PeerWatcher.props(TestConstants.Alice.nodeParams, bitcoin_client))
 
     // first we pick a random key
     val localDelayedKey = randomKey

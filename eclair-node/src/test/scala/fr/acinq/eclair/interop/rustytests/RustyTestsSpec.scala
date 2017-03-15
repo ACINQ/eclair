@@ -10,7 +10,7 @@ import fr.acinq.eclair.blockchain.PeerWatcher
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
-import fr.acinq.eclair.{Globals, TestBitcoinClient}
+import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
@@ -30,8 +30,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     Globals.blockCount.set(0)
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
-    val blockchainA = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
-    val blockchainB = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())))
+    val blockchainA = system.actorOf(PeerWatcher.props(TestConstants.Alice.nodeParams, new TestBitcoinClient()))
+    val blockchainB = system.actorOf(PeerWatcher.props(TestConstants.Bob.nodeParams, new TestBitcoinClient()))
     val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     // we just bypass the relayer for this test
     val relayer = paymentHandler

@@ -17,7 +17,7 @@ import scala.concurrent.ExecutionContext
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
@@ -38,7 +38,7 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
           Globals.blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
-      client.estimateSmartFee(NodeParams.loadFromConfiguration().smartfeeNBlocks).map {
+      client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
         case feerate =>
           Globals.feeratePerKw.set(feerate)
           context.system.eventStream.publish(CurrentFeerate(feerate))
@@ -163,6 +163,6 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
 
 object PeerWatcher {
 
-  def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(classOf[PeerWatcher], client, ec)
+  def props(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new PeerWatcher(nodeParams, client)(ec))
 
 }
