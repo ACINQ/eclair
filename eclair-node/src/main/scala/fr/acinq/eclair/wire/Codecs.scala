@@ -167,7 +167,7 @@ object Codecs {
   val updateFailHtlcCodec: Codec[UpdateFailHtlc] = (
     ("channelId" | binarydata(32)) ::
       ("id" | uint64) ::
-      ("reason" | binarydata(154))).as[UpdateFailHtlc]
+      ("reason" | varsizebinarydata)).as[UpdateFailHtlc]
 
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | binarydata(32)) ::
@@ -188,12 +188,12 @@ object Codecs {
 
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | binarydata(32)) ::
-    ("shortChannelId" | int64) ::
+      ("shortChannelId" | int64) ::
       ("nodeSignature" | signature) ::
       ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec = (
-      ("shortChannelId" | int64) ::
+    ("shortChannelId" | int64) ::
       ("nodeId1" | binarydata(33)) ::
       ("nodeId2" | binarydata(33)) ::
       ("bitcoinKey1" | binarydata(33)) ::
@@ -204,10 +204,10 @@ object Codecs {
       ("nodeSignature2" | signature) ::
       ("bitcoinSignature1" | signature) ::
       ("bitcoinSignature2" | signature) ::
-     channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
+      channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec = (
-      ("timestamp" | uint32) ::
+    ("timestamp" | uint32) ::
       ("nodeId" | binarydata(33)) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
@@ -219,7 +219,7 @@ object Codecs {
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   val channelUpdateWitnessCodec = (
-      ("shortChannelId" | int64) ::
+    ("shortChannelId" | int64) ::
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::
       ("cltvExpiryDelta" | uint16) ::
