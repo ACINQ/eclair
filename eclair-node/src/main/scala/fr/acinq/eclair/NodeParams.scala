@@ -4,7 +4,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.{Files, Paths}
 
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
@@ -41,16 +41,18 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
 
 object NodeParams {
 
-  def loadFromConfiguration(datadir: File): NodeParams = {
-    /**
-      * Order of precedence for the configuration parameters:
-      * 1) Java environment variables (-D...)
-      * 2) Configuration file eclair.conf
-      * 3) default values in application.conf
-      */
-    val config = ConfigFactory.parseProperties(System.getProperties)
+  /**
+    * Order of precedence for the configuration parameters:
+    * 1) Java environment variables (-D...)
+    * 2) Configuration file eclair.conf
+    * 3) default values in application.conf
+    */
+  def loadConfiguration(datadir: File) =
+    ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load()).getConfig("eclair")
+
+  def makeNodeParams(datadir: File, config: Config): NodeParams = {
 
     val seedPath = Paths.get(datadir.getAbsolutePath, "seed.dat")
     val seed: BinaryData = Files.exists(seedPath) match {

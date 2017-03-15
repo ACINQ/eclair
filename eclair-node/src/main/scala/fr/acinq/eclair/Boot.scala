@@ -62,9 +62,9 @@ class Setup(datadir: String) extends Logging {
   LogSetup.logTo(datadir)
 
   logger.info(s"hello!")
-  val nodeParams = NodeParams.loadFromConfiguration(new File(datadir))
+  val config = NodeParams.loadConfiguration(new File(datadir))
+  val nodeParams = NodeParams.makeNodeParams(new File(datadir), config)
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
-  val config = ConfigFactory.load()
 
   implicit lazy val system = ActorSystem()
   implicit val materializer = ActorMaterializer()
