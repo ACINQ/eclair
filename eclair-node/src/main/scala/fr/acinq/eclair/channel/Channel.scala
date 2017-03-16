@@ -114,11 +114,11 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           d match {
-            case n: DATA_NORMAL =>
-              // publish ShortChannelIdAssigned event if possible
-              n.shortChannelId.foreach(shortChannelId => context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId)))
-
-
+            case DATA_NORMAL(_, Some(shortChannelId)) =>
+              context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
+              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+              relayer ! channelUpdate
+            case _ => ()
           }
           goto(OFFLINE) using d
       }
@@ -384,7 +384,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
-          relayer ! Bind(add, origin)
+          relayer ! AddHtlcSuccess(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Success(Left((failure, errorMessage))) =>
@@ -554,6 +554,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+      relayer ! channelUpdate
+
       val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey)
       val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ annSignatures))
@@ -844,7 +847,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
-          relayer ! Bind(add, origin)
+          relayer ! AddHtlcSuccess(add, origin)
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left((failure, errorMessage))) =>

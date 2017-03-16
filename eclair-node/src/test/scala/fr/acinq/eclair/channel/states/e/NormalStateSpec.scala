@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{Bind, Local, Relayed, Relayer}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
@@ -52,7 +52,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           unackedMessages = initialState.commitments.unackedMessages :+ htlc
         )))
-      relayer.expectMsg(Bind(htlc, origin = Local(sender.ref)))
+      relayer.expectMsg(AddHtlcSuccess(htlc, origin = Local(sender.ref)))
     }
   }
 
@@ -86,90 +86,110 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           unackedMessages = initialState.commitments.unackedMessages :+ htlc)))
-      relayer.expectMsg(Bind(htlc, origin = Relayed(originHtlc)))
+      relayer.expectMsg(AddHtlcSuccess(htlc, origin = Relayed(originHtlc)))
     }
   }
 
-  test("recv CMD_ADD_HTLC (expiry too small)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (expiry too small)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000))
-      sender.expectMsg("requirement failed: expiry can't be in the past (expiry=300000 blockCount=400000)")
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
+      sender.send(alice, add)
+      sender.expectMsg("expiry can't be in the past (expiry=300000 blockCount=400000)")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.final_expiry_too_soon))
       alice2bob.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (value too small)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (value too small)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(50, "11" * 32, 400144))
+      val add = CMD_ADD_HTLC(50, "11" * 32, 400144)
+      sender.send(alice, add)
       sender.expectMsg("counterparty requires a minimum htlc value of 1000 msat")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.permanent_channel_failure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(alice, CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144))
+      val add = CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144)
+      sender.send(alice, add)
       sender.expectMsg("insufficient funds: missing=1376443 reserve=20000 fees=8960")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs and 0 balance)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, 400144))
       sender.expectMsg("ok")
+      relayer.expectMsgType[AddHtlcSuccess](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(200000000, "22" * 32, 400144))
       sender.expectMsg("ok")
+      relayer.expectMsgType[AddHtlcSuccess](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(67600000, "33" * 32, 400144))
       sender.expectMsg("ok")
+      relayer.expectMsgType[AddHtlcSuccess](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
-      sender.send(alice, CMD_ADD_HTLC(1000000, "44" * 32, 400144))
+      val add = CMD_ADD_HTLC(1000000, "44" * 32, 400144)
+      sender.send(alice, add)
       sender.expectMsg("insufficient funds: missing=1000 reserve=20000 fees=12400")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (insufficient funds w/ pending htlcs 2/2)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
       sender.expectMsg("ok")
+      relayer.expectMsgType[AddHtlcSuccess](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(300000000, "22" * 32, 400144))
       sender.expectMsg("ok")
+      relayer.expectMsgType[AddHtlcSuccess](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
-      sender.send(alice, CMD_ADD_HTLC(500000000, "33" * 32, 400144))
+      val add = CMD_ADD_HTLC(500000000, "33" * 32, 400144)
+      sender.send(alice, add)
       sender.expectMsg("insufficient funds: missing=332400 reserve=20000 fees=12400")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (over max inflight htlc value)") { case (_, bob, _, bob2alice, _, _, _) =>
+  test("recv CMD_ADD_HTLC (over max inflight htlc value)") { case (_, bob, _, bob2alice, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
-      sender.send(bob, CMD_ADD_HTLC(151000000, "11" * 32, 400144))
+      val add = CMD_ADD_HTLC(151000000, "11" * 32, 400144)
+      sender.send(bob, add)
       sender.expectMsg("reached counterparty's in-flight htlcs value limit: value=151000000 max=150000000")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
       bob2alice.expectNoMsg(200 millis)
     }
   }
 
-  test("recv CMD_ADD_HTLC (over max accepted htlcs)") { case (alice, _, alice2bob, _, _, _, _) =>
+  test("recv CMD_ADD_HTLC (over max accepted htlcs)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
       // Bob accepts a maximum of 30 htlcs
       for (i <- 0 until 30) {
         sender.send(alice, CMD_ADD_HTLC(10000000, "11" * 32, 400144))
         sender.expectMsg("ok")
+        relayer.expectMsgType[AddHtlcSuccess](1 second)
         alice2bob.expectMsgType[UpdateAddHtlc]
       }
-      sender.send(alice, CMD_ADD_HTLC(10000000, "33" * 32, 400144))
+      val add = CMD_ADD_HTLC(10000000, "33" * 32, 400144)
+      sender.send(alice, add)
       sender.expectMsg("reached counterparty's max accepted htlc count limit: value=31 max=30")
+      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
       alice2bob.expectNoMsg(200 millis)
     }
   }

@@ -72,8 +72,8 @@ object Commitments extends Logging {
 
   /**
     *
-    * @param commitments   current commitments
-    * @param cmd           add HTLC command
+    * @param commitments current commitments
+    * @param cmd         add HTLC command
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[(BinaryData, String), (Commitments, UpdateAddHtlc)] = {
@@ -82,10 +82,12 @@ object Commitments extends Logging {
     }
 
     val blockCount = Globals.blockCount.get()
-    require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
+    if (cmd.expiry <= blockCount) {
+      return Left(FailureMessage.final_expiry_too_soon -> s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
+    }
 
     if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
-      return Left(FailureMessage.incorrect_payment_amount -> s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
+      return Left(FailureMessage.permanent_channel_failure -> s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account

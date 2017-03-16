@@ -3,14 +3,17 @@ package fr.acinq.eclair.payment
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, ScriptWitness, Transaction}
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ParsedPacket
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
+import scala.compat.Platform
 import scala.util.{Failure, Success, Try}
 
 // @formatter:off
@@ -21,7 +24,7 @@ sealed trait Origin
 case class Local(sender: ActorRef) extends Origin
 case class Relayed(upstream: UpdateAddHtlc) extends Origin
 
-case class Bind(add: UpdateAddHtlc, origin: Origin)
+case class AddHtlcSuccess(add: UpdateAddHtlc, origin: Origin)
 case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
@@ -35,32 +38,33 @@ case class ForwardFail(fail: UpdateFailHtlc)
   */
 class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor with ActorLogging {
 
-  import Relayer._
-
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  override def receive: Receive = main(Set(), Map())
+  override def receive: Receive = main(Set(), Map(), None)
 
   case class DownstreamHtlcId(channelId: BinaryData, htlcId: Long)
 
-  def main(channels: Set[OutgoingChannel], bindings: Map[DownstreamHtlcId, Origin]): Receive = {
+  def main(channels: Set[OutgoingChannel], bindings: Map[DownstreamHtlcId, Origin], channelUpdate_opt: Option[ChannelUpdate]): Receive = {
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
       import d.commitments.channelId
       log.info(s"adding channel $channelId to available channels")
-      context become main(channels + OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings)
+      context become main(channels + OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings, channelUpdate_opt)
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, NEGOTIATING, d: DATA_NEGOTIATING) =>
       import d.commitments.channelId
       log.info(s"removing channel $channelId from available channels")
       // TODO: cleanup bindings
-      context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings)
+      context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings, channelUpdate_opt)
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, CLOSING, d: DATA_CLOSING) =>
       import d.commitments.channelId
       log.info(s"removing channel $channelId from available channels")
       // TODO: cleanup bindings
-      context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings)
+      context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings, channelUpdate_opt)
+
+    case channelUpdate: ChannelUpdate =>
+      context become main(channels, bindings, Some(channelUpdate))
 
     case ForwardAdd(add) =>
       Try(Sphinx.parsePacket(nodeSecret, add.paymentHash, add.onionRoutingPacket))
@@ -71,11 +75,31 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           log.info(s"we are the final recipient of htlc #${add.id}")
           context.system.eventStream.publish(PaymentReceived(self, add.paymentHash))
           paymentHandler forward add
-        case Success((Attempt.Successful(DecodeResult(payload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
-          val downstream = channels.find(_.nodeAddress == nextNodeAddress).get.channel
-          log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
-          downstream ! CMD_ADD_HTLC(payload.amt_to_forward, add.paymentHash, payload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
-          context become main(channels, bindings)
+        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
+          channelUpdate_opt match {
+            case None =>
+              // TODO: clarify what we're supposed to to in the specs
+              val failure = FailureMessage.temporary_channel_failure
+              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
+            case Some(channelUpdate) if add.amountMsat < channelUpdate.htlcMinimumMsat =>
+              val failure = FailureMessage.amount_below_minimum(add.amountMsat, channelUpdate)
+              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
+            case Some(channelUpdate) if add.expiry != perHopPayload.outgoing_cltv_value + channelUpdate.cltvExpiryDelta =>
+              val failure = FailureMessage.incorrect_cltv_expiry(add.expiry, channelUpdate)
+              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
+            case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 =>
+              val failure = FailureMessage.final_expiry_too_soon
+              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
+            case _ =>
+              val downstream = channels.find(_.nodeAddress == nextNodeAddress).get.channel
+              log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
+              downstream ! CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
+              context become main(channels, bindings, channelUpdate_opt)
+          }
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")
           val failure = FailureMessage.unknown_next_peer
@@ -91,12 +115,12 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           sender ! CMD_FAIL_HTLC(add.id, "onion parsing error".getBytes(), commit = true)
       }
 
-    case Bind(downstream, origin) =>
+    case AddHtlcSuccess(downstream, origin) =>
       origin match {
         case Local(_) => log.info(s"we are the origin of htlc ${downstream.channelId}/${downstream.id}")
         case Relayed(upstream) => log.info(s"relayed htlc ${upstream.channelId}/${upstream.id} to ${downstream}/${downstream.id}")
       }
-      context become main(channels, bindings + (DownstreamHtlcId(downstream.channelId, downstream.id) -> origin))
+      context become main(channels, bindings + (DownstreamHtlcId(downstream.channelId, downstream.id) -> origin), channelUpdate_opt)
 
     case AddHtlcFailed(CMD_ADD_HTLC(_, _, _, onion, Some(updateAddHtlc), _), failure) if channels.exists(_.channelId == updateAddHtlc.channelId) =>
       val upstream = channels.find(_.channelId == updateAddHtlc.channelId).get.channel
