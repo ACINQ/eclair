@@ -18,13 +18,13 @@
         </encoder>
     </appender-->
 
-    <appender name="FILE" class="ch.qos.logback.core.FileAppender">
+    <!--appender name="FILE" class="ch.qos.logback.core.FileAppender">
         <file>eclair.log</file>
         <append>false</append>
         <encoder>
             <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
-    </appender>
+    </appender-->
 
     <logger name="fr.acinq.eclair.Pipe" level="DEBUG">
         <appender-ref ref="CONSOLE"/>

@@ -51,7 +51,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     pipe ! new File(getClass.getResource(s"/scenarii/${test.name}.script").getFile)
     latch.await(30, TimeUnit.SECONDS)
     val ref = Source.fromFile(getClass.getResource(s"/scenarii/${test.name}.script.expected").getFile).getLines().filterNot(_.startsWith("#")).toList
-    val res = Source.fromFile(new File("result.txt")).getLines().filterNot(_.startsWith("#")).toList
+    val res = Source.fromFile(new File(s"${System.getProperty("buildDirectory")}/result.tmp")).getLines().filterNot(_.startsWith("#")).toList
     test((ref, res))
   }
 

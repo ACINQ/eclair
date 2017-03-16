@@ -1,6 +1,7 @@
 package fr.acinq.eclair.interop.rustytests
 
 import java.io.{BufferedWriter, File, FileWriter}
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
@@ -32,7 +33,7 @@ class SynchronizationPipe(latch: CountDownLatch) extends Actor with ActorLogging
   val echo = "echo (.*)".r
   val dump = "(.):dump".r
 
-  val fout = new BufferedWriter(new FileWriter("result.txt"))
+  val fout = new BufferedWriter(new FileWriter(s"${System.getProperty("buildDirectory")}/result.tmp"))
 
   def exec(script: List[String], a: ActorRef, b: ActorRef): Unit = {
     def resolve(x: String) = if (x == "A") a else b
