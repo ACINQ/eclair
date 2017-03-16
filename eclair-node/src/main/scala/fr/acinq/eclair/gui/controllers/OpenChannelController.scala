@@ -14,10 +14,10 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 23/09/2016.
   */
-class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends BaseController with Logging {
+class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends Logging {
 
   /**
-    * Max funding is 2^24 satoshi.
+    * Funding must be less than 2^24 satoshi.
     * PushMsat must not be greater than 1000 * Max funding
     *
     * https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
@@ -48,7 +48,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
         case "Satoshi" => Satoshi(rawFunding)
         case "milliSatoshi" => Satoshi(rawFunding / 1000L)
       }
-      if (GUIValidators.validate(fundingSatoshisError, "Funding must be 16 777 216 satoshis (~0.167 BTC) or less", smartFunding.toLong <= maxFunding)) {
+      if (GUIValidators.validate(fundingSatoshisError, "Funding must be 16 777 216 satoshis (~0.167 BTC) or less", smartFunding.toLong < maxFunding)) {
         if (!pushMsat.getText.isEmpty) {
           // pushMsat is optional, so we validate field only if it isn't empty
           if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push mSat must be numeric", GUIValidators.amountRegex)

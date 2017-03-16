@@ -1,15 +1,14 @@
 package fr.acinq.eclair.gui.controllers
 
-import javafx.application.{HostServices, Platform}
+import javafx.application.HostServices
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.collections.{FXCollections, ObservableList}
 import javafx.event.{ActionEvent, EventHandler}
-import javafx.fxml.{FXML, FXMLLoader}
-import javafx.scene.Parent
+import javafx.fxml.FXML
 import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
-import javafx.scene.input.{ContextMenuEvent, MouseEvent}
+import javafx.scene.input.ContextMenuEvent
 import javafx.scene.layout.{BorderPane, VBox}
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
@@ -27,7 +26,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 22/09/2016.
   */
-class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup, val hostServices: HostServices) extends BaseController with Logging {
+class MainController(val handlers: Handlers, val setup: Setup, val hostServices: HostServices) extends Logging {
 
   @FXML var root: BorderPane = _
   var contextMenu: ContextMenu = _
@@ -77,14 +76,12 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     */
   @FXML def initialize = {
 
-    initNotifs
-
     // init status bar
     labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
     labelAlias.setText(s"${setup.nodeParams.alias}")
     rectRGB.setFill(Color.rgb(setup.nodeParams.color._1 & 0xFF, setup.nodeParams.color._2 & 0xFF, setup.nodeParams.color._3 & 0xFF))
-    labelApi.setText(s"${setup.config.getInt("eclair.api.port")}")
-    labelServer.setText(s"${setup.config.getInt("eclair.server.port")}")
+    labelApi.setText(s"${setup.config.getInt("api.port")}")
+    labelServer.setText(s"${setup.config.getInt("server.port")}")
     bitcoinVersion.setText(s"v${setup.bitcoinVersion}")
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
     bitcoinChain.getStyleClass.add(setup.chain)
@@ -223,74 +220,43 @@ class MainController(val handlers: Handlers, val stage: Stage, val setup: Setup,
     val fileChooser = new FileChooser
     fileChooser.setTitle("Save as")
     fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
-    val file = fileChooser.showSaveDialog(stage)
+    val file = fileChooser.showSaveDialog(root.getScene.getWindow)
     if (file != null) handlers.exportToDot(file)
   }
 
   @FXML def handleOpenChannel = {
     val openChannelStage = new OpenChannelStage(handlers, setup)
-    openChannelStage.initOwner(stage)
+    openChannelStage.initOwner(root.getScene.getWindow)
     positionAtCenter(openChannelStage)
     openChannelStage.show
   }
 
   @FXML def handleSendPayment = {
     val sendPaymentStage = new SendPaymentStage(handlers, setup)
-    sendPaymentStage.initOwner(stage)
+    sendPaymentStage.initOwner(root.getScene.getWindow)
     positionAtCenter(sendPaymentStage)
     sendPaymentStage.show
   }
 
   @FXML def handleReceivePayment = {
     val receiveStage = new ReceivePaymentStage(handlers, setup)
-    receiveStage.initOwner(stage)
+    receiveStage.initOwner(root.getScene.getWindow)
     positionAtCenter(receiveStage)
     receiveStage.show
   }
 
-  @FXML def handleCloseRequest = stage.fireEvent(new WindowEvent(stage, WindowEvent.WINDOW_CLOSE_REQUEST))
+  @FXML def handleCloseRequest = root.getScene.getWindow.fireEvent(new WindowEvent(root.getScene.getWindow, WindowEvent.WINDOW_CLOSE_REQUEST))
 
   @FXML def handleOpenAbout = {
     val aboutStage = new AboutStage(hostServices)
-    aboutStage.initOwner(stage)
+    aboutStage.initOwner(root.getScene.getWindow)
     aboutStage.show
   }
 
   @FXML def openNodeIdContext(event: ContextMenuEvent) = contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
-  @FXML def closeNodeIdContext(event: MouseEvent) = contextMenu.hide
 
   def positionAtCenter(childStage: Stage) = {
-    childStage.setX(stage.getX + stage.getWidth / 2 - childStage.getWidth / 2)
-    childStage.setY(stage.getY + stage.getHeight / 2 - childStage.getHeight / 2)
-  }
-
-  /**
-    * Initialize the notification stage and assign it to the handler class.
-    *
-    * @return
-    */
-  private def initNotifs: NotificationsController = {
-    // get fxml/controller
-    val notifFXML = new FXMLLoader(getClass.getResource("/gui/main/notifications.fxml"))
-    val notifsController = new NotificationsController
-    notifFXML.setController(notifsController)
-    val root = notifFXML.load[Parent]
-
-    Platform.runLater(new Runnable() {
-      override def run = {
-        // create scene
-        val popup = new Popup
-        popup.setAutoFix(false)
-        val margin = 10
-        val width = 300
-        popup.setWidth(margin + width)
-        popup.getContent.add(root)
-        // positioning the popup @ TOP RIGHT of screen
-        val screenBounds = Screen.getPrimary.getVisualBounds
-        popup.show(stage, screenBounds.getMaxX - (margin + width), screenBounds.getMinY + margin)
-        handlers.initNotifications(notifsController)
-      }
-    })
-    notifsController
+    childStage.setX(root.getScene.getWindow.getX + root.getScene.getWindow.getWidth / 2 - childStage.getWidth / 2)
+    childStage.setY(root.getScene.getWindow.getY + root.getScene.getWindow.getHeight / 2 - childStage.getHeight / 2)
   }
 }

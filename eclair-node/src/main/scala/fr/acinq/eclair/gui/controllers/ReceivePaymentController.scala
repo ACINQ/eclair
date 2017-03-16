@@ -14,7 +14,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 23/09/2016.
   */
-class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends BaseController with Logging {
+class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends Logging {
 
   @FXML var amount: TextField = _
   @FXML var amountError: Label = _

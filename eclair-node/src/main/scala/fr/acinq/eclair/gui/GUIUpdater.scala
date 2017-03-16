@@ -5,7 +5,6 @@ import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
-import javafx.stage.Stage
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -22,7 +21,7 @@ import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 /**
   * Created by PM on 16/08/2016.
   */
-class GUIUpdater(primaryStage: Stage, mainController: MainController, setup: Setup) extends Actor with ActorLogging {
+class GUIUpdater(mainController: MainController, setup: Setup) extends Actor with ActorLogging {
 
   class NamedEdge(val id: BinaryData) extends DefaultEdge {
     override def toString: String = s"${id.toString.take(8)}..."

@@ -30,11 +30,13 @@
 }
 
 .link {
-    -fx-fill: rgb(63,179,234);
+    -fx-text-fill: rgb(25,157,221);
+    -fx-fill: rgb(25,157,221);
     -fx-underline: true;
     -fx-cursor: hand;
 }
 .link:hover {
+    -fx-text-fill: rgb(93,199,254);
     -fx-fill: rgb(93,199,254);
 }
 

@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import javafx.application.{Application, Platform}
+import javafx.application.Platform
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.http.scaladsl.Http
@@ -12,13 +12,14 @@ import ch.qos.logback.classic.encoder.PatternLayoutEncoder
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.{Logger, LoggerContext}
 import ch.qos.logback.core.FileAppender
+import com.sun.javafx.application.LauncherImpl
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.Register
-import fr.acinq.eclair.gui.FxApp
+import fr.acinq.eclair.gui.{FxApp, FxPreloader}
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -51,7 +52,7 @@ object Boot extends App with Logging {
         Platform.exit()
       })
       s.boostrap
-    case Some(config) => Application.launch(classOf[FxApp], config.datadir.getAbsolutePath)
+    case Some(config) => LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(config.datadir.getAbsolutePath))
     case None => Platform.exit()
   }
 }

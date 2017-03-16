@@ -3,8 +3,16 @@
 }
 
 .error-box {
-	-fx-padding: 2em;
+	-fx-padding: 1em;
     -fx-border-width: 1px;
+    -fx-border-color: #dddddd;
     -fx-background-color: #f6f6f6;
-    -fx-border-color: rgb(80,80,80);
+}
+
+.error-box .label {
+    -fx-font-size: 12px;
+}
+.error-box .button {
+    -fx-font-size: 12px;
+    -fx-faint-focus-color: transparent;
 }
