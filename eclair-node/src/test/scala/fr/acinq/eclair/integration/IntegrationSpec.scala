@@ -77,6 +77,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   override def afterAll(): Unit = {
     logger.info(s"killing bitcoind")
     bitcoind.destroy()
+    setupA.system.terminate()
+    setupB.system.terminate()
+    setupC.system.terminate()
   }
 
   test("wait bitcoind ready") {
@@ -90,7 +93,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 500))
     sender.expectMsgType[JValue](10 seconds)
     sender.send(bitcoincli, BitcoinReq("getinfo"))
-    sender.expectMsgType[JValue]
+    sender.expectMsgType[JValue](10 seconds)
   }
 
   test("starting eclair nodes") {
@@ -115,7 +118,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond(eventListener.expectMsgType[ChannelStateChanged](5 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED)
     // confirming funding tx
     sender.send(bitcoincli, BitcoinReq("generate", 3))
-    sender.expectMsgType[JValue]
+    sender.expectMsgType[JValue](10 seconds)
     // waiting for channel to reach normal
     awaitCond(eventListener.expectMsgType[ChannelStateChanged](5 seconds).currentState == NORMAL)
     node1.system.eventStream.unsubscribe(eventListener.ref)
