@@ -67,17 +67,21 @@ class PeerWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext =
     case w: WatchLost => log.warning(s"ignoring $w (not implemented)")
 
     case w@WatchSpent(channel, txid, outputIndex, event) =>
-      // we need to check if the tx was already spent
-      client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
-        case false =>
-          log.warning(s"tx $txid has already been spent!!!")
-          client.getTxBlockHash(txid.toString()).collect {
-            case Some(blockhash) =>
-              log.warning(s"getting all transactions since blockhash=$blockhash")
-              client.getTxsSinceBlockHash(blockhash).map {
-                case txs => txs.foreach(tx => self ! NewTransaction(tx))
-              }
-          }
+      // first let's see if the parent tx was published or not
+      client.getTxConfirmations(txid.toString()).collect {
+        case Some(_) =>
+        // parent tx was published, we need to make sure this particular output has not been spent
+        client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
+          case false =>
+            log.warning(s"tx $txid has already been spent!!!")
+            client.getTxBlockHash(txid.toString()).collect {
+              case Some(blockhash) =>
+                log.warning(s"getting all transactions since blockhash=$blockhash")
+                client.getTxsSinceBlockHash(blockhash).map {
+                  case txs => txs.foreach(tx => self ! NewTransaction(tx))
+                }
+            }
+        }
       }
       addWatch(w, watches, block2tx)
 
