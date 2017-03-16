@@ -64,6 +64,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings, channelUpdate_opt)
 
     case channelUpdate: ChannelUpdate =>
+      log.info(s"updating relay parameters with channelUpdate=$channelUpdate")
       context become main(channels, bindings, Some(channelUpdate))
 
     case ForwardAdd(add) =>
@@ -147,11 +148,9 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       bindings.get(DownstreamHtlcId(fail.channelId, fail.id)) match {
         case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
           val upstream = channels.find(_.channelId == origin.channelId).get.channel
-
           // obfuscate the error packet with the upstream node's shared secret
           val sharedSecret = Sphinx.parsePacket(nodeSecret, origin.paymentHash, origin.onionRoutingPacket).sharedSecret
           val reason1 = Sphinx.forwardErrorPacket(fail.reason, sharedSecret)
-
           upstream ! CMD_FAIL_HTLC(origin.id, reason1, commit = true)
         case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")

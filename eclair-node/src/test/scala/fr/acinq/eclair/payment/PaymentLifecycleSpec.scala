@@ -53,7 +53,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets(0)._1, FailureMessage.temporary_channel_failure)))
 
-    val res = sender.expectMsgType[Failure]
+    sender.expectMsgType[PaymentFailed]
   }
 
   test("payment succeeded") { case (router, _) =>
@@ -73,8 +73,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     sender.send(paymentFSM, UpdateFulfillHtlc("00" * 32, 0, "42" * 32))
 
-    val res = sender.expectMsgType[String]
-    assert(res === "sent")
+    sender.expectMsgType[PaymentSucceeded]
 
   }
 

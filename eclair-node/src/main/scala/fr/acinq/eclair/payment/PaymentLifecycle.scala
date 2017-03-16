@@ -14,6 +14,8 @@ import scodec.Attempt
 // @formatter:off
 
 case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey)
+case class PaymentSucceeded(paymentPreimage: BinaryData)
+case class PaymentFailed(paymentHash: BinaryData, reason: Option[BinaryData])
 
 sealed trait Data
 case object WaitingForRequest extends Data
@@ -62,22 +64,22 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       stop(FSM.Failure(reason))
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, cmd, _)) =>
-      s ! "sent"
+      s ! PaymentSucceeded(fulfill.paymentPreimage)
       stop(FSM.Normal)
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, cmd, sharedSecrets)) =>
-      val reason: String = Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
+      val reason = Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
         case None =>
           log.warning(s"cannot parse returned error ${fail.reason}")
-          "payment failed"
+          None
         case Some((pubkey, failureMessage)) =>
           log.info(s"payment failure: $pubkey, $failureMessage")
-          s"payment failed at $pubkey, cause: $failureMessage"
+          Some(failureMessage)
       }
-      s ! Status.Failure(new RuntimeException(reason))
-      stop(FSM.Failure(reason))
+      s ! PaymentFailed(cmd.paymentHash, reason)
+      stop(FSM.Normal)
 
-    case Event(failure: Failure, WaitingForComplete(s, cmd, _)) => {
+    case Event(failure: Failure, WaitingForComplete(s, _, _)) => {
       s ! failure
       stop(FSM.Failure(failure.cause))
     }
