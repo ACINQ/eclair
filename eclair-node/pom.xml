@@ -45,6 +45,27 @@
                 </executions>
             </plugin>
             <plugin>
+                <groupId>com.googlecode.maven-download-plugin</groupId>
+                <artifactId>download-maven-plugin</artifactId>
+                <version>1.3.0</version>
+                <executions>
+                    <execution>
+                        <id>download-bitcoind</id>
+                        <phase>generate-test-resources</phase>
+                        <goals>
+                            <goal>wget</goal>
+                        </goals>
+                        <configuration>
+                            <url>${bitcoind.url}</url>
+                            <unpack>true</unpack>
+                            <outputDirectory>${project.build.directory}</outputDirectory>
+                            <md5>${bitcoind.md5}</md5>
+                            <sha1>${bitcoind.sha1}</sha1>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>com.zenjava</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>8.8.3</version>
@@ -59,6 +80,33 @@
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>default</id>
+            <activation>
+                <activeByDefault>true</activeByDefault>
+            </activation>
+            <properties>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.md5>c811c157d4d618f7d7f4b9f24834551c</bitcoind.md5>
+                <bitcoind.sha1>3ab7e537bd00bf35e6a78fca108d0d886f8289c1</bitcoind.sha1>
+            </properties>
+        </profile>
+        <profile>
+            <id>Windows</id>
+            <activation>
+                <os>
+                    <family>Windows</family>
+                </os>
+            </activation>
+            <properties>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-win64.zip</bitcoind.url>
+                <bitcoind.md5>e84bc3a81ad3d1776299419eb7a04935</bitcoind.md5>
+                <bitcoind.sha1>d2e64fcabf6f85d56d64a52c76e007b6defc32ef</bitcoind.sha1>
+            </properties>
+        </profile>
+    </profiles>
 
     <dependencies>
         <!-- AKKA -->

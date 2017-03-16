@@ -41,7 +41,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
 
   import ExecutionContext.Implicits.global
 
-  context.system.scheduler.schedule(10 seconds, 60 seconds, self, 'tick_broadcast)
+  context.system.scheduler.schedule(1 seconds, nodeParams.routerBroadcastInterval, self, 'tick_broadcast)
 
   def receive: Receive = main(Map(), Map(), Map(), Nil, Set(), Nil)
 

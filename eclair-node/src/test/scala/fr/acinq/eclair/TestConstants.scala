@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Script}
 import fr.acinq.eclair.db.{Dbs, DummyDb}
 import fr.acinq.eclair.io.Peer
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 26/04/2016.
@@ -41,7 +42,8 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      announcementsDb = Dbs.makeAnnouncementDb(db))
+      announcementsDb = Dbs.makeAnnouncementDb(db),
+      routerBroadcastInterval = 60 seconds)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -79,7 +81,8 @@ object TestConstants {
       maxReserveToFundingRatio = 0.05,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      announcementsDb = Dbs.makeAnnouncementDb(db))
+      announcementsDb = Dbs.makeAnnouncementDb(db),
+      routerBroadcastInterval = 60 seconds)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

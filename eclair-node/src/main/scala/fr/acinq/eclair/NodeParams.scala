@@ -3,6 +3,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.{Files, Paths}
+import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
@@ -12,6 +13,8 @@ import fr.acinq.eclair.channel.Data
 import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.io.PeerRecord
 import fr.acinq.eclair.wire.LightningMessage
+
+import scala.concurrent.duration.FiniteDuration
 
 /**
   * Created by PM on 26/02/2017.
@@ -37,7 +40,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       maxReserveToFundingRatio: Double,
                       channelsDb: SimpleTypedDb[BinaryData, Data],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
-                      announcementsDb: SimpleTypedDb[String, LightningMessage])
+                      announcementsDb: SimpleTypedDb[String, LightningMessage],
+                      routerBroadcastInterval: FiniteDuration)
 
 object NodeParams {
 
@@ -93,7 +97,8 @@ object NodeParams {
       maxReserveToFundingRatio = 0.05, // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      announcementsDb = Dbs.makeAnnouncementDb(db)
+      announcementsDb = Dbs.makeAnnouncementDb(db),
+      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS)
     )
   }
 }
