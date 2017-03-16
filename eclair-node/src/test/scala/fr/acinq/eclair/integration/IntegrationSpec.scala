@@ -138,15 +138,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(setupA.router, 'nodes)
       sender.expectMsgType[Iterable[NodeAnnouncement]].size == 3
-    })
+    }, max = 20 seconds, interval = 1 second)
     awaitCond({
       sender.send(setupA.router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]].size == 2
-    })
+    }, max = 20 seconds, interval = 1 second)
     awaitCond({
       sender.send(setupA.router, 'updates)
       sender.expectMsgType[Iterable[ChannelUpdate]].size == 4
-    })
+    }, max = 20 seconds, interval = 1 second)
   }
 
   test("send an HTLC A->C") {
