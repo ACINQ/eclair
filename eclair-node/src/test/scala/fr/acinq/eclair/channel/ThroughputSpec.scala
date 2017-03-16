@@ -22,7 +22,7 @@ class ThroughputSpec extends FunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem()
     val pipe = system.actorOf(Props[Pipe], "pipe")
-    val blockchain = system.actorOf(Props(new PeerWatcher(new TestBitcoinClient())), "blockchain")
+    val blockchain = system.actorOf(PeerWatcher.props(TestConstants.Alice.nodeParams, new TestBitcoinClient()), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = new Random()
 
@@ -58,7 +58,7 @@ class ThroughputSpec extends FunSuite {
     val bob = system.actorOf(Channel.props(Bob.nodeParams, Alice.id, blockchain, ???, relayerB), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
-    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, Alice.channelParams, pipe, bobInit)
+    alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit)
     bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
 
     val latch = new CountDownLatch(2)

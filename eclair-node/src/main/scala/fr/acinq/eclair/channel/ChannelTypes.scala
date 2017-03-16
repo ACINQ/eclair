@@ -54,7 +54,7 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
+case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: BinaryData, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_NO_MORE_HTLCS
 // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
@@ -93,6 +93,7 @@ sealed trait Command
 final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = BinaryData("00" * 1254), upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: String, commit: Boolean = false) extends Command
+final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
 final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
 case object CMD_GETSTATE extends Command
@@ -126,8 +127,8 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, remoteFirstPerCommitmentPoint: Point, lastSent: AcceptChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
@@ -150,7 +151,6 @@ final case class LocalParams(nodeId: PublicKey,
                              maxHtlcValueInFlightMsat: Long,
                              channelReserveSatoshis: Long,
                              htlcMinimumMsat: Long,
-                             feeratePerKw: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
                              fundingPrivKey: PrivateKey,
@@ -168,7 +168,6 @@ final case class RemoteParams(nodeId: PublicKey,
                               maxHtlcValueInFlightMsat: Long,
                               channelReserveSatoshis: Long,
                               htlcMinimumMsat: Long,
-                              feeratePerKw: Long,
                               toSelfDelay: Int,
                               maxAcceptedHtlcs: Int,
                               fundingPubKey: PublicKey,

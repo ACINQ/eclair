@@ -14,6 +14,7 @@ import scala.concurrent.duration._
 object TestConstants {
   val fundingSatoshis = 1000000L
   val pushMsat = 200000000L
+  val feeratePerKw = 10000L
 
   object Alice {
     val seed = BinaryData("01" * 32)
@@ -35,7 +36,7 @@ object TestConstants {
       htlcMinimumMsat = 0,
       minDepthBlocks = 3,
       delayBlocks = 144,
-      feeratePerKw = 10000,
+      smartfeeNBlocks = 3,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
@@ -74,7 +75,7 @@ object TestConstants {
       htlcMinimumMsat = 1000,
       minDepthBlocks = 3,
       delayBlocks = 144,
-      feeratePerKw = 10000,
+      smartfeeNBlocks = 3,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)

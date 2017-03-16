@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
+import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment._
@@ -69,7 +69,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, localParams, remote, remoteInit), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, remote, remoteInit), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
@@ -80,7 +80,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         maxHtlcValueInFlightMsat = localParams.maxHtlcValueInFlightMsat,
         channelReserveSatoshis = localParams.channelReserveSatoshis,
         htlcMinimumMsat = localParams.htlcMinimumMsat,
-        feeratePerKw = localParams.feeratePerKw,
+        feeratePerKw = initialFeeratePerKw,
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPrivKey.publicKey,
@@ -149,7 +149,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             maxHtlcValueInFlightMsat = open.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = open.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
             htlcMinimumMsat = open.htlcMinimumMsat,
-            feeratePerKw = open.feeratePerKw,
             toSelfDelay = open.toSelfDelay,
             maxAcceptedHtlcs = open.maxAcceptedHtlcs,
             fundingPubKey = open.fundingPubkey,
@@ -159,8 +158,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
-          val localParams1 = localParams.copy(feeratePerKw = open.feeratePerKw) // funder gets to choose the first feerate
-          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams1, remoteParams, open.fundingSatoshis, open.pushMsat, open.firstPerCommitmentPoint, accept)
+          goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint, accept)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -171,7 +169,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, localParams, _, remoteInit), open)) =>
+    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit), open)) =>
       Try(Helpers.validateParams(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
@@ -185,7 +183,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
             maxHtlcValueInFlightMsat = accept.maxHtlcValueInFlightMsat,
             channelReserveSatoshis = accept.channelReserveSatoshis, // remote requires local to keep this much satoshis as direct payment
             htlcMinimumMsat = accept.htlcMinimumMsat,
-            feeratePerKw = localParams.feeratePerKw, // funder gets to choose the first feerate
             toSelfDelay = accept.toSelfDelay,
             maxAcceptedHtlcs = accept.maxAcceptedHtlcs,
             fundingPubKey = accept.fundingPubkey,
@@ -197,7 +194,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           log.debug(s"remote params: $remoteParams")
           val localFundingPubkey = localParams.fundingPrivKey.publicKey
           blockchain ! MakeFundingTx(localFundingPubkey, remoteParams.fundingPubKey, Satoshi(fundingSatoshis))
-          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, accept.firstPerCommitmentPoint, open)
+          goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -208,12 +205,12 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, remoteFirstPerCommitmentPoint, _)) =>
+    case Event(MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
       // our wallet provided us with a funding tx
       log.info(s"funding tx txid=${fundingTx.txid}")
 
       // let's create the first commitment tx that spends the yet uncommitted funding tx
-      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis, pushMsat, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
       val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
       // signature of their initial commitment tx that pays remote pushMsat
@@ -236,9 +233,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
-    case Event(FundingCreated(_, fundingTxHash, fundingTxOutputIndex, remoteSig), DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId, localParams, remoteParams, fundingSatoshis: Long, pushMsat, remoteFirstPerCommitmentPoint, _)) =>
+    case Event(FundingCreated(_, fundingTxHash, fundingTxOutputIndex, remoteSig), DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
       // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
-      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis: Long, pushMsat, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis: Long, pushMsat, initialFeeratePerKw, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
       // check remote signature validity
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
@@ -344,6 +341,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
     case Event(FundingLocked(_, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(commitments, _)) =>
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+      context.system.eventStream.subscribe(self, classOf[CurrentFeerate])
       if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures)) {
         // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
         blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
@@ -422,6 +420,20 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           relayer ! ForwardFail(fail)
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) => goto(stateName)
+        case Failure(cause) => handleLocalError(cause, d)
+      }
+
+    case Event(c@CMD_UPDATE_FEE(feeratePerKw, do_commit), d: DATA_NORMAL) =>
+      Try(Commitments.sendFee(d.commitments, c)) match {
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
+    case Event(fee: UpdateFee, d: DATA_NORMAL) =>
+      Try(Commitments.receiveFee(d.commitments, fee)) match {
+        case Success(commitments1) => goto(NORMAL) using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -520,6 +532,16 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
     case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutHtlcs(count) =>
       handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
+    case Event(CurrentFeerate(feeratePerKw), d: DATA_NORMAL) =>
+      d.commitments.localParams.isFunder match {
+        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+          self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
+          stay
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+          handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
+        case _ => stay
+      }
+
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey)
@@ -577,7 +599,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fulfill)) => handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Success((commitments1, fulfill)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -592,7 +616,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFail(d.commitments, c)) match {
-        case Success((commitments1, fail)) => handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -602,6 +628,20 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           relayer ! ForwardFail(fail)
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) => goto(stateName)
+        case Failure(cause) => handleLocalError(cause, d)
+      }
+
+    case Event(c@CMD_UPDATE_FEE(feeratePerKw, do_commit), d: DATA_SHUTDOWN) =>
+      Try(Commitments.sendFee(d.commitments, c)) match {
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
+    case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
+      Try(Commitments.receiveFee(d.commitments, fee)) match {
+        case Success(commitments1) => goto(NORMAL) using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -623,7 +663,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       }
 
     case Event(msg@CommitSig(_, theirSig, theirHtlcSigs), d@DATA_SHUTDOWN(commitments, localShutdown, remoteShutdown)) =>
-      // TODO: we might have to propagate htlcs upstream depending on the outcome of https://github.com/ElementsProject/lightning/issues/29
       Try(Commitments.receiveCommit(d.commitments, msg)) match {
         case Success(Right((commitments1, revocation))) if commitments1.hasNoPendingHtlcs =>
           val closingSigned = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
@@ -666,6 +705,16 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
     case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutHtlcs(count) =>
       handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
+    case Event(CurrentFeerate(feeratePerKw), d: DATA_SHUTDOWN) =>
+      d.commitments.localParams.isFunder match {
+        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+          self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
+          stay
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+          handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
+        case _ => stay
+      }
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
@@ -679,16 +728,24 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   when(NEGOTIATING)(handleExceptions {
 
     case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
+      // at this point commitments.unackedMessages may contain:
+      // - Shutdown, but it is acknowledged since we just received ClosingSigned
+      // - ClosingSigned, but they are never acknowledged and spec says we only need to re-send the last one
+      // this means that we can just set commitments.unackedMessages to the last sent ClosingSigned
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
-        case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.feeSatoshis => handleMutualClose(signedClosingTx, d.copy(commitments = Commitments.acknowledgeShutdown(d.commitments)))
+        case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.feeSatoshis =>
+          // see note above
+          val commitments1 = d.commitments.copy(unackedMessages = d.localClosingSigned :: Nil)
+          handleMutualClose(signedClosingTx, d.copy(commitments = commitments1))
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.feeSatoshis), Satoshi(remoteClosingFee))
           val (_, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
-          forwarder ! closingSigned
+          // see note above
+          val commitments1 = d.commitments.copy(unackedMessages = closingSigned :: Nil)
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
-            handleMutualClose(signedClosingTx, d.copy(commitments = Commitments.acknowledgeShutdown(d.commitments)))
+            handleMutualClose(signedClosingTx, d.copy(commitments = commitments1))
           } else {
-            goto(stateName) using d.copy(localClosingSigned = closingSigned, commitments = Commitments.acknowledgeShutdown(d.commitments))
+            goto(NEGOTIATING) using d.copy(localClosingSigned = closingSigned, commitments = commitments1)
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
@@ -1034,7 +1091,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       } catch {
         case t: Throwable => event.stateData match {
           case d: HasCommitments => handleLocalError(t, d)
-          case _ =>
+          case d: Data =>
+            forwarder ! Error(Helpers.getChannelId(d), t.getMessage.getBytes)
             log.error(t, "")
             goto(CLOSED)
         }

@@ -3,12 +3,12 @@ package fr.acinq.eclair.channel.states.f
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestkitBaseClass
+import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.peer.CurrentBlockCount
+import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFee, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -26,7 +26,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32
@@ -335,6 +335,93 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv RevokeAndAck (unexpectedly)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
+      sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
+      alice2bob.expectMsgType[Error]
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv CMD_UPDATE_FEE") { case (alice, _, alice2bob, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
+      sender.send(alice, CMD_UPDATE_FEE(20000))
+      sender.expectMsg("ok")
+      val fee = alice2bob.expectMsgType[UpdateFee]
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee),
+          unackedMessages = initialState.commitments.unackedMessages :+ fee)))
+    }
+  }
+
+  test("recv CMD_UPDATE_FEE (when fundee)") { case (_, bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+      sender.send(bob, CMD_UPDATE_FEE(20000))
+      sender.expectMsg("only the funder should send update_fee messages")
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv UpdateFee") { case (_, bob, _, _, _, _) =>
+    within(30 seconds) {
+      val initialData = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+      val fee = UpdateFee("00" * 32, 12000)
+      bob ! fee
+      awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ fee))))
+    }
+  }
+
+  test("recv UpdateFee (when sender is not funder)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      sender.send(alice, UpdateFee("00" * 32, 12000))
+      alice2bob.expectMsgType[Error]
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateFee (sender can't afford it)") { case (_, bob, _, bob2alice, _, bob2blockchain) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      val fee = UpdateFee("00" * 32, 100000000)
+      // we first update the global variable so that we don't trigger a 'fee too different' error
+      Globals.feeratePerKw.set(fee.feeratePerKw)
+      sender.send(bob, fee)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "can't pay the fee: missing=72120000 reserve=20000 fees=72400000")
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateFee (local/remote feerates are too different)") { case (_, bob, _, bob2alice, _, bob2blockchain) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val sender = TestProbe()
+      sender.send(bob, UpdateFee("00" * 32, 50000))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=50000 localFeeratePerKw=10000")
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
   test("recv CurrentBlockCount (no htlc timed out)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -358,16 +445,53 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv RevokeAndAck (unexpectedly)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv CurrentFeerate (when funder, triggers an UpdateFee)") { case (alice, _, alice2bob, _, _, _) =>
     within(30 seconds) {
-      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
-      awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteNextCommitInfo.isRight)
-      sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
-      alice2bob.expectMsgType[Error]
-      awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(PublishAsap(tx))
-      alice2blockchain.expectMsgType[WatchConfirmed]
+      val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
+      val event = CurrentFeerate(20000)
+      sender.send(alice, event)
+      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratePerKw))
+    }
+  }
+
+  test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { case (alice, _, alice2bob, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val event = CurrentFeerate(10010)
+      sender.send(alice, event)
+      alice2bob.expectNoMsg(500 millis)
+    }
+  }
+
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { case (_, bob, _, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val event = CurrentFeerate(11000)
+      sender.send(bob, event)
+      bob2alice.expectNoMsg(500 millis)
+    }
+  }
+
+  test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { case (_, bob, _, bob2alice, _, bob2blockchain) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val event = CurrentFeerate(20000)
+      sender.send(bob, event)
+      bob2alice.expectMsgType[Error]
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(bob.stateName == CLOSING)
+    }
+  }
+
+  test("recv CurrentFeerate (ignore negative feerate)") { case (alice, _, alice2bob, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      // this happens when in regtest mode
+      val event = CurrentFeerate(-1)
+      sender.send(alice, event)
+      alice2bob.expectNoMsg(500 millis)
     }
   }
 

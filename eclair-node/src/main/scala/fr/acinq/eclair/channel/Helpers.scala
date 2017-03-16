@@ -4,12 +4,13 @@ import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.Features.Unset
+import fr.acinq.eclair.Globals.Constants.{UPDATE_FEE_MAX_DIFF_RATIO, UPDATE_FEE_MIN_DIFF_RATIO}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Features, NodeParams}
+import fr.acinq.eclair.{Features, Globals, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -61,6 +62,14 @@ object Helpers {
     }
   }
 
+  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long): Boolean =
+  // negative feerate can happen in regtest mode
+    networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
+
+  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Boolean =
+  // negative feerate can happen in regtest mode
+    remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > UPDATE_FEE_MAX_DIFF_RATIO
+
   object Funding {
 
     def makeFundingInputInfo(fundingTxId: BinaryData, fundingTxOutputIndex: Int, fundingSatoshis: Satoshi, fundingPubkey1: PublicKey, fundingPubkey2: PublicKey): InputInfo = {
@@ -80,13 +89,25 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 
-      // local and remote feerate are the same at this point (funder gets to choose the initial feerate)
-      val localSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = localParams.feeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
-      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeRatePerKw = remoteParams.feeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
+      val localSpec = CommitmentSpec(Set.empty[Htlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
+      val remoteSpec = CommitmentSpec(Set.empty[Htlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
+
+      // TODO: should we check the fees sooner in the process?
+      if (!localParams.isFunder) {
+        // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
+        val localFeeratePerKw = Globals.feeratePerKw.get()
+        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw)) {
+          throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
+        }
+        val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
+        val reserve = Satoshi(localParams.channelReserveSatoshis)
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec)
+        require(toRemote >= reserve + fees, s"remote cannot pay the fees for the initial commit tx: toRemote=$toRemote reserve=$reserve fees=$fees")
+      }
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)
       val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
@@ -117,13 +138,16 @@ object Helpers {
     }
 
     def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
-      logger.info(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
+      logger.debug(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
       import commitments._
       val closingFee = {
-        // this is just to estimate the weight
+        // this is just to estimate the weight, it depends on size of the pubkey scripts
         val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
-        Transactions.weight2fee(commitments.localParams.feeratePerKw, closingWeight)
+        // we use our local fee estimate
+        val feeratePerKw = Globals.feeratePerKw.get()
+        logger.info(s"using feeratePerKw=$feeratePerKw for closing tx")
+        Transactions.weight2fee(feeratePerKw, closingWeight)
       }
       val (_, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
       closingSigned
@@ -138,19 +162,20 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
+      logger.debug(s"closingTx=${Transaction.write(closingTx.tx)}")
       (closingTx, closingSigned)
     }
 
-    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
+    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, remoteClosingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
       import commitments._
-      val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
       val signedClosingTx = Transactions.addSigs(closingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
 
     def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = {
       ((localClosingFee + remoteClosingFee) / 4) * 2 match {
-        case value if value == localClosingFee => value + Satoshi(2)
+        case value if value == localClosingFee => value + Satoshi(2) // TODO: why +2 sat?
         case value => value
       }
     }
@@ -182,9 +207,12 @@ object Helpers {
       val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
       val localDelayedPrivkey = Generators.derivePrivKey(localParams.delayedPaymentKey, localPerCommitmentPoint)
 
+      // for now we use the current commit's fee rate, it should be up-to-date
+      val feeratePerKw = localCommit.spec.feeratePerKw
+
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output")(Try {
-        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKw)
         val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
         Transactions.addSigs(claimDelayed, sig)
       })
@@ -213,7 +241,7 @@ object Helpers {
       val htlcDelayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo => generateTx("claim-delayed-output")(Try {
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localParams.feeratePerKw)
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKw)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
         })
@@ -250,11 +278,12 @@ object Helpers {
       val localRevocationPubKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
       val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.toPoint, remoteCommit.remotePerCommitmentPoint)
 
-      // TODO: in the following we use localCommit.feeRatePerKw
+      // for now we use the same fee rate they used, it should be up-to-date
+      val feeratePerKw = remoteCommit.spec.feeratePerKw
 
       // first we will claim our main output right away
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
-        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, commitments.localCommit.spec.feeRatePerKw)
+        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKw)
         val sig = Transactions.sign(claimMain, localPrivkey)
         Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
       })
@@ -267,14 +296,14 @@ object Helpers {
         // incoming htlc for which we have the preimage: we spend it directly
         case Htlc(OUT, add: UpdateAddHtlc, _) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, commitments.localCommit.spec.feeRatePerKw)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKw)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         })
         // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) => generateTx("claim-htlc-timeout")(Try {
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, commitments.localCommit.spec.feeRatePerKw)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKw)
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig)
         })
@@ -319,9 +348,12 @@ object Helpers {
           val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
           val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remotePerCommitmentPoint)
 
+          // for now we use the current commit's fee rate, it should be up-to-date
+          val feeratePerKw = localCommit.spec.feeratePerKw
+
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
-            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localCommit.spec.feeRatePerKw)
+            val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKw)
             val sig = Transactions.sign(claimMain, localPrivkey)
             Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
           })
@@ -329,7 +361,7 @@ object Helpers {
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
             // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-            val txinfo = Transactions.makeMainPenaltyTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, commitments.localParams.feeratePerKw)
+            val txinfo = Transactions.makeMainPenaltyTx(tx, remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, feeratePerKw)
             val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
             Transactions.addSigs(txinfo, sig)
           })

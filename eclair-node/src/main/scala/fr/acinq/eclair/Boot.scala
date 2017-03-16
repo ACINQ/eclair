@@ -82,6 +82,9 @@ class Setup(datadir: String) extends Logging {
   assert(chain == "test" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   assert(progress > 0.99, "bitcoind should be synchronized")
   Globals.blockCount.set(blockCount)
+  val feeratePerKw = if (chain == "regtest") 10000 else Await.result(bitcoin_client.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
+  logger.info(s"initial feeratePerKw=$feeratePerKw")
+  Globals.feeratePerKw.set(feeratePerKw)
   val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
   // we use it as final payment address, so that funds are moved to the bitcoind wallet upon channel termination
   val JString(finalAddress) = Await.result(bitcoin_client.client.invoke("getnewaddress"), 10 seconds)
@@ -102,7 +105,7 @@ class Setup(datadir: String) extends Logging {
   val fatalEventFuture = fatalEventPromise.future
 
   val peer = system.actorOf(PeerClient.props(config.getConfig("bitcoind")), "bitcoin-peer")
-  val watcher = system.actorOf(PeerWatcher.props(bitcoin_client), name = "watcher")
+  val watcher = system.actorOf(PeerWatcher.props(nodeParams, bitcoin_client), name = "watcher")
   val paymentHandler = config.getString("payment-handler") match {
     case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
     case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")

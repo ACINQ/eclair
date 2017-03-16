@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel.states.g
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.eclair.TestkitBaseClass
+import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
@@ -22,15 +22,18 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
   override def withFixture(test: OneArgTest) = {
     val setup = init()
     import setup._
-    // note that alice.initialFeeRate != bob.initialFeeRate
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, blockchainA, alice2blockchain, bob2blockchain)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[Shutdown]
+      // NB: at this point, bob has already computed and sent the first ClosingSigned message
+      // In order to force a fee negotiation, we will change the current fee before forwarding
+      // the Shutdown message to alice, so that alice computes a different initial closing fee.
+      Globals.feeratePerKw.set(Globals.feeratePerKw.get() * 2)
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
       awaitCond(bob.stateName == NEGOTIATING)
@@ -38,14 +41,20 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-  // TODO: this must be re-enabled when dynamic fees are implemented
-  ignore("recv ClosingSigned (theirCloseFee != ourCloseFee") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
-      val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
-      alice2bob.forward(bob)
-      val bob2aliceCloseSig = bob2alice.expectMsgType[ClosingSigned]
-      assert(2 * aliceCloseSig.feeSatoshis == bob2aliceCloseSig.feeSatoshis)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.unackedShutdown() === None)
+      val aliceCloseSig1 = alice2bob.expectMsgType[ClosingSigned]
+      val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
+      assert(aliceCloseSig1.feeSatoshis == 2 * bobCloseSig.feeSatoshis)
+      // actual test starts here
+      val initialState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
+      bob2alice.forward(alice)
+      val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
+      // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
+      assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig.feeSatoshis)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(
+        commitments = initialState.commitments.copy(unackedMessages = aliceCloseSig2 :: Nil),
+        localClosingSigned = aliceCloseSig2))
     }
   }
 

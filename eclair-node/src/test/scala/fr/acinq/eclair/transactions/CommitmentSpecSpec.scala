@@ -9,7 +9,7 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class CommitmentSpecSpec extends FunSuite {
   test("add, fulfill and fail htlcs from the sender side") {
-    val spec = CommitmentSpec(htlcs = Set(), feeRatePerKw = 1000, toLocalMsat = 5000 * 1000, toRemoteMsat = 0)
+    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = 1000, toLocalMsat = 5000 * 1000, toRemoteMsat = 0)
     val R = Crypto.sha256(BinaryData("42" * 32))
     val H = Crypto.sha256(R)
 
@@ -31,7 +31,7 @@ class CommitmentSpecSpec extends FunSuite {
   }
 
   test("add, fulfill and fail htlcs from the receiver side") {
-    val spec = CommitmentSpec(htlcs = Set(), feeRatePerKw = 1000, toLocalMsat = 0, toRemoteMsat = 5000 * 1000)
+    val spec = CommitmentSpec(htlcs = Set(), feeratePerKw = 1000, toLocalMsat = 0, toRemoteMsat = 5000 * 1000)
     val R = Crypto.sha256(BinaryData("42" * 32))
     val H = Crypto.sha256(R)
 

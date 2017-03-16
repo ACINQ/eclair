@@ -167,7 +167,7 @@ class TestVectorsSpec extends FunSuite {
   def run(spec: CommitmentSpec) = {
     println(s"to_local_msat: ${spec.toLocalMsat}")
     println(s"to_remote_msat: ${spec.toRemoteMsat}")
-    println(s"local_feerate_per_kw: ${spec.feeRatePerKw}")
+    println(s"local_feerate_per_kw: ${spec.feeratePerKw}")
 
     val commitTx = {
       val tx = Transactions.makeCommitTx(
@@ -272,7 +272,7 @@ class TestVectorsSpec extends FunSuite {
   test("simple commitment tx with no HTLCs") {
     val name = "simple commitment tx with no HTLCs"
     println(s"name: $name")
-    val spec = CommitmentSpec(htlcs = Set.empty, feeRatePerKw = 15000, toLocalMsat = 7000000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = Set.empty, feeratePerKw = 15000, toLocalMsat = 7000000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
@@ -283,7 +283,7 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with all 5 htlcs untrimmed (minimum feerate)") {
     val name = "commitment tx with all 5 htlcs untrimmed (minimum feerate)"
     println(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 0, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 0, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
@@ -293,8 +293,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 7 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 7 outputs untrimmed (maximum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 7)
@@ -307,8 +307,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 6 outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with 6 outputs untrimmed (minimum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
@@ -321,8 +321,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 6 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 6 outputs untrimmed (maximum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 1454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 1454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 6)
@@ -335,8 +335,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 5 outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with 5 outputs untrimmed (minimum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 1454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 1454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
@@ -349,8 +349,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 5 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 5 outputs untrimmed (maximum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 1454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 1454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 5)
@@ -363,8 +363,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 4 outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with 4 outputs untrimmed (minimum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 1454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 1454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
@@ -377,8 +377,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 4 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 4 outputs untrimmed (maximum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 2454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 2454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 4)
@@ -391,8 +391,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 3 outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with 3 outputs untrimmed (minimum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 2454999 / Transactions.htlcTimeoutWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 2454999 / Transactions.htlcTimeoutWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
@@ -405,8 +405,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 3 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 3 outputs untrimmed (maximum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 3454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 3454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 3)
@@ -419,8 +419,8 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 2 outputs untrimmed (minimum feerate)") {
     val name = "commitment tx with 2 outputs untrimmed (minimum feerate)"
     println(s"name: $name")
-    val feeRatePerKw = 3454999 / Transactions.htlcSuccessWeight
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = feeRatePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val feeratePerKw = 3454999 / Transactions.htlcSuccessWeight
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = feeratePerKw + 1, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
@@ -433,7 +433,7 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 2 outputs untrimmed (maximum feerate)") {
     val name = "commitment tx with 2 outputs untrimmed (maximum feerate)"
     println(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651180, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651180, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 2)
@@ -446,7 +446,7 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with 1 output untrimmed (minimum feerate)") {
     val name = "commitment tx with 1 output untrimmed (minimum feerate)"
     println(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651181, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651181, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)
@@ -459,7 +459,7 @@ class TestVectorsSpec extends FunSuite {
   test("commitment tx with fee greater than funder amount") {
     val name = "commitment tx with fee greater than funder amount"
     println(s"name: $name")
-    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeRatePerKw = 9651936, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
+    val spec = CommitmentSpec(htlcs = htlcs.toSet, feeratePerKw = 9651936, toLocalMsat = 6988000000L, toRemoteMsat = 3000000000L)
 
     val (commitTx, htlcTxs) = run(spec)
     assert(commitTx.tx.txOut.length == 1)

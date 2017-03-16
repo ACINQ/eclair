@@ -1,8 +1,7 @@
 package fr.acinq.eclair.transactions
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.bitcoin.Crypto.sha256
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc, UpdateMessage}
+import fr.acinq.eclair.wire._
 
 /**
   * Created by PM on 07/12/2016.
@@ -16,7 +15,7 @@ case object OUT extends Direction { def opposite = IN }
 
 case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])
 
-final case class CommitmentSpec(htlcs: Set[Htlc], feeRatePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
+final case class CommitmentSpec(htlcs: Set[Htlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
   val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
@@ -71,7 +70,11 @@ object CommitmentSpec {
       case (spec, u: UpdateFailHtlc) => failHtlc(spec, IN, u)
       case (spec, _) => spec
     }
-    spec4
+    val spec5 = (localChanges ++ remoteChanges).foldLeft(spec4) {
+      case (spec, u: UpdateFee) => spec.copy(feeratePerKw = u.feeratePerKw)
+      case (spec, _) => spec
+    }
+    spec5
   }
 
 }
