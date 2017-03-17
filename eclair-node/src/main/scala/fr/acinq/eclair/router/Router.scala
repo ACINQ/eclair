@@ -173,7 +173,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
 
     case 'tick_broadcast =>
       log.info(s"broadcasting ${rebroadcast.size} routing messages")
-      rebroadcast.foreach(context.actorSelection(Register.actorPathToPeers) ! _)
+      context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(rebroadcast)
       context become main(nodes, channels, updates, Nil, awaiting, stash)
 
     case 'nodes => sender ! nodes.values
@@ -199,6 +199,8 @@ object Router {
   def channelKey(shortChannelId: Long) = s"ann-channel-$shortChannelId"
   def channelUpdateKey(shortChannelId: Long, flags: BinaryData) = s"ann-update-$shortChannelId-$flags"
   // @formatter:on
+
+  case class Rebroadcast(ann: Seq[RoutingMessage])
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
