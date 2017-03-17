@@ -1,6 +1,6 @@
 ![Eclair Logo](.readme/logo.png)
 
-[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=wip-bolts)](https://travis-ci.org/ACINQ/eclair)
+[![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=master)](https://travis-ci.org/ACINQ/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
 **Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
