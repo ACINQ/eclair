@@ -650,10 +650,27 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
+    case Event(c@CMD_FAIL_MALFORMED_HTLC(id, onionHash, failureCode, do_commit), d: DATA_SHUTDOWN) =>
+      Try(Commitments.sendFailMalformed(d.commitments, c)) match {
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
     case Event(fail@UpdateFailHtlc(_, id, reason), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
+        case Failure(cause) => handleLocalError(cause, d)
+      }
+
+    case Event(fail@UpdateFailMalformedHtlc(_, id, onionHash, failureCode), d: DATA_SHUTDOWN) =>
+      Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFailMalformed(fail)
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)

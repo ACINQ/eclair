@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -152,6 +152,20 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_FAIL_MALFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(1, Crypto.sha256(BinaryData.empty), FailureMessage.BADONION))
+      sender.expectMsg("ok")
+      val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
+      awaitCond(bob.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
+          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
+    }
+  }
+
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -181,6 +195,16 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
+      val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), FailureMessage.BADONION)
+      sender.send(alice, fail)
+      awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
     }
   }
 

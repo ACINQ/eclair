@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.Tag
@@ -790,6 +790,24 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_FAIL_MAFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+
+      // actual test begins
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessage.BADONION))
+      sender.expectMsg("ok")
+      val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
+      awaitCond(bob.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
+          unackedMessages = fail :: Nil)))
+    }
+  }
+
   test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -810,13 +828,31 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason".getBytes()))
       sender.expectMsg("ok")
-      val fulfill = bob2alice.expectMsgType[UpdateFailHtlc]
+      val fail = bob2alice.expectMsgType[UpdateFailHtlc]
 
       // actual test begins
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       bob2alice.forward(alice)
       awaitCond(alice.stateData == initialState.copy(
-        commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fulfill))))
+        commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+    }
+  }
+
+  test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessage.BADONION))
+      sender.expectMsg("ok")
+      val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
+
+      // actual test begins
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData == initialState.copy(
+        commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
     }
   }
 
