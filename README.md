@@ -1,7 +1,7 @@
 ![Eclair Logo](.readme/logo.png)
 
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=wip-bolts)](https://travis-ci.org/ACINQ/eclair)
-[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-Apache%202.0-orange.svg)](LICENSE)
 
 **Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
 
