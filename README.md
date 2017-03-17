@@ -26,6 +26,7 @@ Eclair 0.2-Alpha1 is compliant to the BOLTs at commit [06a5e6cbdbb4c6f8b8dab444d
   - [X] BOLT 5: Recommendations for On-chain Transaction Handling
   - [X] BOLT 7: P2P Node and Channel Discovery
   - [X] BOLT 8: Encrypted and Authenticated Transport
+  - [X] BOLT 9: Assigned Feature Flags
 
 ## Overview
 
