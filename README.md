@@ -5,16 +5,27 @@
 
 **Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
 
-This software follows the [Lightning Network Specifications](https://github.com/lightningnetwork/lightning-rfc), also known as BOLTs. Other implementations of BOLTs include:
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations of BOLTs include:
 - [lightning-c]
 - [lit]
 - [lnd]
  
- :construction: Both BOLTs and Eclair itself are a work in progress. Expect things to break/change!
+ :construction: Both the BOLTs and Eclair itself are a work in progress. Expect things to break/change!
  
  :warning: Eclair currently only runs on regtest or testnet.
 
 ---
+
+## Lightning Network Specification Compliance
+Eclair 0.2-Alpha1 is compliant to the BOLTs at commit [06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02](https://github.com/lightningnetwork/lightning-rfc/commit/06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02).
+
+  - [X] BOLT 1: Base Protocol
+  - [X] BOLT 2: Peer Protocol for Channel Management
+  - [X] BOLT 3: Bitcoin Transaction and Script Formats
+  - [X] BOLT 4: Onion Routing Protocol
+  - [X] BOLT 5: Recommendations for On-chain Transaction Handling
+  - [X] BOLT 7: P2P Node and Channel Discovery
+  - [X] BOLT 8: Encrypted and Authenticated Transport
 
 ## Overview
 
@@ -84,19 +95,6 @@ option                       | description               | default value
   fulfillhtlc | channel_id, r                       | fulfills an htlc
   close       | channel_id                          | closes a channel
   help        |                                     | displays available methods
-
----
-
-## Project Status
-- [X] Network
-- [X] Routing (simple IRC prototype)
-- [X] Channel protocol
-- [X] HTLC Scripts
-- [X] Unilateral close handling
-- [X] Relaying Payment
-- [ ] Fee management
-- [X] Blockchain watcher
-- [ ] Storing states in a database
 
 ## Other implementations
 Name         | Language | Compatible
