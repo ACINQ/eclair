@@ -136,10 +136,10 @@ object HtlcGenerationSpec {
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.encodeSignature(Crypto.sign(BinaryData.empty, priv_a)) :+ 1.toByte
   val defaultChannelUpdate = ChannelUpdate(sig, 0, 0, "0000", 0, 42000, 0, 0)
-  val channelUpdate_ab = defaultChannelUpdate.copy(cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7)
-  val channelUpdate_bc = defaultChannelUpdate.copy(cltvExpiryDelta = 5, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_cd = defaultChannelUpdate.copy(cltvExpiryDelta = 10, feeBaseMsat = 60000, feeProportionalMillionths = 1)
-  val channelUpdate_de = defaultChannelUpdate.copy(cltvExpiryDelta = 7, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val channelUpdate_ab = defaultChannelUpdate.copy(shortChannelId = 1, cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7)
+  val channelUpdate_bc = defaultChannelUpdate.copy(shortChannelId = 2, cltvExpiryDelta = 5, feeBaseMsat = 153000, feeProportionalMillionths = 4)
+  val channelUpdate_cd = defaultChannelUpdate.copy(shortChannelId = 3, cltvExpiryDelta = 10, feeBaseMsat = 60000, feeProportionalMillionths = 1)
+  val channelUpdate_de = defaultChannelUpdate.copy(shortChannelId = 4, cltvExpiryDelta = 7, feeBaseMsat = 766000, feeProportionalMillionths = 10)
 
   // simple route a -> b -> c -> d -> e
 

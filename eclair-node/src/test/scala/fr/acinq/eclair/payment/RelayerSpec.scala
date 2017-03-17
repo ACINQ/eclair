@@ -42,8 +42,8 @@ class RelayerSpec extends TestkitBaseClass {
   // node c is the next node in the route
   val nodeId_a = PublicKey(a)
   val nodeId_c = PublicKey(c)
-  val channelId_ab = "65514354" * 8
-  val channelId_bc = "64864544" * 8
+  val channelId_ab: BinaryData = "65514354" * 8
+  val channelId_bc: BinaryData = "64864544" * 8
 
   test("add a channel") { case (relayer, _) =>
     val sender = TestProbe()
@@ -115,6 +115,7 @@ class RelayerSpec extends TestkitBaseClass {
     }
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     sender.expectNoMsg(1 second)
@@ -134,6 +135,7 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
@@ -155,6 +157,7 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, "00" * 1254)
     }
 
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
@@ -175,6 +178,7 @@ class RelayerSpec extends TestkitBaseClass {
     }
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
@@ -198,6 +202,7 @@ class RelayerSpec extends TestkitBaseClass {
     }
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
@@ -222,6 +227,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
@@ -249,6 +255,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
@@ -275,6 +282,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
@@ -302,6 +310,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
