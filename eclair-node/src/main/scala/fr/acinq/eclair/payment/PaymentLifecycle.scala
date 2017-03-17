@@ -14,8 +14,11 @@ import scodec.Attempt
 // @formatter:off
 
 case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey)
-case class PaymentSucceeded(paymentPreimage: BinaryData)
-case class PaymentFailed(paymentHash: BinaryData, reason: Option[BinaryData])
+
+sealed trait PaymentResult
+case class PaymentSucceeded(paymentPreimage: BinaryData) extends PaymentResult
+case class PaymentFailed(paymentHash: BinaryData, error: Option[PaymentError]) extends PaymentResult
+case class PaymentError(originNode: PublicKey, reason: BinaryData)
 
 sealed trait Data
 case object WaitingForRequest extends Data
@@ -74,7 +77,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           None
         case Some((pubkey, failureMessage)) =>
           log.info(s"payment failure: $pubkey, $failureMessage")
-          Some(failureMessage)
+          Some(PaymentError(pubkey, failureMessage))
       }
       s ! PaymentFailed(cmd.paymentHash, reason)
       stop(FSM.Normal)
