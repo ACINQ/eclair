@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=wip-bolts)](https://travis-ci.org/ACINQ/eclair)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-**Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
+**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
 This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [lightning-c], [lit], and [lnd].
  
@@ -26,14 +26,6 @@ Eclair 0.2-Alpha1 is fully compliant with the BOLTs at commit [06a5e6cbdbb4c6f8b
   - [X] BOLT 9: Assigned Feature Flags
 
 ## Overview
-
-Eclair intends to be a full-fledged Lightning node. It can run with or without a GUI, and a JSON-RPC API is also available.
-
-Available actions:
-- Open a channel with another lightning node
-- Display opened channels with the node (status, balance, capacity, ...)
-- Receive payments from another node
-- Send payments to another node
 
 ![Eclair Demo](.readme/screen-1.png)
 
