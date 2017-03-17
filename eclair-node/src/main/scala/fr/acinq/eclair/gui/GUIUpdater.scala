@@ -5,6 +5,7 @@ import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
+import collection.JavaConversions._
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -117,7 +118,9 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
 
     case NodeDiscovered(nodeAnnouncement) =>
       log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
-      mainController.networkNodesList.add(nodeAnnouncement)
+      if(!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
+        mainController.networkNodesList.add(nodeAnnouncement)
+      }
       Platform.runLater(new Runnable() {
         override def run = mainController.networkNodesTab.setText(s"Nodes (${mainController.networkNodesList.size})")
       })
@@ -133,7 +136,9 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
 
     case ChannelDiscovered(channelAnnouncement, _) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
-      mainController.networkChannelsList.add(channelAnnouncement)
+      if(!mainController.networkChannelsList.exists(ca => ca.shortChannelId == channelAnnouncement.shortChannelId)) {
+        mainController.networkChannelsList.add(channelAnnouncement)
+      }
       Platform.runLater(new Runnable() {
         override def run = mainController.networkChannelsTab.setText(s"Channels (${mainController.networkChannelsList.size})")
       })
