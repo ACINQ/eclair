@@ -64,7 +64,8 @@ $ mvn package -DskipTests
 $ bitcoin-cli generate 500
 ```
 - Navigate to `eclair-node/target` and execute the jar `eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar`
-````shell
+
+```shell
 $ java 
      -Declair.bitcoind.rpcuser=foo
      -Declair.bitcoind.rpcpassword=bar
