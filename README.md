@@ -7,8 +7,8 @@
 
 This software follows the [Lightning Network Specifications](https://github.com/lightningnetwork/lightning-rfc), also known as BOLTs. Other implementations of BOLTs include:
 - [lightning-c]
-- [lnd]
 - [lit]
+- [lnd]
  
  :construction: Both BOLTs and Eclair itself are a work in progress. Expect things to break/change!
  
@@ -103,8 +103,8 @@ Name         | Language | Compatible
 -------------|----------|------------
 [Amiko-Pay]  | Python   | no
 [lightning-c]| C        | not yet
-[lnd]        | Go       | not yet
 [lit]        | Go       | not yet
+[lnd]        | Go       | not yet
 [Thunder]    | Java     | no
 
 ## Resources
