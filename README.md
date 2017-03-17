@@ -1,83 +1,79 @@
 ![Eclair Logo](.readme/logo.png)
 
-**Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
-
-:construction: This branch implements the [Lightning Network Specifications](https://github.com/lightningnetwork/lightning-rfc), it is a work in progress.
-
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=wip-bolts)](https://travis-ci.org/ACINQ/eclair)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
+**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
+
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [lightning-c], [lit], and [lnd].
+ 
+ :construction: Both the BOLTs and Eclair itself are a work in progress. Expect things to break/change!
+ 
+ :warning: Eclair currently only runs on regtest or testnet.
 
 ---
 
+## Lightning Network Specification Compliance
+Eclair 0.2-Alpha1 is fully compliant with the BOLTs at commit [06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02](https://github.com/lightningnetwork/lightning-rfc/commit/06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02):
+
+  - [X] BOLT 1: Base Protocol
+  - [X] BOLT 2: Peer Protocol for Channel Management
+  - [X] BOLT 3: Bitcoin Transaction and Script Formats
+  - [X] BOLT 4: Onion Routing Protocol
+  - [X] BOLT 5: Recommendations for On-chain Transaction Handling
+  - [X] BOLT 7: P2P Node and Channel Discovery
+  - [X] BOLT 8: Encrypted and Authenticated Transport
+  - [X] BOLT 9: Assigned Feature Flags
+
 ## Overview
-
-This software creates a node compatible with a Lightning network and provides a GUI to manage the node. A JSON-RPC API is available if you prefer to run it headless.
-
-Available actions:
-- Open a channel with another eclair or lightningd instance
-- Display opened channels with the node (status, balance, capacity, ...)
-- Receive payments from another node
-- Send payments to another node
 
 ![Eclair Demo](.readme/screen-1.png)
 
 ## Installation
 
-The project is under heavy development and no release is available yet. Still you can download the sources, compile the project with Maven (cf §Development) and run it on localhost.
+### Configuring Bitcoin Core
 
----
+Eclair needs a _synchronized_, _segwit-ready_, _non-pruning_, _tx-indexing_ [Bitcoin-core](https://github.com/bitcoin/bitcoin) node.
 
-## Development
-
-#### Set up the environment
-- JDK 1.8+
-- [Latest Scala installation](http://www.scala-lang.org/download/)
-- [Maven](https://maven.apache.org/download.cgi)
-- A segwit version of bitcoin core in testnet or regtest mode
-
-:warning: eclair currently runs on regtest/segnet only. **Do not try and modify it to run on bitcoin mainnet!**
-
-- Make sure that bitcoin-cli is on the path and edit ~/.bitcoin/bitcoin.conf and add:
+Run bitcoind with the following `bitcoin.conf`:
 ```
+testnet=1
 server=1
-regtest=1
-rpcuser=***
-rpcpassword=***
+rpcuser=XXX
+rpcpassword=XXX
+txindex=1
 ```
 
-#### Run
+### Installing Eclair
 
-- Download the sources and build the executable JAR with the following command:
+#### Windows
+
+Just use the windows installer, it should create a shortcut on your desktop.
+
+#### Linux, MacOs or manual install on Windows
+
+You need to first install java, more precisely a JRE 1.8+.
+
+Then just grab the latest fat jar and run:
 ```shell
-$ mvn package -DskipTests
-```
-- Start bitcoind
-- Mine enough blocks to activate segwit blocks:
-```shell
-$ bitcoin-cli generate 500
-```
-- Navigate to `eclair-node/target` and execute the jar `eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar`
-````shell
-$ java 
-     -Declair.bitcoind.rpcuser=foo
-     -Declair.bitcoind.rpcpassword=bar
-     -jar eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar
+java -jar eclair-node_xxxxxx-fat.jar
 ```
 
-#### JVM Options
+### Configuring Eclair
 
-option                       | default value             | description
------------------------------|---------------------------|---------
+Eclair will create a directory in `~/.eclair` by default. You may change this directory's location using `--datadir <dir>` command line argument.
+
+If you want to change configuration parameters, create a file named `eclair.conf` in eclair's home directory.
+
+
+option                       | description               | default value
+-----------------------------|---------------------------|--------------
  eclair.server.port          | TCP port                  | 9735
  eclair.http.port            | HTTP port                 | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
-
 &rarr; see [`application.conf`](eclair-node/src/main/resources/application.conf) for full reference.
-
-#### Testing with lightningd
-
-&rarr; Checkout [our guide](TESTING.md)
 
 ## JSON-RPC API
 
@@ -90,32 +86,13 @@ option                       | default value             | description
   close       | channel_id                          | closes a channel
   help        |                                     | displays available methods
 
----
-
-## Project Status
-- [X] Network
-- [X] Routing (simple IRC prototype)
-- [X] Channel protocol
-- [X] HTLC Scripts
-- [X] Unilateral close handling
-- [X] Relaying Payment
-- [ ] Fee management
-- [X] Blockchain watcher
-- [ ] Storing states in a database
-
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 
-## Other implementations
-Name         | Language | Compatible
--------------|----------|------------
-[Amiko-Pay]  | Python   | no
-[lightning-c]| C        | yes
-[lnd]        | Go       | no
-[Thunder]    | Java     | no
-
 [Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
 [lightning-c]: https://github.com/ElementsProject/lightning
 [lnd]: https://github.com/LightningNetwork/lnd
+[lit]: https://github.com/mit-dci/lit
 [Thunder]: https://github.com/blockchain/thunder
+
