@@ -10,7 +10,7 @@ This software follows the [Lightning Network Specifications](https://github.com/
 - [lnd]
 - [lit]
  
- :construction: Both BOLTs and Eclair itself are a work in progress. Expect things to change!
+ :construction: Both BOLTs and Eclair itself are a work in progress. Expect things to break/change!
  
  :warning: Eclair currently only runs on regtest or testnet.
 
