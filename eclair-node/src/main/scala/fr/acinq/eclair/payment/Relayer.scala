@@ -2,7 +2,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, ScriptWitness, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptWitness, Transaction}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
@@ -29,6 +29,7 @@ case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
 case class ForwardFail(fail: UpdateFailHtlc)
+case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc)
 
 // @formatter:on
 
@@ -71,7 +72,6 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       log.info(s"updating relay parameters with channelUpdate=$channelUpdate")
       context become main(channels, bindings, shortIds, channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
 
-
     case ForwardAdd(add) =>
       Try(Sphinx.parsePacket(nodeSecret, add.paymentHash, add.onionRoutingPacket))
         .map {
@@ -98,7 +98,9 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
               val failure = FailureMessage.incorrect_cltv_expiry(add.expiry, channelUpdate)
               val reason = Sphinx.createErrorPacket(sharedSecret, failure)
               sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
+
             case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 =>
+              // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
               val failure = FailureMessage.final_expiry_too_soon
               val reason = Sphinx.createErrorPacket(sharedSecret, failure)
               sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
@@ -119,7 +121,8 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
         case Failure(t) =>
           log.error(t, "couldn't parse onion: ")
-          sender ! CMD_FAIL_HTLC(add.id, "onion parsing error".getBytes(), commit = true)
+          // we cannot even parse the onion packet
+          sender ! CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessage.BADONION, commit = true)
       }
 
     case AddHtlcSuccess(downstream, origin) =>
@@ -158,6 +161,20 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           val sharedSecret = Sphinx.parsePacket(nodeSecret, origin.paymentHash, origin.onionRoutingPacket).sharedSecret
           val reason1 = Sphinx.forwardErrorPacket(fail.reason, sharedSecret)
           upstream ! CMD_FAIL_HTLC(origin.id, reason1, commit = true)
+        case Some(Relayed(origin)) =>
+          log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
+        case Some(Local(origin)) =>
+          log.info(s"we were the origin payer for htlc #${fail.id}")
+          origin ! fail
+        case None =>
+          log.warning(s"no origin found for htlc ${fail.channelId}/${fail.id}")
+      }
+
+    case ForwardFailMalformed(fail) =>
+      bindings.get(DownstreamHtlcId(fail.channelId, fail.id)) match {
+        case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
+          val upstream = channels.find(_.channelId == origin.channelId).get.channel
+          upstream ! CMD_FAIL_MALFORMED_HTLC(origin.id, fail.onionHash, fail.failureCode, commit = true)
         case Some(Relayed(origin)) =>
           log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
         case Some(Local(origin)) =>

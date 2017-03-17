@@ -169,6 +169,12 @@ object Codecs {
       ("id" | uint64) ::
       ("reason" | varsizebinarydata)).as[UpdateFailHtlc]
 
+  val updateFailMalformedHtlcCodec: Codec[UpdateFailMalformedHtlc] = (
+    ("channelId" | binarydata(32)) ::
+      ("id" | uint64) ::
+      ("onionHash" | binarydata(32)) ::
+      ("failureCode" | uint16)).as[UpdateFailMalformedHtlc]
+
   val commitSigCodec: Codec[CommitSig] = (
     ("channelId" | binarydata(32)) ::
       ("signature" | signature) ::
@@ -247,6 +253,7 @@ object Codecs {
     .typecase(132, commitSigCodec)
     .typecase(133, revokeAndAckCodec)
     .typecase(134, updateFeeCodec)
+    .typecase(135, updateFailMalformedHtlcCodec)
     .typecase(256, channelAnnouncementCodec)
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)

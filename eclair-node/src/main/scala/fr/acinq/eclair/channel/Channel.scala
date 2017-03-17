@@ -424,10 +424,27 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
+    case Event(c@CMD_FAIL_MALFORMED_HTLC(id, onionHash, failureCode, do_commit), d: DATA_NORMAL) =>
+      Try(Commitments.sendFailMalformed(d.commitments, c)) match {
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
     case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(_, _)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
+        case Failure(cause) => handleLocalError(cause, d)
+      }
+
+    case Event(fail@UpdateFailMalformedHtlc(_, id, onionHash, failureCode), d@DATA_NORMAL(_, _)) =>
+      Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFailMalformed(fail)
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
@@ -554,9 +571,6 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
-      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
-      relayer ! channelUpdate
-
       val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey)
       val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ annSignatures))
@@ -573,6 +587,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           router ! channelAnn
           router ! nodeAnn
           router ! channelUpdate
+          relayer ! channelUpdate
           // TODO: remove this later when we use testnet/mainnet
           // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
           // we give 3 seconds for the router-watcher roundtrip

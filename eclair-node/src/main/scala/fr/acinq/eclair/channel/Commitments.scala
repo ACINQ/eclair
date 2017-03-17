@@ -213,12 +213,35 @@ object Commitments extends Logging {
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
     }
 
+  def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): (Commitments, UpdateFailMalformedHtlc) =
+    getHtlcCrossSigned(commitments, IN, cmd.id) match {
+      case Some(htlc) =>
+        val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
+        val commitments1 = addLocalProposal(commitments, fail)
+        (commitments1, fail)
+      case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
+    }
+
   def isOldFail(commitments: Commitments, fail: UpdateFailHtlc): Boolean =
     commitments.remoteChanges.proposed.contains(fail) ||
       commitments.remoteChanges.signed.contains(fail) ||
       commitments.remoteChanges.acked.contains(fail)
 
+  def isOldFail(commitments: Commitments, fail: UpdateFailMalformedHtlc): Boolean =
+    commitments.remoteChanges.proposed.contains(fail) ||
+      commitments.remoteChanges.signed.contains(fail) ||
+      commitments.remoteChanges.acked.contains(fail)
+
   def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[Commitments, Commitments] =
+    isOldFail(commitments, fail) match {
+      case true => Left(commitments)
+      case false => getHtlcCrossSigned(commitments, OUT, fail.id) match {
+        case Some(htlc) => Right(addRemoteProposal(commitments, fail))
+        case None => throw new RuntimeException(s"unknown htlc id=${fail.id}")
+      }
+    }
+
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, Commitments] =
     isOldFail(commitments, fail) match {
       case true => Left(commitments)
       case false => getHtlcCrossSigned(commitments, OUT, fail.id) match {

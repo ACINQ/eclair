@@ -160,7 +160,8 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
-    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    val fail = sender.expectMsgType[CMD_FAIL_MALFORMED_HTLC]
+    assert(fail.onionHash == Crypto.sha256(add_ab.onionRoutingPacket))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 

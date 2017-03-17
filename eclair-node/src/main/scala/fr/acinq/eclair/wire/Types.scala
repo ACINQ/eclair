@@ -89,6 +89,11 @@ case class UpdateFailHtlc(channelId: BinaryData,
                           id: Long,
                           reason: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
+case class UpdateFailMalformedHtlc(channelId: BinaryData,
+                                   id: Long,
+                                   onionHash: BinaryData,
+                                   failureCode: Int) extends HtlcMessage with UpdateMessage with HasChannelId
+
 case class CommitSig(channelId: BinaryData,
                      signature: BinaryData,
                      htlcSignatures: List[BinaryData]) extends HtlcMessage with HasChannelId
