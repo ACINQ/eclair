@@ -134,9 +134,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("connect A->B->C->D") {
-    connect(setupA, setupB, 10000000, 0)
-    connect(setupB, setupC, 10000000, 0)
-    connect(setupC, setupD, 10000000, 0)
+    connect(setupA, setupB, 1000000, 0)
+    connect(setupB, setupC, 1000000, 0)
+    connect(setupC, setupD, 500000, 0)
   }
 
   test("wait for network announcements") {
@@ -165,7 +165,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(setupD.paymentHandler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
     // then we make the actual payment
-    sender.send(setupA.paymentInitiator, CreatePayment(42000000, paymentHash, setupD.nodeParams.privateKey.publicKey))
+    sender.send(setupA.paymentInitiator, CreatePayment(4200000, paymentHash, setupD.nodeParams.privateKey.publicKey))
     sender.expectMsgType[PaymentSucceeded]
   }
 
@@ -181,7 +181,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(setupD.paymentHandler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
     // then we make the actual payment
-    val paymentReq = CreatePayment(42000000, paymentHash, setupD.nodeParams.privateKey.publicKey)
+    val paymentReq = CreatePayment(4200000, paymentHash, setupD.nodeParams.privateKey.publicKey)
     sender.send(setupA.paymentInitiator, paymentReq)
     // A calculated the cltv expiry like so: PaymentLifecycle.defaultHtlcExpiry + previous-expiry-delta-C = 10 + 144 = 154
     sender.expectMsgType[PaymentFailed] === FailureMessage.incorrect_cltv_expiry(154, channelUpdateCD)
@@ -195,6 +195,17 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // finally we retry the same payment, this time successfully
     sender.send(setupA.paymentInitiator, paymentReq)
     sender.expectMsgType[PaymentSucceeded]
+  }
+
+  test("send an HTLC A->D with an amount greater than capacity of C-D") {
+    val sender = TestProbe()
+    // first we retrieve a payment hash from D
+    sender.send(setupD.paymentHandler, 'genh)
+    val paymentHash = sender.expectMsgType[BinaryData]
+    // then we make the payment (C-D has a smaller capacity than A-B and B-C)
+    val paymentReq = CreatePayment(600000000L, paymentHash, setupD.nodeParams.privateKey.publicKey)
+    sender.send(setupA.paymentInitiator, paymentReq)
+    sender.expectMsgType[PaymentFailed] === FailureMessage.permanent_node_failure
   }
 
 }
