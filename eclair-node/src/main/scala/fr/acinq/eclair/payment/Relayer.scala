@@ -24,7 +24,7 @@ sealed trait Origin
 case class Local(sender: ActorRef) extends Origin
 case class Relayed(upstream: UpdateAddHtlc) extends Origin
 
-case class AddHtlcSuccess(add: UpdateAddHtlc, origin: Origin)
+case class AddHtlcSucceeded(add: UpdateAddHtlc, origin: Origin)
 case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
@@ -125,7 +125,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           sender ! CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessage.BADONION, commit = true)
       }
 
-    case AddHtlcSuccess(downstream, origin) =>
+    case AddHtlcSucceeded(downstream, origin) =>
       origin match {
         case Local(_) => log.info(s"we are the origin of htlc ${downstream.channelId}/${downstream.id}")
         case Relayed(upstream) => log.info(s"relayed htlc ${upstream.channelId}/${upstream.id} to ${downstream}/${downstream.id}")

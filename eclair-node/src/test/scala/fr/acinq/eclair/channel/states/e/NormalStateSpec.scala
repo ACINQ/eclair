@@ -52,7 +52,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           unackedMessages = initialState.commitments.unackedMessages :+ htlc
         )))
-      relayer.expectMsg(AddHtlcSuccess(htlc, origin = Local(sender.ref)))
+      relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Local(sender.ref)))
     }
   }
 
@@ -86,7 +86,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           unackedMessages = initialState.commitments.unackedMessages :+ htlc)))
-      relayer.expectMsg(AddHtlcSuccess(htlc, origin = Relayed(originHtlc)))
+      relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Relayed(originHtlc)))
     }
   }
 
@@ -128,15 +128,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(500000000, "11" * 32, 400144))
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSuccess](1 second)
+      relayer.expectMsgType[AddHtlcSucceeded](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(200000000, "22" * 32, 400144))
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSuccess](1 second)
+      relayer.expectMsgType[AddHtlcSucceeded](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(67600000, "33" * 32, 400144))
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSuccess](1 second)
+      relayer.expectMsgType[AddHtlcSucceeded](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       val add = CMD_ADD_HTLC(1000000, "44" * 32, 400144)
       sender.send(alice, add)
@@ -151,11 +151,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSuccess](1 second)
+      relayer.expectMsgType[AddHtlcSucceeded](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       sender.send(alice, CMD_ADD_HTLC(300000000, "22" * 32, 400144))
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSuccess](1 second)
+      relayer.expectMsgType[AddHtlcSucceeded](1 second)
       alice2bob.expectMsgType[UpdateAddHtlc]
       val add = CMD_ADD_HTLC(500000000, "33" * 32, 400144)
       sender.send(alice, add)
@@ -183,7 +183,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       for (i <- 0 until 30) {
         sender.send(alice, CMD_ADD_HTLC(10000000, "11" * 32, 400144))
         sender.expectMsg("ok")
-        relayer.expectMsgType[AddHtlcSuccess](1 second)
+        relayer.expectMsgType[AddHtlcSucceeded](1 second)
         alice2bob.expectMsgType[UpdateAddHtlc]
       }
       val add = CMD_ADD_HTLC(10000000, "33" * 32, 400144)

@@ -384,7 +384,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
-          relayer ! AddHtlcSuccess(add, origin)
+          relayer ! AddHtlcSucceeded(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Success(Left((failure, errorMessage))) =>
@@ -879,7 +879,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       Try(Commitments.sendAdd(commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
-          relayer ! AddHtlcSuccess(add, origin)
+          relayer ! AddHtlcSucceeded(add, origin)
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left((failure, errorMessage))) =>
