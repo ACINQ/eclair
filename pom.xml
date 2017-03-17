@@ -46,7 +46,7 @@
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.4.16</akka.version>
         <acinqtools.version>1.2</acinqtools.version>
-        <bitcoinlib.version>0.9.10-SNAPSHOT</bitcoinlib.version>
+        <bitcoinlib.version>0.9.10</bitcoinlib.version>
     </properties>
 
     <build>

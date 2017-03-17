@@ -2,12 +2,13 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, LoggingFSM, PoisonPill, Props, Terminated}
+import akka.actor.{ActorRef, LoggingFSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.router.Router.Rebroadcast
 import fr.acinq.eclair.router.SendRoutingState
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, NodeParams}
@@ -151,8 +152,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
-    case Event(msg: RoutingMessage, ConnectedData(transport, _, _)) if sender == router =>
-      transport forward msg
+    case Event(Rebroadcast(announcements), ConnectedData(transport, _, _)) =>
+      announcements.foreach(transport forward _)
       stay
 
     case Event(msg: RoutingMessage, _) =>
@@ -188,6 +189,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     context watch channel
     channel
   }
+
+  // a failing channel won't be restarted, it should handle its states
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 
 }
 

@@ -49,6 +49,9 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
       origin ! "connected"
       switchboard ! h
   }
+
+  // we should not restart a failing transport
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 }
 
 object Client extends App {

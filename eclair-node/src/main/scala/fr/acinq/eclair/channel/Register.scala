@@ -40,6 +40,8 @@ class Register extends Actor with ActorLogging {
 
     case 'channels => sender ! channels
 
+    case 'shortIds => sender ! shortIds
+
     case Forward(channelId, msg) =>
       channels.get(channelId) match {
         case Some(channel) => channel forward msg
@@ -55,12 +57,8 @@ class Register extends Actor with ActorLogging {
 }
 
 object Register {
-
-  def actorPathToPeers()(implicit context: ActorContext): ActorPath =
-    context.system / "switchboard" / "peer-*"
-
+  // @formatter:off
   case class Forward(channelId: BinaryData, message: Any)
-
   case class ForwardShortId(shortChannelId: Long, message: Any)
-
+  // @formatter:on
 }

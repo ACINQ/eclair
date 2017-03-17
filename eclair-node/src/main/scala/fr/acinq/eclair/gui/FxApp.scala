@@ -9,9 +9,9 @@ import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Popup, Screen, Stage, WindowEvent}
 
-import akka.actor.Props
+import akka.actor.{Props, SupervisorStrategy}
 import akka.stream.StreamTcpException
-import fr.acinq.eclair.Setup
+import fr.acinq.eclair.{Setup, SimpleSupervisor}
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.router.NetworkEvent
@@ -40,7 +40,7 @@ class FxApp extends Application with Logging {
 
       handlers = Option(new Handlers(setup.get))
       val controller = new MainController(handlers.get, setup.get, getHostServices)
-      val guiUpdater = setup.get.system.actorOf(Props(classOf[GUIUpdater], controller, setup.get), "gui-updater")
+      val guiUpdater = setup.get.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller, setup.get), "gui-updater", SupervisorStrategy.Resume))
       setup.get.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
       setup.get.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
 

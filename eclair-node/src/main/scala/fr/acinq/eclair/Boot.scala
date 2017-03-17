@@ -4,7 +4,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import javafx.application.Platform
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
@@ -104,18 +104,18 @@ class Setup(datadir: String) extends Logging {
   }))
   val fatalEventFuture = fatalEventPromise.future
 
-  val peer = system.actorOf(PeerClient.props(config.getConfig("bitcoind")), "bitcoin-peer")
-  val watcher = system.actorOf(PeerWatcher.props(nodeParams, bitcoin_client), name = "watcher")
-  val paymentHandler = config.getString("payment-handler") match {
-    case "local" => system.actorOf(Props[LocalPaymentHandler], name = "payment-handler")
-    case "noop" => system.actorOf(Props[NoopPaymentHandler], name = "payment-handler")
-  }
-  val register = system.actorOf(Props(new Register), name = "register")
-  val relayer = system.actorOf(Relayer.props(nodeParams.privateKey, paymentHandler), name = "relayer")
-  val router = system.actorOf(Router.props(nodeParams, watcher), name = "router")
-  val switchboard = system.actorOf(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), name = "switchboard")
-  val paymentInitiator = system.actorOf(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator")
-  val server = system.actorOf(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))), "server")
+  val peer = system.actorOf(SimpleSupervisor.props(PeerClient.props(config.getConfig("bitcoind")), "bitcoin-peer", SupervisorStrategy.Restart))
+  val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoin_client), "watcher", SupervisorStrategy.Resume))
+  val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
+    case "local" => Props[LocalPaymentHandler]
+    case "noop" => Props[NoopPaymentHandler]
+  }, "payment-handler", SupervisorStrategy.Resume))
+  val register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
+  val relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams.privateKey, paymentHandler), "relayer", SupervisorStrategy.Resume))
+  val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
+  val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), "switchboard", SupervisorStrategy.Resume))
+  val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
+  val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))), "server", SupervisorStrategy.Restart))
 
   val _setup = this
   val api = new Service {
