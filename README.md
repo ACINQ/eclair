@@ -94,15 +94,6 @@ option                       | description               | default value
   close       | channel_id                          | closes a channel
   help        |                                     | displays available methods
 
-## Other implementations
-Name         | Language | Compatible
--------------|----------|------------
-[Amiko-Pay]  | Python   | no
-[lightning-c]| C        | not yet
-[lit]        | Go       | not yet
-[lnd]        | Go       | not yet
-[Thunder]    | Java     | no
-
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
