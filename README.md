@@ -2,7 +2,15 @@
 
 **Eclair** is a scala implementation of the Lightning Network. Eclair is french for Lightning.
 
-:construction: This branch implements the [Lightning Network Specifications](https://github.com/lightningnetwork/lightning-rfc), it is a work in progress.
+This software follows the [Lightning Network Specifications](https://github.com/lightningnetwork/lightning-rfc), also known as BOLTs.
+
+Other implementations of BOLTs include:
+- lightning-c
+- lnd
+- lit
+
+ 
+ :construction: This is a work in progress!
 
 [![Build Status](https://travis-ci.org/ACINQ/eclair.svg?branch=wip-bolts)](https://travis-ci.org/ACINQ/eclair)
 
@@ -118,4 +126,6 @@ Name         | Language | Compatible
 [Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
 [lightning-c]: https://github.com/ElementsProject/lightning
 [lnd]: https://github.com/LightningNetwork/lnd
+[lit]: https://github.com/mit-dci/lit
 [Thunder]: https://github.com/blockchain/thunder
+
