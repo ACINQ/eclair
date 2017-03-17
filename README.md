@@ -20,8 +20,6 @@ This software follows the [Lightning Network Specifications](https://github.com/
 
 Eclair intends to be a full-fledged Lightning node. It can run with or without a GUI, and a JSON-RPC API is also available.
 
-Current version requires a synchronized, non-pruning, tx-indexing [Bitcoin-core](https://github.com/bitcoin/bitcoin) node.
-
 Available actions:
 - Open a channel with another lightning node
 - Display opened channels with the node (status, balance, capacity, ...)
@@ -32,63 +30,49 @@ Available actions:
 
 ## Installation
 
-The project is under heavy development and no release is available yet. Still you can download the sources, compile the project with Maven (cf §Development) and run it on localhost.
+### Configuring Bitcoin Core
 
----
+Eclair needs a synchronized, segwit-ready, non-pruning, tx-indexing [Bitcoin-core](https://github.com/bitcoin/bitcoin) node.
 
-## Development
-
-#### Set up the environment
-- JDK 1.8+
-- [Latest Scala installation](http://www.scala-lang.org/download/)
-- [Maven](https://maven.apache.org/download.cgi)
-- A segwit version of bitcoin core in testnet or regtest mode
-
-:warning: eclair currently runs on regtest/segnet only. **Do not try and modify it to run on bitcoin mainnet!**
-
-- Make sure that bitcoin-cli is on the path and edit ~/.bitcoin/bitcoin.conf and add:
+Run bitcoind with the following `bitcoin.conf`:
 ```
+testnet=1
 server=1
-regtest=1
-rpcuser=***
-rpcpassword=***
+rpcuser=XXX
+rpcpassword=XXX
+txindex=1
 ```
 
-#### Run
+### Installing Eclair
 
-- Download the sources and build the executable JAR with the following command:
+#### Windows
+
+Just use the windows installer, it should create a shortcut on your desktop.
+
+#### Linux, MacOs or manual install on Windows
+
+You need to first install java, more precisely a JRE 1.8+.
+
+Then just grab the latest fat jar and run:
 ```shell
-$ mvn package -DskipTests
-```
-- Start bitcoind
-- Mine enough blocks to activate segwit blocks:
-```shell
-$ bitcoin-cli generate 500
-```
-- Navigate to `eclair-node/target` and execute the jar `eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar`
-
-```shell
-$ java 
-     -Declair.bitcoind.rpcuser=foo
-     -Declair.bitcoind.rpcpassword=bar
-     -jar eclair-node_2.11-0.2-SNAPSHOT-xxxxxx-capsule-fat.jar
+java -jar eclair-node_xxxxxx-fat.jar
 ```
 
-#### JVM Options
+### Configuring Eclair
 
-option                       | default value             | description
------------------------------|---------------------------|---------
+Eclair will create a directory in `~/.eclair` by default. You may change this directory's location using `--datadir <dir>` command line argument.
+
+If you want to change configuration parameters, create a file named `eclair.conf` in eclair's home directory.
+
+
+option                       | description               | default value
+-----------------------------|---------------------------|--------------
  eclair.server.port          | TCP port                  | 9735
  eclair.http.port            | HTTP port                 | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
-
 &rarr; see [`application.conf`](eclair-node/src/main/resources/application.conf) for full reference.
-
-#### Testing with lightningd
-
-&rarr; Checkout [our guide](TESTING.md)
 
 ## JSON-RPC API
 
@@ -114,17 +98,18 @@ option                       | default value             | description
 - [X] Blockchain watcher
 - [ ] Storing states in a database
 
-## Resources
-- [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
-- [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
-
 ## Other implementations
 Name         | Language | Compatible
 -------------|----------|------------
 [Amiko-Pay]  | Python   | no
-[lightning-c]| C        | yes
-[lnd]        | Go       | no
+[lightning-c]| C        | not yet
+[lnd]        | Go       | not yet
+[lit]        | Go       | not yet
 [Thunder]    | Java     | no
+
+## Resources
+- [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
+- [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 
 [Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
 [lightning-c]: https://github.com/ElementsProject/lightning
