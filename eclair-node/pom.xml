@@ -69,6 +69,22 @@
                 <groupId>com.zenjava</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
                 <version>8.8.3</version>
+                <executions>
+                    <execution>
+                        <!-- required before build-native -->
+                        <id>create-jfxjar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-jar</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-native</goal>
+                        </goals>
+                    </execution>
+                </executions>
                 <configuration>
                     <vendor>ACINQ</vendor>
                     <needShortcut>true</needShortcut>
@@ -76,6 +92,7 @@
                     <nativeReleaseVersion>0.2.0</nativeReleaseVersion>
                     <mainClass>fr.acinq.eclair.Boot</mainClass>
                     <verbose>true</verbose>
+                    <bundler>EXE</bundler>
                 </configuration>
             </plugin>
         </plugins>
