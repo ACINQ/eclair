@@ -32,7 +32,7 @@ Available actions:
 
 ### Configuring Bitcoin Core
 
-Eclair needs a synchronized, segwit-ready, non-pruning, tx-indexing [Bitcoin-core](https://github.com/bitcoin/bitcoin) node.
+Eclair needs a _synchronized_, _segwit-ready_, _non-pruning_, _tx-indexing_ [Bitcoin-core](https://github.com/bitcoin/bitcoin) node.
 
 Run bitcoind with the following `bitcoin.conf`:
 ```
