@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -46,6 +46,9 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
     case h: HandshakeCompleted =>
       switchboard ! h
   }
+
+  // we should not restart a failing transport
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 }
 
 object Server {

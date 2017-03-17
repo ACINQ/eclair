@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
+import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -1146,6 +1146,9 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         }
       }
   }
+
+  // we let the peer decide what to do
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
 
 }
 

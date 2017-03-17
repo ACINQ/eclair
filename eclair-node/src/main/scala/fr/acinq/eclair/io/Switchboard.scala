@@ -2,12 +2,13 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
+import fr.acinq.eclair.router.Router.Rebroadcast
 
 /**
   * Ties network connections to peers.
@@ -66,6 +67,8 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       peer forward h
       context become main(peers + (remoteNodeId -> peer), connections)
 
+    case r: Rebroadcast => peers.values.foreach(_ forward r)
+
     case 'peers =>
       sender ! peers.keys
 
@@ -80,6 +83,9 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
         peer
     }
   }
+
+  // we resume failing peers because they may have open channels that we don't want to close abruptly
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Resume }
 }
 
 object Switchboard {
