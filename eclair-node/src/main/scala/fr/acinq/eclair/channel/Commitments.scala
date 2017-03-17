@@ -49,9 +49,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  def addToUnackedMessages(message: LightningMessage) : Commitments = this.copy(unackedMessages = unackedMessages :+ message)
+  def addToUnackedMessages(message: LightningMessage): Commitments = this.copy(unackedMessages = unackedMessages :+ message)
 
-  def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst{ case d: Shutdown => d}
+  def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst { case d: Shutdown => d }
 }
 
 object Commitments extends Logging {
@@ -70,12 +70,24 @@ object Commitments extends Logging {
   private def addRemoteProposal(commitments: Commitments, proposal: UpdateMessage): Commitments =
     commitments.copy(remoteChanges = commitments.remoteChanges.copy(proposed = commitments.remoteChanges.proposed :+ proposal))
 
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): (Commitments, UpdateAddHtlc) = {
+  /**
+    *
+    * @param commitments current commitments
+    * @param cmd         add HTLC command
+    * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
+    */
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[(BinaryData, String), (Commitments, UpdateAddHtlc)] = {
+    if (System.getProperty("failhtlc") == "yes") {
+      return Left(FailureMessage.incorrect_payment_amount -> "debug-mode triggered failure")
+    }
+
     val blockCount = Globals.blockCount.get()
-    require(cmd.expiry > blockCount, s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
+    if (cmd.expiry <= blockCount) {
+      return Left(FailureMessage.final_expiry_too_soon -> s"expiry can't be in the past (expiry=${cmd.expiry} blockCount=$blockCount)")
+    }
 
     if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
-      throw new RuntimeException(s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
+      return Left(FailureMessage.permanent_channel_failure -> s"counterparty requires a minimum htlc value of ${commitments.remoteParams.htlcMinimumMsat} msat")
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -85,13 +97,14 @@ object Commitments extends Logging {
 
     val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
-      throw new RuntimeException(s"reached counterparty's in-flight htlcs value limit: value=$htlcValueInFlight max=${commitments1.remoteParams.maxHtlcValueInFlightMsat}")
+      // TODO: this should be a specific UPDATE error
+      return Left(FailureMessage.temporary_channel_failure -> s"reached counterparty's in-flight htlcs value limit: value=$htlcValueInFlight max=${commitments1.remoteParams.maxHtlcValueInFlightMsat}")
     }
 
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
     if (acceptedHtlcs > commitments1.remoteParams.maxAcceptedHtlcs) {
-      throw new RuntimeException(s"reached counterparty's max accepted htlc count limit: value=$acceptedHtlcs max=${commitments1.remoteParams.maxAcceptedHtlcs}")
+      return Left(FailureMessage.temporary_channel_failure -> s"reached counterparty's max accepted htlc count limit: value=$acceptedHtlcs max=${commitments1.remoteParams.maxAcceptedHtlcs}")
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -99,10 +112,10 @@ object Commitments extends Logging {
     val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount else 0
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
-      throw new RuntimeException(s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.remoteParams.channelReserveSatoshis} fees=$fees")
+      return Left(FailureMessage.temporary_channel_failure -> s"insufficient funds: missing=${-1 * missing} reserve=${commitments1.remoteParams.channelReserveSatoshis} fees=$fees")
     }
 
-    (commitments1, add)
+    Right(commitments1, add)
   }
 
   def isOldAdd(commitments: Commitments, add: UpdateAddHtlc): Boolean = {
@@ -194,7 +207,16 @@ object Commitments extends Logging {
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
       case Some(htlc) =>
-        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, BinaryData(cmd.reason.getBytes("UTF-8")))
+        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, cmd.reason)
+        val commitments1 = addLocalProposal(commitments, fail)
+        (commitments1, fail)
+      case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
+    }
+
+  def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): (Commitments, UpdateFailMalformedHtlc) =
+    getHtlcCrossSigned(commitments, IN, cmd.id) match {
+      case Some(htlc) =>
+        val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
         val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")
@@ -205,7 +227,21 @@ object Commitments extends Logging {
       commitments.remoteChanges.signed.contains(fail) ||
       commitments.remoteChanges.acked.contains(fail)
 
+  def isOldFail(commitments: Commitments, fail: UpdateFailMalformedHtlc): Boolean =
+    commitments.remoteChanges.proposed.contains(fail) ||
+      commitments.remoteChanges.signed.contains(fail) ||
+      commitments.remoteChanges.acked.contains(fail)
+
   def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[Commitments, Commitments] =
+    isOldFail(commitments, fail) match {
+      case true => Left(commitments)
+      case false => getHtlcCrossSigned(commitments, OUT, fail.id) match {
+        case Some(htlc) => Right(addRemoteProposal(commitments, fail))
+        case None => throw new RuntimeException(s"unknown htlc id=${fail.id}")
+      }
+    }
+
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, Commitments] =
     isOldFail(commitments, fail) match {
       case true => Left(commitments)
       case false => getHtlcCrossSigned(commitments, OUT, fail.id) match {

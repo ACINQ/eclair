@@ -113,6 +113,13 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          d match {
+            case DATA_NORMAL(_, Some(shortChannelId)) =>
+              context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
+              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+              relayer ! channelUpdate
+            case _ => ()
+          }
           goto(OFFLINE) using d
       }
   })
@@ -375,11 +382,14 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
-        case Success((commitments1, add)) =>
+        case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
-          relayer ! Bind(add, origin)
+          relayer ! AddHtlcSucceeded(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Success(Left((failure, errorMessage))) =>
+          relayer ! AddHtlcFailed(c, failure)
+          handleCommandError(sender, new RuntimeException(errorMessage))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -414,10 +424,27 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
+    case Event(c@CMD_FAIL_MALFORMED_HTLC(id, onionHash, failureCode, do_commit), d: DATA_NORMAL) =>
+      Try(Commitments.sendFailMalformed(d.commitments, c)) match {
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
     case Event(fail@UpdateFailHtlc(_, id, reason), d@DATA_NORMAL(_, _)) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
+        case Failure(cause) => handleLocalError(cause, d)
+      }
+
+    case Event(fail@UpdateFailMalformedHtlc(_, id, onionHash, failureCode), d@DATA_NORMAL(_, _)) =>
+      Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFailMalformed(fail)
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
@@ -560,6 +587,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
           router ! channelAnn
           router ! nodeAnn
           router ! channelUpdate
+          relayer ! channelUpdate
           // TODO: remove this later when we use testnet/mainnet
           // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
           // we give 3 seconds for the router-watcher roundtrip
@@ -622,10 +650,27 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
+    case Event(c@CMD_FAIL_MALFORMED_HTLC(id, onionHash, failureCode, do_commit), d: DATA_SHUTDOWN) =>
+      Try(Commitments.sendFailMalformed(d.commitments, c)) match {
+        case Success((commitments1, fail)) =>
+          if (do_commit) self ! CMD_SIGN
+          handleCommandSuccess(sender, d.copy(commitments = commitments1))
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
     case Event(fail@UpdateFailHtlc(_, id, reason), d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
+          goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left(_)) => goto(stateName)
+        case Failure(cause) => handleLocalError(cause, d)
+      }
+
+    case Event(fail@UpdateFailMalformedHtlc(_, id, onionHash, failureCode), d: DATA_SHUTDOWN) =>
+      Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
+        case Success(Right(commitments1)) =>
+          relayer ! ForwardFailMalformed(fail)
           goto(stateName) using d.copy(commitments = commitments1)
         case Success(Left(_)) => goto(stateName)
         case Failure(cause) => handleLocalError(cause, d)
@@ -832,11 +877,14 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
       log.info(s"we are disconnected so we just include the add in our commitments")
       Try(Commitments.sendAdd(commitments, c)) match {
-        case Success((commitments1, add)) =>
+        case Success(Right((commitments1, add))) =>
           val origin = downstream_opt.map(Relayed(_)).getOrElse(Local(sender))
-          relayer ! Bind(add, origin)
+          relayer ! AddHtlcSucceeded(add, origin)
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
+        case Success(Left((failure, errorMessage))) =>
+          relayer ! AddHtlcFailed(c, failure)
+          handleCommandError(sender, new RuntimeException(errorMessage))
         case Failure(cause) => handleCommandError(sender, cause)
       }
 

@@ -2,17 +2,19 @@ package fr.acinq.eclair.payment
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxIn}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Transaction, TxIn}
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -32,6 +34,7 @@ class RelayerSpec extends TestkitBaseClass {
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
       val relayer = system.actorOf(Relayer.props(priv_b, paymentHandler.ref))
+      relayer ! channelUpdate_bc
       test((relayer, paymentHandler))
     }
   }
@@ -39,8 +42,8 @@ class RelayerSpec extends TestkitBaseClass {
   // node c is the next node in the route
   val nodeId_a = PublicKey(a)
   val nodeId_c = PublicKey(c)
-  val channelId_ab = "65514354" * 8
-  val channelId_bc = "64864544" * 8
+  val channelId_ab: BinaryData = "65514354" * 8
+  val channelId_bc: BinaryData = "64864544" * 8
 
   test("add a channel") { case (relayer, _) =>
     val sender = TestProbe()
@@ -88,7 +91,7 @@ class RelayerSpec extends TestkitBaseClass {
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops.take(1), currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops.take(1), currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
@@ -99,21 +102,20 @@ class RelayerSpec extends TestkitBaseClass {
     eventListener.expectMsgType[PaymentReceived]
 
     assert(add1 === add_ab)
-
   }
-
 
   test("relay an htlc-add") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     sender.expectNoMsg(1 second)
@@ -121,7 +123,6 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(1 second)
 
     assert(cmd_bc.upstream_opt === Some(add_ab))
-
   }
 
   test("fail to relay an htlc-add when there is no available upstream channel") { case (relayer, paymentHandler) =>
@@ -129,11 +130,12 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
@@ -141,7 +143,6 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(1 second)
 
     assert(fail.id === add_ab.id)
-
   }
 
   test("fail to relay an htlc-add when the onion is malformed") { case (relayer, paymentHandler) =>
@@ -151,19 +152,67 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, "00" * 1254)
     }
 
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
-    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    val fail = sender.expectMsgType[CMD_FAIL_MALFORMED_HTLC]
+    assert(fail.onionHash == Crypto.sha256(add_ab.onionRoutingPacket))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 
     assert(fail.id === add_ab.id)
+  }
 
+  test("fail to relay an htlc-add when amount is below the next hop's requirements") { case (relayer, paymentHandler) =>
+    val sender = TestProbe()
+    val channel_bc = TestProbe()
+
+    val (cmd, secrets) = buildCommand(channelUpdate_bc.htlcMinimumMsat - 1, paymentHash, hops.map(hop => hop.copy(lastUpdate = hop.lastUpdate.copy(feeBaseMsat = 0, feeProportionalMillionths = 0))), currentBlockCount)
+    val add_ab = {
+      // and then manually build an htlc
+      UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    }
+
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    val Some((pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
+    assert(reason == FailureMessage.amount_below_minimum(cmd.amountMsat, channelUpdate_bc))
+    channel_bc.expectNoMsg(1 second)
+    paymentHandler.expectNoMsg(1 second)
+
+    assert(fail.id === add_ab.id)
+  }
+
+  test("fail to relay an htlc-add when expiry does not match next hop's requirements") { case (relayer, paymentHandler) =>
+    val sender = TestProbe()
+    val channel_bc = TestProbe()
+
+    val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(cltvExpiryDelta = 0)))
+    val (cmd, secrets) = buildCommand(finalAmountMsat, paymentHash, hops1, currentBlockCount)
+    val add_ab = {
+      // and then manually build an htlc
+      UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    }
+
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    val Some((pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
+    assert(reason == FailureMessage.incorrect_cltv_expiry(cmd.expiry, channelUpdate_bc))
+    channel_bc.expectNoMsg(1 second)
+    paymentHandler.expectNoMsg(1 second)
+
+    assert(fail.id === add_ab.id)
   }
 
   test("relay an htlc-fulfill") { case (relayer, paymentHandler) =>
@@ -172,17 +221,18 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, Bind(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
     // preimage is wrong, does not matter here
     val fulfill_cb = UpdateFulfillHtlc(channelId = add_bc.channelId, id = add_bc.id, paymentPreimage = "00" * 32)
     sender.send(relayer, ForwardFulfill(fulfill_cb))
@@ -199,18 +249,19 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, Bind(add_bc, Relayed(add_ab)))
-    val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = "some reason".getBytes())
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), FailureMessage.temporary_channel_failure))
     sender.send(relayer, ForwardFail(fail_cb))
 
     val fulfill_ba = channel_ab.expectMsgType[CMD_FAIL_HTLC]
@@ -225,17 +276,18 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, Bind(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
 
     // actual test starts here
     val tx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessHtlcSuccess("11" * 70, "22" * 70, paymentPreimage, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
@@ -252,17 +304,18 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
 
     val add_ab = {
-      val cmd = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
+      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
     sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, Bind(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
 
     // actual test starts here
     val tx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx("11" * 70, paymentPreimage, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)

@@ -12,7 +12,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.CreatePayment
+import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentResult, PaymentSucceeded}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Future
@@ -50,10 +50,13 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long) = {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
-    (paymentInitiator ? CreatePayment(amountMsat, paymentHash, nodeId)).onComplete {
-      case Success(s) =>
+    (paymentInitiator ? CreatePayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
+      case Success(PaymentSucceeded(_)) =>
         val message = s"Amount (mSat): $amountMsat\nH: $paymentHash"
         notification("Payment Successful", message, NOTIFICATION_SUCCESS)
+      case Success(PaymentFailed(_, reason)) =>
+        val message = s"Cause: ${reason.getOrElse("unknown")}\nAmount (mSat): $amountMsat\nH: $paymentHash"
+        notification("Payment Failed", message, NOTIFICATION_ERROR)
       case Failure(t) =>
         val message = s"Cause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $paymentHash"
         notification("Payment Failed", message, NOTIFICATION_ERROR)

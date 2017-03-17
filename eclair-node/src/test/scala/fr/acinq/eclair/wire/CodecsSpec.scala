@@ -148,6 +148,7 @@ class CodecsSpec extends FunSuite {
     val update_add_htlc = UpdateAddHtlc(randomBytes(32), 2, 3, 4, bin(32, 0), bin(1254, 0))
     val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes(32), 2, bin(32, 0))
     val update_fail_htlc = UpdateFailHtlc(randomBytes(32), 2, bin(154, 0))
+    val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes(32), 2, randomBytes(32), 1111)
     val commit_sig = CommitSig(randomBytes(32), randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
     val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1), randomSignature :: randomSignature :: randomSignature :: randomSignature :: randomSignature :: Nil)
     val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, 1, bin(33, 5), bin(33, 6), bin(33, 7), bin(33, 8))
@@ -157,7 +158,7 @@ class CodecsSpec extends FunSuite {
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
-        update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: commit_sig :: revoke_and_ack ::
+        update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
         channel_announcement :: node_announcement :: channel_update :: announcement_signatures :: Nil
 
     msgs.foreach {

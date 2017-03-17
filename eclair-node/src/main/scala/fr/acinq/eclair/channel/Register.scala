@@ -40,6 +40,8 @@ class Register extends Actor with ActorLogging {
 
     case 'channels => sender ! channels
 
+    case 'shortIds => sender ! shortIds
+
     case Forward(channelId, msg) =>
       channels.get(channelId) match {
         case Some(channel) => channel forward msg
