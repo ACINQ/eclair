@@ -3,6 +3,7 @@ package fr.acinq.eclair.io
 import java.net.InetSocketAddress
 
 import akka.actor.{Props, _}
+import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.{Globals, NodeParams}
@@ -19,7 +20,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Connect(address)
+  IO(Tcp) ! Connect(address, options = KeepAlive(true) :: Nil)
 
   def receive = {
     case CommandFailed(_: Connect) =>
