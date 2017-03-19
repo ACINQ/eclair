@@ -39,9 +39,10 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
-        case feerate =>
+        case feerate if feerate > 0 =>
           Globals.feeratePerKw.set(feerate)
           context.system.eventStream.publish(CurrentFeerate(feerate))
+        case _ => () // bitcoind cannot estimate feerate
       }
       // TODO: beware of the herd effect
       watches.collect {

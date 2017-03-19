@@ -203,8 +203,11 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     */
   def estimateSmartFee(nBlocks: Int)(implicit ec: ExecutionContext): Future[Long] =
     client.invoke("estimatesmartfee", nBlocks).map(json => {
-      val JDouble(feerate) = json \ "feerate"
-      Btc(feerate).toLong
+      json \ "feerate" match {
+        case JDouble(feerate) => Btc(feerate).toLong
+        case JInt(feerate) if feerate.toLong < 0 => feerate.toLong
+        case JInt(feerate) => Btc(feerate.toLong).toLong
+      }
     })
 }
 

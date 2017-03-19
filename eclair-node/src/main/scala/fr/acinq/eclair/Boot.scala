@@ -82,7 +82,12 @@ class Setup(datadir: String) extends Logging {
   assert(chain == "test" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
   assert(progress > 0.99, "bitcoind should be synchronized")
   Globals.blockCount.set(blockCount)
-  val feeratePerKw = if (chain == "regtest") 10000 else Await.result(bitcoin_client.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
+  val defaultFeeratePerKw = config.getLong("default-feerate-perkw")
+  val feeratePerKw = if (chain == "regtest") defaultFeeratePerKw else {
+    val estimate = Await.result(bitcoin_client.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
+    if (estimate < 0) defaultFeeratePerKw else estimate
+  }
+
   logger.info(s"initial feeratePerKw=$feeratePerKw")
   Globals.feeratePerKw.set(feeratePerKw)
   val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
