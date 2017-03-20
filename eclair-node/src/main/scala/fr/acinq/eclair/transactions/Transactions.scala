@@ -99,12 +99,18 @@ object Transactions {
   /**
     *
     * @param commitTxNumber         commit tx number
+    * @param isFunder               true if local node is funder
     * @param localPaymentBasePoint  local payment base point
     * @param remotePaymentBasePoint remote payment base point
     * @return the obscured tx number as defined in BOLT #3 (a 48 bits integer)
     */
-  def obscuredCommitTxNumber(commitTxNumber: Long, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
-    val h = Crypto.sha256(localPaymentBasePoint.toBin(true) ++ remotePaymentBasePoint.toBin(true))
+  def obscuredCommitTxNumber(commitTxNumber: Long, isFunder: Boolean, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
+    // from BOLT 3: SHA256(payment-basepoint from open_channel || payment-basepoint from accept_channel)
+    val h = if (isFunder)
+      Crypto.sha256(localPaymentBasePoint.toBin(true) ++ remotePaymentBasePoint.toBin(true))
+    else
+      Crypto.sha256(remotePaymentBasePoint.toBin(true) ++ localPaymentBasePoint.toBin(true))
+
     val blind = Protocol.uint64(h.takeRight(6).reverse ++ BinaryData("0x0000"), ByteOrder.LITTLE_ENDIAN)
     commitTxNumber ^ blind
   }
@@ -112,12 +118,13 @@ object Transactions {
   /**
     *
     * @param commitTx               commit tx
+    * @param isFunder               true if local node is funder
     * @param localPaymentBasePoint  local payment base point
     * @param remotePaymentBasePoint remote payment base point
     * @return the actual commit tx number that was blinded and stored in locktime and sequence fields
     */
-  def getCommitTxNumber(commitTx: Transaction, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
-    val blind = obscuredCommitTxNumber(0, localPaymentBasePoint, remotePaymentBasePoint)
+  def getCommitTxNumber(commitTx: Transaction, isFunder: Boolean, localPaymentBasePoint: Point, remotePaymentBasePoint: Point): Long = {
+    val blind = obscuredCommitTxNumber(0, isFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val obscured = decodeTxNumber(commitTx.txIn(0).sequence, commitTx.lockTime)
     obscured ^ blind
   }
@@ -152,7 +159,7 @@ object Transactions {
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localPubKey, remotePubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
 
-    val txnumber = obscuredCommitTxNumber(commitTxNumber, localPaymentBasePoint, remotePaymentBasePoint)
+    val txnumber = obscuredCommitTxNumber(commitTxNumber, true /*localIsFunder*/, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
 
     val tx = Transaction(

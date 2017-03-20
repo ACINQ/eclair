@@ -335,7 +335,7 @@ object Helpers {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, localParams.isFunder, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       logger.warn(s"counterparty has published revoked commit txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
