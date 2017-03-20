@@ -131,7 +131,7 @@ object Codecs {
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | binarydata(32)) ::
       ("fundingTxid" | binarydata(32)) ::
-      ("fundingOutputIndex" | uint8) ::
+      ("fundingOutputIndex" | uint16) ::
       ("signature" | signature)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
