@@ -404,18 +404,13 @@ object Commitments extends Logging {
             HtlcTxAndSigs(htlcTx, localSig, remoteSig)
         }
 
-        val timeoutHtlcSigs = htlcTxsAndSigs.collect {
-          case HtlcTxAndSigs(_: HtlcTimeoutTx, localSig, _) => localSig
-        }
-
         // we will send our revocation preimage + our next revocation hash
         val localPerCommitmentSecret = Generators.perCommitSecret(localParams.shaSeed, commitments.localCommit.index)
         val localNextPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index + 2)
         val revocation = RevokeAndAck(
           channelId = commitments.channelId,
           perCommitmentSecret = localPerCommitmentSecret,
-          nextPerCommitmentPoint = localNextPerCommitmentPoint,
-          htlcTimeoutSignatures = timeoutHtlcSigs.toList
+          nextPerCommitmentPoint = localNextPerCommitmentPoint
         )
 
         // update our commitment data
@@ -453,27 +448,6 @@ object Commitments extends Logging {
           case Left(_) if revocation.perCommitmentSecret.toPoint != remoteCommit.remotePerCommitmentPoint =>
             throw new RuntimeException("invalid preimage")
           case Left(WaitingForRevocation(theirNextCommit, _, _)) =>
-            // we rebuild the transactions a 2nd time but we are just interested in HTLC-timeout txs because we need to check their sig
-            val (_, htlcTimeoutTxs, _) = makeRemoteTxs(theirNextCommit.index, localParams, remoteParams, commitInput, theirNextCommit.remotePerCommitmentPoint, theirNextCommit.spec)
-            // then we sort and sign them
-            val sortedHtlcTimeoutTxs = htlcTimeoutTxs.sortBy(_.input.outPoint.index)
-            require(revocation.htlcTimeoutSignatures.size == sortedHtlcTimeoutTxs.size, s"htlc-timeout sig count mismatch (received=${
-              revocation.htlcTimeoutSignatures.size
-            }, expected=${
-              sortedHtlcTimeoutTxs.size
-            })")
-            val paymentKey = Generators.derivePrivKey(localParams.paymentKey, theirNextCommit.remotePerCommitmentPoint)
-            val htlcSigs = sortedHtlcTimeoutTxs.map(Transactions.sign(_, paymentKey))
-            // combine the sigs to make signed txes
-            val signedHtlcTxs = sortedHtlcTimeoutTxs
-              .zip(htlcSigs)
-              .zip(revocation.htlcTimeoutSignatures) // this is a list of ((tx, localSig), remoteSig)
-              .map(e => (e._1._1, e._1._2, e._2)) // this is a list of (tx, localSig, remoteSig)
-              .map(x => Transactions.addSigs(x._1, x._3, x._2))
-
-            // and finally whe check the sigs
-            require(signedHtlcTxs.forall(Transactions.checkSpendable(_).isSuccess), "bad sig")
-
             // they have received our last commitsig (otherwise they wouldn't have replied with a revocation)
             // so we can acknowledge all our previous updates and the commitsig
             val unackedMessages1 = commitments.unackedMessages.drop(commitments.unackedMessages.indexWhere(_.isInstanceOf[CommitSig]) + 1)

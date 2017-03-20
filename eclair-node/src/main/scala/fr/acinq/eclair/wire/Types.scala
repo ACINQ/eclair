@@ -100,8 +100,7 @@ case class CommitSig(channelId: BinaryData,
 
 case class RevokeAndAck(channelId: BinaryData,
                         perCommitmentSecret: Scalar,
-                        nextPerCommitmentPoint: Point,
-                        htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage with HasChannelId
+                        nextPerCommitmentPoint: Point) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: BinaryData,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
@@ -119,7 +118,8 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                nodeId1: BinaryData,
                                nodeId2: BinaryData,
                                bitcoinKey1: BinaryData,
-                               bitcoinKey2: BinaryData) extends RoutingMessage
+                               bitcoinKey2: BinaryData,
+                               features: BinaryData) extends RoutingMessage
 
 case class NodeAnnouncement(signature: BinaryData,
                             timestamp: Long,

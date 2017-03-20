@@ -644,7 +644,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       bob2alice.expectMsgType[RevokeAndAck]
-      sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
+      sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
@@ -657,7 +657,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteNextCommitInfo.isRight)
-      sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint, Nil))
+      sender.send(alice, RevokeAndAck("00" * 32, Scalar("11" * 32), Scalar("22" * 32).toPoint))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))

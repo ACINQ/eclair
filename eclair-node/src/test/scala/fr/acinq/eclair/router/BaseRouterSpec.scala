@@ -48,8 +48,8 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val channelId_ef = toShortId(420000, 4, 0)
 
   def channelAnnouncement(channelId: Long, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
-    val (node1_sig, funding1_sig) = signChannelAnnouncement(channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey)
-    val (node2_sig, funding2_sig) = signChannelAnnouncement(channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey)
+    val (node1_sig, funding1_sig) = signChannelAnnouncement(channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
+    val (node2_sig, funding2_sig) = signChannelAnnouncement(channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
     makeChannelAnnouncement(channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
 

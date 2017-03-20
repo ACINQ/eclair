@@ -131,7 +131,7 @@ object Codecs {
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | binarydata(32)) ::
       ("fundingTxid" | binarydata(32)) ::
-      ("fundingOutputIndex" | uint8) ::
+      ("fundingOutputIndex" | uint16) ::
       ("signature" | signature)).as[FundingCreated]
 
   val fundingSignedCodec: Codec[FundingSigned] = (
@@ -183,9 +183,7 @@ object Codecs {
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | binarydata(32)) ::
       ("perCommitmentSecret" | scalar) ::
-      ("nextPerCommitmentPoint" | point) ::
-      ("padding" | ignore(8 * 3)) ::
-      ("htlcTimeoutSignature" | listofsignatures)
+      ("nextPerCommitmentPoint" | point)
     ).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (
@@ -203,7 +201,8 @@ object Codecs {
       ("nodeId1" | binarydata(33)) ::
       ("nodeId2" | binarydata(33)) ::
       ("bitcoinKey1" | binarydata(33)) ::
-      ("bitcoinKey2" | binarydata(33)))
+      ("bitcoinKey2" | binarydata(33)) ::
+      ("features" | varsizebinarydata))
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | signature) ::
