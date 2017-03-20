@@ -80,14 +80,19 @@ option                       | description               | default value
 
 ## JSON-RPC API
 
- method       |  params                             | description
- -------------|-------------------------------------|-----------------------------------------------------------
-  connect     | host, port, anchor_amount           | opens a channel with another eclair or lightningd instance
-  list        |                                     | lists existing channels
-  addhtlc     | channel_id, amount, rhash, locktime | sends an htlc
-  fulfillhtlc | channel_id, r                       | fulfills an htlc
-  close       | channel_id                          | closes a channel
-  help        |                                     | displays available methods
+ method       |  params                                      | description
+ -------------|----------------------------------------------|-----------------------------------------------------------
+  connect     | host, port, pubkey                           | connect to another lightning node through a secure connection
+  open        | host, port, pubkey, fundingSatoshi, pushMsat | opens a channel with another lightning node
+  peers       |                                              | list existing local peers
+  channels    |                                              | list existing local channels
+  channel     | channelIdHex                                 | retrieve detailed information about a given channel
+  network     |                                              | list all nodes that have been announced
+  genh        |                                              | generate a payment H
+  send        | amountMsat, paymentHash, pubkey              | send a payment to a lightning node
+  close       | channelIdHex                                 | close a channel
+  close       | channelIdHex, scriptPubKey                   | close a channel and send the funds to the given scriptPubKey
+  help        |                                              | display available methods
 
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
