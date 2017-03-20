@@ -183,9 +183,7 @@ object Codecs {
   val revokeAndAckCodec: Codec[RevokeAndAck] = (
     ("channelId" | binarydata(32)) ::
       ("perCommitmentSecret" | scalar) ::
-      ("nextPerCommitmentPoint" | point) ::
-      ("padding" | ignore(8 * 3)) ::
-      ("htlcTimeoutSignature" | listofsignatures)
+      ("nextPerCommitmentPoint" | point)
     ).as[RevokeAndAck]
 
   val updateFeeCodec: Codec[UpdateFee] = (

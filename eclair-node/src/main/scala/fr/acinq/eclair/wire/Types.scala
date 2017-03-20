@@ -100,8 +100,7 @@ case class CommitSig(channelId: BinaryData,
 
 case class RevokeAndAck(channelId: BinaryData,
                         perCommitmentSecret: Scalar,
-                        nextPerCommitmentPoint: Point,
-                        htlcTimeoutSignatures: List[BinaryData]) extends HtlcMessage with HasChannelId
+                        nextPerCommitmentPoint: Point) extends HtlcMessage with HasChannelId
 
 case class UpdateFee(channelId: BinaryData,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
