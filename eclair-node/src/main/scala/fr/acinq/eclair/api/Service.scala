@@ -17,7 +17,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.CreatePayment
+import fr.acinq.eclair.payment.{CreatePayment, PaymentResult}
 import fr.acinq.eclair.wire.NodeAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JInt, JString}
@@ -69,8 +69,8 @@ trait Service extends Logging {
 
   def getChannel(channelIdHex: String): Future[ActorRef] =
     for {
-      channels <- (register ? 'channels).mapTo[Map[String, ActorRef]]
-    } yield channels.get(channelIdHex).getOrElse(throw new RuntimeException("unknown channel"))
+      channels <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]]
+    } yield channels.get(BinaryData(channelIdHex)).getOrElse(throw new RuntimeException("unknown channel"))
 
   val route =
     respondWithDefaultHeaders(customHeaders) {
@@ -94,22 +94,23 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
-                  (paymentInitiator ? CreatePayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[String]
+                  (paymentInitiator ? CreatePayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "close", JString(channelIdHex) :: JString(scriptPubKey) :: Nil) =>
                   getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
                 case JsonRPCBody(_, _, "close", JString(channelIdHex) :: Nil) =>
                   getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
-                    "info: display basic node information",
-                    "connect (host, port, nodeId): opens a secure connection with another lightning node",
-                    "connect (host, port, nodeId, fundingSat, pushMsat): open a channel with another lightning node",
-                    "peers: list existing peers",
-                    "channels: list existing channels",
-                    "channel (channelId): retrieve detailed information about a given channel",
-                    "send (amount, paymentHash, nodeId): send a payment to a lightning node",
-                    "close (channel_id): close a channel",
-                    "close (channel_id, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
+                    "connect (host, port, pubkey): connect to another lightning node through a secure connection",
+                    "open (host, port, pubkey, fundingSatoshi, pushMsat): open a channel with another lightning node",
+                    "peers: list existing local peers",
+                    "channels: list existing local channels",
+                    "channel (channelIdHex): retrieve detailed informations about a given channel",
+                    "network: list all the nodes announced in network",
+                    "genh: generate a payment H",
+                    "send (amountMsat, paymentHash, pubkey): send a payment to a lightning node",
+                    "close (channelIdHex): close a channel",
+                    "close (channelIdHex, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
                 case _ => Future.failed(new RuntimeException("method not found"))
               }
