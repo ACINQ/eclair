@@ -25,21 +25,21 @@
             <children>
                 <TextFlow>
                     <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Eclair v0.0.2" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Eclair v0.2" />
                     </children>
                 </TextFlow>
                 <TextFlow layoutX="10.0" layoutY="90.0">
                     <children>
                         <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="This software is released under " />
                         <Text onMouseClicked="#openApacheLicencePage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="the Apache 2 License" />
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". It follows the LN specifications and as such is compatible with other Lightning Network implementations." />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". It follows the LN specifications." />
                     </children>
                 </TextFlow>
                 <TextFlow layoutX="10.0" layoutY="10.0">
                     <children>
                         <Text strokeType="OUTSIDE" strokeWidth="0.0" text="The source code is available from " />
                         <Text onMouseClicked="#openGithubPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="https://github.com/ACINQ/eclair" />
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". If you encounter technical issues, please open a ticket here." />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="." />
                     </children>
                 </TextFlow>
                 <TextFlow layoutX="10.0" layoutY="90.0">
