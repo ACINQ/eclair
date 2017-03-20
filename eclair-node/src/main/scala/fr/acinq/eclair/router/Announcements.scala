@@ -14,8 +14,8 @@ import shapeless.HNil
   */
 object Announcements {
 
-  def channelAnnouncementWitnessEncode(shortChannelId: Long, nodeId1: BinaryData, nodeId2: BinaryData, bitcoinKey1: BinaryData, bitcoinKey2: BinaryData): BinaryData =
-    sha256(sha256(serializationResult(Codecs.channelAnnouncementWitnessCodec.encode(shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: HNil))))
+  def channelAnnouncementWitnessEncode(shortChannelId: Long, nodeId1: BinaryData, nodeId2: BinaryData, bitcoinKey1: BinaryData, bitcoinKey2: BinaryData, features: BinaryData): BinaryData =
+    sha256(sha256(serializationResult(Codecs.channelAnnouncementWitnessCodec.encode(shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: features :: HNil))))
 
   def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: BinaryData, rgbColor: (Byte, Byte, Byte), alias: String, features: BinaryData, addresses: List[InetSocketAddress]): BinaryData =
     sha256(sha256(serializationResult(Codecs.nodeAnnouncementWitnessCodec.encode(timestamp :: nodeId :: rgbColor :: alias :: features :: addresses :: HNil))))
@@ -23,11 +23,11 @@ object Announcements {
   def channelUpdateWitnessEncode(shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long): BinaryData =
     sha256(sha256(serializationResult(Codecs.channelUpdateWitnessCodec.encode(shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil))))
 
-  def signChannelAnnouncement(shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey): (BinaryData, BinaryData) = {
+  def signChannelAnnouncement(shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
     val witness = if (LexicographicalOrdering.isLessThan(localNodeSecret.publicKey.toBin, remoteNodeId.toBin)) {
-      channelAnnouncementWitnessEncode(shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey)
+      channelAnnouncementWitnessEncode(shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features)
     } else {
-      channelAnnouncementWitnessEncode(shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey)
+      channelAnnouncementWitnessEncode(shortChannelId, remoteNodeId, localNodeSecret.publicKey, remoteFundingKey, localFundingPrivKey.publicKey, features)
     }
     val nodeSig = Crypto.encodeSignature(Crypto.sign(witness, localNodeSecret)) :+ 1.toByte
     val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, localFundingPrivKey)) :+ 1.toByte
@@ -50,7 +50,8 @@ object Announcements {
       nodeId1 = nodeId1,
       nodeId2 = nodeId2,
       bitcoinKey1 = bitcoinKey1,
-      bitcoinKey2 = bitcoinKey2
+      bitcoinKey2 = bitcoinKey2,
+      features = BinaryData("")
     )
   }
 
@@ -86,7 +87,7 @@ object Announcements {
   }
 
   def checkSigs(ann: ChannelAnnouncement): Boolean = {
-    val witness = channelAnnouncementWitnessEncode(ann.shortChannelId, ann.nodeId1, ann.nodeId2, ann.bitcoinKey1, ann.bitcoinKey2)
+    val witness = channelAnnouncementWitnessEncode(ann.shortChannelId, ann.nodeId1, ann.nodeId2, ann.bitcoinKey1, ann.bitcoinKey2, ann.features)
     verifySignature(witness, ann.nodeSignature1, PublicKey(ann.nodeId1)) &&
       verifySignature(witness, ann.nodeSignature2, PublicKey(ann.nodeId2)) &&
       verifySignature(witness, ann.bitcoinSignature1, PublicKey(ann.bitcoinKey1)) &&

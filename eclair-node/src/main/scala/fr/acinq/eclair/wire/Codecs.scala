@@ -201,7 +201,8 @@ object Codecs {
       ("nodeId1" | binarydata(33)) ::
       ("nodeId2" | binarydata(33)) ::
       ("bitcoinKey1" | binarydata(33)) ::
-      ("bitcoinKey2" | binarydata(33)))
+      ("bitcoinKey2" | binarydata(33)) ::
+      ("features" | varsizebinarydata))
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | signature) ::

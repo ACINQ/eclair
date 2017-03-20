@@ -118,7 +118,8 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                nodeId1: BinaryData,
                                nodeId2: BinaryData,
                                bitcoinKey1: BinaryData,
-                               bitcoinKey2: BinaryData) extends RoutingMessage
+                               bitcoinKey2: BinaryData,
+                               features: BinaryData) extends RoutingMessage
 
 case class NodeAnnouncement(signature: BinaryData,
                             timestamp: Long,

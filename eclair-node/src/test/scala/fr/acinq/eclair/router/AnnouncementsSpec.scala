@@ -17,8 +17,8 @@ class AnnouncementsSpec extends FunSuite {
 
   test("create valid signed channel announcement") {
     val (node_a, node_b, bitcoin_a, bitcoin_b) = (randomKey, randomKey, randomKey, randomKey)
-    val (node_a_sig, bitcoin_a_sig) = signChannelAnnouncement(42, node_a, node_b.publicKey, bitcoin_a, bitcoin_b.publicKey)
-    val (node_b_sig, bitcoin_b_sig) = signChannelAnnouncement(42, node_b, node_a.publicKey, bitcoin_b, bitcoin_a.publicKey)
+    val (node_a_sig, bitcoin_a_sig) = signChannelAnnouncement(42, node_a, node_b.publicKey, bitcoin_a, bitcoin_b.publicKey, "")
+    val (node_b_sig, bitcoin_b_sig) = signChannelAnnouncement(42, node_b, node_a.publicKey, bitcoin_b, bitcoin_a.publicKey, "")
     val ann = makeChannelAnnouncement(42, node_a.publicKey, node_b.publicKey, bitcoin_a.publicKey, bitcoin_b.publicKey, node_a_sig, node_b_sig, bitcoin_a_sig, bitcoin_b_sig)
     assert(checkSigs(ann))
     assert(checkSigs(ann.copy(nodeId1 = randomKey.publicKey)) === false)
