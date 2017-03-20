@@ -121,17 +121,11 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
       if(!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
         mainController.networkNodesList.add(nodeAnnouncement)
       }
-      Platform.runLater(new Runnable() {
-        override def run = mainController.networkNodesTab.setText(s"Nodes (${mainController.networkNodesList.size})")
-      })
 
     case NodeLost(nodeId) =>
       log.debug(s"peer node lost with node id=${nodeId}")
       mainController.networkNodesList.removeIf(new Predicate[NodeAnnouncement] {
         override def test(na: NodeAnnouncement) = na.nodeId.equals(nodeId)
-      })
-      Platform.runLater(new Runnable() {
-        override def run = mainController.networkNodesTab.setText(s"Nodes (${mainController.networkNodesList.size})")
       })
 
     case ChannelDiscovered(channelAnnouncement, _) =>
@@ -139,17 +133,11 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
       if(!mainController.networkChannelsList.exists(ca => ca.shortChannelId == channelAnnouncement.shortChannelId)) {
         mainController.networkChannelsList.add(channelAnnouncement)
       }
-      Platform.runLater(new Runnable() {
-        override def run = mainController.networkChannelsTab.setText(s"Channels (${mainController.networkChannelsList.size})")
-      })
 
     case ChannelLost(shortChannelId) =>
       log.debug(s"peer channel lost with channel id=${shortChannelId}")
       mainController.networkChannelsList.removeIf(new Predicate[ChannelAnnouncement] {
         override def test(ca: ChannelAnnouncement) = ca.shortChannelId == shortChannelId
-      })
-      Platform.runLater(new Runnable() {
-        override def run = mainController.networkChannelsTab.setText(s"Channels (${mainController.networkChannelsList.size})")
       })
   }
 }

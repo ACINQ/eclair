@@ -1,9 +1,10 @@
 package fr.acinq.eclair.gui.controllers
 
-import javafx.application.HostServices
+import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
-import javafx.collections.{FXCollections, ObservableList}
+import javafx.collections.ListChangeListener.Change
+import javafx.collections.{FXCollections, ListChangeListener, ObservableList}
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
 import javafx.scene.control.TableColumn.CellDataFeatures
@@ -111,6 +112,13 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
 
     // init all nodes
     networkNodesTable.setItems(networkNodesList)
+    networkNodesList.addListener(new ListChangeListener[NodeAnnouncement] {
+      override def onChanged(c: Change[_ <: NodeAnnouncement]) = {
+        Platform.runLater(new Runnable() {
+          override def run = networkNodesTab.setText(s"All Nodes (${networkNodesList.size})")
+        })
+      }
+    })
     networkNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.nodeId.toString)
     })
@@ -141,6 +149,13 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
 
     // init all channels
     networkChannelsTable.setItems(networkChannelsList)
+    networkChannelsList.addListener(new ListChangeListener[ChannelAnnouncement] {
+      override def onChanged(c: Change[_ <: ChannelAnnouncement]) = {
+        Platform.runLater(new Runnable() {
+          override def run = networkChannelsTab.setText(s"All Channels (${networkChannelsList.size})")
+        })
+      }
+    })
     networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, Number], ObservableValue[Number]]() {
       def call(pc: CellDataFeatures[ChannelAnnouncement, Number]) = new SimpleLongProperty(pc.getValue.shortChannelId)
     })
