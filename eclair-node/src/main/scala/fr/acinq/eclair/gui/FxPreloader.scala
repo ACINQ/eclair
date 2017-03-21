@@ -14,7 +14,6 @@ import grizzled.slf4j.Logging
 sealed trait AppNotificationType
 case object SuccessAppNotification extends AppNotificationType
 case object InfoAppNotification extends AppNotificationType
-case object FatalAppNotification extends AppNotificationType
 
 case class AppNotification(notificationType: AppNotificationType, message: String) extends PreloaderNotification
 
@@ -60,11 +59,11 @@ class FxPreloader extends Preloader with Logging {
         logger.debug(s"Preloader error notification => ${n.getDetails}")
         logger.error(s"An error has occured", n.getCause)
         controller.map(_.addError(n.getDetails))
+        controller.map(_.showErrorBox)
       case n: AppNotification =>
         logger.debug(s"Preloader app notification => ${n.notificationType}, ${n.message}")
         n.notificationType match {
           case SuccessAppNotification => stage.map(_.close)
-          case FatalAppNotification => controller.map(_.showErrorBox)
           case InfoAppNotification => controller.map(_.addLog(n.message))
           case _ =>
         }

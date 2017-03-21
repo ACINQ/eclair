@@ -23,61 +23,62 @@ import grizzled.slf4j.Logging
   */
 class FxApp extends Application with Logging {
 
-  var mainController: Option[MainController] = None
-  var setup: Option[Setup] = None
-  var handlers: Option[Handlers] = None
-
   override def init = {
     logger.debug("initializing application...")
-    try {
-
-      val datadir = getParameters.getUnnamed.get(0)
-      setup = Option(new Setup(datadir))
-
-      handlers = Option(new Handlers(setup.get))
-      val controller = new MainController(handlers.get, setup.get, getHostServices)
-      val guiUpdater = setup.get.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller, setup.get), "gui-updater", SupervisorStrategy.Resume))
-      setup.get.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
-      setup.get.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
-
-      mainController = Option(controller)
-
-      notifyPreloader(new AppNotification(SuccessAppNotification, "Init successful"))
-    } catch {
-      case TCPBindException(port) =>
-        notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
-      case _: ConnectException | _: StreamTcpException =>
-        notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin-core.", null))
-        notifyPreloader(new AppNotification(InfoAppNotification, "Please check that Bitcoin-core is started and that the RPC user, password and port are correct."))
-      case t: Throwable =>
-        notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
-    }
   }
 
   override def start(primaryStage: Stage): Unit = {
     val icon = new Image(getClass.getResource("/gui/commons/images/eclair-square.png").toExternalForm, false)
     primaryStage.getIcons.add(icon)
 
-    val mainFXML = new FXMLLoader(getClass.getResource("/gui/main/main.fxml"))
-    mainFXML.setController(mainController.get)
-    val mainRoot = mainFXML.load[Parent]
-    val scene = new Scene(mainRoot)
+    new Thread(new Runnable {
+      override def run(): Unit = {
+        try {
+          val datadir = getParameters.getUnnamed.get(0)
 
-    primaryStage.setTitle("Eclair")
-    primaryStage.setMinWidth(570)
-    primaryStage.setWidth(650)
-    primaryStage.setMinHeight(400)
-    primaryStage.setHeight(400)
-    primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
-      override def handle(event: WindowEvent) {
-        System.exit(0)
+          val setup = new Setup(datadir)
+          val handlers = new Handlers(setup)
+          val controller = new MainController(handlers, setup, getHostServices)
+          val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller, setup), "gui-updater", SupervisorStrategy.Resume))
+          setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
+
+          Platform.runLater(new Runnable {
+            override def run(): Unit = {
+              val mainFXML = new FXMLLoader(getClass.getResource("/gui/main/main.fxml"))
+              mainFXML.setController(controller)
+              val mainRoot = mainFXML.load[Parent]
+              val scene = new Scene(mainRoot)
+
+              primaryStage.setTitle("Eclair")
+              primaryStage.setMinWidth(570)
+              primaryStage.setWidth(650)
+              primaryStage.setMinHeight(400)
+              primaryStage.setHeight(400)
+              primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
+                override def handle(event: WindowEvent) {
+                  System.exit(0)
+                }
+              })
+              notifyPreloader(new AppNotification(SuccessAppNotification, "Init successful"))
+              primaryStage.setScene(scene)
+              primaryStage.show
+              initNotificationStage(primaryStage, handlers)
+              setup.boostrap
+            }
+          })
+
+        } catch {
+          case TCPBindException(port) =>
+            notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
+          case _: ConnectException | _: StreamTcpException =>
+            notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin-core.", null))
+            notifyPreloader(new AppNotification(InfoAppNotification, "Please check that Bitcoin-core is started and that the RPC user, password and port are correct."))
+          case t: Throwable =>
+            notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
+        }
       }
-    })
-
-    primaryStage.setScene(scene)
-    primaryStage.show
-    initNotificationStage(primaryStage, handlers.get)
-    setup.get.boostrap
+    }).start
 
   }
 
