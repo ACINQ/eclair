@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import akka.actor.{Actor, ActorLogging, OneForOneStrategy, Props, SupervisorStrategy}
 
 /**
-  * This supervisor will supervise a single child actor using the provided [[SupervisorStrategy.Directive]]
+  * This supervisor will supervise a single child actor using the provided [[SupervisorStrategy]]
   * All incoming messages will be forwarded to the child actor.
   *
   * Created by PM on 17/03/2017.
