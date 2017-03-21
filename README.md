@@ -74,7 +74,7 @@ If you want to change configuration parameters, create a file named `eclair.conf
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
  eclair.server.port          | TCP port                  | 9735
- eclair.http.port            | HTTP port                 | 8080
+ eclair.api.port            | HTTP port                 | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
