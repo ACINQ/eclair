@@ -26,27 +26,29 @@
                 <TextFlow>
                     <children>
                         <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Eclair v0.2" />
+                        <Text strokeType="OUTSIDE" styleClass="text-sm" strokeWidth="0.0" text=" brought to you by " />
+                        <Text onMouseClicked="#openACINQPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="ACINQ" />
                     </children>
                 </TextFlow>
                 <TextFlow layoutX="10.0" layoutY="90.0">
                     <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="about-text" text="This software is released under " />
-                        <Text onMouseClicked="#openApacheLicencePage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="the Apache 2 License" />
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". It follows the LN specifications." />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Eclair follows " />
+                        <Text onMouseClicked="#openLNRFCPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="the Lightning Network specifications" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="." />
                     </children>
                 </TextFlow>
                 <TextFlow layoutX="10.0" layoutY="10.0">
                     <children>
                         <Text strokeType="OUTSIDE" strokeWidth="0.0" text="The source code is available from " />
-                        <Text onMouseClicked="#openGithubPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="https://github.com/ACINQ/eclair" />
+                        <Text onMouseClicked="#openGithubPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="GitHub" />
                         <Text strokeType="OUTSIDE" strokeWidth="0.0" text="." />
                     </children>
                 </TextFlow>
-                <TextFlow layoutX="10.0" layoutY="90.0">
+                <TextFlow layoutX="10.0" layoutY="90.0" styleClass="">
                     <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="This software is brought to you by " />
-                        <Text onMouseClicked="#openACINQPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="ACINQ" />
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text=". Contact us at hello@acinq.co." />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="Licensed under " />
+                        <Text onMouseClicked="#openApacheLicencePage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="the Apache 2 License" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" text="." />
                     </children>
                 </TextFlow>
             </children>

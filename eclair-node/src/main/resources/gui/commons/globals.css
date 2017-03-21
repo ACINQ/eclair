@@ -11,6 +11,10 @@
 	-fx-font-weight: bold;
 }
 
+.text-sm {
+    -fx-font-size: 12px;
+}
+
 .text-error {
 	-fx-text-fill: rgb(216,31,74);
 	-fx-font-size: 11px;
