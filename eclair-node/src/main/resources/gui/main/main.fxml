@@ -85,14 +85,14 @@
                         <Label fx:id="labelAlias" text="N/A"/>
                     </children>
                 </HBox>
-                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="75.0">
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="85.0">
                     <children>
                         <Separator orientation="VERTICAL"/>
                         <Label text="HTTP" styleClass="badge, badge-http"/>
                         <Label fx:id="labelApi" styleClass="value" text="N/A"/>
                     </children>
                 </HBox>
-                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="75.0">
+                <HBox alignment="CENTER_LEFT" HBox.hgrow="NEVER" minWidth="85.0">
                     <children>
                         <Separator orientation="VERTICAL"/>
                         <Label text="TCP" styleClass="badge, badge-tcp"/>

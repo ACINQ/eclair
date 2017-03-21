@@ -6,7 +6,7 @@
 <?import java.net.URL?>
 <?import javafx.collections.FXCollections?>
 <?import java.lang.String?>
-<GridPane styleClass="grid" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane styleClass="grid" prefWidth="550.0" prefHeight="300.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="210.0" minWidth="10.0" prefWidth="200.0"/>
         <ColumnConstraints hgrow="ALWAYS" minWidth="10.0" prefWidth="120.0"/>
