@@ -159,7 +159,7 @@ object Transactions {
     val htlcReceivedOutputs = trimReceivedHtlcs(localDustLimit, spec)
       .map(htlc => TxOut(MilliSatoshi(htlc.add.amountMsat), pay2wsh(htlcReceived(localPubKey, remotePubkey, localRevocationPubkey, ripemd160(htlc.add.paymentHash), htlc.add.expiry))))
 
-    val txnumber = obscuredCommitTxNumber(commitTxNumber, true /*localIsFunder*/, localPaymentBasePoint, remotePaymentBasePoint)
+    val txnumber = obscuredCommitTxNumber(commitTxNumber, localIsFunder, localPaymentBasePoint, remotePaymentBasePoint)
     val (sequence, locktime) = encodeTxNumber(txnumber)
 
     val tx = Transaction(
