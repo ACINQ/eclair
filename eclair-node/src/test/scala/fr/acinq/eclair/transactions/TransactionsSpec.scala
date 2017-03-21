@@ -160,7 +160,7 @@ class TransactionsSpec extends FunSuite {
     }
 
     {
-      assert(getCommitTxNumber(commitTx.tx, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
+      assert(getCommitTxNumber(commitTx.tx, true, localPaymentPriv.publicKey, remotePaymentPriv.publicKey) == commitTxNumber)
       val hash: Array[Byte] = Crypto.sha256(localPaymentPriv.publicKey.toBin ++ remotePaymentPriv.publicKey.toBin)
       val num = Protocol.uint64(hash.takeRight(8), ByteOrder.BIG_ENDIAN) & 0xffffffffffffL
       val check = ((commitTx.tx.txIn(0).sequence & 0xffffff) << 24) | (commitTx.tx.lockTime)

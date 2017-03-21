@@ -114,7 +114,7 @@ class TestVectorsSpec extends FunSuite {
 
   val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, Local.funding_pubkey, Remote.funding_pubkey)
 
-  val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, Local.payment_basepoint, Remote.payment_basepoint)
+  val obscured_tx_number = Transactions.obscuredCommitTxNumber(42, true, Local.payment_basepoint, Remote.payment_basepoint)
   assert(obscured_tx_number === (0x2bb038521914L ^ 42L))
 
   println(s"local_payment_basepoint: ${Local.payment_basepoint}")
@@ -213,7 +213,7 @@ class TestVectorsSpec extends FunSuite {
       println(s"remote_signature: ${toHexString(remote_sig.dropRight(1))}")
     }
 
-    assert(Transactions.getCommitTxNumber(commitTx.tx, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
+    assert(Transactions.getCommitTxNumber(commitTx.tx, true, Local.payment_basepoint, Remote.payment_basepoint) === Local.commitTxNumber)
     Transaction.correctlySpends(commitTx.tx, Seq(fundingTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
     println(s"output commit_tx: ${Transaction.write(commitTx.tx)}")
 
