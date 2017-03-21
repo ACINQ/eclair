@@ -40,7 +40,7 @@ Eclair needs a _synchronized_, _segwit-ready_, _non-pruning_, _tx-indexing_ [Bit
 
 Run bitcoind with the following `bitcoin.conf`:
 ```
-regtest=1
+testnet=1
 server=1
 rpcuser=XXX
 rpcpassword=XXX
