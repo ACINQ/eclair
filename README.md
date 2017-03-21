@@ -16,7 +16,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 ---
 
 ## Lightning Network Specification Compliance
-Eclair 0.2-Alpha1 is compliant with the BOLTs at commit [06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02](https://github.com/lightningnetwork/lightning-rfc/commit/06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02), with the following caveats:
+[Eclair 0.2-alpha1](https://github.com/ACINQ/eclair/releases/tag/v0.2-alpha1) is compliant with the BOLTs at commit [06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02](https://github.com/lightningnetwork/lightning-rfc/commit/06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02), with the following caveats:
 
   - [X] BOLT 1: Base Protocol
   - [X] BOLT 2: Peer Protocol for Channel Management
