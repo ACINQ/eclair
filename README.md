@@ -68,6 +68,8 @@ Eclair will create a directory in `~/.eclair` by default. You may change this di
 
 If you want to change configuration parameters, create a file named `eclair.conf` in eclair's home directory.
 
+:warning: Using separate `datadir` is mandatory if you want to run several instances of eclair on the same machine. You will also have to change ports.
+
 
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
