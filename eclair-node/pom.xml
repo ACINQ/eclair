@@ -91,7 +91,7 @@
                     <appName>Eclair (Alpha 1)</appName>
                     <nativeReleaseVersion>0.2.0</nativeReleaseVersion>
                     <mainClass>fr.acinq.eclair.Boot</mainClass>
-                    <verbose>true</verbose>
+                    <verbose>false</verbose>
                     <bundler>EXE</bundler>
                 </configuration>
             </plugin>
