@@ -11,7 +11,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
  
  :construction: Both the BOLTs and Eclair itself are a work in progress. Expect things to break/change!
  
- :warning: Eclair currently only runs on regtest or testnet.
+ :warning: Eclair currently only runs on regtest or testnet. We recommend testing in regtest, as it allows you to generate blocks manually and not wait for confirmations.
 
 ---
 
