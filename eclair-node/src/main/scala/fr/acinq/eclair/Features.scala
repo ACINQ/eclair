@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 
 import java.util.BitSet
+import java.util.function.IntPredicate
 
 import fr.acinq.bitcoin.BinaryData
 
@@ -11,31 +12,22 @@ import fr.acinq.bitcoin.BinaryData
   */
 object Features {
 
-  // @formatter:off
-  sealed trait FeatureFlag
-  case object Unset extends FeatureFlag
-  case object Mandatory extends FeatureFlag
-  case object Optional extends FeatureFlag
-  // @formatter:on
+  val CHANNELS_PUBLIC_BIT = 0
+  val INITIAL_ROUTING_SYNC_BIT = 2
 
-  def readFeature(features: BinaryData, index: Int): FeatureFlag = {
-    require(index % 2 == 0, "feature index must be even")
-    val mandatoryBit = index
-    val optionalBit = index + 1
-    val bitset = BitSet.valueOf(features)
-    require(!(bitset.get(mandatoryBit) && bitset.get(optionalBit)), s"both feature bits are set for feature index=$index")
-    if (bitset.get(mandatoryBit)) Mandatory else if (bitset.get(optionalBit)) Optional else Unset
-  }
+  // NB: BitSet operates on little endian, hence the reverse
 
-  def channelPublic(localFeatures: BinaryData): FeatureFlag = readFeature(localFeatures, 0)
+  def isSet(features: BinaryData, bitIndex: Int): Boolean = BitSet.valueOf(features.reverse.toArray).get(bitIndex)
 
-  def initialRoutingSync(localFeatures: BinaryData): FeatureFlag = readFeature(localFeatures, 2)
-
-  def areFeaturesCompatible(localLocalFeatures: BinaryData, remoteLocalFeatures: BinaryData): Boolean = {
-    val localChannelPublic = Features.channelPublic(localLocalFeatures)
-    val remoteChannelPublic = Features.channelPublic(remoteLocalFeatures)
-
-    if ((localChannelPublic == Mandatory && remoteChannelPublic == Unset) || (localChannelPublic == Unset && remoteChannelPublic == Mandatory)) false else true
+  /**
+    * A feature set is supported if all even bits are supported.
+    * We just ignore unknown odd bits.
+    */
+  def areSupported(features: BinaryData): Boolean = {
+    val bitset = BitSet.valueOf(features.reverse.toArray)
+    bitset.stream().noneMatch(new IntPredicate {
+      override def test(value: Int) = value % 2 == 0 && value > INITIAL_ROUTING_SYNC_BIT
+    })
   }
 
 }

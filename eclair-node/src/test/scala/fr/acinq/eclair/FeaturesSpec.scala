@@ -1,9 +1,9 @@
 package fr.acinq.eclair
 
+import fr.acinq.eclair.Features._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import Features._
 
 /**
   * Created by PM on 27/01/2017.
@@ -12,31 +12,24 @@ import Features._
 class FeaturesSpec extends FunSuite {
 
   test("'channel_public' feature") {
-    assert(channelPublic("") === Unset)
-    assert(channelPublic("00") === Unset)
-    assert(channelPublic("01") === Mandatory)
-    assert(channelPublic("02") === Optional)
+    assert(isSet("", CHANNELS_PUBLIC_BIT) == false)
+    assert(isSet("00", CHANNELS_PUBLIC_BIT) == false)
+    assert(isSet("01", CHANNELS_PUBLIC_BIT) == true)
+    assert(isSet("a602", CHANNELS_PUBLIC_BIT) == false)
   }
 
   test("'initial_routing_sync' feature") {
-    assert(initialRoutingSync("") === Unset)
-    assert(initialRoutingSync("00") === Unset)
-    assert(initialRoutingSync("01") === Unset)
-    assert(initialRoutingSync("04") === Mandatory)
-    assert(initialRoutingSync("05") === Mandatory)
-    assert(initialRoutingSync("08") === Optional)
-    assert(initialRoutingSync("09") === Optional)
+    assert(isSet("", INITIAL_ROUTING_SYNC_BIT) == false)
+    assert(isSet("00", INITIAL_ROUTING_SYNC_BIT) == false)
+    assert(isSet("04", INITIAL_ROUTING_SYNC_BIT) == true)
+    assert(isSet("05", INITIAL_ROUTING_SYNC_BIT) == true)
   }
 
   test("features compatibility") {
-    // if one node wants channels to be public the other must at least make it optional
-    assert(areFeaturesCompatible("01", "00") == false)
-    assert(areFeaturesCompatible("01", "02") == true)
-    assert(areFeaturesCompatible("02", "02") == true)
-    // eclair supports initial routing sync so we always accept
-    assert(areFeaturesCompatible("00", "04") == true)
-    // if we request initial routing sync and they don't support it they will close the connection
-    assert(areFeaturesCompatible("04", "00") == true)
+    for (i <- 0 until 16) assert(areSupported(Array[Byte](i.toByte)) == true)
+    assert(areSupported("14") == false)
+    assert(areSupported("0141") == false)
+    assert(areSupported("02af") == true)
   }
 
 }
