@@ -4,7 +4,7 @@ import java.io.File
 import java.net.InetSocketAddress
 import javafx.application.Platform
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props, SupervisorStrategy}
+import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
@@ -46,11 +46,6 @@ object Boot extends App with Logging {
   parser.parse(args, CmdLineConfig()) match {
     case Some(config) if config.headless =>
       val s = new Setup(config.datadir.getAbsolutePath)
-      import ExecutionContext.Implicits.global
-      s.fatalEventFuture.map(e => {
-        logger.error(s"received fatal event $e")
-        Platform.exit()
-      })
       s.boostrap
     case Some(config) => LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(config.datadir.getAbsolutePath))
     case None => Platform.exit()
@@ -98,16 +93,6 @@ class Setup(datadir: String) extends Logging {
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
 
-  val fatalEventPromise = Promise[FatalEvent]()
-  system.actorOf(Props(new Actor {
-    system.eventStream.subscribe(self, classOf[FatalEvent])
-
-    override def receive: Receive = {
-      case e: FatalEvent => fatalEventPromise.success(e)
-
-    }
-  }))
-  val fatalEventFuture = fatalEventPromise.future
 
   val peer = system.actorOf(SimpleSupervisor.props(PeerClient.props(config.getConfig("bitcoind")), "bitcoin-peer", SupervisorStrategy.Restart))
   val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoin_client), "watcher", SupervisorStrategy.Resume))
@@ -120,7 +105,9 @@ class Setup(datadir: String) extends Logging {
   val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
   val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), "switchboard", SupervisorStrategy.Resume))
   val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
-  val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port"))), "server", SupervisorStrategy.Restart))
+  val bound = Promise[Unit]()
+  val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(bound)), "server", SupervisorStrategy.Restart))
+  Await.result(bound.future.recover { case _ => throw new TCPBindException(config.getInt("server.port")) }, 10 seconds)
 
   val _setup = this
   val api = new Service {
@@ -131,9 +118,7 @@ class Setup(datadir: String) extends Logging {
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
     override val system: ActorSystem = _setup.system
   }
-  Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")) onFailure {
-    case t: Throwable => system.eventStream.publish(HTTPBindError)
-  }
+  Await.result(Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }, 10 seconds)
 
   val tasks = new Thread(new Runnable() {
     override def run(): Unit = {
@@ -164,3 +149,5 @@ object LogSetup {
     logger.addAppender(fileAppender)
   }
 }
+
+case class TCPBindException(port: Int) extends RuntimeException

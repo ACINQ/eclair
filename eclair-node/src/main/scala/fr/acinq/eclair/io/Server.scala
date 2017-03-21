@@ -5,16 +5,18 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
+import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.wire.LightningMessage
-import fr.acinq.eclair.{NodeParams, TCPBindError}
+
+import scala.concurrent.Promise
 
 /**
   * Created by PM on 27/10/2015.
   */
-class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress) extends Actor with ActorLogging {
+class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, bound: Option[Promise[Unit]] = None) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -25,10 +27,11 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
 
   def main(transports: Set[ActorRef]): Receive = {
     case Bound(localAddress) =>
+      bound.map(_.success())
       log.info(s"bound on $localAddress")
 
     case CommandFailed(_: Bind) =>
-      system.eventStream.publish(TCPBindError)
+      bound.map(_.failure(new RuntimeException("TCP bind failed")))
       context stop self
 
     case Connected(remote, _) =>
@@ -53,7 +56,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
 
 object Server {
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress): Props = Props(new Server(nodeParams, switchboard, address))
+  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, bound: Option[Promise[Unit]] = None): Props = Props(new Server(nodeParams, switchboard, address, bound))
 
 }
 
