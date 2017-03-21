@@ -40,7 +40,7 @@ Eclair needs a _synchronized_, _segwit-ready_, _non-pruning_, _tx-indexing_ [Bit
 
 Run bitcoind with the following `bitcoin.conf`:
 ```
-testnet=1
+regtest=1
 server=1
 rpcuser=XXX
 rpcpassword=XXX
@@ -80,19 +80,19 @@ option                       | description               | default value
 
 ## JSON-RPC API
 
- method       |  params                                      | description
- -------------|----------------------------------------------|-----------------------------------------------------------
-  connect     | host, port, pubkey                           | connect to another lightning node through a secure connection
-  open        | host, port, pubkey, fundingSatoshi, pushMsat | opens a channel with another lightning node
-  peers       |                                              | list existing local peers
-  channels    |                                              | list existing local channels
-  channel     | channelIdHex                                 | retrieve detailed information about a given channel
-  network     |                                              | list all nodes that have been announced
-  genh        |                                              | generate a payment H
-  send        | amountMsat, paymentHash, pubkey              | send a payment to a lightning node
-  close       | channelIdHex                                 | close a channel
-  close       | channelIdHex, scriptPubKey                   | close a channel and send the funds to the given scriptPubKey
-  help        |                                              | display available methods
+ method       |  params                                       | description
+ -------------|-----------------------------------------------|-----------------------------------------------------------
+  connect     | host, port, pubkey                            | connect to another lightning node through a secure connection
+  open        | host, port, pubkey, fundingSatoshis, pushMsat | opens a channel with another lightning node
+  peers       |                                               | list existing local peers
+  channels    |                                               | list existing local channels
+  channel     | channelId                                     | retrieve detailed information about a given channel
+  network     |                                               | list all nodes that have been announced
+  genh        |                                               | generate a payment H
+  send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
+  close       | channelId                                     | close a channel
+  close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
+  help        |                                               | display available methods
 
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
