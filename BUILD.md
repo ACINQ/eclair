@@ -14,7 +14,3 @@ or
 ```shell
 $ mvn package -DskipTests
 ```
-To generate the windows installer:
-```shell
-$ mvn jfx:native
-```
