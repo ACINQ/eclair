@@ -40,6 +40,20 @@
                             <appClass>fr.acinq.eclair.Boot</appClass>
                             <type>fat</type>
                             <customDescriptor>-${git.commit.id.abbrev}-capsule-fat</customDescriptor>
+                            <manifest>
+                                <entry>
+                                    <key>Url</key>
+                                    <value>${project.parent.url}</value>
+                                </entry>
+                                <entry>
+                                    <key>Commit-Id</key>
+                                    <value>${git.commit.id}</value>
+                                </entry>
+                                <entry>
+                                    <key>Implementation-Version</key>
+                                    <value>${project.version}</value>
+                                </entry>
+                            </manifest>
                         </configuration>
                     </execution>
                 </executions>
@@ -93,6 +107,27 @@
                     <mainClass>fr.acinq.eclair.Boot</mainClass>
                     <verbose>false</verbose>
                     <bundler>EXE</bundler>
+                    <manifestAttributes>
+                        <Url>${project.parent.url}</Url>
+                        <Commit-Id>${git.commit.id}</Commit-Id>
+                        <Implementation-Version>${project.version}</Implementation-Version>
+                    </manifestAttributes>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addClasspath>true</addClasspath>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                        <manifestEntries>
+                            <Url>${project.parent.url}</Url>
+                            <Commit-Id>${git.commit.id}</Commit-Id>
+                        </manifestEntries>
+                    </archive>
                 </configuration>
             </plugin>
         </plugins>
