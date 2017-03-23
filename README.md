@@ -57,24 +57,33 @@ Just use the windows installer, it should create a shortcut on your desktop.
 
 You need to first install java, more precisely a JRE 1.8+.
 
-Then just grab the latest fat jar and run:
+Then download the latest fat jar anywhere on your machine.
+
+### Running Eclair
+
+Launch Eclair by running the installed executable. If you are using the fat jar, run:
 ```shell
 java -jar eclair-node_xxxxxx-fat.jar
 ```
 
+When Eclair launches for the first time, it creates a directory to store its data. This directory default location is `~/.eclair`. You can override this by providing an option to the executable.
+
+option         | description                     | default value
+---------------|---------------------------------|--------------
+--datadir      | Path to the data directory      | ~/.eclair
+--headless     | Run Eclair without the GUI      |
+--help, -h     | Display usage text              |
+
+:warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in the configuration (see below).
+
 ### Configuring Eclair
 
-Eclair will create a directory in `~/.eclair` by default. You may change this directory's location using `--datadir <dir>` command line argument.
-
-If you want to change configuration parameters, create a file named `eclair.conf` in eclair's home directory.
-
-:warning: Using separate `datadir` is mandatory if you want to run several instances of eclair on the same machine. You will also have to change ports.
-
+To change your node configuration, create a file named `eclair.conf` in `datadir`.
 
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
  eclair.server.port          | TCP port                  | 9735
- eclair.api.port            | HTTP port                 | 8080
+ eclair.api.port             | HTTP port                 | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
