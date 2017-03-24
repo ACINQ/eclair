@@ -65,7 +65,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       // TODO: cleanup bindings
       context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings, shortIds, channelUpdates)
 
-    case ShortChannelIdAssigned(channel, channelId, shortChannelId) =>
+    case ShortChannelIdAssigned(_, channelId, shortChannelId) =>
       context become main(channels, bindings, shortIds + (channelId -> shortChannelId), channelUpdates)
 
     case channelUpdate: ChannelUpdate =>
@@ -78,9 +78,8 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           case ParsedPacket(payload, nextNodeAddress, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextNodeAddress, nextPacket, sharedSecret)
         } match {
         case Success((_, nextNodeAddress, _, sharedSecret)) if nextNodeAddress.forall(_ == 0) =>
-          log.info(s"we are the final recipient of htlc #${add.id}")
-          context.system.eventStream.publish(PaymentReceived(self, add.paymentHash))
-          paymentHandler forward add
+          log.info(s"looks like we are the final recipient of htlc #${add.id}")
+          paymentHandler forward (add, sharedSecret)
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
           val outgoingChannel = channels.find(_.nodeAddress == nextNodeAddress).get
           val channelUpdate = shortIds.get(outgoingChannel.channelId).flatMap(shortId => channelUpdates.get(shortId))

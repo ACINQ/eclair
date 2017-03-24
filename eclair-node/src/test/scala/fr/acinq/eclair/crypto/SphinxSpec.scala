@@ -109,7 +109,7 @@ class SphinxSpec extends FunSuite {
     // error packet received by the origin node
     val error = sharedsecrets.dropRight(1).reverse.foldLeft(error0)(forwardErrorPacket)
 
-    val Some((pubkey, failure1)) = parseErrorPacket(error, sharedsecrets.zip(publicKeys))
+    val Some(ErrorPacket(pubkey, failure1)) = parseErrorPacket(error, sharedsecrets.zip(publicKeys))
     assert(pubkey == publicKeys.last)
     assert(failure1 == failure)
   }
@@ -143,7 +143,7 @@ class SphinxSpec extends FunSuite {
     val error4 = forwardErrorPacket(error3, sharedSecret0)
 
     // origin parses error packet and can see that it comes from node #4
-    val Some((pubkey, failure)) = parseErrorPacket(error4, sharedSecrets)
+    val Some(ErrorPacket(pubkey, failure)) = parseErrorPacket(error4, sharedSecrets)
     assert(pubkey == publicKeys(4))
     assert(failure == PermanentChannelFailure)
   }
@@ -170,7 +170,7 @@ class SphinxSpec extends FunSuite {
     val error2 = forwardErrorPacket(error1, sharedSecret0)
 
     // origin parses error packet and can see that it comes from node #2
-    val Some((pubkey, failure)) = parseErrorPacket(error2, sharedSecrets)
+    val Some(ErrorPacket(pubkey, failure)) = parseErrorPacket(error2, sharedSecrets)
     assert(pubkey == publicKeys(2))
     assert(failure == InvalidRealm)
   }

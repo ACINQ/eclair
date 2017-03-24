@@ -25,8 +25,8 @@ import scala.concurrent.{ExecutionContext, Future}
 
 case class ChannelDesc(id: Long, a: BinaryData, b: BinaryData)
 case class Hop(nodeId: BinaryData, nextNodeId: BinaryData, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: BinaryData, target: BinaryData)
-case class RouteResponse(hops: Seq[Hop]) { require(hops.size > 0, "route cannot be empty") }
+case class RouteRequest(source: BinaryData, target: BinaryData, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
+case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class SendRoutingState(to: ActorRef)
 
 // @formatter:on
@@ -112,6 +112,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       log.info(s"funding tx of channelId=$shortChannelId has been spent by txid=${tx.txid}")
       log.info(s"removed channel channelId=$shortChannelId")
       context.system.eventStream.publish(ChannelLost(shortChannelId))
+
       def isNodeLost(nodeId: BinaryData): Option[BinaryData] = {
         // has nodeId still open channels?
         if ((channels - shortChannelId).values.filter(c => c.nodeId1 == nodeId || c.nodeId2 == nodeId).isEmpty) {
@@ -120,6 +121,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
           Some(nodeId)
         } else None
       }
+
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
       nodeParams.announcementsDb.delete(channelKey(shortChannelId))
       updates.values.filter(_.shortChannelId == shortChannelId).foreach(u => nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags)))
@@ -184,7 +186,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
 
     case 'dot => graph2dot(nodes, channels) pipeTo sender
 
-    case RouteRequest(start, end) => findRoute(start, end, updates).map(RouteResponse(_)) pipeTo sender
+    case RouteRequest(start, end, ignoreNodes, ignoreChannels) =>
+      log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.mkString(",")}")
+      findRoute(start, end, filterUpdates(updates, ignoreNodes, ignoreChannels)).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
 
     case other => log.warning(s"unhandled message $other")
   }
@@ -209,6 +213,11 @@ object Router {
     // the least significant bit tells us if it is node1 or node2
     if (u.flags.data(1) % 2 == 0) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
   }
+
+  def filterUpdates(updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) =
+    updates
+      .filterNot(u => ignoreNodes.map(_.toBin).contains(u._1.a) || ignoreNodes.map(_.toBin).contains(u._1.b))
+      .filterNot(u => ignoreChannels.contains(u._1.id))
 
   def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
     require(localNodeId != targetNodeId, "cannot route to self")

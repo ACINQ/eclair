@@ -2,8 +2,9 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CMD_SIGN}
-import fr.acinq.eclair.wire.{FailureMessageCodecs, UnknownPaymentHash, UpdateAddHtlc}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.wire.{UnknownPaymentHash, UpdateAddHtlc}
 
 import scala.util.Random
 
@@ -33,14 +34,15 @@ class LocalPaymentHandler extends Actor with ActorLogging {
       sender ! h
       context.become(run(h2r + (h -> r)))
 
-    case htlc: UpdateAddHtlc if h2r.contains(htlc.paymentHash) =>
+    case (htlc: UpdateAddHtlc, _) if h2r.contains(htlc.paymentHash) =>
       val r = h2r(htlc.paymentHash)
       sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
+      context.system.eventStream.publish(PaymentReceived(self, htlc.paymentHash))
       context.become(run(h2r - htlc.paymentHash))
 
-    case htlc: UpdateAddHtlc =>
-      // TODO: this doesn't seem right, FailureMessages are attributes of onion?
-      sender ! CMD_FAIL_HTLC(htlc.id, FailureMessageCodecs.failureMessageCodec.encode(UnknownPaymentHash).require.toByteArray, commit = true)
+    case (htlc: UpdateAddHtlc, sharedSecret: BinaryData) =>
+      val reason = Sphinx.createErrorPacket(sharedSecret, UnknownPaymentHash)
+      sender ! CMD_FAIL_HTLC(htlc.id, reason, commit = true)
 
   }
 

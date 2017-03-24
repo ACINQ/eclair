@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
@@ -17,13 +18,12 @@ case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId
 
 sealed trait PaymentResult
 case class PaymentSucceeded(paymentPreimage: BinaryData) extends PaymentResult
-case class PaymentFailed(paymentHash: BinaryData, error: Option[PaymentError]) extends PaymentResult
-case class PaymentError(originNode: PublicKey, reason: FailureMessage)
+case class PaymentFailed(paymentHash: BinaryData, error: Option[ErrorPacket]) extends PaymentResult
 
 sealed trait Data
 case object WaitingForRequest extends Data
-case class WaitingForRoute(sender: ActorRef, c: CreatePayment) extends Data
-case class WaitingForComplete(sender: ActorRef, c: CreatePayment, sharedSecrets: Seq[(BinaryData, PublicKey)]) extends Data
+case class WaitingForRoute(sender: ActorRef, c: CreatePayment, attempts: Int) extends Data
+case class WaitingForComplete(sender: ActorRef, c: CreatePayment, attempts: Int, sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long], hops: Seq[Hop]) extends Data
 
 sealed trait State
 case object WAITING_FOR_REQUEST extends State
@@ -44,44 +44,61 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
   when(WAITING_FOR_REQUEST) {
     case Event(c: CreatePayment, WaitingForRequest) =>
       router ! RouteRequest(sourceNodeId, c.targetNodeId)
-      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c)
+      goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, attempts = 0)
   }
 
   when(WAITING_FOR_ROUTE) {
-    case Event(RouteResponse(hops), WaitingForRoute(s, c)) =>
+    case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, attempts)) =>
       val firstHop = hops.head
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, sharedSecrets)
+      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, attempts + 1, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
-    case Event(f@Failure(t), WaitingForRoute(s, _)) =>
-      s ! f
-      stop(FSM.Failure(t))
+    case Event(f@Failure(t), WaitingForRoute(s, c, _)) =>
+      s ! PaymentFailed(c.paymentHash, error = None)
+      stop(FSM.Normal)
   }
 
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event("ok", _) => stay()
 
-    case Event(reason: String, WaitingForComplete(s, _, _)) =>
-      s ! Status.Failure(new RuntimeException(reason))
+    case Event(reason: String, w: WaitingForComplete) =>
+      w.sender ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 
-    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, _, _)) =>
-      s ! PaymentSucceeded(fulfill.paymentPreimage)
+    case Event(fulfill: UpdateFulfillHtlc, w: WaitingForComplete) =>
+      w.sender ! PaymentSucceeded(fulfill.paymentPreimage)
       stop(FSM.Normal)
 
-    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, sharedSecrets)) =>
+    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, attempts, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
-        case Some((nodeId, failureMessage: Update)) =>
+        case e@Some(ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
+          // TODO: spec says: that MAY retry the payment in certain conditions, see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#receiving-failure-codes
+          s ! PaymentFailed(c.paymentHash, error = e)
+          stop(FSM.Normal)
+        case Some(ErrorPacket(nodeId, failureMessage: Node)) =>
+          // TODO: spec says: If the PERM bit is not set, the origin node SHOULD restore the channels as it sees new channel_updates.
+          log.info(s"received an error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
+          // let's try to route around this node
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, attempts)
+        case e@Some(ErrorPacket(nodeId, failureMessage: Update)) =>
+          // TODO: spec says: if UPDATE is set, and the channel_update is valid *and more recent* than the channel_update used to send the payment
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           // TODO: should check that signature of the update is valid? Router will currently ignore it and send us an Error message
           router ! failureMessage.update
-          // let's try again
-          router ! RouteRequest(sourceNodeId, c.targetNodeId)
-          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c)
-        case Some((nodeId, failureMessage)) =>
-          log.info(s"payment failure: $nodeId, $failureMessage")
-          s ! PaymentFailed(c.paymentHash, error = Some(PaymentError(nodeId, failureMessage)))
+          // let's try again, router will have updated its state
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, attempts)
+        case e@Some(ErrorPacket(nodeId, failureMessage)) if attempts < MAX_ATTEMPTS =>
+          // TODO: If the PERM bit is not set, the origin node SHOULD restore the channel as it sees a new channel_update.
+          log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
+          // let's try again without the channel outgoing from nodeId
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels ++ hops.find(hop => hop.nodeId == nodeId.toBin).map(_.lastUpdate.shortChannelId).toSet)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, attempts)
+        case e@Some(ErrorPacket(nodeId, failureMessage)) =>
+          log.warning(s"too many failed attempts, failing the payment (attempts=$attempts)")
+          s ! PaymentFailed(c.paymentHash, error = e)
           stop(FSM.Normal)
         case None =>
           log.warning(s"cannot parse returned error ${fail.reason}")
@@ -89,8 +106,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           stop(FSM.Normal)
       }
 
-    case Event(failure: Failure, WaitingForComplete(s, _, _)) => {
-      s ! failure
+    case Event(failure: Failure, w: WaitingForComplete) => {
+      w.sender ! failure
       stop(FSM.Failure(failure.cause))
     }
   }
@@ -99,6 +116,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
+
+  val MAX_ATTEMPTS = 5
 
   /**
     *

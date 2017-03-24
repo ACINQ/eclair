@@ -246,6 +246,13 @@ object Sphinx {
   case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)])
 
   /**
+    * A properly decoded error from a node in the route
+    * @param originNode
+    * @param failureMessage
+    */
+  case class ErrorPacket(originNode: PublicKey, failureMessage: FailureMessage)
+
+  /**
     * Builds an encrypted onion packet that contains payloads and routing information for all nodes in the list
     *
     * @param sessionKey     session key
@@ -345,13 +352,13 @@ object Sphinx {
     * @return Some(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, none otherwise
     */
   @tailrec
-  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Option[(PublicKey, FailureMessage)] = {
+  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Option[ErrorPacket] = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     sharedSecrets match {
       case Nil => None
       case (secret, pubkey) :: tail =>
         val packet1 = forwardErrorPacket(packet, secret)
-        if (checkMac(secret, packet1)) Some(pubkey, extractFailureMessage(packet1)) else parseErrorPacket(packet1, tail)
+        if (checkMac(secret, packet1)) Some(ErrorPacket(pubkey, extractFailureMessage(packet1))) else parseErrorPacket(packet1, tail)
     }
   }
 }
