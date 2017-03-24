@@ -194,11 +194,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // then we make the actual payment
     val paymentReq = CreatePayment(4200000, paymentHash, setupD.nodeParams.privateKey.publicKey)
     sender.send(setupA.paymentInitiator, paymentReq)
-    // A calculated the cltv expiry like so: PaymentLifecycle.defaultHtlcExpiry + previous-expiry-delta-C = 10 + 144 = 154
-    sender.expectMsgType[PaymentFailed].error === Some(ErrorPacket(setupC.nodeParams.privateKey.publicKey, IncorrectCltvExpiry(154, channelUpdateCD)))
-    // let's say than A is notified later on about C's channel update
-    sender.send(setupA.router, channelUpdateCD)
-    // we wait for A to receive it
+    // A will receive an error from C that include the updated channel update, then will retry the payment
+    sender.expectMsgType[PaymentSucceeded](5 seconds)
+    // in the meantime, the router will have updated its state
     awaitCond({
       sender.send(setupA.router, 'updates)
       sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateCD)
