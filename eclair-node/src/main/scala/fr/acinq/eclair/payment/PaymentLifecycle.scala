@@ -23,7 +23,7 @@ case class PaymentError(originNode: PublicKey, reason: FailureMessage)
 sealed trait Data
 case object WaitingForRequest extends Data
 case class WaitingForRoute(sender: ActorRef, c: CreatePayment) extends Data
-case class WaitingForComplete(sender: ActorRef, c: CMD_ADD_HTLC, sharedSecrets: Seq[(BinaryData, PublicKey)]) extends Data
+case class WaitingForComplete(sender: ActorRef, c: CreatePayment, sharedSecrets: Seq[(BinaryData, PublicKey)]) extends Data
 
 sealed trait State
 case object WAITING_FOR_REQUEST extends State
@@ -52,7 +52,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val firstHop = hops.head
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, cmd, sharedSecrets)
+      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, sharedSecrets)
 
     case Event(f@Failure(t), WaitingForRoute(s, _)) =>
       s ! f
@@ -66,21 +66,28 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       s ! Status.Failure(new RuntimeException(reason))
       stop(FSM.Failure(reason))
 
-    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, cmd, _)) =>
+    case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, _, _)) =>
       s ! PaymentSucceeded(fulfill.paymentPreimage)
       stop(FSM.Normal)
 
-    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, cmd, sharedSecrets)) =>
-      val reason = Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
+    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, sharedSecrets)) =>
+      Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
+        case Some((nodeId, failureMessage: Update)) =>
+          log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
+          // TODO: should check that signature of the update is valid? Router will currently ignore it and send us an Error message
+          router ! failureMessage.update
+          // let's try again
+          router ! RouteRequest(sourceNodeId, c.targetNodeId)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c)
+        case Some((nodeId, failureMessage)) =>
+          log.info(s"payment failure: $nodeId, $failureMessage")
+          s ! PaymentFailed(c.paymentHash, error = Some(PaymentError(nodeId, failureMessage)))
+          stop(FSM.Normal)
         case None =>
           log.warning(s"cannot parse returned error ${fail.reason}")
-          None
-        case Some((pubkey, failureMessage)) =>
-          log.info(s"payment failure: $pubkey, $failureMessage")
-          Some(PaymentError(pubkey, failureMessage))
+          s ! PaymentFailed(c.paymentHash, error = None)
+          stop(FSM.Normal)
       }
-      s ! PaymentFailed(cmd.paymentHash, reason)
-      stop(FSM.Normal)
 
     case Event(failure: Failure, WaitingForComplete(s, _, _)) => {
       s ! failure
