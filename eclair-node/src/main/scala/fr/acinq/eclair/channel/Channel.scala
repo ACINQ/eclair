@@ -556,7 +556,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleLocalError(cause, d)
       }
 
-    case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutHtlcs(count) =>
+    case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       // TODO: fail htlc in upstream channel?
       handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
@@ -750,7 +750,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
         case Failure(cause) => handleLocalError(cause, d)
       }
 
-    case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutHtlcs(count) =>
+    case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_SHUTDOWN) =>
@@ -901,6 +901,10 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       }
 
     case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(new RuntimeException("can't do a mutual close while disconnected, doing an unilateral close instead"), d)
+
+    case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
+      // TODO: fail htlc in upstream channel?
+      handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 

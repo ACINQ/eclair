@@ -3,11 +3,13 @@ package fr.acinq.eclair.integration
 import java.nio.file.{Files, Paths}
 import java.util.UUID
 
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
@@ -16,6 +18,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, Setup}
 import grizzled.slf4j.Logging
+import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -41,6 +44,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   val PATH_ECLAIR_DATADIR_C = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-C")
   val PATH_ECLAIR_DATADIR_D = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-D")
   val PATH_ECLAIR_DATADIR_E = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-E")
+  val PATH_ECLAIR_DATADIR_F = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-F")
 
   var bitcoind: Process = null
   var bitcoincli: ActorRef = null
@@ -49,6 +53,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   var setupC: Setup = null
   var setupD: Setup = null
   var setupE: Setup = null
+  var setupF: Setup = null
+
+  implicit val formats = DefaultFormats
 
   case class BitcoinReq(method: String, params: Any*)
 
@@ -59,12 +66,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     Files.createDirectories(PATH_ECLAIR_DATADIR_C)
     Files.createDirectories(PATH_ECLAIR_DATADIR_D)
     Files.createDirectories(PATH_ECLAIR_DATADIR_E)
+    Files.createDirectories(PATH_ECLAIR_DATADIR_F)
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), Paths.get(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_A.conf"), Paths.get(PATH_ECLAIR_DATADIR_A.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_B.conf"), Paths.get(PATH_ECLAIR_DATADIR_B.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_C.conf"), Paths.get(PATH_ECLAIR_DATADIR_C.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_D.conf"), Paths.get(PATH_ECLAIR_DATADIR_D.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_E.conf"), Paths.get(PATH_ECLAIR_DATADIR_E.toString, "eclair.conf"))
+    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_F.conf"), Paths.get(PATH_ECLAIR_DATADIR_F.toString, "eclair.conf"))
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoincli = system.actorOf(Props(new Actor {
@@ -93,6 +102,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     setupC.system.terminate()
     setupD.system.terminate()
     setupE.system.terminate()
+    setupF.system.terminate()
+//    logger.warn(s"starting bitcoin-qt")
+//    val PATH_BITCOINQT = Paths.get(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt")
+//    bitcoind = s"$PATH_BITCOINQT -datadir=$PATH_BITCOIND_DATADIR".run()
   }
 
   test("wait bitcoind ready") {
@@ -110,16 +123,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("starting eclair nodes") {
-    setupA = new Setup(PATH_ECLAIR_DATADIR_A.toString)
-    setupB = new Setup(PATH_ECLAIR_DATADIR_B.toString)
-    setupC = new Setup(PATH_ECLAIR_DATADIR_C.toString)
-    setupD = new Setup(PATH_ECLAIR_DATADIR_D.toString)
-    setupE = new Setup(PATH_ECLAIR_DATADIR_E.toString)
+    setupA = new Setup(PATH_ECLAIR_DATADIR_A.toString, actorSystemName = "system-A")
+    setupB = new Setup(PATH_ECLAIR_DATADIR_B.toString, actorSystemName = "system-B")
+    setupC = new Setup(PATH_ECLAIR_DATADIR_C.toString, actorSystemName = "system-C")
+    setupD = new Setup(PATH_ECLAIR_DATADIR_D.toString, actorSystemName = "system-D")
+    setupE = new Setup(PATH_ECLAIR_DATADIR_E.toString, actorSystemName = "system-E")
+    setupF = new Setup(PATH_ECLAIR_DATADIR_F.toString, actorSystemName = "system-F")
     setupA.boostrap
     setupB.boostrap
     setupC.boostrap
     setupD.boostrap
     setupE.boostrap
+    setupF.boostrap
   }
 
   def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
@@ -141,13 +156,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     node1.system.eventStream.unsubscribe(eventListener.ref)
   }
 
-  test("connect A->B->C->D and B->E->C") {
+  test("connect A->B->C->D and B->E->C and C->F") {
     connect(setupA, setupB, 1000000, 0)
     connect(setupB, setupC, 200000, 0)
     connect(setupC, setupD, 500000, 0)
 
     connect(setupB, setupE, 500000, 0)
     connect(setupE, setupC, 500000, 0)
+
+    connect(setupC, setupF, 500000, 0)
   }
 
   test("wait for network announcements") {
@@ -158,15 +175,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // wait for A to know all nodes and channels
     awaitCond({
       sender.send(setupA.router, 'nodes)
-      sender.expectMsgType[Iterable[NodeAnnouncement]].size == 5
+      sender.expectMsgType[Iterable[NodeAnnouncement]].size == 6
     }, max = 20 seconds, interval = 1 second)
     awaitCond({
       sender.send(setupA.router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == 5
+      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == 6
     }, max = 20 seconds, interval = 1 second)
     awaitCond({
       sender.send(setupA.router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].size == 10
+      sender.expectMsgType[Iterable[ChannelUpdate]].size == 12
     }, max = 20 seconds, interval = 1 second)
   }
 
@@ -223,6 +240,59 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(setupA.paymentInitiator, paymentReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsg(PaymentFailed(paymentHash, Some(ErrorPacket(setupD.nodeParams.privateKey.publicKey, UnknownPaymentHash))))
+  }
+
+  test("send an HTLC A->B->C->F which times out between C and F and is fulfilled by F") {
+    // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
+    val htlcReceiver = TestProbe()
+    // we register this probe as the final payment handler
+    setupF.paymentHandler ! htlcReceiver.ref
+    val sender = TestProbe()
+    // we will need the channel id CF later
+    sender.send(setupF.register, 'shortIds)
+    val shortIdCF = sender.expectMsgType[Map[Long, BinaryData]].keys.head
+    val preimage: BinaryData = "42" * 32
+    val paymentHash = Crypto.sha256(preimage)
+    // A sends a payment to F
+    val paymentReq = CreatePayment(10000000L, paymentHash, setupF.nodeParams.privateKey.publicKey)
+    sender.send(setupA.paymentInitiator, paymentReq)
+    // F gets the htlc
+    val htlc = htlcReceiver.expectMsgType[(UpdateAddHtlc, BinaryData)]._1
+    // we then kill the connection between C and F
+    sender.send(setupC.switchboard, 'connections)
+    val connections = sender.expectMsgType[Map[PublicKey, ActorRef]]
+    val connCF = connections(setupF.nodeParams.privateKey.publicKey)
+    connCF ! PoisonPill
+    // we then wait for C to be in disconnected state
+    awaitCond({
+      sender.send(setupC.register, ForwardShortId(shortIdCF, CMD_GETSTATE))
+      sender.expectMsgType[State] == OFFLINE
+    }, max = 20 seconds, interval = 1 second)
+    // we then fulfill the htlc on F's side (it will forward the fulfill to C but C won't get it)
+    //htlcReceiver.reply(CMD_FULFILL_HTLC(htlc.id, preimage, commit = false))
+    // we then generate enough blocks to make the htlc timeout
+    sender.send(bitcoincli, BitcoinReq("generate", 10))
+    sender.expectMsgType[JValue](10 seconds)
+    // this will make C publish its commitment tx
+    awaitCond({
+      sender.send(setupC.register, ForwardShortId(shortIdCF, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSING
+    }, max = 20 seconds, interval = 1 second)
+    // which will in reaction make F publish its commitment tx
+    awaitCond({
+      sender.send(setupF.register, ForwardShortId(shortIdCF, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSING
+    }, max = 20 seconds, interval = 1 second)
+    // we then generate enough blocks to confirm all delayed transactions
+    sender.send(bitcoincli, BitcoinReq("generate", 150))
+    sender.expectMsgType[JValue](10 seconds)
+    // at this point C should have 2 recv transactions: its main output and the htlc timeout
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
+      val res = sender.expectMsgType[JValue](10 seconds)
+      res.children.exists(c => (c \ "address").extract[String] == setupC.finalAddress && (c \ "txids").children.size == 2)
+    }, max = 60 seconds, interval = 1 second)
+
   }
 
 }

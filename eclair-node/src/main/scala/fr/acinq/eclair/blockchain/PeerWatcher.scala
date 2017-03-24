@@ -125,7 +125,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       val blockCount = Globals.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
-      log.info(s"parent tx has been confirmed, now need to wait for relative timeout of ${csvTimeout} blocks")
+      log.info(s"parent tx has been confirmed, now we need to wait for relative timeout of ${csvTimeout} blocks")
       log.info(s"delaying publication of tx until block=$absTimeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
       val block2tx1 = block2tx.updated(absTimeout, tx +: block2tx.getOrElse(absTimeout, Seq.empty[Transaction]))
       context.become(watching(watches, block2tx1))

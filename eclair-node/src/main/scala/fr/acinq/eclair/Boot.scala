@@ -53,7 +53,7 @@ object Boot extends App with Logging {
   }
 }
 
-class Setup(datadir: String) extends Logging {
+class Setup(datadir: String, actorSystemName: String = "default") extends Logging {
 
   LogSetup.logTo(datadir)
 
@@ -63,7 +63,7 @@ class Setup(datadir: String) extends Logging {
   val nodeParams = NodeParams.makeNodeParams(new File(datadir), config)
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
 
-  implicit lazy val system = ActorSystem()
+  implicit lazy val system = ActorSystem(actorSystemName)
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
 

@@ -184,10 +184,10 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       tx.txIn
         .map(_.witness)
         .map {
-          case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) =>
+          case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
             log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (claim-htlc-success)")
             Some(paymentPreimage)
-          case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcOfferedScript)) =>
+          case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
             log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (htlc-success)")
             Some(paymentPreimage)
           case _ =>

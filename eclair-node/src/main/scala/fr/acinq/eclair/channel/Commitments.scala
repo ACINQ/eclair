@@ -41,7 +41,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 
-  def hasTimedoutHtlcs(blockheight: Long): Boolean =
+  def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
     localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
       remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)
 
