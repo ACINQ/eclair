@@ -39,7 +39,7 @@ case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"
 object Boot extends App with Logging {
 
   val parser = new scopt.OptionParser[CmdLineConfig]("eclair") {
-    head("eclair", s"${Version.version} (commit: ${Version.commit})")
+    head("eclair", s"${getClass.getPackage.getImplementationVersion} (commit: ${getClass.getPackage.getSpecificationVersion})")
     help("help").abbr("h").text("display usage text")
     opt[File]("datadir").optional().valueName("<file>").action((x, c) => c.copy(datadir = x)).text("optional data directory, default is ~/.eclair")
     opt[Unit]("headless").optional().action((_, c) => c.copy(headless = true)).text("runs eclair without a gui")
@@ -58,7 +58,7 @@ class Setup(datadir: String) extends Logging {
   LogSetup.logTo(datadir)
 
   logger.info(s"hello!")
-  logger.info(s"version=${Version.version} commit=${Version.commit}")
+  logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   val config = NodeParams.loadConfiguration(new File(datadir))
   val nodeParams = NodeParams.makeNodeParams(new File(datadir), config)
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
