@@ -57,16 +57,14 @@ Just use the windows installer, it should create a shortcut on your desktop.
 
 You need to first install java, more precisely a JRE 1.8+.
 
-Then download the latest fat jar anywhere on your machine.
-
-### Running Eclair
-
-Launch Eclair by running the installed executable. If you are using the fat jar, run:
+Then download the latest fat jar and run:
 ```shell
 java -jar eclair-node_xxxxxx-fat.jar
 ```
 
-When Eclair launches for the first time, it creates a directory to store its data. This directory default location is `~/.eclair`. You can override this by providing an option to the executable.
+### Configuring Eclair
+
+#### Command-line parameters
 
 option         | description                     | default value
 ---------------|---------------------------------|--------------
@@ -74,11 +72,12 @@ option         | description                     | default value
 --headless     | Run Eclair without the GUI      |
 --help, -h     | Display usage text              |
 
+
 :warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in the configuration (see below).
 
-### Configuring Eclair
+#### Configuration file
 
-To change your node configuration, create a file named `eclair.conf` in `datadir`.
+To change your node configuration, edit the file `eclair.conf` in `datadir`.
 
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
