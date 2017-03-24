@@ -5,23 +5,16 @@ import java.net.InetSocketAddress
 import akka.actor._
 import akka.io.Tcp.Connected
 import akka.pattern.{Backoff, BackoffSupervisor}
-import com.typesafe.config.Config
 import fr.acinq.bitcoin._
 
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class PeerClient(config: Config) extends Actor with ActorLogging {
+class PeerClient(socket: InetSocketAddress, magic: Long) extends Actor with ActorLogging {
 
-  val magic = config.getString("network") match {
-    case "mainnet" => Message.MagicMain
-    case "test" => Message.MagicTestnet3
-    case "regtest" => Message.MagicTestNet
-  }
-  val peer = new InetSocketAddress(config.getString("host"), config.getInt("port"))
   val supervisor = BackoffSupervisor.props(
     Backoff.onStop(
-      Props(classOf[PeerHandler], peer, self),
+      Props(classOf[PeerHandler], socket, self),
       childName = "peer-conn",
       minBackoff = 1 seconds,
       maxBackoff = 10 seconds,
@@ -75,7 +68,7 @@ class PeerClient(config: Config) extends Actor with ActorLogging {
 }
 
 object PeerClient {
-  def props(config: Config) = Props(new PeerClient(config))
+  def props(socket: InetSocketAddress, magic: Long) = Props(new PeerClient(socket, magic))
 }
 
 object PeerClientTest extends App {
