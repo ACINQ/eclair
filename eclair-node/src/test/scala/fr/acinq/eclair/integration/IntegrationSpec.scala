@@ -12,7 +12,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{CreatePayment, PaymentError, PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
@@ -184,7 +184,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val paymentReq = CreatePayment(4200000, paymentHash, setupD.nodeParams.privateKey.publicKey)
     sender.send(setupA.paymentInitiator, paymentReq)
     // A calculated the cltv expiry like so: PaymentLifecycle.defaultHtlcExpiry + previous-expiry-delta-C = 10 + 144 = 154
-    sender.expectMsgType[PaymentFailed].error === Some(PaymentError(setupC.nodeParams.privateKey.publicKey, FailureMessage.incorrect_cltv_expiry(154, channelUpdateCD)))
+    sender.expectMsgType[PaymentFailed].error === Some(PaymentError(setupC.nodeParams.privateKey.publicKey, IncorrectCltvExpiry(154, channelUpdateCD)))
     // let's say than A is notified later on about C's channel update
     sender.send(setupA.router, channelUpdateCD)
     // we wait for A to receive it
@@ -205,7 +205,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // then we make the payment (C-D has a smaller capacity than A-B and B-C)
     val paymentReq = CreatePayment(600000000L, paymentHash, setupD.nodeParams.privateKey.publicKey)
     sender.send(setupA.paymentInitiator, paymentReq)
-    sender.expectMsgType[PaymentFailed].error === Some(PaymentError(setupC.nodeParams.privateKey.publicKey, FailureMessage.permanent_node_failure))
+    sender.expectMsgType[PaymentFailed].error === Some(PaymentError(setupC.nodeParams.privateKey.publicKey, PermanentNodeFailure))
   }
 
 }

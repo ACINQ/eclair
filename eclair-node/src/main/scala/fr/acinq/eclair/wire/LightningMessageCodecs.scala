@@ -10,13 +10,12 @@ import fr.acinq.eclair.wire
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
-import shapeless._, ops.hlist._
 
 
 /**
   * Created by PM on 15/11/2016.
   */
-object Codecs {
+object LightningMessageCodecs {
 
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)

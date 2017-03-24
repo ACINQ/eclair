@@ -6,7 +6,7 @@ import fr.acinq.eclair.crypto.Sphinx.{OnionPacket, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.wire.{ChannelUpdate, Codecs, PerHopPayload}
+import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -51,21 +51,21 @@ class HtlcGenerationSpec extends FunSuite {
 
     // let's peel the onion
     val ParsedPacket(bin_b, address_c, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, packet_b)
-    val payload_b = Codecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
+    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
     assert(address_c === c.hash160)
     assert(packet_c.size === 1254)
     assert(payload_b.amt_to_forward === amount_bc)
     assert(payload_b.outgoing_cltv_value === expiry_bc)
 
     val ParsedPacket(bin_c, address_d, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c)
-    val payload_c = Codecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).toOption.get.value
+    val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).toOption.get.value
     assert(address_d === d.hash160)
     assert(packet_d.size === 1254)
     assert(payload_c.amt_to_forward === amount_cd)
     assert(payload_c.outgoing_cltv_value === expiry_cd)
 
     val ParsedPacket(bin_d, address_e, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d)
-    val payload_d = Codecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).toOption.get.value
+    val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).toOption.get.value
     assert(address_e === e.hash160)
     assert(packet_e.size === 1254)
     assert(payload_d.amt_to_forward === amount_de)
@@ -88,21 +88,21 @@ class HtlcGenerationSpec extends FunSuite {
 
     // let's peel the onion
     val ParsedPacket(bin_b, address_c, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
-    val payload_b = Codecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
+    val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
     assert(address_c === c.hash160)
     assert(packet_c.size === 1254)
     assert(payload_b.amt_to_forward === amount_bc)
     assert(payload_b.outgoing_cltv_value === expiry_bc)
 
     val ParsedPacket(bin_c, address_d, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c)
-    val payload_c = Codecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).toOption.get.value
+    val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).toOption.get.value
     assert(address_d === d.hash160)
     assert(packet_d.size === 1254)
     assert(payload_c.amt_to_forward === amount_cd)
     assert(payload_c.outgoing_cltv_value === expiry_cd)
 
     val ParsedPacket(bin_d, address_e, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d)
-    val payload_d = Codecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).toOption.get.value
+    val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).toOption.get.value
     assert(address_e === e.hash160)
     assert(packet_e.size === 1254)
     assert(payload_d.amt_to_forward === amount_de)

@@ -2,8 +2,8 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CMD_SIGN, FailureMessage}
-import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, CMD_SIGN}
+import fr.acinq.eclair.wire.{FailureMessageCodecs, UnknownPaymentHash, UpdateAddHtlc}
 
 import scala.util.Random
 
@@ -39,7 +39,8 @@ class LocalPaymentHandler extends Actor with ActorLogging {
       context.become(run(h2r - htlc.paymentHash))
 
     case htlc: UpdateAddHtlc =>
-      sender ! CMD_FAIL_HTLC(htlc.id, FailureMessage.unknown_payment_hash, commit = true)
+      // TODO: this doesn't seem right, FailureMessages are attributes of onion?
+      sender ! CMD_FAIL_HTLC(htlc.id, FailureMessageCodecs.failureMessageCodec.encode(UnknownPaymentHash).require.toByteArray, commit = true)
 
   }
 

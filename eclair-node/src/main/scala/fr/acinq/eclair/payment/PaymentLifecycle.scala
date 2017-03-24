@@ -8,7 +8,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire.{Codecs, PerHopPayload, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire._
 import scodec.Attempt
 
 // @formatter:off
@@ -18,7 +18,7 @@ case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId
 sealed trait PaymentResult
 case class PaymentSucceeded(paymentPreimage: BinaryData) extends PaymentResult
 case class PaymentFailed(paymentHash: BinaryData, error: Option[PaymentError]) extends PaymentResult
-case class PaymentError(originNode: PublicKey, reason: BinaryData)
+case class PaymentError(originNode: PublicKey, reason: FailureMessage)
 
 sealed trait Data
 case object WaitingForRequest extends Data
@@ -110,7 +110,7 @@ object PaymentLifecycle {
     val sessionKey = randomKey
 
     val payloadsbin: Seq[BinaryData] = payloads
-      .map(Codecs.perHopPayloadCodec.encode(_))
+      .map(LightningMessageCodecs.perHopPayloadCodec.encode(_))
       .map {
         case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")

@@ -2,7 +2,7 @@ package fr.acinq.eclair.crypto
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.channel.FailureMessage
+import fr.acinq.eclair.wire.{FailureMessage, InvalidRealm, PermanentChannelFailure, TemporaryChannelFailure}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -100,7 +100,7 @@ class SphinxSpec extends FunSuite {
   }
 
   test("generate return messages") {
-    val failure = FailureMessage.encode(42, "foo".getBytes())
+    val failure = TemporaryChannelFailure
     val (ephkeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
 
     // error packet created by the last node
@@ -134,7 +134,7 @@ class SphinxSpec extends FunSuite {
     assert(address4 == LAST_ADDRESS)
 
     // node #4 want to reply with an error message
-    val error = createErrorPacket(sharedSecret4, FailureMessage.encode(42, "foo".getBytes()))
+    val error = createErrorPacket(sharedSecret4, PermanentChannelFailure)
 
     // error sent back to 3, 2, 1 and 0
     val error1 = forwardErrorPacket(error, sharedSecret3)
@@ -145,7 +145,7 @@ class SphinxSpec extends FunSuite {
     // origin parses error packet and can see that it comes from node #4
     val Some((pubkey, failure)) = parseErrorPacket(error4, sharedSecrets)
     assert(pubkey == publicKeys(4))
-    assert(failure == FailureMessage.encode(42, "foo".getBytes()))
+    assert(failure == PermanentChannelFailure)
   }
 
   test("intermediate node replies with an error message") {
@@ -163,7 +163,7 @@ class SphinxSpec extends FunSuite {
     val ParsedPacket(payload2, address2, packet3, sharedSecret2) = parsePacket(privKeys(2), associatedData, packet2)
 
     // node #2 want to reply with an error message
-    val error = createErrorPacket(sharedSecret2, FailureMessage.encode(42, "foo".getBytes()))
+    val error = createErrorPacket(sharedSecret2, InvalidRealm)
 
     // error sent back to 1 and 0
     val error1 = forwardErrorPacket(error, sharedSecret1)
@@ -172,7 +172,7 @@ class SphinxSpec extends FunSuite {
     // origin parses error packet and can see that it comes from node #2
     val Some((pubkey, failure)) = parseErrorPacket(error2, sharedSecrets)
     assert(pubkey == publicKeys(2))
-    assert(failure == FailureMessage.encode(42, "foo".getBytes()))
+    assert(failure == InvalidRealm)
   }
 }
 
