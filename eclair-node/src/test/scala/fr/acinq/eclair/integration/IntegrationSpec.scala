@@ -268,12 +268,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(setupC.register, ForwardShortId(shortIdCF, CMD_GETSTATE))
       sender.expectMsgType[State] == OFFLINE
     }, max = 20 seconds, interval = 1 second)
-    // we then fulfill the htlc on F's side (it will forward the fulfill to C but C won't get it)
-    //htlcReceiver.reply(CMD_FULFILL_HTLC(htlc.id, preimage, commit = false))
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("generate", 10))
     sender.expectMsgType[JValue](10 seconds)
-    // this will make C publish its commitment tx
+    // this will fail the htlc
+    sender.expectMsgType[PaymentFailed](20 seconds)
+    // C will also publish its commitment tx
     awaitCond({
       sender.send(setupC.register, ForwardShortId(shortIdCF, CMD_GETSTATE))
       sender.expectMsgType[State] == CLOSING

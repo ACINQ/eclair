@@ -1,19 +1,17 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptWitness, Transaction}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ParsedPacket
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
-import scala.compat.Platform
 import scala.util.{Failure, Success, Try}
 
 // @formatter:off
@@ -42,7 +40,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
 
-  override def receive: Receive = main(Set(), Map(), Map(),Map())
+  override def receive: Receive = main(Set(), Map(), Map(), Map())
 
   case class DownstreamHtlcId(channelId: BinaryData, htlcId: Long)
 
@@ -79,7 +77,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         } match {
         case Success((_, nextNodeAddress, _, sharedSecret)) if nextNodeAddress.forall(_ == 0) =>
           log.info(s"looks like we are the final recipient of htlc #${add.id}")
-          paymentHandler forward (add, sharedSecret)
+          paymentHandler forward(add, sharedSecret)
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
           val outgoingChannel = channels.find(_.nodeAddress == nextNodeAddress).get
           val channelUpdate = shortIds.get(outgoingChannel.channelId).flatMap(shortId => channelUpdates.get(shortId))
@@ -185,11 +183,20 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         .map(_.witness)
         .map {
           case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
-            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (claim-htlc-success)")
+            log.warning(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (claim-htlc-success)")
             Some(paymentPreimage)
           case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
-            log.info(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (htlc-success)")
+            log.warning(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (htlc-success)")
             Some(paymentPreimage)
+          case ScriptWitness(Seq(remoteSig, BinaryData.empty, htlcReceivedScript)) =>
+            val paymentHash160 = BinaryData(htlcReceivedScript.slice(109, 109 + 20))
+            log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (claim-htlc-timeout)")
+            Some(paymentHash160)
+          case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, BinaryData.empty, htlcReceivedScript)) =>
+            log.warning(s"this htlc has timed out with tx=${Transaction.write(tx)} (htlc-timeout)")
+            val paymentHash160 = BinaryData(htlcReceivedScript.slice(109, 109 + 20))
+            log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (htlc-timeout)")
+            Some(paymentHash160)
           case _ =>
             None
         }
@@ -197,8 +204,15 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         .map { preimage =>
           bindings.collect {
             case b@(downstreamHtlcId, Relayed(upstream)) if upstream.paymentHash == sha256(preimage) =>
-              log.info(s"found a match between preimage=$preimage and origin htlc for $b")
+              log.warning(s"found a match between preimage=$preimage and origin htlc for $b")
               self ! ForwardFulfill(UpdateFulfillHtlc(downstreamHtlcId.channelId, downstreamHtlcId.htlcId, preimage))
+            case b@(downstreamHtlcId, Relayed(upstream)) if ripemd160(upstream.paymentHash) == preimage =>
+              log.warning(s"found a match between paymentHash160=$preimage and origin htlc for $b")
+              // we need the shared secret to build the error packet
+              val sharedSecret = Sphinx.parsePacket(nodeSecret, upstream.paymentHash, upstream.onionRoutingPacket).sharedSecret
+              // TODO: check error is appropriate
+              val reason = Sphinx.createErrorPacket(sharedSecret, TemporaryChannelFailure)
+              self ! ForwardFail(UpdateFailHtlc(downstreamHtlcId.channelId, downstreamHtlcId.htlcId, reason))
           }
         }
 

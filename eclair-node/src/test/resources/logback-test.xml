@@ -4,7 +4,7 @@
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <encoder>
-            <pattern>%-5level %X{akkaSource} - %msg%ex{12}%n</pattern>
+            <pattern>%highlight(%-5level) %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
     </appender>
 

@@ -76,18 +76,18 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       // first let's see if the parent tx was published or not
       client.getTxConfirmations(txid.toString()).collect {
         case Some(_) =>
-        // parent tx was published, we need to make sure this particular output has not been spent
-        client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
-          case false =>
-            log.warning(s"tx $txid has already been spent!!!")
-            client.getTxBlockHash(txid.toString()).collect {
-              case Some(blockhash) =>
-                log.warning(s"getting all transactions since blockhash=$blockhash")
-                client.getTxsSinceBlockHash(blockhash).map {
-                  case txs => txs.foreach(tx => self ! NewTransaction(tx))
-                }
-            }
-        }
+          // parent tx was published, we need to make sure this particular output has not been spent
+          client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
+            case false =>
+              log.warning(s"tx $txid has already been spent!!!")
+              client.getTxBlockHash(txid.toString()).collect {
+                case Some(blockhash) =>
+                  log.warning(s"getting all transactions since blockhash=$blockhash")
+                  client.getTxsSinceBlockHash(blockhash).map {
+                    case txs => txs.foreach(tx => self ! NewTransaction(tx))
+                  }
+              }
+          }
       }
       addWatch(w, watches, block2tx)
 
@@ -113,22 +113,24 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn(0).outPoint.txid
-        log.info(s"this tx has a relative timeout of ${csvTimeout} blocks, watching parent tx: parenttxid=$parentTxid txid=${tx.txid} tx=${Transaction.write(tx)}")
+        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=${Transaction.write(tx)}")
         self ! WatchConfirmed(self, parentTxid, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
-        log.info(s"delaying publication of tx until block=$cltvTimeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
+        log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))
         context.become(watching(watches, block2tx1))
       } else publish(tx)
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _) =>
+      log.info(s"parent tx of txid=${tx.txid} has been confirmed")
       val blockCount = Globals.blockCount.get()
       val csvTimeout = Scripts.csvTimeout(tx)
       val absTimeout = blockHeight + csvTimeout
-      log.info(s"parent tx has been confirmed, now we need to wait for relative timeout of ${csvTimeout} blocks")
-      log.info(s"delaying publication of tx until block=$absTimeout (curblock=$blockCount): txid=${tx.txid} tx=${Transaction.write(tx)}")
-      val block2tx1 = block2tx.updated(absTimeout, tx +: block2tx.getOrElse(absTimeout, Seq.empty[Transaction]))
-      context.become(watching(watches, block2tx1))
+      if (absTimeout > blockCount) {
+        log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
+        val block2tx1 = block2tx.updated(absTimeout, tx +: block2tx.getOrElse(absTimeout, Seq.empty[Transaction]))
+        context.become(watching(watches, block2tx1))
+      } else publish(tx)
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
       client.makeFundingTx(ourCommitPub, theirCommitPub, amount).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
