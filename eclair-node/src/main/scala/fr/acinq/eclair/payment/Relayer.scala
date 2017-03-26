@@ -178,7 +178,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.warning(s"processing $w")
+      log.warning(s"processing BITCOIN_HTLC_SPENT with txid=${tx.txid} tx=$tx")
       tx.txIn
         .map(_.witness)
         .map {

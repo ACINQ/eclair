@@ -29,6 +29,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       log.debug(s"analyzing tx ${tx.txid}: ${Transaction.write(tx)}")
       watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
+          log.info(s"txid=${tx.txid} spends output=$outputIndex of parenttxid=$txid")
           self ! ('trigger, w, WatchEventSpent(event, tx))
       }
 

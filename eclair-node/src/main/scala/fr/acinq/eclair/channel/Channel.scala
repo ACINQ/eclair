@@ -816,17 +816,29 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
 
   when(CLOSING) {
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.localCommit.publishableTxs.commitTx.tx.txid =>
-      // we just initiated a uniclose moments ago and are now receiving the blockchain notification, there is nothing to do
-      goto(stateName)
-
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.mutualClosePublished.map(_.txid) =>
       // we just published a mutual close tx, we are notified but it's alright
-      goto(stateName)
+      stay
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.localCommitPublished.map(_.commitTx.txid) =>
+      // this is because WatchSpent watches never expire and we are notified multiple times
+      stay
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.remoteCommitPublished.map(_.commitTx.txid) =>
+      // this is because WatchSpent watches never expire and we are notified multiple times
+      stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.remoteCommit.txid =>
       // counterparty may attempt to spend its last commit tx at any time
       handleRemoteSpentCurrent(tx, d)
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.nextRemoteCommitPublished.map(_.commitTx.txid) =>
+      // this is because WatchSpent watches never expire and we are notified multiple times
+      stay
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) =>
+      // counterparty may attempt to spend its last commit tx at any time
+      handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) =>
       // counterparty may attempt to spend a revoked commit tx at any time
@@ -920,6 +932,8 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
   }
 
   whenUnhandled {
+
+    case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(new RuntimeException(s"initiating local commit"), d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(OFFLINE)
 

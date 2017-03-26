@@ -58,9 +58,8 @@ case object ERR_INFORMATION_LEAK extends State
 
 case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: BinaryData, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
-case object INPUT_NO_MORE_HTLCS
-// when requesting a mutual close, we wait for as much as this timeout, then unilateral close
-case object INPUT_CLOSE_COMPLETE_TIMEOUT
+case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
+case object INPUT_PUBLISH_LOCALCOMMIT // used in tests
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef)
 case class INPUT_RESTORED(data: HasCommitments)
