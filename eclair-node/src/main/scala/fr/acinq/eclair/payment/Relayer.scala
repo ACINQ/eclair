@@ -130,7 +130,8 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, errorPacket, commit = true)
 
     case ForwardFulfill(fulfill) =>
-      bindings.get(DownstreamHtlcId(fulfill.channelId, fulfill.id)) match {
+      val downstream = DownstreamHtlcId(fulfill.channelId, fulfill.id)
+      bindings.get(downstream) match {
         case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
           val upstream = channels.find(_.channelId == origin.channelId).get.channel
           upstream ! CMD_FULFILL_HTLC(origin.id, fulfill.paymentPreimage, commit = true)
@@ -142,9 +143,11 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         case None =>
           log.warning(s"no origin found for htlc ${fulfill.channelId}/${fulfill.id}")
       }
+      context become(main(channels, bindings - downstream, shortIds, channelUpdates))
 
     case ForwardFail(fail) =>
-      bindings.get(DownstreamHtlcId(fail.channelId, fail.id)) match {
+      val downstream = DownstreamHtlcId(fail.channelId, fail.id)
+      bindings.get(downstream) match {
         case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
           val upstream = channels.find(_.channelId == origin.channelId).get.channel
           // obfuscate the error packet with the upstream node's shared secret
@@ -159,6 +162,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         case None =>
           log.warning(s"no origin found for htlc ${fail.channelId}/${fail.id}")
       }
+      context become(main(channels, bindings - downstream, shortIds, channelUpdates))
 
     case ForwardFailMalformed(fail) =>
       bindings.get(DownstreamHtlcId(fail.channelId, fail.id)) match {
