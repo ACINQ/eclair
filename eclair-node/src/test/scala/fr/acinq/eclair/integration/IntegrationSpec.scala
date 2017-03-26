@@ -299,7 +299,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }, max = 60 seconds, interval = 1 second)
   }
 
-  ignore("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
     // let's first connect C to F
     connect(setupC, setupF, 500000, 0)
     // and wait for the channel to be announced
@@ -318,7 +318,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = CreatePayment(10000000L, paymentHash, setupF.nodeParams.privateKey.publicKey)
-    sender.send(setupA.paymentInitiator, paymentReq)
+    val paymentSender = TestProbe()
+    paymentSender.send(setupA.paymentInitiator, paymentReq)
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[(UpdateAddHtlc, BinaryData)]._1
     // we then kill the connection between C and F
@@ -345,22 +346,26 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
     // C will extract the preimage from the blockchain and fulfill the payment upstream
-    sender.expectMsgType[PaymentSucceeded](20 seconds)
+    paymentSender.expectMsgType[PaymentSucceeded](20 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       res.children.exists(c => (c \ "address").extract[String] == setupF.finalAddress && (c \ "txids").children.size == 1)
     }, max = 60 seconds, interval = 1 second)
+    // we then generate enough blocks so that C gets its main delayed output
+    sender.send(bitcoincli, BitcoinReq("generate", 145))
+    sender.expectMsgType[JValue](10 seconds)
     // and C will have its main output
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.children.exists(c => (c \ "address").extract[String] == setupC.finalAddress && (c \ "txids").children.size == 1)
+      // NB: we need to take previous test txes into account!!
+      res.children.exists(c => (c \ "address").extract[String] == setupC.finalAddress && (c \ "txids").children.size == 3)
     }, max = 60 seconds, interval = 1 second)
   }
 
-  ignore("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
+  test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
     // let's first connect C to F
     connect(setupC, setupF, 500000, 0)
     // and wait for the channel to be announced
@@ -379,7 +384,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
     val paymentReq = CreatePayment(10000000L, paymentHash, setupF.nodeParams.privateKey.publicKey)
-    sender.send(setupA.paymentInitiator, paymentReq)
+    val paymentSender = TestProbe()
+    paymentSender.send(setupA.paymentInitiator, paymentReq)
     // F gets the htlc
     val htlc = htlcReceiver.expectMsgType[(UpdateAddHtlc, BinaryData)]._1
     // we then kill the connection between C and F
@@ -406,18 +412,23 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
     // C will extract the preimage from the blockchain and fulfill the payment upstream
-    sender.expectMsgType[PaymentSucceeded](20 seconds)
+    paymentSender.expectMsgType[PaymentSucceeded](20 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
+    // we then generate enough blocks so that F gets its htlc-success delayed output
+    sender.send(bitcoincli, BitcoinReq("generate", 145))
+    sender.expectMsgType[JValue](10 seconds)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.children.exists(c => (c \ "address").extract[String] == setupF.finalAddress && (c \ "txids").children.size == 1)
+      // NB: we need to take previous test txes into account!!
+      res.children.exists(c => (c \ "address").extract[String] == setupF.finalAddress && (c \ "txids").children.size == 2)
     }, max = 60 seconds, interval = 1 second)
     // and C will have its main output
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.children.exists(c => (c \ "address").extract[String] == setupC.finalAddress && (c \ "txids").children.size == 1)
+      // NB: we need to take previous test txes into account!!
+      res.children.exists(c => (c \ "address").extract[String] == setupC.finalAddress && (c \ "txids").children.size == 4)
     }, max = 60 seconds, interval = 1 second)
   }
 

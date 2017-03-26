@@ -47,6 +47,7 @@ class PeerClient(socketAddress: InetSocketAddress, magic: Long) extends Actor wi
       // see https://github.com/bitcoin/bips/blob/master/bip-0144.mediawiki: request tx with witness
       val inventory1 = Inventory(inventory.inventory.map(iv => iv.`type` match {
         case 1 => iv.copy(`type` = 0x40000001)
+        case 2 => iv.copy(`type` = 0x40000002)
         case _ => iv
       }))
       sender ! Message(magic, "getdata", Inventory.write(inventory1))

@@ -77,7 +77,7 @@ case object BITCOIN_NEXTREMOTECOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_PENALTY_DONE extends BitcoinEvent
 case object BITCOIN_CLOSE_DONE extends BitcoinEvent
 case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId: Long) extends BitcoinEvent
-case class BITCOIN_PARENT_TX_CONFIRMED(tx: Transaction) extends BitcoinEvent
+case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
