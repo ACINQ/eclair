@@ -74,6 +74,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
       } else if (channels.containsKey(c.shortChannelId)) {
         log.debug(s"ignoring $c (duplicate)")
+      } else if (awaiting.contains(c)) {
+        log.debug(s"ignoring $c (already in the process of checking it)")
       } else {
         val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
         log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
