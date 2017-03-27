@@ -557,6 +557,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       }
 
     case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutHtlcs(count) =>
+      // TODO: fail htlc in upstream channel?
       handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_NORMAL) =>

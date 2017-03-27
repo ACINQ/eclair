@@ -2,19 +2,19 @@ package fr.acinq.eclair.payment
 
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Transaction, TxIn}
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
-import scala.compat.Platform
 import scala.concurrent.duration._
 
 /**
@@ -83,25 +83,6 @@ class RelayerSpec extends TestkitBaseClass {
 
     val upstreams2 = sender.expectMsgType[Set[OutgoingChannel]]
     assert(upstreams2 === Set.empty)
-  }
-
-  test("send an event when we receive a payment") { case (relayer, paymentHandler) =>
-    val sender = TestProbe()
-    val eventListener = TestProbe()
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
-
-    val add_ab = {
-      val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops.take(1), currentBlockCount)
-      // and then manually build an htlc
-      UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
-    }
-
-    sender.send(relayer, ForwardAdd(add_ab))
-
-    val add1 = paymentHandler.expectMsgType[UpdateAddHtlc]
-    eventListener.expectMsgType[PaymentReceived]
-
-    assert(add1 === add_ab)
   }
 
   test("relay an htlc-add") { case (relayer, paymentHandler) =>
@@ -183,8 +164,8 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
-    val Some((pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
-    assert(reason == FailureMessage.amount_below_minimum(cmd.amountMsat, channelUpdate_bc))
+    val Some(ErrorPacket(pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
+    assert(reason == AmountBelowMinimum(cmd.amountMsat, channelUpdate_bc))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 
@@ -207,8 +188,8 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
-    val Some((pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
-    assert(reason == FailureMessage.incorrect_cltv_expiry(cmd.expiry, channelUpdate_bc))
+    val Some(ErrorPacket(pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
+    assert(reason == IncorrectCltvExpiry(cmd.expiry, channelUpdate_bc))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 
@@ -261,7 +242,7 @@ class RelayerSpec extends TestkitBaseClass {
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
     sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
-    val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), FailureMessage.temporary_channel_failure))
+    val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), TemporaryChannelFailure))
     sender.send(relayer, ForwardFail(fail_cb))
 
     val fulfill_ba = channel_ab.expectMsgType[CMD_FAIL_HTLC]

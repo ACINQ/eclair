@@ -4,7 +4,7 @@ import java.net.{InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.wire.Codecs.{socketaddress, lightningMessageCodec, rgb, zeropaddedstring}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{lightningMessageCodec, rgb, socketaddress, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -16,7 +16,7 @@ import scala.util.Random
   * Created by PM on 31/05/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class CodecsSpec extends FunSuite {
+class LightningMessageCodecsSpec extends FunSuite {
 
   def bin(size: Int, fill: Byte): BinaryData = Array.fill[Byte](size)(fill)
 
@@ -68,45 +68,45 @@ class CodecsSpec extends FunSuite {
 
   test("encode/decode with signature codec") {
     val sig = randomSignature
-    val wire = Codecs.signature.encode(sig).toOption.get
-    val sig1 = Codecs.signature.decode(wire).toOption.get.value
+    val wire = LightningMessageCodecs.signature.encode(sig).toOption.get
+    val sig1 = LightningMessageCodecs.signature.decode(wire).toOption.get.value
     assert(sig1 == sig)
   }
 
   test("encode/decode with optional signature codec") {
     {
       val sig = randomSignature
-      val wire = Codecs.optionalSignature.encode(Some(sig)).toOption.get
-      val Some(sig1) = Codecs.optionalSignature.decode(wire).toOption.get.value
+      val wire = LightningMessageCodecs.optionalSignature.encode(Some(sig)).toOption.get
+      val Some(sig1) = LightningMessageCodecs.optionalSignature.decode(wire).toOption.get.value
       assert(sig1 == sig)
     }
     {
-      val wire = Codecs.optionalSignature.encode(None).toOption.get
-      assert(Codecs.optionalSignature.decode(wire).toOption.get.value == None)
+      val wire = LightningMessageCodecs.optionalSignature.encode(None).toOption.get
+      assert(LightningMessageCodecs.optionalSignature.decode(wire).toOption.get.value == None)
     }
   }
 
   test("encode/decode with scalar codec") {
     val value = Scalar(randomBytes(32))
-    val wire = Codecs.scalar.encode(value).toOption.get
+    val wire = LightningMessageCodecs.scalar.encode(value).toOption.get
     assert(wire.length == 256)
-    val value1 = Codecs.scalar.decode(wire).toOption.get.value
+    val value1 = LightningMessageCodecs.scalar.decode(wire).toOption.get.value
     assert(value1 == value)
   }
 
   test("encode/decode with point codec") {
     val value = Scalar(randomBytes(32)).toPoint
-    val wire = Codecs.point.encode(value).toOption.get
+    val wire = LightningMessageCodecs.point.encode(value).toOption.get
     assert(wire.length == 33 * 8)
-    val value1 = Codecs.point.decode(wire).toOption.get.value
+    val value1 = LightningMessageCodecs.point.decode(wire).toOption.get.value
     assert(value1 == value)
   }
 
   test("encode/decode with public key codec") {
     val value = PrivateKey(randomBytes(32), true).publicKey
-    val wire = Codecs.publicKey.encode(value).toOption.get
+    val wire = LightningMessageCodecs.publicKey.encode(value).toOption.get
     assert(wire.length == 33 * 8)
-    val value1 = Codecs.publicKey.decode(wire).toOption.get.value
+    val value1 = LightningMessageCodecs.publicKey.decode(wire).toOption.get.value
     assert(value1 == value)
   }
 
@@ -163,18 +163,18 @@ class CodecsSpec extends FunSuite {
 
     msgs.foreach {
       case msg => {
-        val encoded = lightningMessageCodec.encode(msg)
-        val decoded = encoded.flatMap(lightningMessageCodec.decode(_))
-        assert(msg === decoded.toOption.get.value)
+        val encoded = lightningMessageCodec.encode(msg).require
+        val decoded = lightningMessageCodec.decode(encoded).require
+        assert(msg === decoded.value)
       }
     }
   }
 
   test("encode/decode per-hop payload") {
     val payload = PerHopPayload(amt_to_forward = 142000, outgoing_cltv_value = 500000)
-    val bin = Codecs.perHopPayloadCodec.encode(payload).toOption.get
+    val bin = LightningMessageCodecs.perHopPayloadCodec.encode(payload).toOption.get
     assert(bin.toByteVector.size === 20)
-    val payload1 = Codecs.perHopPayloadCodec.decode(bin).toOption.get.value
+    val payload1 = LightningMessageCodecs.perHopPayloadCodec.decode(bin).toOption.get.value
     assert(payload === payload1)
   }
 }

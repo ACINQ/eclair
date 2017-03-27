@@ -25,7 +25,7 @@ case class Local(sender: ActorRef) extends Origin
 case class Relayed(upstream: UpdateAddHtlc) extends Origin
 
 case class AddHtlcSucceeded(add: UpdateAddHtlc, origin: Origin)
-case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: BinaryData)
+case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: FailureMessage)
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
 case class ForwardFail(fail: UpdateFailHtlc)
@@ -65,7 +65,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       // TODO: cleanup bindings
       context become main(channels - OutgoingChannel(channelId, channel, remoteNodeId.hash160), bindings, shortIds, channelUpdates)
 
-    case ShortChannelIdAssigned(channel, channelId, shortChannelId) =>
+    case ShortChannelIdAssigned(_, channelId, shortChannelId) =>
       context become main(channels, bindings, shortIds + (channelId -> shortChannelId), channelUpdates)
 
     case channelUpdate: ChannelUpdate =>
@@ -75,34 +75,28 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
     case ForwardAdd(add) =>
       Try(Sphinx.parsePacket(nodeSecret, add.paymentHash, add.onionRoutingPacket))
         .map {
-          case ParsedPacket(payload, nextNodeAddress, nextPacket, sharedSecret) => (Codecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextNodeAddress, nextPacket, sharedSecret)
+          case ParsedPacket(payload, nextNodeAddress, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextNodeAddress, nextPacket, sharedSecret)
         } match {
         case Success((_, nextNodeAddress, _, sharedSecret)) if nextNodeAddress.forall(_ == 0) =>
-          log.info(s"we are the final recipient of htlc #${add.id}")
-          context.system.eventStream.publish(PaymentReceived(self, add.paymentHash))
-          paymentHandler forward add
+          log.info(s"looks like we are the final recipient of htlc #${add.id}")
+          paymentHandler forward (add, sharedSecret)
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
           val outgoingChannel = channels.find(_.nodeAddress == nextNodeAddress).get
           val channelUpdate = shortIds.get(outgoingChannel.channelId).flatMap(shortId => channelUpdates.get(shortId))
           channelUpdate match {
             case None =>
               // TODO: clarify what we're supposed to to in the specs
-              val failure = FailureMessage.temporary_channel_failure
-              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              val reason = Sphinx.createErrorPacket(sharedSecret, TemporaryChannelFailure)
               sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
             case Some(channelUpdate) if add.amountMsat < channelUpdate.htlcMinimumMsat =>
-              val failure = FailureMessage.amount_below_minimum(add.amountMsat, channelUpdate)
-              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              val reason = Sphinx.createErrorPacket(sharedSecret, AmountBelowMinimum(add.amountMsat, channelUpdate))
               sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
             case Some(channelUpdate) if add.expiry != perHopPayload.outgoing_cltv_value + channelUpdate.cltvExpiryDelta =>
-              val failure = FailureMessage.incorrect_cltv_expiry(add.expiry, channelUpdate)
-              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              val reason = Sphinx.createErrorPacket(sharedSecret, IncorrectCltvExpiry(add.expiry, channelUpdate))
               sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
-
             case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 =>
               // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
-              val failure = FailureMessage.final_expiry_too_soon
-              val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+              val reason = Sphinx.createErrorPacket(sharedSecret, FinalExpiryTooSoon)
               sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
             case _ =>
               val downstream = outgoingChannel.channel
@@ -111,18 +105,16 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           }
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")
-          val failure = FailureMessage.unknown_next_peer
-          val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+          val reason = Sphinx.createErrorPacket(sharedSecret, UnknownNextPeer)
           sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
         case Success((Attempt.Failure(cause), _, _, sharedSecret)) =>
           log.error(s"couldn't parse payload: $cause")
-          val failure = FailureMessage.permanent_node_failure
-          val reason = Sphinx.createErrorPacket(sharedSecret, failure)
+          val reason = Sphinx.createErrorPacket(sharedSecret, PermanentNodeFailure)
           sender ! CMD_FAIL_HTLC(add.id, reason, commit = true)
         case Failure(t) =>
           log.error(t, "couldn't parse onion: ")
           // we cannot even parse the onion packet
-          sender ! CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessage.BADONION, commit = true)
+          sender ! CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessageCodecs.BADONION, commit = true)
       }
 
     case AddHtlcSucceeded(downstream, origin) =>

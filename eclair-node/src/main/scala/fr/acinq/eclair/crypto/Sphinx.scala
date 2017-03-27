@@ -5,10 +5,11 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
-import fr.acinq.eclair.wire.{ChannelUpdate, Codecs}
+import fr.acinq.eclair.wire.{ChannelUpdate, FailureMessage, FailureMessageCodecs, LightningMessageCodecs}
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
+import scodec.bits.BitVector
 
 import scala.annotation.tailrec
 
@@ -245,6 +246,13 @@ object Sphinx {
   case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)])
 
   /**
+    * A properly decoded error from a node in the route
+    * @param originNode
+    * @param failureMessage
+    */
+  case class ErrorPacket(originNode: PublicKey, failureMessage: FailureMessage)
+
+  /**
     * Builds an encrypted onion packet that contains payloads and routing information for all nodes in the list
     *
     * @param sessionKey     session key
@@ -282,15 +290,15 @@ object Sphinx {
    */
   val ErrorPacketLength = MacLength + 128 + 2 + 2
 
-
   /**
     *
     * @param sharedSecret destination node's shared secret that was computed when the original onion for the HTLC
     *                     was created or forwarded: see makePacket() and makeNextPacket()
-    * @param message      failure message
+    * @param failure      failure message
     * @return an error packet that can be sent to the destination node
     */
-  def createErrorPacket(sharedSecret: BinaryData, message: BinaryData): BinaryData = {
+  def createErrorPacket(sharedSecret: BinaryData, failure: FailureMessage): BinaryData = {
+    val message: BinaryData = FailureMessageCodecs.failureMessageCodec.encode(failure).require.toByteArray
     require(message.length <= 128, s"error message length is ${message.length}, it must be less than 128")
     val um = Sphinx.generateKey("um", sharedSecret)
     val padlen = 128 - message.length
@@ -303,12 +311,12 @@ object Sphinx {
     * @param packet error packet
     * @return the failure message that is embedded in the error packet
     */
-  def extractFailureMessage(packet: BinaryData): BinaryData = {
+  def extractFailureMessage(packet: BinaryData): FailureMessage = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
     val len = Protocol.uint16(payload, ByteOrder.BIG_ENDIAN)
     require((len >= 0) && (len <= 128), "message length must be less than 128")
-    payload.drop(2).take(len)
+    FailureMessageCodecs.failureMessageCodec.decode(BitVector(payload.drop(2).take(len))).require.value
   }
 
   /**
@@ -344,13 +352,13 @@ object Sphinx {
     * @return Some(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, none otherwise
     */
   @tailrec
-  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Option[(PublicKey, BinaryData)] = {
+  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Option[ErrorPacket] = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     sharedSecrets match {
       case Nil => None
       case (secret, pubkey) :: tail =>
         val packet1 = forwardErrorPacket(packet, secret)
-        if (checkMac(secret, packet1)) Some(pubkey, extractFailureMessage(packet1)) else parseErrorPacket(packet1, tail)
+        if (checkMac(secret, packet1)) Some(ErrorPacket(pubkey, extractFailureMessage(packet1))) else parseErrorPacket(packet1, tail)
     }
   }
 }

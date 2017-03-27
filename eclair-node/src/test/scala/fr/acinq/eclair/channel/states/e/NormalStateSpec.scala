@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FinalExpiryTooSoon, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryChannelFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.Tag
@@ -96,7 +96,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
       sender.send(alice, add)
       sender.expectMsg("expiry can't be in the past (expiry=300000 blockCount=400000)")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.final_expiry_too_soon))
+      relayer.expectMsg(AddHtlcFailed(add, FinalExpiryTooSoon))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -107,7 +107,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(50, "11" * 32, 400144)
       sender.send(alice, add)
       sender.expectMsg("counterparty requires a minimum htlc value of 1000 msat")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.permanent_channel_failure))
+      relayer.expectMsg(AddHtlcFailed(add, PermanentChannelFailure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -118,7 +118,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144)
       sender.send(alice, add)
       sender.expectMsg("insufficient funds: missing=1376443 reserve=20000 fees=8960")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
+      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -141,7 +141,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(1000000, "44" * 32, 400144)
       sender.send(alice, add)
       sender.expectMsg("insufficient funds: missing=1000 reserve=20000 fees=12400")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
+      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -160,7 +160,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(500000000, "33" * 32, 400144)
       sender.send(alice, add)
       sender.expectMsg("insufficient funds: missing=332400 reserve=20000 fees=12400")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
+      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -171,7 +171,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(151000000, "11" * 32, 400144)
       sender.send(bob, add)
       sender.expectMsg("reached counterparty's in-flight htlcs value limit: value=151000000 max=150000000")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
+      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
       bob2alice.expectNoMsg(200 millis)
     }
   }
@@ -189,7 +189,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(10000000, "33" * 32, 400144)
       sender.send(alice, add)
       sender.expectMsg("reached counterparty's max accepted htlc count limit: value=31 max=30")
-      relayer.expectMsg(AddHtlcFailed(add, FailureMessage.temporary_channel_failure))
+      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -798,7 +798,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessage.BADONION))
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
       awaitCond(bob.stateData == initialState.copy(
@@ -844,7 +844,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
 
-      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessage.BADONION))
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
 

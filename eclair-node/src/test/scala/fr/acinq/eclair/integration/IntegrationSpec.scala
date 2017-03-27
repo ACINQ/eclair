@@ -9,10 +9,11 @@ import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{CreatePayment, PaymentError, PaymentFailed, PaymentSucceeded}
+import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
@@ -39,6 +40,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   val PATH_ECLAIR_DATADIR_B = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-B")
   val PATH_ECLAIR_DATADIR_C = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-C")
   val PATH_ECLAIR_DATADIR_D = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-D")
+  val PATH_ECLAIR_DATADIR_E = Paths.get(INTEGRATION_TMP_DIR, "datadir-eclair-E")
 
   var bitcoind: Process = null
   var bitcoincli: ActorRef = null
@@ -46,6 +48,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   var setupB: Setup = null
   var setupC: Setup = null
   var setupD: Setup = null
+  var setupE: Setup = null
 
   case class BitcoinReq(method: String, params: Any*)
 
@@ -55,11 +58,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     Files.createDirectories(PATH_ECLAIR_DATADIR_B)
     Files.createDirectories(PATH_ECLAIR_DATADIR_C)
     Files.createDirectories(PATH_ECLAIR_DATADIR_D)
+    Files.createDirectories(PATH_ECLAIR_DATADIR_E)
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), Paths.get(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_A.conf"), Paths.get(PATH_ECLAIR_DATADIR_A.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_B.conf"), Paths.get(PATH_ECLAIR_DATADIR_B.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_C.conf"), Paths.get(PATH_ECLAIR_DATADIR_C.toString, "eclair.conf"))
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_D.conf"), Paths.get(PATH_ECLAIR_DATADIR_D.toString, "eclair.conf"))
+    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/eclair_E.conf"), Paths.get(PATH_ECLAIR_DATADIR_E.toString, "eclair.conf"))
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoincli = system.actorOf(Props(new Actor {
@@ -87,6 +92,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     setupB.system.terminate()
     setupC.system.terminate()
     setupD.system.terminate()
+    setupE.system.terminate()
   }
 
   test("wait bitcoind ready") {
@@ -108,10 +114,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     setupB = new Setup(PATH_ECLAIR_DATADIR_B.toString)
     setupC = new Setup(PATH_ECLAIR_DATADIR_C.toString)
     setupD = new Setup(PATH_ECLAIR_DATADIR_D.toString)
+    setupE = new Setup(PATH_ECLAIR_DATADIR_E.toString)
     setupA.boostrap
     setupB.boostrap
     setupC.boostrap
     setupD.boostrap
+    setupE.boostrap
   }
 
   def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
@@ -133,10 +141,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     node1.system.eventStream.unsubscribe(eventListener.ref)
   }
 
-  test("connect A->B->C->D") {
+  test("connect A->B->C->D and B->E->C") {
     connect(setupA, setupB, 1000000, 0)
-    connect(setupB, setupC, 1000000, 0)
+    connect(setupB, setupC, 200000, 0)
     connect(setupC, setupD, 500000, 0)
+
+    connect(setupB, setupE, 500000, 0)
+    connect(setupE, setupC, 500000, 0)
   }
 
   test("wait for network announcements") {
@@ -147,15 +158,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // wait for A to know all nodes and channels
     awaitCond({
       sender.send(setupA.router, 'nodes)
-      sender.expectMsgType[Iterable[NodeAnnouncement]].size == 4
+      sender.expectMsgType[Iterable[NodeAnnouncement]].size == 5
     }, max = 20 seconds, interval = 1 second)
     awaitCond({
       sender.send(setupA.router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == 3
+      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == 5
     }, max = 20 seconds, interval = 1 second)
     awaitCond({
       sender.send(setupA.router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].size == 6
+      sender.expectMsgType[Iterable[ChannelUpdate]].size == 10
     }, max = 20 seconds, interval = 1 second)
   }
 
@@ -183,18 +194,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // then we make the actual payment
     val paymentReq = CreatePayment(4200000, paymentHash, setupD.nodeParams.privateKey.publicKey)
     sender.send(setupA.paymentInitiator, paymentReq)
-    // A calculated the cltv expiry like so: PaymentLifecycle.defaultHtlcExpiry + previous-expiry-delta-C = 10 + 144 = 154
-    sender.expectMsgType[PaymentFailed].error === Some(PaymentError(setupC.nodeParams.privateKey.publicKey, FailureMessage.incorrect_cltv_expiry(154, channelUpdateCD)))
-    // let's say than A is notified later on about C's channel update
-    sender.send(setupA.router, channelUpdateCD)
-    // we wait for A to receive it
+    // A will receive an error from C that include the updated channel update, then will retry the payment
+    sender.expectMsgType[PaymentSucceeded](5 seconds)
+    // in the meantime, the router will have updated its state
     awaitCond({
       sender.send(setupA.router, 'updates)
       sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateCD)
     }, max = 20 seconds, interval = 1 second)
     // finally we retry the same payment, this time successfully
-    sender.send(setupA.paymentInitiator, paymentReq)
-    sender.expectMsgType[PaymentSucceeded]
   }
 
   test("send an HTLC A->D with an amount greater than capacity of C-D") {
@@ -203,9 +210,19 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(setupD.paymentHandler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
     // then we make the payment (C-D has a smaller capacity than A-B and B-C)
-    val paymentReq = CreatePayment(600000000L, paymentHash, setupD.nodeParams.privateKey.publicKey)
+    val paymentReq = CreatePayment(300000000L, paymentHash, setupD.nodeParams.privateKey.publicKey)
     sender.send(setupA.paymentInitiator, paymentReq)
-    sender.expectMsgType[PaymentFailed].error === Some(PaymentError(setupC.nodeParams.privateKey.publicKey, FailureMessage.permanent_node_failure))
+    // A will first receive an error from C, then retry and route around C: A->B->E->C->D
+    sender.expectMsgType[PaymentSucceeded](5 seconds)
+  }
+
+  test("send an HTLC A->D with an unknown payment hash") {
+    val sender = TestProbe()
+    val paymentHash = "42" * 32
+    val paymentReq = CreatePayment(100000000L, paymentHash, setupD.nodeParams.privateKey.publicKey)
+    sender.send(setupA.paymentInitiator, paymentReq)
+    // A will first receive an error from C, then retry and route around C: A->B->E->C->D
+    sender.expectMsg(PaymentFailed(paymentHash, Some(ErrorPacket(setupD.nodeParams.privateKey.publicKey, UnknownPaymentHash))))
   }
 
 }
