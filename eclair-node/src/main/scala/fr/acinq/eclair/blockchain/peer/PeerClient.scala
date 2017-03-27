@@ -10,11 +10,11 @@ import fr.acinq.bitcoin._
 import scala.compat.Platform
 import scala.concurrent.duration._
 
-class PeerClient(socket: InetSocketAddress, magic: Long) extends Actor with ActorLogging {
+class PeerClient(socketAddress: InetSocketAddress, magic: Long) extends Actor with ActorLogging {
 
   val supervisor = BackoffSupervisor.props(
     Backoff.onStop(
-      Props(classOf[PeerHandler], socket, self),
+      Props(classOf[PeerHandler], socketAddress, self),
       childName = "peer-conn",
       minBackoff = 1 seconds,
       maxBackoff = 10 seconds,
@@ -68,7 +68,7 @@ class PeerClient(socket: InetSocketAddress, magic: Long) extends Actor with Acto
 }
 
 object PeerClient {
-  def props(socket: InetSocketAddress, magic: Long) = Props(new PeerClient(socket, magic))
+  def props(socketAddress: InetSocketAddress, magic: Long) = Props(new PeerClient(socketAddress, magic))
 }
 
 object PeerClientTest extends App {
