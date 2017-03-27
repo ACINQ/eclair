@@ -1,19 +1,21 @@
 package fr.acinq.eclair.gui
 
+import java.time.LocalDateTime
 import java.util.function.Predicate
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
-import collection.JavaConversions._
 
+import collection.JavaConversions._
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
+import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, Payment}
 import fr.acinq.eclair.io.Reconnect
+import fr.acinq.eclair.payment.PaymentReceived
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
@@ -139,5 +141,9 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
       mainController.networkChannelsList.removeIf(new Predicate[ChannelAnnouncement] {
         override def test(ca: ChannelAnnouncement) = ca.shortChannelId == shortChannelId
       })
+
+    case PaymentReceived(channel, h) =>
+      log.debug(s"payment received with h=$h")
+      mainController.paymentReceivedList.add(new Payment(h, LocalDateTime.now()))
   }
 }

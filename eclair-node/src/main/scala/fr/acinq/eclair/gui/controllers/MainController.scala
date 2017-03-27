@@ -1,5 +1,7 @@
 package fr.acinq.eclair.gui.controllers
 
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
@@ -17,12 +19,15 @@ import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
 import javafx.util.Callback
 
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
+
+class Payment(val h: BinaryData, val receivedAt: LocalDateTime)
 
 /**
   * Created by DPA on 22/09/2016.
@@ -67,6 +72,14 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, Number] = _
   @FXML var networkChannelsNode1Column: TableColumn[ChannelAnnouncement, String] = _
   @FXML var networkChannelsNode2Column: TableColumn[ChannelAnnouncement, String] = _
+
+  // payment received table
+  val paymentReceivedList = FXCollections.observableArrayList[Payment]()
+  @FXML var paymentReceivedTab: Tab = _
+  @FXML var paymentReceivedTable: TableView[Payment] = _
+  @FXML var paymentReceivedAmountColumn: TableColumn[Payment, Long] = _
+  @FXML var paymentReceivedHColumn: TableColumn[Payment, String] = _
+  @FXML var paymentReceivedDateColumn: TableColumn[Payment, String] = _
 
   /**
     * Initialize the main window.
@@ -167,6 +180,22 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     })
     networkChannelsTable.setRowFactory(new Callback[TableView[ChannelAnnouncement], TableRow[ChannelAnnouncement]]() {
       override def call(table: TableView[ChannelAnnouncement]): TableRow[ChannelAnnouncement] = setupPeerChannelContextMenu
+    })
+
+    // init payment received
+    paymentReceivedTable.setItems(paymentReceivedList)
+    paymentReceivedList.addListener(new ListChangeListener[Payment] {
+      override def onChanged(c: Change[_ <: Payment]) = {
+        Platform.runLater(new Runnable() {
+          override def run = paymentReceivedTab.setText(s"Received (${paymentReceivedList.size})")
+        })
+      }
+    })
+    paymentReceivedHColumn.setCellValueFactory(new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
+      def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.h.toString)
+    })
+    paymentReceivedDateColumn.setCellValueFactory(new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
+      def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.receivedAt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")))
     })
   }
 
