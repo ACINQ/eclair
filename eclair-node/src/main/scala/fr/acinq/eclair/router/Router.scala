@@ -191,8 +191,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
     case RouteRequest(start, end, ignoreNodes, ignoreChannels) =>
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.mkString(",")}")
       findRoute(start, end, filterUpdates(updates, ignoreNodes, ignoreChannels)).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
-
-    case other => log.warning(s"unhandled message $other")
   }
 
 }

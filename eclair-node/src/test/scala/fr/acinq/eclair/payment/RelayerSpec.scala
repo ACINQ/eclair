@@ -164,8 +164,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
-    val Some(ErrorPacket(pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
-    assert(reason == AmountBelowMinimum(cmd.amountMsat, channelUpdate_bc))
+    assert(fail.reason == Right(AmountBelowMinimum(cmd.amountMsat, channelUpdate_bc)))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 
@@ -188,8 +187,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
-    val Some(ErrorPacket(pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
-    assert(reason == IncorrectCltvExpiry(cmd.expiry, channelUpdate_bc))
+    assert(fail.reason == Right(IncorrectCltvExpiry(cmd.expiry, channelUpdate_bc)))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 

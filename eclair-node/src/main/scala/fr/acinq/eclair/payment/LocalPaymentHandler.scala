@@ -34,15 +34,14 @@ class LocalPaymentHandler extends Actor with ActorLogging {
       sender ! h
       context.become(run(h2r + (h -> r)))
 
-    case (htlc: UpdateAddHtlc, _) if h2r.contains(htlc.paymentHash) =>
+    case htlc: UpdateAddHtlc if h2r.contains(htlc.paymentHash) =>
       val r = h2r(htlc.paymentHash)
       sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
       context.system.eventStream.publish(PaymentReceived(self, htlc.paymentHash))
       context.become(run(h2r - htlc.paymentHash))
 
-    case (htlc: UpdateAddHtlc, sharedSecret: BinaryData) =>
-      val reason = Sphinx.createErrorPacket(sharedSecret, UnknownPaymentHash)
-      sender ! CMD_FAIL_HTLC(htlc.id, reason, commit = true)
+    case htlc: UpdateAddHtlc =>
+      sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
 
   }
 

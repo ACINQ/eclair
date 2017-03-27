@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -142,7 +142,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(bob, CMD_FAIL_HTLC(1, "some reason".getBytes()))
+      sender.send(bob, CMD_FAIL_HTLC(1, Right(PermanentChannelFailure)))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(
@@ -170,7 +170,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(bob, CMD_FAIL_HTLC(42, "some reason".getBytes()))
+      sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
       sender.expectMsg("unknown htlc id=42")
       assert(initialState == bob.stateData)
     }
@@ -180,7 +180,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-      val fail = UpdateFailHtlc("00" * 32, 1, "some reason".getBytes())
+      val fail = UpdateFailHtlc("00" * 32, 1, "00" * 152)
       sender.send(alice, fail)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
     }
@@ -190,7 +190,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
-      sender.send(alice, UpdateFailHtlc("00" * 32, 42, "some reason".getBytes()))
+      sender.send(alice, UpdateFailHtlc("00" * 32, 42, "00" * 152))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))

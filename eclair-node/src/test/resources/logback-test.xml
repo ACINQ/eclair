@@ -26,9 +26,7 @@
         </encoder>
     </appender-->
 
-    <logger name="fr.acinq.eclair.Pipe" level="DEBUG">
-        <appender-ref ref="CONSOLE"/>
-    </logger>
+    <logger name="fr.acinq.eclair.Pipe" level="DEBUG" />
 
     <root level="INFO">
         <!--appender-ref ref="FILE"/>

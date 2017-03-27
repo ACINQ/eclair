@@ -417,7 +417,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       }
 
     case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_NORMAL) =>
-      Try(Commitments.sendFail(d.commitments, c)) match {
+      Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
         case Success((commitments1, fail)) =>
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
@@ -646,7 +646,7 @@ class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: Actor
       }
 
     case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_SHUTDOWN) =>
-      Try(Commitments.sendFail(d.commitments, c)) match {
+      Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
         case Success((commitments1, fail)) =>
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
