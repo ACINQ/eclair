@@ -1,8 +1,11 @@
 package fr.acinq.eclair.gui.stages
 
 import javafx.application.HostServices
+import javafx.event.EventHandler
 import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
+import javafx.scene.input.KeyCode._
+import javafx.scene.input.KeyEvent
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Modality, Stage, StageStyle}
 
@@ -17,6 +20,8 @@ class AboutStage(hostServices: HostServices) extends Stage() {
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
   setTitle("About Eclair")
   setResizable(false)
+  setWidth(500)
+  setHeight(200)
 
   // get fxml/controller
   val openFXML = new FXMLLoader(getClass.getResource("/gui/modals/about.fxml"))
@@ -25,5 +30,17 @@ class AboutStage(hostServices: HostServices) extends Stage() {
 
   // create scene
   val scene = new Scene(root)
+
+  val self = this
+  scene.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent]() {
+    def handle(event: KeyEvent) = {
+      event.getCode match {
+        case ESCAPE =>
+          self.close
+        case _ =>
+      }
+    }
+  })
+
   setScene(scene)
 }

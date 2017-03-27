@@ -10,7 +10,7 @@
 <?import javafx.scene.text.Text?>
 <?import javafx.scene.text.TextFlow?>
 
-<GridPane prefWidth="450.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane prefWidth="500.0" prefHeight="200.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" maxWidth="120.0" />
         <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="180.0" />
@@ -25,7 +25,8 @@
             <children>
                 <TextFlow>
                     <children>
-                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Eclair v0.2" />
+                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Eclair v" />
+                        <Text fx:id="version" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Unknown" />
                         <Text strokeType="OUTSIDE" styleClass="text-sm" strokeWidth="0.0" text=" brought to you by " />
                         <Text onMouseClicked="#openACINQPage" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="link" text="ACINQ" />
                     </children>

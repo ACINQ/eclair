@@ -265,6 +265,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML def handleOpenAbout = {
     val aboutStage = new AboutStage(hostServices)
     aboutStage.initOwner(root.getScene.getWindow)
+    positionAtCenter(aboutStage)
     aboutStage.show
   }
 

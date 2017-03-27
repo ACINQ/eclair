@@ -57,24 +57,32 @@ Just use the windows installer, it should create a shortcut on your desktop.
 
 You need to first install java, more precisely a JRE 1.8.
 
-Then just grab the latest fat jar and run:
+Then download the latest fat jar and run:
 ```shell
 java -jar eclair-node_xxxxxx-fat.jar
 ```
 
 ### Configuring Eclair
 
-Eclair will create a directory in `~/.eclair` by default. You may change this directory's location using `--datadir <dir>` command line argument.
+#### Command-line parameters
 
-If you want to change configuration parameters, create a file named `eclair.conf` in eclair's home directory.
+option         | description                     | default value
+---------------|---------------------------------|--------------
+--datadir      | Path to the data directory      | ~/.eclair
+--headless     | Run Eclair without the GUI      |
+--help, -h     | Display usage text              |
 
-:warning: Using separate `datadir` is mandatory if you want to run several instances of eclair on the same machine. You will also have to change ports.
 
+:warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in the configuration (see below).
+
+#### Configuration file
+
+To change your node configuration, edit the file `eclair.conf` in `datadir`.
 
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
  eclair.server.port          | TCP port                  | 9735
- eclair.api.port            | HTTP port                 | 8080
+ eclair.api.port             | HTTP port                 | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
 
