@@ -13,7 +13,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.{Logger, LoggerContext}
 import ch.qos.logback.core.FileAppender
 import com.sun.javafx.application.LauncherImpl
-import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import fr.acinq.bitcoin.{Base58Check, Message, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.peer.PeerClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
@@ -76,7 +76,12 @@ class Setup(datadir: String) extends Logging {
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
   val (chain, blockCount, progress) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)
-  assert(chain == "test" || chain == "regtest" || chain == "segnet4", "you should be on testnet or regtest or segnet4")
+  logger.info(s"using chain=$chain")
+  val magic = chain match {
+    case "test" => Message.MagicTestnet3
+    case "regtest" => Message.MagicTestNet
+    case _ => throw new RuntimeException("only regtest and testnet are supported for now")
+  }
   assert(progress > 0.99, "bitcoind should be synchronized")
   Globals.blockCount.set(blockCount)
   val defaultFeeratePerKw = config.getLong("default-feerate-perkw")
@@ -95,8 +100,7 @@ class Setup(datadir: String) extends Logging {
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
 
-
-  val peer = system.actorOf(SimpleSupervisor.props(PeerClient.props(config.getConfig("bitcoind")), "bitcoin-peer", SupervisorStrategy.Restart))
+  val peer = system.actorOf(SimpleSupervisor.props(PeerClient.props(new InetSocketAddress(config.getString("bitcoind.host"), config.getInt("bitcoind.port")), magic), "bitcoin-peer", SupervisorStrategy.Restart))
   val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoin_client), "watcher", SupervisorStrategy.Resume))
   val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
     case "local" => Props[LocalPaymentHandler]
