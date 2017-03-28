@@ -1,10 +1,11 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.wire.{UnknownPaymentHash, UpdateAddHtlc}
+import fr.acinq.eclair.wire.UnknownPaymentHash
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.wire.UpdateAddHtlc
 
 import scala.util.Random
 
@@ -37,7 +38,7 @@ class LocalPaymentHandler extends Actor with ActorLogging {
     case (htlc: UpdateAddHtlc, _) if h2r.contains(htlc.paymentHash) =>
       val r = h2r(htlc.paymentHash)
       sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
-      context.system.eventStream.publish(PaymentReceived(self, htlc.paymentHash))
+      context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
       context.become(run(h2r - htlc.paymentHash))
 
     case (htlc: UpdateAddHtlc, sharedSecret: BinaryData) =>

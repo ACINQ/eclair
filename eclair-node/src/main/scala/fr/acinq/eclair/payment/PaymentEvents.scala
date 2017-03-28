@@ -1,15 +1,14 @@
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorRef
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 
 /**
   * Created by PM on 01/02/2017.
   */
 class PaymentEvent
 
-//case class PaymentSent(channel: ActorRef, h: BinaryData) extends PaymentEvent
+case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
 
-//case class PaymentFailed(channel: ActorRef, h: BinaryData, reason: String) extends PaymentEvent
+case class PaymentRelayed(amount: MilliSatoshi, feesEarned: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
 
-case class PaymentReceived(channel: ActorRef, h: BinaryData) extends PaymentEvent
+case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent

@@ -3,6 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.BaseRouterSpec
@@ -46,7 +47,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
-    val WaitingForComplete(_, add, _, sharedSecrets, _, _, _) = paymentFSM.stateData
+    val WaitingForComplete(_, c, cmd, _, sharedSecrets, _, _, _) = paymentFSM.stateData
 
     sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets(0)._1, TemporaryChannelFailure)))
 
@@ -71,6 +72,8 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, UpdateFulfillHtlc("00" * 32, 0, "42" * 32))
 
     sender.expectMsgType[PaymentSucceeded]
+    val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash) = eventListener.expectMsgType[PaymentSent]
+    assert(feesPaid.amount > 0)
 
   }
 

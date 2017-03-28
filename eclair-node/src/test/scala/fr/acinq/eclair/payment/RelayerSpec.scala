@@ -3,7 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Transaction, TxIn}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, OutPoint, Transaction, TxIn}
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
@@ -88,6 +88,9 @@ class RelayerSpec extends TestkitBaseClass {
   test("relay an htlc-add") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
+    val eventListener = TestProbe()
+
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     val add_ab = {
       val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
@@ -102,6 +105,8 @@ class RelayerSpec extends TestkitBaseClass {
     sender.expectNoMsg(1 second)
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     paymentHandler.expectNoMsg(1 second)
+
+    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(cmd_bc.amountMsat), MilliSatoshi(add_ab.amountMsat - cmd_bc.amountMsat), add_ab.paymentHash))
 
     assert(cmd_bc.upstream_opt === Some(add_ab))
   }

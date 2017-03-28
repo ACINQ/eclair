@@ -2,7 +2,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptWitness, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, ScriptWitness, Transaction}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
@@ -102,6 +102,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
               val downstream = outgoingChannel.channel
               log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
               downstream ! CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
+              context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(perHopPayload.amt_to_forward), MilliSatoshi(add.amountMsat - perHopPayload.amt_to_forward), add.paymentHash))
           }
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")

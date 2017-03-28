@@ -2,7 +2,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
@@ -25,9 +25,10 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
 
-    sender.send(handler, (UpdateAddHtlc("11" * 32, 0, 0, 0, paymentHash, ""), ""))
+    val add = UpdateAddHtlc("11" * 32, 0, 42000, 0, paymentHash, "")
+    sender.send(handler, (add, ""))
     sender.expectMsgType[CMD_FULFILL_HTLC]
-    eventListener.expectMsgType[PaymentReceived]
+    eventListener.expectMsg(PaymentReceived(MilliSatoshi(add.amountMsat), add.paymentHash))
   }
 
 }
