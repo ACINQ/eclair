@@ -129,10 +129,10 @@
 }
 
 
-/* ------------- Activities tab -------------- */
+/* ------------- Activity tab -------------- */
 
 .activities-tab.tab-pane > *.tab-header-area {
-	-fx-padding: 10px .5em 0px;
+	-fx-padding: 7px .5em 0;
 }
 
 .activities-tab.tab-pane > *.tab-header-area > *.tab-header-background {
@@ -162,10 +162,9 @@
 	-fx-border-color: #f54956;
 }
 .activities-tab.tab-pane .tab:top:selected .text {
-	-fx-border-color: red;
-	-fx-font-weight: bold;
+    -fx-border-color: rgb(234,98,112);
+    -fx-font-weight: bold;
     -fx-fill: rgb(0, 0, 0);
-
 }
 
 .activities-tab.tab-pane .tab-content-area {
@@ -175,4 +174,9 @@
 .activities-tab .table-view {
     -fx-border-width: 1px 0 0 0;
     -fx-font-size: 12px;
+}
+.label.activity-disclaimer {
+    -fx-font-size: 10px;
+    -fx-text-fill: rgb(166,169,171);
+    -fx-padding: 7px 7px 0 0;
 }

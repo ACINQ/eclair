@@ -15,7 +15,7 @@ import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController, Payment}
 import fr.acinq.eclair.io.Reconnect
-import fr.acinq.eclair.payment.PaymentReceived
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
@@ -142,8 +142,16 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
         override def test(ca: ChannelAnnouncement) = ca.shortChannelId == shortChannelId
       })
 
-    case PaymentReceived(channel, h) =>
-      log.debug(s"payment received with h=$h")
-      mainController.paymentReceivedList.add(new Payment(h, LocalDateTime.now()))
+    case PaymentSent(amount, feesPaid, h) =>
+      log.debug(s"payment sent with h=$h, amount=$amount, fees=$feesPaid")
+      mainController.paymentSentList.add(new Payment(amount, feesPaid, h, LocalDateTime.now))
+
+    case PaymentReceived(amount, h) =>
+      log.debug(s"payment received with h=$h, amount=$amount")
+      mainController.paymentReceivedList.add(new Payment(amount, MilliSatoshi(0), h, LocalDateTime.now))
+
+    case PaymentRelayed(amount, feesEarned, h) =>
+      log.debug(s"payment relayed with h=$h, amount=$amount, feesEarned=$feesEarned")
+      mainController.paymentRelayedList.add(new Payment(amount, feesEarned, h, LocalDateTime.now))
   }
 }
