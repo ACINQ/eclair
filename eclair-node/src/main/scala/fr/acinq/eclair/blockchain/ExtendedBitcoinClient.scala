@@ -35,7 +35,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
-      .map(json => Some((json \ "blockhash").extract[String]))
+      .map(json => (json \ "blockhash").extractOpt[String])
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
@@ -219,3 +219,19 @@ object ExtendedBitcoinClient {
 
 }
 
+
+/*object Test extends App {
+
+  import scala.concurrent.duration._
+  import ExecutionContext.Implicits.global
+  implicit val system = ActorSystem()
+  implicit val timeout = Timeout(30 seconds)
+
+  val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
+    user = "foo",
+    password = "bar",
+    host = "localhost",
+    port = 28332))
+
+  println(Await.result(bitcoin_client.getTxBlockHash("dcb0abfa822402ce379fedd7bbbb2c824e53ef300313594c39282da1efd35f17"), 10 seconds))
+}*/
