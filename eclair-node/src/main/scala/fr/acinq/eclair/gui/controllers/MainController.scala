@@ -232,10 +232,10 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.hash.toString)
   }
   private def paymentFeesCellFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
-    def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.fees.toLong)
+    def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.fees.amount)
   }
   private def paymentAmountCellFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
-    def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.amount.toLong)
+    def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.amount.amount)
   }
   private def paymentDateCellFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.receivedAt.format(PAYMENT_DATE_FORMAT))
