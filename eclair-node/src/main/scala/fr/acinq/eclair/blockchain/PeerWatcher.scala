@@ -1,12 +1,14 @@
 package fr.acinq.eclair.blockchain
 
+import java.util.concurrent.Executors
+
 import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.{Globals, NodeParams}
 import fr.acinq.eclair.blockchain.peer._
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.{Globals, NodeParams}
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
@@ -26,14 +28,14 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
 
     case NewTransaction(tx) =>
-      log.debug(s"analyzing tx ${tx.txid}: ${Transaction.write(tx)}")
+      log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
       watches.collect {
         case w@WatchSpent(channel, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
-          log.info(s"txid=${tx.txid} spends output=$outputIndex of parenttxid=$txid")
           self ! ('trigger, w, WatchEventSpent(event, tx))
       }
 
     case NewBlock(block) =>
+      log.debug(s"received blockid=${block.blockId}")
       client.getBlockCount.map {
         case count =>
           Globals.blockCount.set(count)
@@ -80,13 +82,20 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
           // parent tx was published, we need to make sure this particular output has not been spent
           client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
             case false =>
-              log.warning(s"tx $txid has already been spent!!!")
+              log.warning(s"output=$outputIndex of txid=$txid has already been spent")
               client.getTxBlockHash(txid.toString()).collect {
                 case Some(blockhash) =>
                   log.warning(s"getting all transactions since blockhash=$blockhash")
                   client.getTxsSinceBlockHash(blockhash).map {
-                    case txs => txs.foreach(tx => self ! NewTransaction(tx))
+                    case txs =>
+                      log.warning(s"found ${txs.size} txs since blockhash=$blockhash")
+                      txs.foreach(tx => self ! NewTransaction(tx))
                   }
+              }
+              client.getMempool().map {
+                case txs =>
+                  log.warning(s"found ${txs.size} txs in the mempool")
+                  txs.foreach(tx => self ! NewTransaction(tx))
               }
           }
       }
@@ -156,10 +165,13 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       context.become(watching(watches + w, block2tx))
     }
 
+  // NOTE: we use a single thread to publish transactions so that it preserves order.
+  // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS
+  val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def publish(tx: Transaction) = {
     log.info(s"publishing tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
-    client.publishTransaction(tx).onFailure {
+    client.publishTransaction(tx)(singleThreadExecutionContext).onFailure {
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
     }
   }

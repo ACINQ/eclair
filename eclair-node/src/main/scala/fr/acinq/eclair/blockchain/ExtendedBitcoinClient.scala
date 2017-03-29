@@ -50,6 +50,11 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       }
     } yield res
 
+  def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
+    for {
+      txids <- client.invoke("getrawmempool").map(json => json.extract[List[String]])
+      txs <- Future.sequence(txids.map(getTransaction(_)))
+    } yield txs
 
   /**
     * *used in interop test*

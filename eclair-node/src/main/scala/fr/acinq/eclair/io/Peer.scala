@@ -67,8 +67,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
       goto(INITIALIZING) using InitializingData(transport, offlineChannels)
 
-    case Event(Terminated(actor), d@DisconnectedData(offlineChannels)) if offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.isDefined =>
-      val h = offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.toSeq
+    case Event(Terminated(actor), d@DisconnectedData(offlineChannels)) if offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.isDefined =>
+      val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
   }
 
@@ -110,8 +110,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.warning(s"lost connection to $remoteNodeId")
       goto(DISCONNECTED) using DisconnectedData(offlineChannels)
 
-    case Event(Terminated(actor), d@InitializingData(_, offlineChannels)) if offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.isDefined =>
-      val h = offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.toSeq
+    case Event(Terminated(actor), d@InitializingData(_, offlineChannels)) if offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.isDefined =>
+      val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
   }
 
