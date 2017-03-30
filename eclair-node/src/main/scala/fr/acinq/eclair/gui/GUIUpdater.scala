@@ -144,14 +144,14 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
 
     case PaymentSent(amount, feesPaid, h) =>
       log.debug(s"payment sent with h=$h, amount=$amount, fees=$feesPaid")
-      mainController.paymentSentList.add(new Payment(amount, feesPaid, h, LocalDateTime.now))
+      mainController.paymentSentList.prepend(new Payment(amount, feesPaid, h, LocalDateTime.now))
 
     case PaymentReceived(amount, h) =>
       log.debug(s"payment received with h=$h, amount=$amount")
-      mainController.paymentReceivedList.add(new Payment(amount, MilliSatoshi(0), h, LocalDateTime.now))
+       mainController.paymentReceivedList.prepend(new Payment(amount, MilliSatoshi(0), h, LocalDateTime.now))
 
     case PaymentRelayed(amount, feesEarned, h) =>
       log.debug(s"payment relayed with h=$h, amount=$amount, feesEarned=$feesEarned")
-      mainController.paymentRelayedList.add(new Payment(amount, feesEarned, h, LocalDateTime.now))
+      mainController.paymentRelayedList.prepend(new Payment(amount, feesEarned, h, LocalDateTime.now))
   }
 }
