@@ -35,7 +35,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       }
 
     case NewBlock(block) =>
-      log.debug(s"received blockid=${block.blockId}")
+      //log.debug(s"received blockid=${block.blockId}")
       client.getBlockCount.map {
         case count =>
           Globals.blockCount.set(count)

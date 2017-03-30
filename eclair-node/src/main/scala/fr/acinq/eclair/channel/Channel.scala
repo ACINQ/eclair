@@ -27,7 +27,7 @@ object Channel {
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, remoteNodeId, blockchain, router, relayer))
 }
 
-class Channel(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
