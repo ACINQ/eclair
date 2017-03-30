@@ -1,7 +1,9 @@
 package fr.acinq.eclair.gui.controllers
 
+import java.text.NumberFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.{Locale}
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
@@ -100,6 +102,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var paymentRelayedDateColumn: TableColumn[Payment, String] = _
 
   val PAYMENT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+  val moneyFormatter = NumberFormat.getInstance(Locale.getDefault)
 
   /**
     * Initialize the main window.
@@ -196,29 +199,34 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     paymentSentTable.setItems(paymentSentList)
     paymentSentList.addListener(new ListChangeListener[Payment] {
       override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentSentTab, "Sent", paymentSentList)})
-    paymentSentAmountColumn.setCellValueFactory(paymentAmountCellFactory)
-    paymentSentFeesColumn.setCellValueFactory(paymentFeesCellFactory)
-    paymentSentHashColumn.setCellValueFactory(paymentHashCellFactory)
-    paymentSentDateColumn.setCellValueFactory(paymentDateCellFactory)
+    paymentSentAmountColumn.setCellValueFactory(paymentAmountCellValueFactory)
+    paymentSentAmountColumn.setCellFactory(paymentMoneyCellFactory)
+    paymentSentFeesColumn.setCellValueFactory(paymentFeesCellValueFactory)
+    paymentSentFeesColumn.setCellFactory(paymentMoneyCellFactory)
+    paymentSentHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentSentDateColumn.setCellValueFactory(paymentDateCellValueFactory)
     paymentSentTable.setRowFactory(paymentRowFactory)
 
     // init payment received
     paymentReceivedTable.setItems(paymentReceivedList)
     paymentReceivedList.addListener(new ListChangeListener[Payment] {
       override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentReceivedTab, "Received", paymentReceivedList)})
-    paymentReceivedAmountColumn.setCellValueFactory(paymentAmountCellFactory)
-    paymentReceivedHashColumn.setCellValueFactory(paymentHashCellFactory)
-    paymentReceivedDateColumn.setCellValueFactory(paymentDateCellFactory)
+    paymentReceivedAmountColumn.setCellValueFactory(paymentAmountCellValueFactory)
+    paymentReceivedAmountColumn.setCellFactory(paymentMoneyCellFactory)
+    paymentReceivedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentReceivedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
     paymentReceivedTable.setRowFactory(paymentRowFactory)
 
     // init payment relayed
     paymentRelayedTable.setItems(paymentRelayedList)
     paymentRelayedList.addListener(new ListChangeListener[Payment] {
         override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentRelayedTab, "Relayed", paymentRelayedList)})
-    paymentRelayedAmountColumn.setCellValueFactory(paymentAmountCellFactory)
-    paymentRelayedFeesColumn.setCellValueFactory(paymentFeesCellFactory)
-    paymentRelayedHashColumn.setCellValueFactory(paymentHashCellFactory)
-    paymentRelayedDateColumn.setCellValueFactory(paymentDateCellFactory)
+    paymentRelayedAmountColumn.setCellValueFactory(paymentAmountCellValueFactory)
+    paymentRelayedAmountColumn.setCellFactory(paymentMoneyCellFactory)
+    paymentRelayedFeesColumn.setCellValueFactory(paymentFeesCellValueFactory)
+    paymentRelayedFeesColumn.setCellFactory(paymentMoneyCellFactory)
+    paymentRelayedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentRelayedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
     paymentRelayedTable.setRowFactory(paymentRowFactory)
   }
 
@@ -228,16 +236,26 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
       })
     }
 
-  private def paymentHashCellFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
+  private def paymentHashCellValueFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.hash.toString)
   }
-  private def paymentFeesCellFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
+  private def paymentFeesCellValueFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
     def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.fees.amount)
   }
-  private def paymentAmountCellFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
+  private def paymentAmountCellValueFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
     def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.amount.amount)
   }
-  private def paymentDateCellFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
+  private def paymentMoneyCellFactory = new Callback[TableColumn[Payment, Number], TableCell[Payment, Number]]() {
+    def call(pn: TableColumn[Payment, Number]) = {
+      new TableCell[Payment, Number] () {
+        override def updateItem(item: Number, empty: Boolean): Unit = {
+          super.updateItem(item, empty)
+          if (item != null) setText(moneyFormatter.format(item))
+        }
+      }
+    }
+  }
+  private def paymentDateCellValueFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.receivedAt.format(PAYMENT_DATE_FORMAT))
   }
   private def paymentRowFactory = new Callback[TableView[Payment], TableRow[Payment]]() {
