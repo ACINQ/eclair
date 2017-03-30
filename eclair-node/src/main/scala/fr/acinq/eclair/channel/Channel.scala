@@ -321,7 +321,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
     case Event(msg: FundingLocked, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       log.info(s"received their FundingLocked, deferring message")
-      goto(stateName) using d.copy(deferred = Some(msg))
+      stay using d.copy(deferred = Some(msg))
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, deferred, lastSent)) =>
       blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
@@ -963,7 +963,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       if (nextState != state) {
         context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, nextStateData))
       }
-      forwarder ! StoreAndForward(nextState, nextStateData, Helpers.extractOutgoingMessages(state, nextState, stateData, nextStateData))
+      val outgoing = Helpers.extractOutgoingMessages(state, nextState, stateData, nextStateData)
+      log.debug(s"outgoing messages: ${outgoing.map(_.getClass.getName).mkString(",")}")
+      forwarder ! StoreAndForward(nextState, nextStateData, outgoing)
   }
 
   /*
