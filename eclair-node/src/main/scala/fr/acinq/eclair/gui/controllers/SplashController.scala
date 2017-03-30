@@ -26,20 +26,13 @@ class SplashController(hostServices: HostServices) extends Logging {
     * Start an animation when the splash window is initialized
     */
   @FXML def initialize = {
-    val t = new HBox()
-    t.prefHeightProperty()
-
-    val timeline = new Timeline()
-
-    val startKF = new KeyFrame(Duration.ZERO,
-      new KeyValue(img.opacityProperty, double2Double(0), Interpolator.EASE_IN),
-      new KeyValue(imgBlurred.opacityProperty, double2Double(1.0), Interpolator.EASE_IN))
-
-    val endKF = new KeyFrame(Duration.millis(1000.0d),
-      new KeyValue(img.opacityProperty, double2Double(1.0), Interpolator.EASE_OUT),
-      new KeyValue(imgBlurred.opacityProperty, double2Double(0), Interpolator.EASE_OUT))
-
-    timeline.getKeyFrames.addAll(startKF, endKF)
+    val timeline = new Timeline(
+      new KeyFrame(Duration.ZERO,
+        new KeyValue(img.opacityProperty, double2Double(0), Interpolator.EASE_IN),
+        new KeyValue(imgBlurred.opacityProperty, double2Double(1.0), Interpolator.EASE_IN)),
+      new KeyFrame(Duration.millis(1000.0d),
+        new KeyValue(img.opacityProperty, double2Double(1.0), Interpolator.EASE_OUT),
+        new KeyValue(imgBlurred.opacityProperty, double2Double(0), Interpolator.EASE_OUT)))
     timeline.play()
   }
 
