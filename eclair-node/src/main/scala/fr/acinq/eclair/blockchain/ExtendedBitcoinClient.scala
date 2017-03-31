@@ -158,10 +158,10 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(tx2Hex(tx))
 
-  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, fee: Satoshi)(implicit ec: ExecutionContext): Future[(Transaction, Transaction, Int)] = {
+  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
     // this is the funding tx that we want to publish
     val (partialTx, pubkeyScript) = Transactions.makePartialFundingTx(amount, localFundingPubkey, remoteFundingPubkey)
-
+    val parentFee = Satoshi(250 * 2 * 2 * feeRatePerKw / 1024)
     val future = for {
     // ask for a new address and the corresponding private key
       JString(address) <- client.invoke("getnewaddress")
@@ -169,7 +169,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
       pub = priv.publicKey
       // create a tx that sends money to a WPKH output that matches our private key
-      tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + fee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0L)
+      tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + parentFee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0L)
       FundTransactionResponse(tx1, changePos, fee) <- fundTransaction(tx)
       // this is the first tx that we will publish, a standard tx which send money to our p2wpkh address
       SignTransactionResponse(tx2, true) <- signTransaction(tx1)
@@ -179,7 +179,10 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       sig = Transaction.signInput(tx3, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx2.txOut(pos).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
       tx4 = tx3.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
       _ = Transaction.correctlySpends(tx4, tx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-    } yield (tx2, tx4, 0)
+      // TODO: we publish the parent tx. we assume that the peer will reply very soon and our child funding tx
+      // will be mined in the same block
+      _ <- publishTransaction(tx2)
+    } yield (tx4, 0)
 
     future
   }

@@ -34,9 +34,8 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   * Publish the provided tx as soon as possible depending on locktime and csv
   */
 final case class PublishAsap(tx: Transaction)
-final case class PublishParentAndChild(parentTx :Transaction, childTx: Transaction)
-final case class MakeFundingTx(localCommitPub: PublicKey, remoteCommitPub: PublicKey, amount: Satoshi, fee: Satoshi)
-final case class MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int)
+final case class MakeFundingTx(localCommitPub: PublicKey, remoteCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)
+final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int)
 final case class GetTx(blockHeight: Int, txIndex: Int, outputIndex: Int, ctx: LightningMessage)
 final case class GetTxResponse(tx: Transaction, isSpendable: Boolean, ctx: LightningMessage)
 

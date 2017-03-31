@@ -42,7 +42,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishParentAndChild]
+      alice2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
       alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
