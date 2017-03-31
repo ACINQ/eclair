@@ -5,6 +5,7 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.feerateKB2Kw
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{Globals, NodeParams}
@@ -56,11 +57,11 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
       client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
-        case feerate if feerate > 0 =>
-          log.debug(s"setting feeratePerKw=${feerate / 2}")
-          // TODO: improve ? we estimate that fee-rate-per-kw is roughly fee-rate-per-kw / 2 for a standard commit tx
-          Globals.feeratePerKw.set(feerate / 2)
-          context.system.eventStream.publish(CurrentFeerate(feerate))
+        case feeratePerKB if feeratePerKB > 0 =>
+          val feeratePerKw = feerateKB2Kw(feeratePerKB)
+          log.debug(s"setting feeratePerKB=$feeratePerKB -> feeratePerKw=$feeratePerKw")
+          Globals.feeratePerKw.set(feeratePerKw)
+          context.system.eventStream.publish(CurrentFeerate(feeratePerKw))
         case _ => () // bitcoind cannot estimate feerate
       }
       // TODO: beware of the herd effect
