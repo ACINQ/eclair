@@ -35,10 +35,19 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
 
   def getTxBlockHash(txId: String)(implicit ec: ExecutionContext): Future[Option[String]] =
     client.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
-      .map(json => Some((json \ "blockhash").extract[String]))
+      .map(json => (json \ "blockhash").extractOpt[String])
       .recover {
         case t: JsonRPCError if t.error.code == -5 => None
       }
+
+  def getBlockHashesSinceBlockHash(blockHash: String, previous: Seq[String] = Nil)(implicit ec: ExecutionContext): Future[Seq[String]] =
+    for {
+      nextblockhash_opt <- client.invoke("getblock", blockHash).map(json => ((json \ "nextblockhash").extractOpt[String]))
+      res <- nextblockhash_opt match {
+        case Some(nextBlockHash) => getBlockHashesSinceBlockHash(nextBlockHash, previous :+ nextBlockHash)
+        case None => Future.successful(previous)
+      }
+    } yield res
 
   def getTxsSinceBlockHash(blockHash: String, previous: Seq[Transaction] = Nil)(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
@@ -50,6 +59,11 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       }
     } yield res
 
+  def getMempool()(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
+    for {
+      txids <- client.invoke("getrawmempool").map(json => json.extract[List[String]])
+      txs <- Future.sequence(txids.map(getTransaction(_)))
+    } yield txs
 
   /**
     * *used in interop test*
@@ -219,3 +233,19 @@ object ExtendedBitcoinClient {
 
 }
 
+
+/*object Test extends App {
+
+  import scala.concurrent.duration._
+  import ExecutionContext.Implicits.global
+  implicit val system = ActorSystem()
+  implicit val timeout = Timeout(30 seconds)
+
+  val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
+    user = "foo",
+    password = "bar",
+    host = "localhost",
+    port = 28332))
+
+  println(Await.result(bitcoin_client.getTxBlockHash("dcb0abfa822402ce379fedd7bbbb2c824e53ef300313594c39282da1efd35f17"), 10 seconds))
+}*/

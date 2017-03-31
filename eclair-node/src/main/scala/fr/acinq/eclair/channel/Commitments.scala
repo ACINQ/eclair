@@ -1,9 +1,9 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.{Point, sha256}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.Globals
-import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
@@ -41,7 +41,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 
-  def hasTimedoutHtlcs(blockheight: Long): Boolean =
+  def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
     localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
       remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)
 
@@ -204,10 +204,16 @@ object Commitments extends Logging {
       }
     }
 
-  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC): (Commitments, UpdateFailHtlc) =
+  def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
       case Some(htlc) =>
-        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, cmd.reason)
+        // we need the shared secret to build the error packet
+        val sharedSecret = Sphinx.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).sharedSecret
+        val reason = cmd.reason match {
+          case Left(forwarded) => Sphinx.forwardErrorPacket(forwarded, sharedSecret)
+          case Right(failure) => Sphinx.createErrorPacket(sharedSecret, failure)
+        }
+        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
         val commitments1 = addLocalProposal(commitments, fail)
         (commitments1, fail)
       case None => throw new RuntimeException(s"unknown htlc id=${cmd.id}")

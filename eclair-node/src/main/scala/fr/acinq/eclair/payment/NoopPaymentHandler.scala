@@ -7,15 +7,12 @@ import akka.actor.{Actor, ActorLogging, ActorRef}
   */
 class NoopPaymentHandler extends Actor with ActorLogging {
 
-  override def receive: Receive = {
-    case handler: ActorRef => {
-      log.info(s"registering actor $handler as payment handler")
-      context.become(forward(handler))
-    }
-    case _ => {} // no-op
-  }
+  override def receive: Receive = forward(context.system.deadLetters)
 
   def forward(handler: ActorRef): Receive = {
+    case newHandler: ActorRef =>
+      log.info(s"registering actor $handler as payment handler")
+      context become forward(newHandler)
     case msg => handler forward msg
   }
 

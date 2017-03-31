@@ -18,7 +18,7 @@ import scala.util.Random
 // @formatter:off
 
 case object Reconnect
-//case class ChannelIdSwitch(previousId: Long, nextId: Long)
+case object Disconnect
 
 sealed trait OfflineChannel
 case class BrandNewChannel(c: NewChannel) extends OfflineChannel
@@ -67,8 +67,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
       goto(INITIALIZING) using InitializingData(transport, offlineChannels)
 
-    case Event(Terminated(actor), d@DisconnectedData(offlineChannels)) if offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.isDefined =>
-      val h = offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.toSeq
+    case Event(Terminated(actor), d@DisconnectedData(offlineChannels)) if offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.isDefined =>
+      val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
   }
 
@@ -110,8 +110,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.warning(s"lost connection to $remoteNodeId")
       goto(DISCONNECTED) using DisconnectedData(offlineChannels)
 
-    case Event(Terminated(actor), d@InitializingData(_, offlineChannels)) if offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.isDefined =>
-      val h = offlineChannels.collectFirst{ case h: HotChannel if h.a == actor => h}.toSeq
+    case Event(Terminated(actor), d@InitializingData(_, offlineChannels)) if offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.isDefined =>
+      val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
   }
 
@@ -158,6 +158,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
     case Event(msg: RoutingMessage, _) =>
       router forward msg
+      stay
+
+    case Event(Disconnect, ConnectedData(transport, _, _)) =>
+      transport ! PoisonPill
       stay
 
     case Event(Terminated(actor), ConnectedData(transport, _, channels)) if actor == transport =>

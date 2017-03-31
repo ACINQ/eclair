@@ -6,11 +6,10 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.SigVersion._
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.peer.NewBlock
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.{TestConstants, randomKey}
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions
+import fr.acinq.eclair.{TestConstants, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
