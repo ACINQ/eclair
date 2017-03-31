@@ -2,7 +2,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
 import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
@@ -23,7 +23,7 @@ case class PaymentFailed(paymentHash: BinaryData, error: Option[ErrorPacket]) ex
 sealed trait Data
 case object WaitingForRequest extends Data
 case class WaitingForRoute(sender: ActorRef, c: CreatePayment, attempts: Int) extends Data
-case class WaitingForComplete(sender: ActorRef, c: CreatePayment, attempts: Int, sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long], hops: Seq[Hop]) extends Data
+case class WaitingForComplete(sender: ActorRef, c: CreatePayment, cmd: CMD_ADD_HTLC, attempts: Int, sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long], hops: Seq[Hop]) extends Data
 
 sealed trait State
 case object WAITING_FOR_REQUEST extends State
@@ -52,7 +52,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val firstHop = hops.head
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, attempts + 1, sharedSecrets, ignoreNodes, ignoreChannels, hops)
+      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, attempts + 1, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(f@Failure(t), WaitingForRoute(s, c, _)) =>
       s ! PaymentFailed(c.paymentHash, error = None)
@@ -68,9 +68,10 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
     case Event(fulfill: UpdateFulfillHtlc, w: WaitingForComplete) =>
       w.sender ! PaymentSucceeded(fulfill.paymentPreimage)
+      context.system.eventStream.publish(PaymentSent(MilliSatoshi(w.c.amountMsat), MilliSatoshi(w.cmd.amountMsat - w.c.amountMsat), w.cmd.paymentHash))
       stop(FSM.Normal)
 
-    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, attempts, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
+    case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, attempts, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
         case e@Some(ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // TODO: spec says: that MAY retry the payment in certain conditions, see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#receiving-failure-codes

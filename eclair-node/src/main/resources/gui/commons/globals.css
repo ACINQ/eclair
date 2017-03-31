@@ -48,11 +48,17 @@
 	-fx-text-fill: rgb(146,149,151);
 }
 
+.align-right {
+    /* useful for table columns */
+    -fx-alignment: CENTER_RIGHT;
+}
+
 /* ---------- Context Menu ---------- */
 
 .context-menu {
     -fx-padding: 4px;
     -fx-font-weight: normal;
+    -fx-font-size: 12px;
 }
 .context-menu .menu-item:focused {
    -fx-background-color: rgb(63,179,234);
@@ -62,6 +68,11 @@
 }
 .context-menu .separator {
     -fx-padding: 2px 0;
+}
+
+.menu-bar .context-menu {
+    /* font size in menu context popup is standard */
+    -fx-font-size: 14px;
 }
 
 /* ---------- Grid Structure ---------- */

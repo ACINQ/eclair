@@ -52,13 +52,13 @@ class Handlers(setup: Setup) extends Logging {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
     (paymentInitiator ? CreatePayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
       case Success(PaymentSucceeded(_)) =>
-        val message = s"Amount (mSat): $amountMsat\nH: $paymentHash"
+        val message = s"Amount (msat): $amountMsat\nH: $paymentHash"
         notification("Payment Successful", message, NOTIFICATION_SUCCESS)
       case Success(PaymentFailed(_, reason)) =>
-        val message = s"Cause: ${reason.getOrElse("unknown")}\nAmount (mSat): $amountMsat\nH: $paymentHash"
+        val message = s"Cause: ${reason.getOrElse("unknown")}\nAmount (msat): $amountMsat\nH: $paymentHash"
         notification("Payment Failed", message, NOTIFICATION_ERROR)
       case Failure(t) =>
-        val message = s"Cause: ${t.getMessage}\nAmount (mSat): $amountMsat\nH: $paymentHash"
+        val message = s"Cause: ${t.getMessage}\nAmount (msat): $amountMsat\nH: $paymentHash"
         notification("Payment Failed", message, NOTIFICATION_ERROR)
     }
   }

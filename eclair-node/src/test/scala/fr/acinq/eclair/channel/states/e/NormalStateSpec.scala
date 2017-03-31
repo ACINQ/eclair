@@ -85,7 +85,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           unackedMessages = initialState.commitments.unackedMessages :+ htlc)))
-      relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Relayed(originHtlc)))
+      relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Relayed(sender.ref, originHtlc)))
     }
   }
 

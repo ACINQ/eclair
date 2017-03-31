@@ -13,6 +13,7 @@ import akka.actor.{Props, SupervisorStrategy}
 import akka.stream.StreamTcpException
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
+import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
 import fr.acinq.eclair.{Setup, SimpleSupervisor, TCPBindException}
 import grizzled.slf4j.Logging
@@ -42,6 +43,7 @@ class FxApp extends Application with Logging {
           val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller, setup), "gui-updater", SupervisorStrategy.Resume))
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
 
           Platform.runLater(new Runnable {
             override def run(): Unit = {
@@ -51,7 +53,7 @@ class FxApp extends Application with Logging {
               val scene = new Scene(mainRoot)
 
               primaryStage.setTitle("Eclair")
-              primaryStage.setMinWidth(570)
+              primaryStage.setMinWidth(600)
               primaryStage.setWidth(650)
               primaryStage.setMinHeight(400)
               primaryStage.setHeight(400)

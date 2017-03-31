@@ -5,7 +5,6 @@ import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
 import javafx.scene.layout.VBox
-import collection.JavaConversions._
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -14,9 +13,12 @@ import fr.acinq.eclair.Setup
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
 import fr.acinq.eclair.io.Reconnect
+import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
+
+import scala.collection.JavaConversions._
 
 
 /**
@@ -139,5 +141,17 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
       mainController.networkChannelsList.removeIf(new Predicate[ChannelAnnouncement] {
         override def test(ca: ChannelAnnouncement) = ca.shortChannelId == shortChannelId
       })
+
+    case p: PaymentSent =>
+      log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.amount}, fees=${p.feesPaid}")
+      mainController.paymentSentList.prepend(p)
+
+    case p: PaymentReceived =>
+      log.debug(s"payment received with h=${p.paymentHash}, amount=${p.amount}")
+      mainController.paymentReceivedList.prepend(p)
+
+    case p: PaymentRelayed =>
+      log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amount}, feesEarned=${p.feesEarned}")
+      mainController.paymentRelayedList.prepend(p)
   }
 }

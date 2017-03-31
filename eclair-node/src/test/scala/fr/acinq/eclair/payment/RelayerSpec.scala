@@ -3,7 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Transaction, TxIn}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, OutPoint, Transaction, TxIn}
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
@@ -101,6 +101,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.expectNoMsg(1 second)
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
+
     paymentHandler.expectNoMsg(1 second)
 
     assert(cmd_bc.upstream_opt === Some(add_ab))
@@ -198,6 +199,9 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
     val channel_ab = TestProbe()
     val channel_bc = TestProbe()
+    val eventListener = TestProbe()
+
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     val add_ab = {
       val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
@@ -211,15 +215,16 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
     // preimage is wrong, does not matter here
     val fulfill_cb = UpdateFulfillHtlc(channelId = add_bc.channelId, id = add_bc.id, paymentPreimage = "00" * 32)
     sender.send(relayer, ForwardFulfill(fulfill_cb))
 
     val fulfill_ba = channel_ab.expectMsgType[CMD_FULFILL_HTLC]
 
-    assert(fulfill_ba.id === add_ab.id)
+    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(add_ab.amountMsat), MilliSatoshi(add_ab.amountMsat - cmd_bc.amountMsat), add_ab.paymentHash))
 
+    assert(fulfill_ba.id === add_ab.id)
   }
 
   test("relay an htlc-fail") { case (relayer, paymentHandler) =>
@@ -239,7 +244,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
     val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), TemporaryChannelFailure))
     sender.send(relayer, ForwardFail(fail_cb))
 
@@ -266,7 +271,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
 
     // actual test starts here
     val tx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessHtlcSuccess("11" * 70, "22" * 70, paymentPreimage, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
@@ -294,7 +299,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
 
     // actual test starts here
     val tx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx("11" * 70, paymentPreimage, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)

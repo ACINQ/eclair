@@ -1,5 +1,9 @@
 package fr.acinq.eclair.gui.controllers
 
+import java.text.NumberFormat
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
@@ -21,6 +25,7 @@ import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
@@ -52,7 +57,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val networkNodesList:ObservableList[NodeAnnouncement] = FXCollections.observableArrayList[NodeAnnouncement]()
+  val networkNodesList: ObservableList[NodeAnnouncement] = FXCollections.observableArrayList[NodeAnnouncement]()
   @FXML var networkNodesTab: Tab = _
   @FXML var networkNodesTable: TableView[NodeAnnouncement] = _
   @FXML var networkNodesIdColumn: TableColumn[NodeAnnouncement, String] = _
@@ -61,12 +66,41 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList:ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
+  val networkChannelsList: ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
   @FXML var networkChannelsTab: Tab = _
   @FXML var networkChannelsTable: TableView[ChannelAnnouncement] = _
   @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, Number] = _
   @FXML var networkChannelsNode1Column: TableColumn[ChannelAnnouncement, String] = _
   @FXML var networkChannelsNode2Column: TableColumn[ChannelAnnouncement, String] = _
+
+  // payment sent table
+  val paymentSentList = FXCollections.observableArrayList[PaymentSent]()
+  @FXML var paymentSentTab: Tab = _
+  @FXML var paymentSentTable: TableView[PaymentSent] = _
+  @FXML var paymentSentAmountColumn: TableColumn[PaymentSent, Number] = _
+  @FXML var paymentSentFeesColumn: TableColumn[PaymentSent, Number] = _
+  @FXML var paymentSentHashColumn: TableColumn[PaymentSent, String] = _
+  @FXML var paymentSentDateColumn: TableColumn[PaymentSent, String] = _
+
+  // payment received table
+  val paymentReceivedList = FXCollections.observableArrayList[PaymentReceived]()
+  @FXML var paymentReceivedTab: Tab = _
+  @FXML var paymentReceivedTable: TableView[PaymentReceived] = _
+  @FXML var paymentReceivedAmountColumn: TableColumn[PaymentReceived, Number] = _
+  @FXML var paymentReceivedHashColumn: TableColumn[PaymentReceived, String] = _
+  @FXML var paymentReceivedDateColumn: TableColumn[PaymentReceived, String] = _
+
+  // payment relayed table
+  val paymentRelayedList = FXCollections.observableArrayList[PaymentRelayed]()
+  @FXML var paymentRelayedTab: Tab = _
+  @FXML var paymentRelayedTable: TableView[PaymentRelayed] = _
+  @FXML var paymentRelayedAmountColumn: TableColumn[PaymentRelayed, Number] = _
+  @FXML var paymentRelayedFeesColumn: TableColumn[PaymentRelayed, Number] = _
+  @FXML var paymentRelayedHashColumn: TableColumn[PaymentRelayed, String] = _
+  @FXML var paymentRelayedDateColumn: TableColumn[PaymentRelayed, String] = _
+
+  val PAYMENT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+  val moneyFormatter = NumberFormat.getInstance(Locale.getDefault)
 
   /**
     * Initialize the main window.
@@ -90,7 +124,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init context
     contextMenu = ContextMenuUtils.buildCopyContext(List(
       new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}"),
-      new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${setup.nodeParams.address.getHostString}:${setup.nodeParams.address.getPort}" )))
+      new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${setup.nodeParams.address.getHostString}:${setup.nodeParams.address.getPort}")))
 
     // init channels tab
     if (channelBox.getChildren.size() > 0) {
@@ -113,11 +147,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init all nodes
     networkNodesTable.setItems(networkNodesList)
     networkNodesList.addListener(new ListChangeListener[NodeAnnouncement] {
-      override def onChanged(c: Change[_ <: NodeAnnouncement]) = {
-        Platform.runLater(new Runnable() {
-          override def run = networkNodesTab.setText(s"All Nodes (${networkNodesList.size})")
-        })
-      }
+      override def onChanged(c: Change[_ <: NodeAnnouncement]) = updateTabHeader(networkNodesTab, "All Nodes", networkNodesList)
     })
     networkNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.nodeId.toString)
@@ -135,7 +165,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     })
     networkNodesRGBColumn.setCellFactory(new Callback[TableColumn[NodeAnnouncement, String], TableCell[NodeAnnouncement, String]]() {
       def call(pn: TableColumn[NodeAnnouncement, String]) = {
-        new TableCell[NodeAnnouncement, String] () {
+        new TableCell[NodeAnnouncement, String]() {
           override def updateItem(item: String, empty: Boolean): Unit = {
             super.updateItem(item, empty)
             setStyle("-fx-background-color:" + item)
@@ -150,11 +180,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init all channels
     networkChannelsTable.setItems(networkChannelsList)
     networkChannelsList.addListener(new ListChangeListener[ChannelAnnouncement] {
-      override def onChanged(c: Change[_ <: ChannelAnnouncement]) = {
-        Platform.runLater(new Runnable() {
-          override def run = networkChannelsTab.setText(s"All Channels (${networkChannelsList.size})")
-        })
-      }
+      override def onChanged(c: Change[_ <: ChannelAnnouncement]) = updateTabHeader(networkChannelsTab, "All Channels", networkChannelsList)
     })
     networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, Number], ObservableValue[Number]]() {
       def call(pc: CellDataFeatures[ChannelAnnouncement, Number]) = new SimpleLongProperty(pc.getValue.shortChannelId)
@@ -168,10 +194,106 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     networkChannelsTable.setRowFactory(new Callback[TableView[ChannelAnnouncement], TableRow[ChannelAnnouncement]]() {
       override def call(table: TableView[ChannelAnnouncement]): TableRow[ChannelAnnouncement] = setupPeerChannelContextMenu
     })
+
+    // init payment sent
+    paymentSentTable.setItems(paymentSentList)
+    paymentSentList.addListener(new ListChangeListener[PaymentSent] {
+      override def onChanged(c: Change[_ <: PaymentSent]) = updateTabHeader(paymentSentTab, "Sent", paymentSentList)
+    })
+    paymentSentAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSent, Number], ObservableValue[Number]]() {
+      def call(p: CellDataFeatures[PaymentSent, Number]) = new SimpleLongProperty(p.getValue.amount.amount)
+    })
+    paymentSentAmountColumn.setCellFactory(new Callback[TableColumn[PaymentSent, Number], TableCell[PaymentSent, Number]]() {
+      def call(pn: TableColumn[PaymentSent, Number]) = buildMoneyTableCell
+    })
+    paymentSentFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSent, Number], ObservableValue[Number]]() {
+      def call(p: CellDataFeatures[PaymentSent, Number]) = new SimpleLongProperty(p.getValue.feesPaid.amount)
+    })
+    paymentSentFeesColumn.setCellFactory(new Callback[TableColumn[PaymentSent, Number], TableCell[PaymentSent, Number]]() {
+      def call(pn: TableColumn[PaymentSent, Number]) = buildMoneyTableCell
+    })
+    paymentSentHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentSentDateColumn.setCellValueFactory(paymentDateCellValueFactory)
+    paymentSentTable.setRowFactory(paymentRowFactory)
+
+    // init payment received
+    paymentReceivedTable.setItems(paymentReceivedList)
+    paymentReceivedList.addListener(new ListChangeListener[PaymentReceived] {
+      override def onChanged(c: Change[_ <: PaymentReceived]) = updateTabHeader(paymentReceivedTab, "Received", paymentReceivedList)
+    })
+    paymentReceivedAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentReceived, Number], ObservableValue[Number]]() {
+      def call(p: CellDataFeatures[PaymentReceived, Number]) = new SimpleLongProperty(p.getValue.amount.amount)
+    })
+    paymentReceivedAmountColumn.setCellFactory(new Callback[TableColumn[PaymentReceived, Number], TableCell[PaymentReceived, Number]]() {
+      def call(pn: TableColumn[PaymentReceived, Number]) = buildMoneyTableCell
+    })
+    paymentReceivedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentReceivedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
+    paymentReceivedTable.setRowFactory(paymentRowFactory)
+
+    // init payment relayed
+    paymentRelayedTable.setItems(paymentRelayedList)
+    paymentRelayedList.addListener(new ListChangeListener[PaymentRelayed] {
+      override def onChanged(c: Change[_ <: PaymentRelayed]) = updateTabHeader(paymentRelayedTab, "Relayed", paymentRelayedList)
+    })
+    paymentRelayedAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayed, Number], ObservableValue[Number]]() {
+      def call(p: CellDataFeatures[PaymentRelayed, Number]) = new SimpleLongProperty(p.getValue.amount.amount)
+    })
+    paymentRelayedAmountColumn.setCellFactory(new Callback[TableColumn[PaymentRelayed, Number], TableCell[PaymentRelayed, Number]]() {
+      def call(pn: TableColumn[PaymentRelayed, Number]) = buildMoneyTableCell
+    })
+    paymentRelayedFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayed, Number], ObservableValue[Number]]() {
+      def call(p: CellDataFeatures[PaymentRelayed, Number]) = new SimpleLongProperty(p.getValue.feesEarned.amount)
+    })
+    paymentRelayedFeesColumn.setCellFactory(new Callback[TableColumn[PaymentRelayed, Number], TableCell[PaymentRelayed, Number]]() {
+      def call(pn: TableColumn[PaymentRelayed, Number]) = buildMoneyTableCell
+    })
+    paymentRelayedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentRelayedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
+    paymentRelayedTable.setRowFactory(paymentRowFactory)
+  }
+
+  private def updateTabHeader(tab: Tab, prefix: String, items: ObservableList[_]) = {
+    Platform.runLater(new Runnable() {
+      override def run = tab.setText(s"$prefix (${items.size})")
+    })
+  }
+
+  private def paymentHashCellValueFactory[T <: PaymentEvent] = new Callback[CellDataFeatures[T, String], ObservableValue[String]]() {
+    def call(p: CellDataFeatures[T, String]) = new SimpleStringProperty(p.getValue.paymentHash.toString)
+  }
+
+  private def buildMoneyTableCell[T <: PaymentEvent] = new TableCell[T, Number]() {
+    override def updateItem(item: Number, empty: Boolean) = {
+      super.updateItem(item, empty)
+      if (item != null && !empty) setText(moneyFormatter.format(item))
+    }
+  }
+
+  private def paymentDateCellValueFactory[T <: PaymentEvent] = new Callback[CellDataFeatures[T, String], ObservableValue[String]]() {
+    def call(p: CellDataFeatures[T, String]) = new SimpleStringProperty(LocalDateTime.now.format(PAYMENT_DATE_FORMAT))
+  }
+
+  private def paymentRowFactory[T <: PaymentEvent] = new Callback[TableView[T], TableRow[T]]() {
+    override def call(table: TableView[T]): TableRow[T] = {
+      val row = new TableRow[T]
+      val rowContextMenu = new ContextMenu
+      val copyHash = new MenuItem("Copy Payment Hash")
+      copyHash.setOnAction(new EventHandler[ActionEvent] {
+        override def handle(event: ActionEvent) = Option(row.getItem) match {
+          case Some(p) => ContextMenuUtils.copyToClipboard(p.paymentHash.toString)
+          case None =>
+        }
+      })
+      rowContextMenu.getItems.addAll(copyHash)
+      row.setContextMenu(rowContextMenu)
+      row
+    }
   }
 
   /**
     * Create a row for a node with context actions (copy node uri and id).
+    *
     * @return TableRow the created row
     */
   private def setupPeerNodeContextMenu(): TableRow[NodeAnnouncement] = {
@@ -200,6 +322,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
 
   /**
     * Create a row for a PeerChannel with Copy context actions.
+    *
     * @return TableRow the created row
     */
   private def setupPeerChannelContextMenu(): TableRow[ChannelAnnouncement] = {

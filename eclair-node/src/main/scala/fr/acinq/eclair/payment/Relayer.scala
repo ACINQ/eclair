@@ -2,7 +2,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, ripemd160, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, ScriptWitness, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, ScriptWitness, Transaction}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
@@ -20,7 +20,7 @@ case class OutgoingChannel(channelId: BinaryData, channel: ActorRef, nodeAddress
 
 sealed trait Origin
 case class Local(sender: ActorRef) extends Origin
-case class Relayed(upstream: UpdateAddHtlc) extends Origin
+case class Relayed(upstream: ActorRef, htlcIn: UpdateAddHtlc) extends Origin
 
 case class AddHtlcSucceeded(add: UpdateAddHtlc, origin: Origin)
 case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: FailureMessage)
@@ -42,9 +42,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
   override def receive: Receive = main(Set(), Map(), Map(), Map())
 
-  case class DownstreamHtlcId(channelId: BinaryData, htlcId: Long)
-
-  def main(channels: Set[OutgoingChannel], bindings: Map[DownstreamHtlcId, Origin], shortIds: Map[BinaryData, Long], channelUpdates: Map[Long, ChannelUpdate]): Receive = {
+  def main(channels: Set[OutgoingChannel], bindings: Map[UpdateAddHtlc, Origin], shortIds: Map[BinaryData, Long], channelUpdates: Map[Long, ChannelUpdate]): Receive = {
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
       import d.commitments.channelId
@@ -95,7 +93,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
             case _ =>
               val downstream = outgoingChannel.channel
               log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
-              downstream ! CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
+              downstream forward CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
           }
         case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
           log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")
@@ -112,57 +110,50 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
     case AddHtlcSucceeded(downstream, origin) =>
       origin match {
         case Local(_) => log.info(s"we are the origin of htlc ${downstream.channelId}/${downstream.id}")
-        case Relayed(upstream) => log.info(s"relayed htlc ${upstream.channelId}/${upstream.id} to ${downstream}/${downstream.id}")
+        case Relayed(_, upstream) => log.info(s"relayed htlc ${upstream.channelId}/${upstream.id} to ${downstream.channelId}/${downstream.id}")
       }
-      context become main(channels, bindings + (DownstreamHtlcId(downstream.channelId, downstream.id) -> origin), shortIds, channelUpdates)
+      context become main(channels, bindings + (downstream -> origin), shortIds, channelUpdates)
 
     case AddHtlcFailed(CMD_ADD_HTLC(_, _, _, onion, Some(updateAddHtlc), _), failure) if channels.exists(_.channelId == updateAddHtlc.channelId) =>
       val upstream = channels.find(_.channelId == updateAddHtlc.channelId).get.channel
       upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(failure), commit = true)
 
     case ForwardFulfill(fulfill) =>
-      val downstream = DownstreamHtlcId(fulfill.channelId, fulfill.id)
-      bindings.get(downstream) match {
-        case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
-          val upstream = channels.find(_.channelId == origin.channelId).get.channel
-          upstream ! CMD_FULFILL_HTLC(origin.id, fulfill.paymentPreimage, commit = true)
-        case Some(Relayed(origin)) =>
-          log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case Some(Local(origin)) =>
+      bindings.find(b => b._1.channelId == fulfill.channelId && b._1.id == fulfill.id) match {
+        case Some((htlcOut, Relayed(upstream, htlcIn))) =>
+          upstream ! CMD_FULFILL_HTLC(htlcIn.id, fulfill.paymentPreimage, commit = true)
+          context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(htlcIn.amountMsat), MilliSatoshi(htlcIn.amountMsat - htlcOut.amountMsat), htlcIn.paymentHash))
+          context become main(channels, bindings - htlcOut, shortIds, channelUpdates)
+        case Some((htlcOut, Local(origin))) =>
           log.info(s"we were the origin payer for htlc #${fulfill.id}")
           origin ! fulfill
+          context become main(channels, bindings - htlcOut, shortIds, channelUpdates)
         case None =>
           log.warning(s"no origin found for htlc ${fulfill.channelId}/${fulfill.id}")
       }
-      context become (main(channels, bindings - downstream, shortIds, channelUpdates))
 
     case ForwardFail(fail) =>
-      val downstream = DownstreamHtlcId(fail.channelId, fail.id)
-      bindings.get(downstream) match {
-        case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
-          val upstream = channels.find(_.channelId == origin.channelId).get.channel
-          upstream ! CMD_FAIL_HTLC(origin.id, Left(fail.reason), commit = true)
-        case Some(Relayed(origin)) =>
-          log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case Some(Local(origin)) =>
+      bindings.find(b => b._1.channelId == fail.channelId && b._1.id == fail.id) match {
+        case Some((htlcOut, Relayed(upstream, htlcIn))) =>
+          upstream ! CMD_FAIL_HTLC(htlcIn.id, Left(fail.reason), commit = true)
+          context become main(channels, bindings - htlcOut, shortIds, channelUpdates)
+        case Some((htlcOut, Local(origin))) =>
           log.info(s"we were the origin payer for htlc #${fail.id}")
           origin ! fail
+          context become main(channels, bindings - htlcOut, shortIds, channelUpdates)
         case None =>
           log.warning(s"no origin found for htlc ${fail.channelId}/${fail.id}")
       }
-      context become (main(channels, bindings - downstream, shortIds, channelUpdates))
 
     case ForwardFailMalformed(fail) =>
-      val downstream = DownstreamHtlcId(fail.channelId, fail.id)
-      bindings.get(downstream) match {
-        case Some(Relayed(origin)) if channels.exists(_.channelId == origin.channelId) =>
-          val upstream = channels.find(_.channelId == origin.channelId).get.channel
-          upstream ! CMD_FAIL_MALFORMED_HTLC(origin.id, fail.onionHash, fail.failureCode, commit = true)
-        case Some(Relayed(origin)) =>
-          log.warning(s"origin channel ${origin.channelId} has disappeared in the meantime")
-        case Some(Local(origin)) =>
+      bindings.find(b => b._1.channelId == fail.channelId && b._1.id == fail.id) match {
+        case Some((htlcOut, Relayed(upstream, htlcIn))) =>
+          upstream ! CMD_FAIL_MALFORMED_HTLC(htlcIn.id, fail.onionHash, fail.failureCode, commit = true)
+          context become main(channels, bindings - htlcOut, shortIds, channelUpdates)
+        case Some((htlcOut, Local(origin))) =>
           log.info(s"we were the origin payer for htlc #${fail.id}")
           origin ! fail
+          context become main(channels, bindings - htlcOut, shortIds, channelUpdates)
         case None =>
           log.warning(s"no origin found for htlc ${fail.channelId}/${fail.id}")
       }
@@ -190,30 +181,19 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (claim-htlc-timeout)")
           paymentHash160
       }
-      val downstreams = bindings.collect {
-        case b@(downstream, Relayed(origin)) if origin.paymentHash == sha256(extracted) =>
-          log.warning(s"found a match between preimage=$extracted and origin htlc=$origin")
-          channels.find(_.channelId == origin.channelId) match {
-            case Some(outgoingChannel) =>
-              val upstream = outgoingChannel.channel
-              upstream ! CMD_FULFILL_HTLC(origin.id, extracted, commit = true)
-            case None => log.warning(s"could not find channel for channelId=${origin.channelId}")
-          }
-          downstream
-        case b@(downstream, Relayed(origin)) if ripemd160(origin.paymentHash) == extracted =>
-          log.warning(s"found a match between paymentHash160=$extracted and origin htlc=$origin")
-          channels.find(_.channelId == origin.channelId) match {
-            case Some(outgoingChannel) =>
-              val upstream = outgoingChannel.channel
-              upstream ! CMD_FAIL_HTLC(origin.id, Right(PermanentChannelFailure), commit = true)
-            case None => log.warning(s"could not find channel for channelId=${origin.channelId}")
-          }
-          downstream
+      val htlcsOut = bindings.collect {
+        case b@(htlcOut, Relayed(upstream, htlcIn)) if htlcIn.paymentHash == sha256(extracted) =>
+          log.warning(s"found a match between preimage=$extracted and origin htlc=$htlcIn")
+          upstream ! CMD_FULFILL_HTLC(htlcIn.id, extracted, commit = true)
+          htlcOut
+        case b@(htlcOut, Relayed(upstream, htlcIn)) if ripemd160(htlcIn.paymentHash) == extracted =>
+          log.warning(s"found a match between paymentHash160=$extracted and origin htlc=$htlcIn")
+          upstream ! CMD_FAIL_HTLC(htlcIn.id, Right(PermanentChannelFailure), commit = true)
+          htlcOut
       }
-      context become (main(channels, bindings -- downstreams, shortIds, channelUpdates))
+      context become main(channels, bindings -- htlcsOut, shortIds, channelUpdates)
 
-    case 'channels
-    => sender ! channels
+    case 'channels => sender ! channels
   }
 }
 
