@@ -5,7 +5,9 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 /**
   * Created by PM on 01/02/2017.
   */
-class PaymentEvent
+sealed trait PaymentEvent {
+  val paymentHash: BinaryData
+}
 
 case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
 
