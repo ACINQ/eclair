@@ -1,5 +1,7 @@
 package fr.acinq.eclair.channel.states
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import akka.actor.{ActorRef, Cancellable, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.BinaryData
@@ -77,10 +79,12 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       val senders = for (i <- 0 until parallel) yield TestProbe()
       senders.foreach(_.send(paymentHandler, 'genh))
       val paymentHashes = senders.map(_.expectMsgType[BinaryData])
-      val cmds = paymentHashes.map(buildCmdAdd(_))
-      senders.zip(cmds).foreach(x => x._1.send(channel, x._2))
+      val cmds = paymentHashes.map(buildCmdAdd(_)._1)
+      senders.zip(cmds).foreach {
+        case (s, cmd) => s.send(channel, cmd)
+      }
       val oks = senders.map(_.expectMsgType[String])
-      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc])
+      val fulfills = senders.map(_.expectMsgAnyClassOf(classOf[UpdateFulfillHtlc], classOf[UpdateFailMalformedHtlc]))
     }
   }
 
@@ -99,28 +103,43 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("fuzzy testing with only one party sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+      val success1 = new AtomicBoolean(false)
       val gatling1 = new Thread(new Runnable {
-        override def run(): Unit = gatling(5, 100, alice, paymentHandlerB)
+        override def run(): Unit = {
+          gatling(5, 100, alice, paymentHandlerB)
+          success1.set(true)
+        }
       })
       gatling1.start()
       val chaosMonkey = randomDisconnect(pipe)
       gatling1.join()
+      assert(success1.get())
       chaosMonkey.cancel()
   }
 
-  test("fuzzy testing with only both parties sending HTLCs") {
+  test("fuzzy testing with both parties sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+      val success1 = new AtomicBoolean(false)
       val gatling1 = new Thread(new Runnable {
-        override def run(): Unit = gatling(4, 100, alice, paymentHandlerB)
+        override def run(): Unit = {
+          gatling(4, 100, alice, paymentHandlerB)
+          success1.set(true)
+        }
       })
       gatling1.start()
+      val success2 = new AtomicBoolean(false)
       val gatling2 = new Thread(new Runnable {
-        override def run(): Unit = gatling(4, 100, bob, paymentHandlerA)
+        override def run(): Unit = {
+          gatling(4, 100, bob, paymentHandlerA)
+          success2.set(true)
+        }
       })
       gatling2.start()
       val chaosMonkey = randomDisconnect(pipe)
       gatling1.join()
+      assert(success1.get())
       gatling2.join()
+      assert(success2.get())
       chaosMonkey.cancel()
   }
 
