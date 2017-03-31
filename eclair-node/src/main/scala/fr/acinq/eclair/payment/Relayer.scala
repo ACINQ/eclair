@@ -8,12 +8,10 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ParsedPacket
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
-import scala.compat.Platform
 import scala.util.{Failure, Success, Try}
 
 // @formatter:off
