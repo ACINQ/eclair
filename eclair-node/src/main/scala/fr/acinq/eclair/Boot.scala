@@ -86,7 +86,8 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   val defaultFeeratePerKw = config.getLong("default-feerate-perkw")
   val feeratePerKw = if (chain == "regtest") defaultFeeratePerKw else {
     val estimate = Await.result(bitcoin_client.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
-    if (estimate < 0) defaultFeeratePerKw else estimate
+    // TODO: improve! we use feeRatePerKw = feeRatePerKb /2, this works for a standard LN commit tx
+    if (estimate < 0) defaultFeeratePerKw else estimate / 2
   }
 
   logger.info(s"initial feeratePerKw=$feeratePerKw")
