@@ -152,15 +152,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     //        --E--'   F{1,2,3,4}
     //
 
-    connect(nodes("A"), nodes("B"), 1000000, 0)
-    connect(nodes("B"), nodes("C"), 200000, 0)
-    connect(nodes("C"), nodes("D"), 500000, 0)
-    connect(nodes("B"), nodes("E"), 500000, 0)
-    connect(nodes("E"), nodes("C"), 500000, 0)
-    connect(nodes("C"), nodes("F1"), 500000, 0)
-    connect(nodes("C"), nodes("F2"), 500000, 0)
-    connect(nodes("C"), nodes("F3"), 500000, 0)
-    connect(nodes("C"), nodes("F4"), 500000, 0)
+    connect(nodes("A"), nodes("B"), 10000000, 0)
+    connect(nodes("B"), nodes("C"), 2000000, 0)
+    connect(nodes("C"), nodes("D"), 5000000, 0)
+    connect(nodes("B"), nodes("E"), 5000000, 0)
+    connect(nodes("E"), nodes("C"), 5000000, 0)
+    connect(nodes("C"), nodes("F1"), 5000000, 0)
+    connect(nodes("C"), nodes("F2"), 5000000, 0)
+    connect(nodes("C"), nodes("F3"), 5000000, 0)
+    connect(nodes("C"), nodes("F4"), 5000000, 0)
     // confirming funding txes
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("generate", 6))
@@ -262,7 +262,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(10000000L, paymentHash, nodes("F1").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F1").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -317,7 +317,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(10000000L, paymentHash, nodes("F2").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F2").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -373,7 +373,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(10000000L, paymentHash, nodes("F3").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F3").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -408,7 +408,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(10000000L, paymentHash, nodes("F4").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F4").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -441,7 +441,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val node2BitcoinKey = randomKey
     val amount = Satoshi(1000000)
     // first we publish the funding tx
-    val fundingTxFuture = extendedClient.makeFundingTx(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey, amount)
+    val fundingTxFuture = extendedClient.makeFundingTx(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey, amount, 10000)
     val fundingTx = Await.result(fundingTxFuture, 10 seconds)
     Await.result(extendedClient.publishTransaction(fundingTx._1), 10 seconds)
     SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, fundingTx._1, fundingTx._2)

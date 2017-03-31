@@ -57,8 +57,9 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       }
       client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
         case feerate if feerate > 0 =>
-          log.debug(s"setting feeratePerKw=$feerate")
-          Globals.feeratePerKw.set(feerate)
+          log.debug(s"setting feeratePerKw=${feerate / 2}")
+          // TODO: improve ? we estimate that fee-rate-per-kw is roughly fee-rate-per-kw / 2 for a standard commit tx
+          Globals.feeratePerKw.set(feerate / 2)
           context.system.eventStream.publish(CurrentFeerate(feerate))
         case _ => () // bitcoind cannot estimate feerate
       }
@@ -116,8 +117,8 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
         context.become(watching(watches, block2tx1, None))
       } else publish(tx)
 
-    case MakeFundingTx(ourCommitPub, theirCommitPub, amount) =>
-      client.makeFundingTx(ourCommitPub, theirCommitPub, amount).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
+    case MakeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw) =>
+      client.makeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
 
     case GetTx(blockHeight, txIndex, outputIndex, ctx) =>
       (for {
