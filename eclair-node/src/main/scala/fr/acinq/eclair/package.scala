@@ -18,6 +18,7 @@ package object eclair {
 
   /**
     * Creates a unique index assigned to a channel (== an unspent multisig 2-of-2 output)
+    *
     * @param blockHeight
     * @param txIndex
     * @param outputIndex
@@ -45,5 +46,14 @@ package object eclair {
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)
     case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
   }
+
+  /**
+    * Converts fee-rate-per-kB to fee-rate-per-kw, *based on a standard commit tx*
+    *
+    * @param feeratePerKB
+    * @return
+    */
+  def feerateKB2Kw(feeratePerKB: Long): Long = feeratePerKB / 2
+
 
 }
