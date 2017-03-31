@@ -6,6 +6,7 @@ import akka.actor._
 import akka.io.Tcp.Connected
 import akka.pattern.{Backoff, BackoffSupervisor}
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.{BlockchainEvent, PeerBlock, PeerTransaction}
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -41,6 +42,9 @@ class PeerClient(socketAddress: InetSocketAddress, magic: Long) extends Actor wi
       sender ! Message(magic, "verack", Array.empty[Byte])
     case Message(magic, "verack", _) =>
       log.debug("received verack")
+      import scala.concurrent.duration._
+      import scala.concurrent.ExecutionContext.Implicits.global
+      context.system.scheduler.schedule(3 seconds, 5 seconds, sender, Message(magic, "mempool", Array.empty[Byte]))
     case Message(magic, "inv", payload) =>
       val inventory = Inventory.read(payload)
       log.debug(s"received $inventory")
@@ -56,10 +60,10 @@ class PeerClient(socketAddress: InetSocketAddress, magic: Long) extends Actor wi
       sender ! Message(magic, "pong", payload)
     case Message(magic, "tx", payload) =>
       log.debug(s"received tx ${toHexString(payload)}")
-      context.system.eventStream.publish(NewTransaction(Transaction.read(payload)))
+      context.system.eventStream.publish(PeerTransaction(Transaction.read(payload)))
     case Message(magic, "block", payload) =>
       log.debug(s"received block ${toHexString(payload)}")
-      context.system.eventStream.publish(NewBlock(Block.read(payload)))
+      context.system.eventStream.publish(PeerBlock(Block.read(payload)))
     case Message(magic, "notfound", payload) =>
       val inventory = Inventory.read(payload)
       log.debug(s"received notfound for inv $inventory")

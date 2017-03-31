@@ -3,13 +3,12 @@ package fr.acinq.eclair.channel.states.f
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 

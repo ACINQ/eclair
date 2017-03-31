@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.peer
+package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.{Block, Transaction}
 
@@ -15,3 +15,10 @@ case class NewTransaction(tx: Transaction) extends BlockchainEvent
 case class CurrentBlockCount(blockCount: Long) extends BlockchainEvent
 
 case class CurrentFeerate(feeratePerKw: Long) extends BlockchainEvent
+
+
+case class PeerBlock(block: Block)
+
+case class PeerTransaction(tx: Transaction)
+
+case class MempoolTransaction(tx: Transaction)

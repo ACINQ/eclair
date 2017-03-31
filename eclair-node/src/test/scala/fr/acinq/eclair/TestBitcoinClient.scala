@@ -2,11 +2,10 @@ package fr.acinq.eclair
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.bitcoin.{Block, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient.SignTransactionResponse
-import fr.acinq.eclair.blockchain.peer.{NewBlock, NewTransaction}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, NewBlock, NewTransaction}
 import fr.acinq.eclair.transactions.Scripts
 
 import scala.concurrent.duration._

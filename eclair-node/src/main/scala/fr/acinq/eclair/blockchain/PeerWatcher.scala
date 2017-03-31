@@ -11,7 +11,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{Globals, NodeParams}
 
 import scala.collection.SortedMap
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * A blockchain watcher that:
@@ -57,8 +57,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
               }
           }
       }
-      // NB: this is a safety measure, because sometimes we seem to not receive NewTransactions directly from bitcoind
-      block.tx.foreach(tx => self ! NewTransaction(tx))
+      context become (watching(watches, block2tx))
 
     case ('trigger, w: Watch, e: WatchEvent) if watches.contains(w) =>
       log.info(s"triggering $w")
@@ -69,7 +68,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
-      toPublish.values.flatten.map(publish)
+      toPublish.values.flatten.map(tx => publish(tx))
       context.become(watching(watches, block2tx -- toPublish.keys))
     }
 
@@ -149,7 +148,11 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       (for {
         tx <- client.getTransaction(blockHeight, txIndex)
         spendable <- client.isTransactionOuputSpendable(tx.txid.toString(), outputIndex, true)
-      } yield GetTxResponse(tx, spendable, ctx)).pipeTo(sender)
+      } yield GetTxResponse(tx, spendable, ctx)).recover {
+        case t: Throwable =>
+          log.error(t, s"could not retrieve tx at blockHeight=$blockHeight, txIndex=$txIndex, outputIndex=$txIndex, ctx=$ctx")
+          GetTxResponse(null, false, ctx)
+      }.pipeTo(sender)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor
@@ -169,9 +172,14 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
-  def publish(tx: Transaction) = {
-    log.info(s"publishing tx: txid=${tx.txid} tx=${Transaction.write(tx)}")
-    client.publishTransaction(tx)(singleThreadExecutionContext).onFailure {
+  def publish(tx: Transaction, isRetry: Boolean = false): Unit = {
+    log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx=${Transaction.write(tx)}")
+    client.publishTransaction(tx)(singleThreadExecutionContext).recover {
+      case t: Throwable if t.getMessage.contains("-25") && !isRetry => // we retry only once
+        import akka.pattern.after
+
+        import scala.concurrent.duration._
+        after(3 seconds, context.system.scheduler)(Future.successful()).map(x => publish(tx, isRetry = true))
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
     }
   }

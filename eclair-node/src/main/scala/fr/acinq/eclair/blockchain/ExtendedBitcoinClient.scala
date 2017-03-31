@@ -40,6 +40,15 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
+  def getBlockHashesSinceBlockHash(blockHash: String, previous: Seq[String] = Nil)(implicit ec: ExecutionContext): Future[Seq[String]] =
+    for {
+      nextblockhash_opt <- client.invoke("getblock", blockHash).map(json => ((json \ "nextblockhash").extractOpt[String]))
+      res <- nextblockhash_opt match {
+        case Some(nextBlockHash) => getBlockHashesSinceBlockHash(nextBlockHash, previous :+ nextBlockHash)
+        case None => Future.successful(previous)
+      }
+    } yield res
+
   def getTxsSinceBlockHash(blockHash: String, previous: Seq[Transaction] = Nil)(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
     for {
       (nextblockhash_opt, txids) <- client.invoke("getblock", blockHash).map(json => ((json \ "nextblockhash").extractOpt[String], (json \ "tx").extract[List[String]]))

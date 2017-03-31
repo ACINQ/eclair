@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain}
 import fr.acinq.eclair.payment._
@@ -324,6 +323,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       stay using d.copy(deferred = Some(msg))
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, deferred, lastSent)) =>
+      log.info(s"channelId=${commitments.channelId} was confirmed at blockHeight=$blockHeight txIndex=$txIndex")
       blockchain ! WatchLost(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
       val nextPerCommitmentPoint = Generators.perCommitPoint(commitments.localParams.shaSeed, 1)
       val fundingLocked = FundingLocked(commitments.channelId, nextPerCommitmentPoint)
@@ -572,6 +572,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
+      log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex, sending announcements")
       // TODO: empty features
       val features = BinaryData("")
       val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey, features)
@@ -582,7 +583,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       d.commitments.unackedMessages.collectFirst({ case ann: AnnouncementSignatures => ann }) match {
         case Some(localAnnSigs) =>
           require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
-          log.info(s"announcing channel ${d.channelId} on the network")
+          log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
           import commitments.{localParams, remoteParams}
           val channelAnn = Announcements.makeChannelAnnouncement(localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
           val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
@@ -601,7 +602,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         case None =>
           log.info(s"received remote announcement signatures, delaying")
           // our watcher didn't notify yet that the tx has reached 6 confirmations, let's delay remote's message
-          context.system.scheduler.scheduleOnce(10 seconds, self, remoteAnnSigs)
+          context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
           stay
       }
 

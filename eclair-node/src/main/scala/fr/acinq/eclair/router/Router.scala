@@ -76,9 +76,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         log.debug(s"ignoring $c (duplicate)")
       } else if (awaiting.contains(c)) {
         log.debug(s"ignoring $c (already in the process of checking it)")
+      } else if (awaiting.size >= MAX_PARALLEL_JSONRPC_REQUESTS) {
+        log.warning(s"already have ${awaiting.size} requests in progress, delaying processing of $c")
+        context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ c)
       } else {
         val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
-        log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex")
+        log.info(s"retrieving raw tx with blockHeight=$blockHeight and txIndex=$txIndex corresponding to channelId=${c.shortChannelId}")
         watcher ! GetTx(blockHeight, txIndex, outputIndex, c)
         context become main(nodes, channels, updates, rebroadcast, awaiting + c, stash)
       }
@@ -99,7 +102,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         nodeParams.announcementsDb.put(channelKey(c.shortChannelId), c)
         channels + (c.shortChannelId -> c)
       } else {
-        log.debug(s"ignoring $c (funding tx spent)")
+        log.warning(s"ignoring $c (funding tx not found in utxo)")
         nodeParams.announcementsDb.delete(channelKey(c.shortChannelId))
         channels
       }
@@ -203,6 +206,8 @@ object Router {
   def channelKey(shortChannelId: Long) = s"ann-channel-$shortChannelId"
   def channelUpdateKey(shortChannelId: Long, flags: BinaryData) = s"ann-update-$shortChannelId-$flags"
   // @formatter:on
+
+  val MAX_PARALLEL_JSONRPC_REQUESTS = 5
 
   case class Rebroadcast(ann: Seq[RoutingMessage])
 

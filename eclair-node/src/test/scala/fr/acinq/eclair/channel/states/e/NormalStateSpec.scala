@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._

@@ -3,7 +3,6 @@ package fr.acinq.eclair.payment
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.{UnknownPaymentHash, UpdateAddHtlc}
 
 import scala.util.Random
