@@ -75,12 +75,12 @@
                                             <TableView fx:id="paymentSentTable" minHeight="50.0" prefHeight="5000.0">
                                                 <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
                                                 <columns>
-                                                    <TableColumn fx:id="paymentSentDateColumn" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0" text="Sending Date"/>
+                                                    <TableColumn fx:id="paymentSentDateColumn" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0" text="Date"/>
                                                     <TableColumn fx:id="paymentSentAmountColumn" text="Amount (msat)"
                                                                  styleClass="align-right" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0"/>
                                                     <TableColumn fx:id="paymentSentFeesColumn" text="Fees Paid (msat)"
                                                                  styleClass="align-right" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0"/>
-                                                    <TableColumn fx:id="paymentSentHashColumn" text="Hash"/>
+                                                    <TableColumn fx:id="paymentSentHashColumn" text="Payment Hash"/>
                                                 </columns>
                                             </TableView>
                                         </Tab>
@@ -88,10 +88,10 @@
                                             <TableView fx:id="paymentReceivedTable" minHeight="50.0" prefHeight="5000.0">
                                                 <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
                                                 <columns>
-                                                    <TableColumn fx:id="paymentReceivedDateColumn" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0" text="Received Date"/>
+                                                    <TableColumn fx:id="paymentReceivedDateColumn" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0" text="Date"/>
                                                     <TableColumn fx:id="paymentReceivedAmountColumn" text="Amount (msat)"
                                                                  styleClass="align-right" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0"/>
-                                                    <TableColumn fx:id="paymentReceivedHashColumn" text="Hash"/>
+                                                    <TableColumn fx:id="paymentReceivedHashColumn" text="Payment Hash"/>
                                                 </columns>
                                             </TableView>
                                         </Tab>
@@ -99,12 +99,12 @@
                                             <TableView fx:id="paymentRelayedTable" minHeight="50.0" prefHeight="5000.0">
                                                 <columnResizePolicy><TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/></columnResizePolicy>
                                                 <columns>
-                                                    <TableColumn fx:id="paymentRelayedDateColumn" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0" text="Relaying Date"/>
+                                                    <TableColumn fx:id="paymentRelayedDateColumn" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0" text="Date"/>
                                                     <TableColumn fx:id="paymentRelayedAmountColumn" text="Amount (msat)"
                                                                  styleClass="align-right" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0"/>
                                                     <TableColumn fx:id="paymentRelayedFeesColumn" text="Fees Earned (msat)"
                                                                  styleClass="align-right" resizable="false" minWidth="150.0" prefWidth="150.0" maxWidth="150.0"/>
-                                                    <TableColumn fx:id="paymentRelayedHashColumn" text="Hash"/>
+                                                    <TableColumn fx:id="paymentRelayedHashColumn" text="Payment Hash"/>
                                                 </columns>
                                             </TableView>
                                         </Tab>
@@ -112,7 +112,7 @@
                                 </TabPane>
                                 <Label AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" textAlignment="RIGHT"
                                        maxWidth="180.0" wrapText="true" styleClass="activity-disclaimer"
-                                       text="Payment history will be cleaned up when the node is shutdown." />
+                                       text="Payment history will be erased when the node is shutdown." />
                             </children>
                         </AnchorPane>
                     </content>

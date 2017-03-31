@@ -28,7 +28,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
   @FXML def handleGenerate(event: ActionEvent) = {
     if ((("milliBTC".equals(unit.getValue) || "Satoshi".equals(unit.getValue))
           && GUIValidators.validate(amount.getText, amountError, "Amount must be numeric", GUIValidators.amountDecRegex))
-      || ("milliSatoshi".equals(unit.getValue) && GUIValidators.validate(amount.getText, amountError, "Amount must be numeric (no decimal mSat)", GUIValidators.amountRegex))) {
+      || ("milliSatoshi".equals(unit.getValue) && GUIValidators.validate(amount.getText, amountError, "Amount must be numeric (no decimal msat)", GUIValidators.amountRegex))) {
         try {
           val Array(parsedInt, parsedDec) = if (amount.getText.contains(".")) amount.getText.split("\\.") else Array(amount.getText, "0")
           val amountDec = parsedDec.length match {
@@ -48,7 +48,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
           }
           logger.debug(s"Final amount for payment request = $smartAmount")
           if (GUIValidators.validate(amountError, "Amount must be greater than 0", smartAmount.amount > 0)
-            && GUIValidators.validate(amountError, "Must be less than 4 294 967 295 mSat (~0.042 BTC)", smartAmount.amount < 4294967295L)) {
+            && GUIValidators.validate(amountError, "Must be less than 4 294 967 295 msat (~0.042 BTC)", smartAmount.amount < 4294967295L)) {
             handlers.getPaymentRequest(smartAmount.amount, paymentRequest)
           }
         } catch {

@@ -27,7 +27,7 @@
         <Label fx:id="paymentRequestError" opacity="0.0" text="Generic Invalid Payment Request" mouseTransparent="true"
                styleClass="text-error" GridPane.columnSpan="2" GridPane.rowIndex="2"/>
 
-        <Label styleClass="text-muted" text="Amount (mSat)" GridPane.halignment="RIGHT" GridPane.rowIndex="3"/>
+        <Label styleClass="text-muted" text="Amount (msat)" GridPane.halignment="RIGHT" GridPane.rowIndex="3"/>
         <TextField fx:id="amountField" focusTraversable="false" editable="false" styleClass="noteditable" text="0" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
 
         <Label styleClass="text-muted" text="Node Id" GridPane.halignment="RIGHT" GridPane.rowIndex="4"/>

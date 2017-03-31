@@ -68,7 +68,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
       Try(amount.toLong) match {
         case Success(amountLong) =>
           if (GUIValidators.validate(paymentRequestError, "Amount must be greater than 0", amountLong > 0)
-            && GUIValidators.validate(paymentRequestError, "Amount must be less than 4 294 967 295 mSat (~0.042 BTC)", amountLong < 4294967295L)) {
+            && GUIValidators.validate(paymentRequestError, "Amount must be less than 4 294 967 295 msat (~0.042 BTC)", amountLong < 4294967295L)) {
             Try (handlers.send(PublicKey(nodeId), BinaryData(hash), amountLong)) match {
               case Success(s) => stage.close
               case Failure(f) => GUIValidators.validate(paymentRequestError, s"Invalid Payment Request: ${f.getMessage}", false)
