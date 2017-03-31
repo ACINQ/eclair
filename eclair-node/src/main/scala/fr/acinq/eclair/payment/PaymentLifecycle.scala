@@ -14,7 +14,7 @@ import scodec.Attempt
 
 // @formatter:off
 
-case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey)
+case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, maxAttempts: Int = 5)
 
 sealed trait PaymentResult
 case class PaymentSucceeded(paymentPreimage: BinaryData) extends PaymentResult
@@ -91,7 +91,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           // let's try again, router will have updated its state
           router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, attempts)
-        case e@Some(ErrorPacket(nodeId, failureMessage)) if attempts < MAX_ATTEMPTS =>
+        case e@Some(ErrorPacket(nodeId, failureMessage)) if attempts < c.maxAttempts =>
           // TODO: If the PERM bit is not set, the origin node SHOULD restore the channel as it sees a new channel_update.
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
@@ -117,8 +117,6 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
-
-  val MAX_ATTEMPTS = 5
 
   /**
     *

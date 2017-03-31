@@ -5,6 +5,8 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.payment.PaymentLifecycle
+import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants}
@@ -94,12 +96,13 @@ trait StateTestsHelperMethods extends TestKitBase {
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {
-    val rand = new Random()
     val R: BinaryData = Array.fill[Byte](32)(0)
-    rand.nextBytes(R)
+    Random.nextBytes(R)
     val H: BinaryData = Crypto.sha256(R)
     val sender = TestProbe()
-    sender.send(s, CMD_ADD_HTLC(amountMsat, H, 400144))
+    val receiverPubkey = r.underlyingActor.nodeParams.privateKey.publicKey
+    val onion = PaymentLifecycle.buildOnion(receiverPubkey :: Nil, Nil, H)
+    sender.send(s, CMD_ADD_HTLC(amountMsat, H, 400144, onion = onion.onionPacket))
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)

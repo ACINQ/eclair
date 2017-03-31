@@ -1,7 +1,6 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals

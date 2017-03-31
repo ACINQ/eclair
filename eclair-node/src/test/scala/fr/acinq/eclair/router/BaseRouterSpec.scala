@@ -6,8 +6,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpent}
-import fr.acinq.eclair.db.{DummyDb, SimpleDb}
+import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpentBasic}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -86,10 +85,10 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), true, chan_cd))
       watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), true, chan_ef))
       // watcher receives watch-spent request
-      watcher.expectMsgType[WatchSpent]
-      watcher.expectMsgType[WatchSpent]
-      watcher.expectMsgType[WatchSpent]
-      watcher.expectMsgType[WatchSpent]
+      watcher.expectMsgType[WatchSpentBasic]
+      watcher.expectMsgType[WatchSpentBasic]
+      watcher.expectMsgType[WatchSpentBasic]
+      watcher.expectMsgType[WatchSpentBasic]
       // then nodes
       router ! ann_a
       router ! ann_b

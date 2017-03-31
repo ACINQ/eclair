@@ -5,7 +5,6 @@ import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.peer.{CurrentBlockCount, CurrentFeerate}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
@@ -86,7 +85,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
           localNextHtlcId = 1,
           localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
           unackedMessages = initialState.commitments.unackedMessages :+ htlc)))
-      relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Relayed(originHtlc)))
+      relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Relayed(sender.ref, originHtlc)))
     }
   }
 
@@ -780,7 +779,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason".getBytes()))
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(
@@ -814,7 +813,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val r: BinaryData = "11" * 32
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
 
-      sender.send(bob, CMD_FAIL_HTLC(42, "some reason".getBytes()))
+      sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
       sender.expectMsg("unknown htlc id=42")
       assert(initialState == bob.stateData)
     }
@@ -826,7 +825,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
 
-      sender.send(bob, CMD_FAIL_HTLC(htlc.id, "some reason".getBytes()))
+      sender.send(bob, CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure)))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
 
@@ -866,7 +865,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      sender.send(alice, UpdateFailHtlc("00" * 32, htlc.id, "some reason".getBytes()))
+      sender.send(alice, UpdateFailHtlc("00" * 32, htlc.id, "00" * 152))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
@@ -878,7 +877,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
-      sender.send(alice, UpdateFailHtlc("00" * 32, 42, "some reason".getBytes()))
+      sender.send(alice, UpdateFailHtlc("00" * 32, 42, "00" * 152))
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))

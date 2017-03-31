@@ -22,9 +22,12 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case error: Error => destination ! error
 
-    case StoreAndForward(CLOSED, stateData: HasCommitments, outgoing) => nodeParams.channelsDb.delete(stateData.channelId)
+    case StoreAndForward(CLOSED, stateData: HasCommitments, _) =>
+      log.debug(s"deleting database record for channelId=${stateData.channelId}")
+      nodeParams.channelsDb.delete(stateData.channelId)
 
     case StoreAndForward(_, stateData: HasCommitments, outgoing) =>
+      log.debug(s"updating database record for channelId=${stateData.channelId}")
       nodeParams.channelsDb.put(stateData.channelId, stateData)
       outgoing.foreach(destination forward _)
 

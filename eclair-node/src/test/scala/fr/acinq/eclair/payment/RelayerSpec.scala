@@ -165,8 +165,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
-    val Some(ErrorPacket(pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
-    assert(reason == AmountBelowMinimum(cmd.amountMsat, channelUpdate_bc))
+    assert(fail.reason == Right(AmountBelowMinimum(cmd.amountMsat, channelUpdate_bc)))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 
@@ -189,8 +188,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
-    val Some(ErrorPacket(pubkey, reason)) = Sphinx.parseErrorPacket(fail.reason, secrets)
-    assert(reason == IncorrectCltvExpiry(cmd.expiry, channelUpdate_bc))
+    assert(fail.reason == Right(IncorrectCltvExpiry(cmd.expiry, channelUpdate_bc)))
     channel_bc.expectNoMsg(1 second)
     paymentHandler.expectNoMsg(1 second)
 
@@ -217,7 +215,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
     // preimage is wrong, does not matter here
     val fulfill_cb = UpdateFulfillHtlc(channelId = add_bc.channelId, id = add_bc.id, paymentPreimage = "00" * 32)
     sender.send(relayer, ForwardFulfill(fulfill_cb))
@@ -246,7 +244,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
     val fail_cb = UpdateFailHtlc(channelId = add_bc.channelId, id = add_bc.id, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), TemporaryChannelFailure))
     sender.send(relayer, ForwardFail(fail_cb))
 
@@ -273,7 +271,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
 
     // actual test starts here
     val tx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessHtlcSuccess("11" * 70, "22" * 70, paymentPreimage, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)
@@ -301,7 +299,7 @@ class RelayerSpec extends TestkitBaseClass {
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
     val add_bc = UpdateAddHtlc(channelId = channelId_bc, id = 987451, amountMsat = cmd_bc.amountMsat, expiry = cmd_bc.expiry, paymentHash = cmd_bc.paymentHash, onionRoutingPacket = cmd_bc.onion)
-    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(add_ab)))
+    sender.send(relayer, AddHtlcSucceeded(add_bc, Relayed(channel_ab.ref, add_ab)))
 
     // actual test starts here
     val tx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx("11" * 70, paymentPreimage, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)

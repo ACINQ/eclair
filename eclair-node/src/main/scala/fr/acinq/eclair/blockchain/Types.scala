@@ -12,11 +12,13 @@ import fr.acinq.eclair.wire.LightningMessage
 
 // @formatter:off
 
-trait Watch {
+sealed trait Watch {
   def channel: ActorRef
+  def event: BitcoinEvent
 }
 final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: Int, event: BitcoinEvent) extends Watch
+final case class WatchSpentBasic(channel: ActorRef, txId: BinaryData, outputIndex: Int, event: BitcoinEvent) extends Watch // we use this when we don't care about the spending tx, and we also assume txid exists
 // TODO: notify me if confirmation number gets below minDepth?
 final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 
@@ -25,6 +27,7 @@ trait WatchEvent {
 }
 final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIndex: Int) extends WatchEvent
 final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends WatchEvent
+final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
 final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
 
 /**
