@@ -1,19 +1,16 @@
 package fr.acinq.eclair.integration
 
-import java.io.{File, FileWriter, PrintWriter}
-import java.net.{InetAddress, InetSocketAddress}
+import java.io.{File, PrintWriter}
 import java.nio.file.{Files, Paths}
 import java.util.{Properties, UUID}
 
-import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props, SupervisorStrategy}
+import akka.actor.{Actor, ActorRef, ActorSystem, PoisonPill, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
-import com.typesafe.config.{Config, ConfigFactory, ConfigValue, ConfigValueFactory}
+import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, Message, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Setup, SimpleSupervisor}
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
-import fr.acinq.eclair.blockchain.peer.PeerClient
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.Setup
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._

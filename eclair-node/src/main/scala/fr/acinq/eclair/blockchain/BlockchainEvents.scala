@@ -16,9 +16,4 @@ case class CurrentBlockCount(blockCount: Long) extends BlockchainEvent
 
 case class CurrentFeerate(feeratePerKw: Long) extends BlockchainEvent
 
-
-case class PeerBlock(block: Block)
-
-case class PeerTransaction(tx: Transaction)
-
 case class MempoolTransaction(tx: Transaction)

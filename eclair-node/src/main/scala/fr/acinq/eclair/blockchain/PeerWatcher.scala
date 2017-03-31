@@ -5,7 +5,6 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.peer._
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{Globals, NodeParams}
