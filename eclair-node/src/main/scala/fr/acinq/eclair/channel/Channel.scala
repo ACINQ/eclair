@@ -408,6 +408,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       }
 
     case Event(fulfill@UpdateFulfillHtlc(_, id, r), d@DATA_NORMAL(commitments, _)) =>
+      log.warning(s"received fulfill!")
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFulfill(fulfill)

@@ -4,13 +4,13 @@ import akka.actor.Status.Failure
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
-import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import fr.acinq.eclair.wire.Error
 
 import scala.concurrent.duration._
 
@@ -30,7 +30,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! chan_ac
     watcher.expectMsg(GetTx(420000, 5, 0, chan_ac))
     watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), true, chan_ac))
-    watcher.expectMsgType[WatchSpent]
+    watcher.expectMsgType[WatchSpentBasic]
 
     eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
   }
@@ -39,19 +39,19 @@ class RouterSpec extends BaseRouterSpec {
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
-    router ! WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_ab), Transaction(version = 0, txIn = Nil, txOut = Nil, lockTime = 0))
+    router ! WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_ab))
     eventListener.expectMsg(ChannelLost(channelId_ab))
     // a doesn't have any channels, b still has one with c
     eventListener.expectMsg(NodeLost(a))
     eventListener.expectNoMsg(200 milliseconds)
 
-    router ! WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_cd), Transaction(version = 0, txIn = Nil, txOut = Nil, lockTime = 0))
+    router ! WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_cd))
     eventListener.expectMsg(ChannelLost(channelId_cd))
     // d doesn't have any channels, c still has one with b
     eventListener.expectMsg(NodeLost(d))
     eventListener.expectNoMsg(200 milliseconds)
 
-    router ! WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_bc), Transaction(version = 0, txIn = Nil, txOut = Nil, lockTime = 0))
+    router ! WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_bc))
     eventListener.expectMsg(ChannelLost(channelId_bc))
     // now b and c do not have any channels
     eventListener.expectMsgAllOf(NodeLost(b), NodeLost(c))

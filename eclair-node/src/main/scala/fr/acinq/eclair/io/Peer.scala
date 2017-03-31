@@ -18,7 +18,7 @@ import scala.util.Random
 // @formatter:off
 
 case object Reconnect
-//case class ChannelIdSwitch(previousId: Long, nextId: Long)
+case object Disconnect
 
 sealed trait OfflineChannel
 case class BrandNewChannel(c: NewChannel) extends OfflineChannel
@@ -158,6 +158,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
     case Event(msg: RoutingMessage, _) =>
       router forward msg
+      stay
+
+    case Event(Disconnect, ConnectedData(transport, _, _)) =>
+      transport ! PoisonPill
       stay
 
     case Event(Terminated(actor), ConnectedData(transport, _, channels)) if actor == transport =>

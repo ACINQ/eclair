@@ -69,7 +69,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
     case r: Rebroadcast => peers.values.foreach(_ forward r)
 
-    case 'peers => sender ! peers.keys
+    case 'peers => sender ! peers
 
     case 'connections => sender ! connections
 

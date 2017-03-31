@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchEventSpent, WatchSpent}
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.Scripts
@@ -77,7 +77,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       } else if (awaiting.contains(c)) {
         log.debug(s"ignoring $c (already in the process of checking it)")
       } else if (awaiting.size >= MAX_PARALLEL_JSONRPC_REQUESTS) {
-        log.warning(s"already have ${awaiting.size} requests in progress, delaying processing of $c")
+        log.debug(s"already have ${awaiting.size} requests in progress, delaying processing of $c")
         context become main(nodes, channels, updates, rebroadcast, awaiting, stash :+ c)
       } else {
         val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
@@ -95,7 +95,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
         val output = tx.txOut(outputIndex)
         val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
         require(fundingOutputScript == output.publicKeyScript, s"funding script mismatch: actual=${output.publicKeyScript} expected=${fundingOutputScript}")
-        watcher ! WatchSpent(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
+        watcher ! WatchSpentBasic(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
         // TODO: check feature bit set
         log.info(s"added channel channelId=${c.shortChannelId}")
         context.system.eventStream.publish(ChannelDiscovered(c, output.amount))
@@ -112,9 +112,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends Actor with Actor
       } else stash
       context become mainWithLog(nodes, channels1, updates, rebroadcast :+ c, awaiting - c, stash1)
 
-    case WatchEventSpent(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId), tx) if channels.containsKey(shortChannelId) =>
+    case WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId)) if channels.containsKey(shortChannelId) =>
       val lostChannel = channels(shortChannelId)
-      log.info(s"funding tx of channelId=$shortChannelId has been spent by txid=${tx.txid}")
+      log.info(s"funding tx of channelId=$shortChannelId has been spent")
       log.info(s"removed channel channelId=$shortChannelId")
       context.system.eventStream.publish(ChannelLost(shortChannelId))
 
