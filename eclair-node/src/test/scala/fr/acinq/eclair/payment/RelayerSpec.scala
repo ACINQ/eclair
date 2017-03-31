@@ -88,9 +88,6 @@ class RelayerSpec extends TestkitBaseClass {
   test("relay an htlc-add") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
-    val eventListener = TestProbe()
-
-    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     val add_ab = {
       val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
@@ -104,9 +101,8 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.expectNoMsg(1 second)
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
-    paymentHandler.expectNoMsg(1 second)
 
-    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(cmd_bc.amountMsat), MilliSatoshi(add_ab.amountMsat - cmd_bc.amountMsat), add_ab.paymentHash))
+    paymentHandler.expectNoMsg(1 second)
 
     assert(cmd_bc.upstream_opt === Some(add_ab))
   }
@@ -205,6 +201,9 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
     val channel_ab = TestProbe()
     val channel_bc = TestProbe()
+    val eventListener = TestProbe()
+
+    system.eventStream.subscribe(eventListener.ref, classOf[PaymentEvent])
 
     val add_ab = {
       val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
@@ -225,8 +224,9 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fulfill_ba = channel_ab.expectMsgType[CMD_FULFILL_HTLC]
 
-    assert(fulfill_ba.id === add_ab.id)
+    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(add_ab.amountMsat), MilliSatoshi(add_ab.amountMsat - cmd_bc.amountMsat), add_ab.paymentHash))
 
+    assert(fulfill_ba.id === add_ab.id)
   }
 
   test("relay an htlc-fail") { case (relayer, paymentHandler) =>
