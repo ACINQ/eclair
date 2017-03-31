@@ -36,15 +36,17 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 
 ### Configuring Bitcoin Core
 
-Eclair needs a _synchronized_, _segwit-ready_, _non-pruning_, _tx-indexing_ [Bitcoin-core](https://github.com/bitcoin/bitcoin) node.
+Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. This means that on Windows you will need Bitcoin Core 0.14.0.
 
-Run bitcoind with the following `bitcoin.conf`:
+Run bitcoind with the following minimal `bitcoin.conf`:
 ```
 regtest=1
 server=1
 rpcuser=XXX
 rpcpassword=XXX
 txindex=1
+zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 
 ### Installing Eclair
@@ -85,6 +87,7 @@ option                       | description               | default value
  eclair.api.port             | HTTP port                 | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
+ eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
 
 &rarr; see [`application.conf`](eclair-node/src/main/resources/application.conf) for full reference.
 
