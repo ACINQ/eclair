@@ -59,7 +59,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val networkNodesList:ObservableList[NodeAnnouncement] = FXCollections.observableArrayList[NodeAnnouncement]()
+  val networkNodesList: ObservableList[NodeAnnouncement] = FXCollections.observableArrayList[NodeAnnouncement]()
   @FXML var networkNodesTab: Tab = _
   @FXML var networkNodesTable: TableView[NodeAnnouncement] = _
   @FXML var networkNodesIdColumn: TableColumn[NodeAnnouncement, String] = _
@@ -68,7 +68,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList:ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
+  val networkChannelsList: ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
   @FXML var networkChannelsTab: Tab = _
   @FXML var networkChannelsTable: TableView[ChannelAnnouncement] = _
   @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, Number] = _
@@ -126,7 +126,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init context
     contextMenu = ContextMenuUtils.buildCopyContext(List(
       new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}"),
-      new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${setup.nodeParams.address.getHostString}:${setup.nodeParams.address.getPort}" )))
+      new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${setup.nodeParams.address.getHostString}:${setup.nodeParams.address.getPort}")))
 
     // init channels tab
     if (channelBox.getChildren.size() > 0) {
@@ -149,7 +149,8 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init all nodes
     networkNodesTable.setItems(networkNodesList)
     networkNodesList.addListener(new ListChangeListener[NodeAnnouncement] {
-      override def onChanged(c: Change[_ <: NodeAnnouncement]) =  updateTabHeader(networkNodesTab, "All Nodes", networkNodesList)})
+      override def onChanged(c: Change[_ <: NodeAnnouncement]) = updateTabHeader(networkNodesTab, "All Nodes", networkNodesList)
+    })
     networkNodesIdColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.nodeId.toString)
     })
@@ -166,7 +167,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     })
     networkNodesRGBColumn.setCellFactory(new Callback[TableColumn[NodeAnnouncement, String], TableCell[NodeAnnouncement, String]]() {
       def call(pn: TableColumn[NodeAnnouncement, String]) = {
-        new TableCell[NodeAnnouncement, String] () {
+        new TableCell[NodeAnnouncement, String]() {
           override def updateItem(item: String, empty: Boolean): Unit = {
             super.updateItem(item, empty)
             setStyle("-fx-background-color:" + item)
@@ -181,7 +182,8 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init all channels
     networkChannelsTable.setItems(networkChannelsList)
     networkChannelsList.addListener(new ListChangeListener[ChannelAnnouncement] {
-      override def onChanged(c: Change[_ <: ChannelAnnouncement]) = updateTabHeader(networkChannelsTab, "All Channels", networkChannelsList)})
+      override def onChanged(c: Change[_ <: ChannelAnnouncement]) = updateTabHeader(networkChannelsTab, "All Channels", networkChannelsList)
+    })
     networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, Number], ObservableValue[Number]]() {
       def call(pc: CellDataFeatures[ChannelAnnouncement, Number]) = new SimpleLongProperty(pc.getValue.shortChannelId)
     })
@@ -198,7 +200,8 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init payment sent
     paymentSentTable.setItems(paymentSentList)
     paymentSentList.addListener(new ListChangeListener[Payment] {
-      override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentSentTab, "Sent", paymentSentList)})
+      override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentSentTab, "Sent", paymentSentList)
+    })
     paymentSentAmountColumn.setCellValueFactory(paymentAmountCellValueFactory)
     paymentSentAmountColumn.setCellFactory(paymentMoneyCellFactory)
     paymentSentFeesColumn.setCellValueFactory(paymentFeesCellValueFactory)
@@ -210,7 +213,8 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init payment received
     paymentReceivedTable.setItems(paymentReceivedList)
     paymentReceivedList.addListener(new ListChangeListener[Payment] {
-      override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentReceivedTab, "Received", paymentReceivedList)})
+      override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentReceivedTab, "Received", paymentReceivedList)
+    })
     paymentReceivedAmountColumn.setCellValueFactory(paymentAmountCellValueFactory)
     paymentReceivedAmountColumn.setCellFactory(paymentMoneyCellFactory)
     paymentReceivedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
@@ -220,7 +224,8 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     // init payment relayed
     paymentRelayedTable.setItems(paymentRelayedList)
     paymentRelayedList.addListener(new ListChangeListener[Payment] {
-        override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentRelayedTab, "Relayed", paymentRelayedList)})
+      override def onChanged(c: Change[_ <: Payment]) = updateTabHeader(paymentRelayedTab, "Relayed", paymentRelayedList)
+    })
     paymentRelayedAmountColumn.setCellValueFactory(paymentAmountCellValueFactory)
     paymentRelayedAmountColumn.setCellFactory(paymentMoneyCellFactory)
     paymentRelayedFeesColumn.setCellValueFactory(paymentFeesCellValueFactory)
@@ -231,23 +236,26 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   }
 
   private def updateTabHeader(tab: Tab, prefix: String, items: ObservableList[_]) = {
-      Platform.runLater(new Runnable() {
-        override def run = tab.setText(s"$prefix (${items.size})")
-      })
-    }
+    Platform.runLater(new Runnable() {
+      override def run = tab.setText(s"$prefix (${items.size})")
+    })
+  }
 
   private def paymentHashCellValueFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.hash.toString)
   }
+
   private def paymentFeesCellValueFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
     def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.fees.amount)
   }
+
   private def paymentAmountCellValueFactory = new Callback[CellDataFeatures[Payment, Number], ObservableValue[Number]]() {
     def call(p: CellDataFeatures[Payment, Number]) = new SimpleLongProperty(p.getValue.amount.amount)
   }
+
   private def paymentMoneyCellFactory = new Callback[TableColumn[Payment, Number], TableCell[Payment, Number]]() {
     def call(pn: TableColumn[Payment, Number]) = {
-      new TableCell[Payment, Number] () {
+      new TableCell[Payment, Number]() {
         override def updateItem(item: Number, empty: Boolean): Unit = {
           super.updateItem(item, empty)
           if (item != null) setText(moneyFormatter.format(item))
@@ -255,9 +263,11 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
       }
     }
   }
+
   private def paymentDateCellValueFactory = new Callback[CellDataFeatures[Payment, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[Payment, String]) = new SimpleStringProperty(p.getValue.receivedAt.format(PAYMENT_DATE_FORMAT))
   }
+
   private def paymentRowFactory = new Callback[TableView[Payment], TableRow[Payment]]() {
     override def call(table: TableView[Payment]): TableRow[Payment] = {
       val row = new TableRow[Payment]
@@ -277,6 +287,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
 
   /**
     * Create a row for a node with context actions (copy node uri and id).
+    *
     * @return TableRow the created row
     */
   private def setupPeerNodeContextMenu(): TableRow[NodeAnnouncement] = {
@@ -305,6 +316,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
 
   /**
     * Create a row for a PeerChannel with Copy context actions.
+    *
     * @return TableRow the created row
     */
   private def setupPeerChannelContextMenu(): TableRow[ChannelAnnouncement] = {
