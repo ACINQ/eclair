@@ -34,6 +34,8 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 
 ## Installation
 
+:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha1](https://github.com/ACINQ/eclair/blob/v0.2-alpha1/README.md#installation)**.
+
 ### Configuring Bitcoin Core
 
 Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. This means that on Windows you will need Bitcoin Core 0.14.0.
