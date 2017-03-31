@@ -71,7 +71,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.expectMsgType[PublishAsap]
+    alice2blockchain.expectMsgType[PublishParentAndChild]
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
@@ -92,7 +92,7 @@ trait StateTestsHelperMethods extends TestKitBase {
       txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
       lockTime = 0
     )
-    MakeFundingTxResponse(anchorTx, 0)
+    MakeFundingTxResponse(anchorTx, anchorTx, 0)
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {

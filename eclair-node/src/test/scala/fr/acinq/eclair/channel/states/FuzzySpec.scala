@@ -49,7 +49,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! dummyFundingTx
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishAsap]
+      alice2blockchain.expectMsgType[PublishParentAndChild]
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
       alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
