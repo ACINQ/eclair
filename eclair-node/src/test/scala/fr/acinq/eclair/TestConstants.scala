@@ -44,7 +44,8 @@ object TestConstants {
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
-      routerBroadcastInterval = 60 seconds)
+      routerBroadcastInterval = 60 seconds,
+      routerValidateInterval = 2 seconds)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -83,7 +84,8 @@ object TestConstants {
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
-      routerBroadcastInterval = 60 seconds)
+      routerBroadcastInterval = 60 seconds,
+      routerValidateInterval = 2 seconds)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

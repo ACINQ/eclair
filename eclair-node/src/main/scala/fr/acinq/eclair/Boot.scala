@@ -67,7 +67,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
 
-  val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
+  val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
     user = config.getString("bitcoind.rpcuser"),
     password = config.getString("bitcoind.rpcpassword"),
     host = config.getString("bitcoind.host"),
@@ -75,7 +75,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
 
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
-  val (chain, blockCount, progress) = Await.result(bitcoin_client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)
+  val (chain, blockCount, progress) = Await.result(bitcoinClient.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)
   logger.info(s"using chain=$chain")
   chain match {
     case "test" | "regtest" => {}
@@ -85,22 +85,22 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   Globals.blockCount.set(blockCount)
   val defaultFeeratePerKw = config.getLong("default-feerate-perkw")
   val feeratePerKw = if (chain == "regtest") defaultFeeratePerKw else {
-    val feeratePerKB = Await.result(bitcoin_client.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
+    val feeratePerKB = Await.result(bitcoinClient.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
     if (feeratePerKB < 0) defaultFeeratePerKw else feerateKB2Kw(feeratePerKB)
   }
 
   logger.info(s"initial feeratePerKw=$feeratePerKw")
   Globals.feeratePerKw.set(feeratePerKw)
-  val bitcoinVersion = Await.result(bitcoin_client.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
+  val bitcoinVersion = Await.result(bitcoinClient.client.invoke("getinfo").map(json => (json \ "version").extract[String]), 10 seconds)
   // we use it as final payment address, so that funds are moved to the bitcoind wallet upon channel termination
-  val JString(finalAddress) = Await.result(bitcoin_client.client.invoke("getnewaddress"), 10 seconds)
+  val JString(finalAddress) = Await.result(bitcoinClient.client.invoke("getnewaddress"), 10 seconds)
   logger.info(s"finaladdress=$finalAddress")
   // TODO: we should use p2wpkh instead of p2pkh as soon as bitcoind supports it
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
 
   val zmq = new ZeroMQClient(config.getString("bitcoind.zmq"), system.eventStream)
-  val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoin_client), "watcher", SupervisorStrategy.Resume))
+  val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
   val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
     case "local" => Props[LocalPaymentHandler]
     case "noop" => Props[NoopPaymentHandler]

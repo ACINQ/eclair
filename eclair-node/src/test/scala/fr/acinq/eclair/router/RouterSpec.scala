@@ -20,17 +20,36 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class RouterSpec extends BaseRouterSpec {
 
-  test("properly announce new channels") { case (router, watcher) =>
+  test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
     val channelId_ac = toShortId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    // a-x will not be found
+    val chan_ax = channelAnnouncement(42001, priv_a, randomKey, priv_funding_a, randomKey)
+    // a-y will have an invalid script
+    val priv_y = randomKey
+    val priv_funding_y = randomKey
+    val chan_ay = channelAnnouncement(42002, priv_a, priv_y, priv_funding_a, priv_funding_y)
+    // a-z will be spent
+    val priv_z = randomKey
+    val priv_funding_z = randomKey
+    val chan_az = channelAnnouncement(42003, priv_a, priv_z, priv_funding_a, priv_funding_z)
 
     router ! chan_ac
-    watcher.expectMsg(GetTx(420000, 5, 0, chan_ac))
-    watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0), true, chan_ac))
+    router ! chan_ax
+    router ! chan_ay
+    router ! chan_az
+    router ! 'tick_validate // we manually trigger a validation
+    watcher.expectMsg(ParallelGetRequest(chan_ac :: chan_ax :: chan_ay :: chan_az :: Nil))
+    watcher.send(router, ParallelGetResponse(
+      IndividualResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true) ::
+        IndividualResult(chan_ax, None, false) ::
+        IndividualResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true) ::
+        IndividualResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false) :: Nil))
     watcher.expectMsgType[WatchSpentBasic]
+    watcher.expectNoMsg(1 second)
 
     eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
   }

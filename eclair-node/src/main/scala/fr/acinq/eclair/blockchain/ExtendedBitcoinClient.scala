@@ -4,11 +4,14 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.fromShortId
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
 
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 
 /**
   * Created by PM on 26/04/2016.
@@ -214,6 +217,37 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
         case JInt(feerate) => Btc(feerate.toLong).toLong
       }
     })
+
+  def getParallel(awaiting: Seq[ChannelAnnouncement]): Future[ParallelGetResponse] = {
+    case class TxCoordinate(blockHeight: Int, txIndex: Int, outputIndex: Int)
+
+    val coordinates = awaiting.map {
+      case c =>
+        val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
+        TxCoordinate(blockHeight, txIndex, outputIndex)
+    }.zipWithIndex
+
+    import ExecutionContext.Implicits.global
+    implicit val formats = org.json4s.DefaultFormats
+
+    for {
+      blockHashes: Seq[String] <- client.invoke(coordinates.map(coord => ("getblockhash", coord._1.blockHeight :: Nil))).map(_.map(_.extractOrElse[String]("00" * 32)))
+      txids: Seq[String] <- client.invoke(blockHashes.map(h => ("getblock", h :: Nil)))
+        .map(_.zipWithIndex)
+        .map(_.map {
+          case (json, idx) => Try {
+            val JArray(txs) = json \ "tx"
+            txs(coordinates(idx)._1.txIndex).extract[String]
+          } getOrElse ("00" * 32)
+        })
+      txs <- client.invoke(txids.map(txid => ("getrawtransaction", txid :: Nil))).map(_.map {
+        case JString(raw) => Some(Transaction.read(raw))
+        case _ => None
+      })
+      unspent <- client.invoke(txids.zipWithIndex.map(txid => ("gettxout", txid._1 :: coordinates(txid._2)._1.outputIndex :: true :: Nil))).map(_.map(_ != JNull))
+    } yield ParallelGetResponse(awaiting.zip(txs.zip(unspent)).map(x => IndividualResult(x._1, x._2._1, x._2._2)))
+
+  }
 }
 
 object ExtendedBitcoinClient {

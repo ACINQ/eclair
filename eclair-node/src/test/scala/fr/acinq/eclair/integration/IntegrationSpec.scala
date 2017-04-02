@@ -18,7 +18,7 @@ import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Disconnect
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentSucceeded}
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.{Announcements, AnnouncementsValidationSpec}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Setup, randomKey, toShortId}
 import grizzled.slf4j.Logging
@@ -432,51 +432,28 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }, max = 20 seconds, interval = 1 second)
   }
 
-  case class SimulatedChannel(node1Key: PrivateKey, node2Key: PrivateKey, node1FundingKey: PrivateKey, node2FundingKey: PrivateKey, amount: Satoshi, fundingTx: Transaction, fundingOutputIndex: Int)
-
-  def simulateChannel(extendedClient: ExtendedBitcoinClient): SimulatedChannel = {
-    val node1Key = randomKey
-    val node2Key = randomKey
-    val node1BitcoinKey = randomKey
-    val node2BitcoinKey = randomKey
-    val amount = Satoshi(1000000)
-    // first we publish the funding tx
-    val fundingTxFuture = extendedClient.makeFundingTx(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey, amount, 10000)
-    val fundingTx = Await.result(fundingTxFuture, 10 seconds)
-    Await.result(extendedClient.publishTransaction(fundingTx._1), 10 seconds)
-    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, fundingTx._1, fundingTx._2)
-  }
-
-  test("generate and validate 100 channels") {
-    val extendedClient = new ExtendedBitcoinClient(bitcoinrpcclient)
+  test("generate and validate lots of channels") {
+    implicit val extendedClient = new ExtendedBitcoinClient(bitcoinrpcclient)
     // we simulate fake channels by publishing a funding tx and sending announcement messages to a node at random
     logger.info(s"generating fake channels")
     val sender = TestProbe()
-    val channels = for (i <- 0 until 100) yield {
+    val channels = for (i <- 0 until 242) yield {
       // let's generate a block every 10 txs so that we can compute short ids
       if (i % 10 == 0) {
         sender.send(bitcoincli, BitcoinReq("generate", 1))
         sender.expectMsgType[JValue](10 seconds)
       }
-      simulateChannel(extendedClient)
+      AnnouncementsValidationSpec.simulateChannel
     }
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
+    logger.info(s"simulated ${channels.size} channels")
     // then we make the announcements
-    val announcements = channels.map {
-      case c =>
-        val (blockHeight, txIndex) = Await.result(extendedClient.getTransactionShortId(c.fundingTx.txid.toString()), 10 seconds)
-        val shortChannelId = toShortId(blockHeight, txIndex, c.fundingOutputIndex)
-        val (channelAnnNodeSig1, channelAnnBitcoinSig1) = Announcements.signChannelAnnouncement(shortChannelId, c.node1Key, c.node2Key.publicKey, c.node1FundingKey, c.node2FundingKey.publicKey, BinaryData(""))
-        val (channelAnnNodeSig2, channelAnnBitcoinSig2) = Announcements.signChannelAnnouncement(shortChannelId, c.node2Key, c.node1Key.publicKey, c.node2FundingKey, c.node1FundingKey.publicKey, BinaryData(""))
-        val channelAnnouncement = Announcements.makeChannelAnnouncement(shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, channelAnnNodeSig1, channelAnnNodeSig2, channelAnnBitcoinSig1, channelAnnBitcoinSig2)
-        channelAnnouncement
-    }
+    val announcements = channels.map(c => AnnouncementsValidationSpec.makeChannelAnnouncement(c))
     announcements.foreach(ann => nodes("A").router ! ann)
-    // remember F1->F4 and related channels have disappeared
     awaitCond({
       sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]].size == 105
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-F4} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
 

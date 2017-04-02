@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.{GetTx, GetTxResponse, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.{IndividualResult, ParallelGetRequest, ParallelGetResponse, WatchSpentBasic}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -74,16 +74,16 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! chan_bc
       router ! chan_cd
       router ! chan_ef
+      router ! 'tick_validate // we manually trigger a validation
       // watcher receives the get tx requests
-      watcher.expectMsg(GetTx(420000, 1, 0, chan_ab))
-      watcher.expectMsg(GetTx(420000, 2, 0, chan_bc))
-      watcher.expectMsg(GetTx(420000, 3, 0, chan_cd))
-      watcher.expectMsg(GetTx(420000, 4, 0, chan_ef))
+      watcher.expectMsg(ParallelGetRequest(chan_ab :: chan_bc :: chan_cd :: chan_ef :: Nil))
       // and answers with valid scripts
-      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0), true, chan_ab))
-      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0), true, chan_bc))
-      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0), true, chan_cd))
-      watcher.send(router, GetTxResponse(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0), true, chan_ef))
+      watcher.send(router, ParallelGetResponse(
+        IndividualResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true) ::
+        IndividualResult(chan_bc, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0)), true) ::
+        IndividualResult(chan_cd, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0)), true) ::
+        IndividualResult(chan_ef, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0)), true) :: Nil
+      ))
       // watcher receives watch-spent request
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
