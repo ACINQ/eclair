@@ -14,6 +14,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, NodeParams}
 
 import scala.util.Random
+import scala.concurrent.duration._
 
 // @formatter:off
 
@@ -44,8 +45,10 @@ case class PeerRecord(id: PublicKey, address: InetSocketAddress)
 class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
 
   import Peer._
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
+  context.system.scheduler.schedule(30 seconds, 30 seconds, self, 'ping)
 
   when(DISCONNECTED) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
@@ -118,6 +121,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   when(CONNECTED) {
+    case (Event('ping, ConnectedData(transport, _, _))) =>
+      transport ! Ping(100, BinaryData("00" * 50))
+      stay
+
+    case Event(Ping(pongLength, _), ConnectedData(transport, _, _)) =>
+      transport ! Pong(BinaryData("00" * pongLength))
+      stay
+
+    case Event(Pong(data), ConnectedData(transport, _, _)) =>
+      // TODO: compute latency for remote peer ?
+      log.debug(s"received pong with ${data.length} bytes")
+      stay
 
     case Event(err@Error(channelId, reason), ConnectedData(transport, _, channels)) if channelId == CHANNELID_ZERO =>
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")

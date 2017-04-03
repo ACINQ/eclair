@@ -26,6 +26,10 @@ case class Init(globalFeatures: BinaryData,
 case class Error(channelId: BinaryData,
                  data: BinaryData) extends SetupMessage with HasChannelId
 
+case class Ping(pongLength: Int, data: BinaryData) extends LightningMessage
+
+case class Pong(data: BinaryData) extends LightningMessage
+
 case class OpenChannel(temporaryChannelId: BinaryData,
                        fundingSatoshis: Long,
                        pushMsat: Long,

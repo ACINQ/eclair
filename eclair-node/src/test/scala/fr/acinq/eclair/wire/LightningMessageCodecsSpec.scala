@@ -155,11 +155,13 @@ class LightningMessageCodecsSpec extends FunSuite {
     val node_announcement = NodeAnnouncement(randomSignature, 1, bin(33, 2), (100.toByte, 200.toByte, 300.toByte), "node-alias", bin(0, 0), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
     val channel_update = ChannelUpdate(randomSignature, 1, 2, bin(2, 2), 3, 4, 5, 6)
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), 42, randomSignature, randomSignature)
+    val ping = Ping(100, BinaryData("01" * 10))
+    val pong = Pong(BinaryData("01" * 10))
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: announcement_signatures :: Nil
+        channel_announcement :: node_announcement :: channel_update :: announcement_signatures :: ping :: pong :: Nil
 
     msgs.foreach {
       case msg => {
