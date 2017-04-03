@@ -67,7 +67,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   def buildCmdAdd(paymentHash: BinaryData, dest: PublicKey) = {
     // we don't want to be below htlcMinimumMsat
-    val amount = 1000000 // Random.nextInt(1000000) + 1000
+    val amount = Random.nextInt(1000000) + 10000
     val onion = PaymentLifecycle.buildOnion(dest :: Nil, Nil, paymentHash)
 
     CMD_ADD_HTLC(amount, paymentHash, Globals.blockCount.get() + PaymentLifecycle.defaultHtlcExpiry, onion.onionPacket, upstream_opt = None, commit = true)
@@ -85,7 +85,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
         case (s, cmd) => s.send(channel, cmd)
       }
       val oks = senders.map(_.expectMsgType[String])
-      val fulfills = senders.map(_.expectMsgAnyClassOf(classOf[UpdateFulfillHtlc], classOf[UpdateFailMalformedHtlc]))
+      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc])
     }
   }
 
