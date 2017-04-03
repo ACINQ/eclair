@@ -24,17 +24,17 @@ class NotificationsController extends Logging {
   @FXML var notifsVBox: VBox = _
 
   val successIcon: Image = new Image(getClass.getResource("/gui/commons/images/success_icon.png").toExternalForm, true)
-  val errorIcon: Image = new Image(getClass.getResource("/gui/commons/images/error_icon.png").toExternalForm, true)
+  val errorIcon: Image = new Image(getClass.getResource("/gui/commons/images/warning_icon.png").toExternalForm, true)
   val infoIcon: Image = new Image(getClass.getResource("/gui/commons/images/info_icon.png").toExternalForm, true)
 
   /**
     * Adds a notification panel to the notifications stage
     *
     * @param title Title of the notification, should not be too long
-    * @param body Body of the notification
+    * @param message Main message of the notification
     * @param notificationType type of the notification (error, warning, success, info...)
     */
-  def addNotification (title: String, body: String, notificationType: NotificationType) = {
+  def addNotification (title: String, message: String, notificationType: NotificationType) = {
 
     val loader = new FXMLLoader(getClass.getResource("/gui/main/notificationPane.fxml"))
     val notifPaneController = new NotificationPaneController
@@ -47,7 +47,7 @@ class NotificationsController extends Logging {
 
         // set notification content
         notifPaneController.titleLabel.setText(title)
-        notifPaneController.bodyLabel.setText(body)
+        notifPaneController.messageLabel.setText(message.capitalize)
         notificationType match {
           case NOTIFICATION_SUCCESS => {
             notifPaneController.rootPane.setStyle("-fx-border-color: #28d087")

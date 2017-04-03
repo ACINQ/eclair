@@ -101,6 +101,7 @@ class FxApp extends Application with Logging {
       override def run = {
         // create scene
         val popup = new Popup
+        popup.setHideOnEscape(false)
         popup.setAutoFix(false)
         val margin = 10
         val width = 300

@@ -2,6 +2,8 @@ package fr.acinq.eclair.gui
 
 import java.io.{File, FileWriter}
 import java.net.InetSocketAddress
+import java.text.NumberFormat
+import java.util.Locale
 import javafx.application.Platform
 import javafx.scene.control.TextArea
 
@@ -41,8 +43,7 @@ class Handlers(setup: Setup) extends Logging {
           conn <- setup.switchboard ? NewConnection(pubkey, address, Some(NewChannel(fundingSatoshis, pushMsat)))
         } yield conn) onFailure {
           case t =>
-            val message = s"$host:$port\nCause: ${t.getMessage}"
-            notification("Connection failed", message, NOTIFICATION_ERROR)
+            notification("Connection failed", s"$host:$port", NOTIFICATION_ERROR)
         }
       case _ => {}
     }
@@ -52,13 +53,13 @@ class Handlers(setup: Setup) extends Logging {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
     (paymentInitiator ? CreatePayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
       case Success(PaymentSucceeded(_)) =>
-        val message = s"Amount (msat): $amountMsat\nH: $paymentHash"
-        notification("Payment Successful", message, NOTIFICATION_SUCCESS)
+        val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat/1000)} satoshis"
+        notification("Payment Sent", message, NOTIFICATION_SUCCESS)
       case Success(PaymentFailed(_, reason)) =>
-        val message = s"Cause: ${reason.getOrElse("unknown")}\nAmount (msat): $amountMsat\nH: $paymentHash"
+        val message = reason.getOrElse("Unknown Error").toString
         notification("Payment Failed", message, NOTIFICATION_ERROR)
       case Failure(t) =>
-        val message = s"Cause: ${t.getMessage}\nAmount (msat): $amountMsat\nH: $paymentHash"
+        val message = t.getMessage
         notification("Payment Failed", message, NOTIFICATION_ERROR)
     }
   }
@@ -91,7 +92,7 @@ class Handlers(setup: Setup) extends Logging {
     * Displays a system notification if the system supports it.
     *
     * @param title Title of the notification
-    * @param message content of the notification. Accepts line break
+    * @param message main message of the notification, will not wrap
     * @param notificationType type of the message, default to NONE
     * @param showAppName true if you want the notification title to be preceded by "Eclair - ". True by default
     */

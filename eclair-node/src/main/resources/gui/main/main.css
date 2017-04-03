@@ -102,16 +102,19 @@
 .notification-pane.grid {
     -fx-background-color: #252525;
     -fx-border-width: 0 0 0 3px;
-    -fx-padding: 1.5em;
+    -fx-padding: 1em;
+    -fx-vgap: 5px;
+    -fx-hgap: 1em;
 }
 .notification-pane .label {
-    -fx-text-fill: rgb(245, 245, 245);
+    -fx-text-fill: rgb(255, 255, 255);
 }
 .notification-pane .label.notification-title {
-    -fx-font-weight: bold;
+    -fx-text-fill: rgb(220, 220, 220);
 }
-.notification-pane .label.notification-body {
-    -fx-text-fill: rgb(200, 200, 200);
+.notification-pane .label.notification-message {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
 }
 .button.notification-close {
 	-fx-background-color: transparent;
@@ -121,11 +124,12 @@
     -fx-background-position: center center;
     -fx-border-color: transparent;
 	-fx-padding: 0;
-	-fx-translate-y: -12px;
+	-fx-translate-y: -7px;
+	-fx-translate-x: -3px;
 }
 .button.notification-close:hover,
 .button.notification-close:pressed {
-    -fx-background-color: #7e7e7e;
+    -fx-background-color: #353535;
 }
 
 

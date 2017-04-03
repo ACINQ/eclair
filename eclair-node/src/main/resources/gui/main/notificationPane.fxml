@@ -12,34 +12,33 @@
 
 <GridPane fx:id="rootPane" minWidth="300.0" prefWidth="300.0" maxWidth="300.0"
           xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1"
-          onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit" onMouseClicked="#handleMouseClick">
-  <columnConstraints>
-    <ColumnConstraints hgrow="SOMETIMES" maxWidth="25.0" prefWidth="25.0" />
-    <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="220.0" />
-    <ColumnConstraints hgrow="SOMETIMES" maxWidth="30.0" minWidth="5.0" prefWidth="20.0" />
-  </columnConstraints>
-  <rowConstraints>
-    <RowConstraints minHeight="10.0" valignment="TOP" vgrow="SOMETIMES" />
-    <RowConstraints minHeight="10.0" valignment="TOP" vgrow="ALWAYS" />
-  </rowConstraints>
-   <children>
-      <Label fx:id="titleLabel" styleClass="notification-title" text="Eclair Notification" GridPane.columnIndex="1" />
-      <Label fx:id="bodyLabel" styleClass="notification-body" text="N/A" wrapText="true"
-             maxHeight="70.0" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-      <ImageView fx:id="icon" fitWidth="25.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
-         <image>
-            <Image url="@../commons/images/eclair-square.png" />
-         </image>
-      </ImageView>
-      <Button fx:id="closeButton" mnemonicParsing="false" styleClass="notification-close" text="" GridPane.columnIndex="2"
-              minWidth="18.0" prefWidth="18.0" maxWidth="18.0" minHeight="18.0" prefHeight="18.0" maxHeight="18.0"/>
-   </children>
-   <styleClass>
-      <String fx:value="grid" />
-      <String fx:value="notification-pane" />
-   </styleClass>
-   <stylesheets>
-      <URL value="@../commons/globals.css" />
-      <URL value="@main.css" />
-   </stylesheets>
+          opacity="0" onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit">
+    <columnConstraints>
+        <ColumnConstraints hgrow="SOMETIMES" maxWidth="25.0" prefWidth="25.0"/>
+        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="220.0"/>
+        <ColumnConstraints hgrow="SOMETIMES" maxWidth="30.0" minWidth="5.0" prefWidth="20.0"/>
+    </columnConstraints>
+    <rowConstraints>
+        <RowConstraints minHeight="10.0" valignment="TOP" vgrow="SOMETIMES"/>
+        <RowConstraints minHeight="10.0" valignment="TOP" vgrow="ALWAYS"/>
+    </rowConstraints>
+    <children>
+        <Label fx:id="titleLabel" styleClass="notification-title" text="Eclair Notification" GridPane.columnIndex="1"/>
+        <ImageView fx:id="icon" fitWidth="25.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
+            <image>
+                <Image url="@../commons/images/eclair-square.png"/>
+            </image>
+        </ImageView>
+        <Button fx:id="closeButton" maxHeight="18.0" maxWidth="18.0" minHeight="18.0" minWidth="18.0" mnemonicParsing="false"
+                styleClass="notification-close" text="" GridPane.columnIndex="2" />
+        <Label fx:id="messageLabel" styleClass="notification-message" text="N/A" wrapText="false" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1"/>
+    </children>
+    <styleClass>
+        <String fx:value="grid"/>
+        <String fx:value="notification-pane"/>
+    </styleClass>
+    <stylesheets>
+        <URL value="@../commons/globals.css"/>
+        <URL value="@main.css"/>
+    </stylesheets>
 </GridPane>
