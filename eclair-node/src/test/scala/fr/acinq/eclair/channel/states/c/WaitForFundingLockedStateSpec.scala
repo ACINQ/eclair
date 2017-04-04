@@ -36,6 +36,8 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
       val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
       alice ! dummyFundingTx
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
       alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       bob2alice.expectMsgType[FundingSigned]

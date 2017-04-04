@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -66,6 +66,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
     val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
     alice ! dummyFundingTx
+    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingSigned]
@@ -88,12 +90,14 @@ trait StateTestsHelperMethods extends TestKitBase {
   }
 
   def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
-    val anchorTx = Transaction(version = 1,
-      txIn = Seq.empty[TxIn],
+    val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
+    val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(makeFundingTx.amount, Script.pay2wpkh(priv.publicKey)) :: Nil, lockTime = 0)
+    val anchorTx = Transaction(version = 2,
+      txIn = TxIn(OutPoint(parentTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
       lockTime = 0
     )
-    MakeFundingTxResponse(anchorTx, anchorTx, 0, PrivateKey(BinaryData("01" * 32)))
+    MakeFundingTxResponse(parentTx, anchorTx, 0, priv)
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {

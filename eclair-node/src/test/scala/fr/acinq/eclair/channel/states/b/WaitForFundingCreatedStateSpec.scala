@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel.states.b
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.{MakeFundingTx, WatchConfirmed, WatchSpent}
+import fr.acinq.eclair.blockchain.{MakeFundingTx, WatchConfirmed, WatchEventConfirmed, WatchSpent}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.transactions.Transactions
@@ -44,6 +44,8 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
       val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
       val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
       alice ! dummyFundingTx
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
       awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
     }
     test((bob, alice2bob, bob2alice, bob2blockchain))

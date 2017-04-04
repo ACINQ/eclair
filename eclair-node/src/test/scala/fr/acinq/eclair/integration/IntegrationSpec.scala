@@ -9,7 +9,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, SIGHASH_ALL, Satoshi, Script, ScriptWitness, SigVersion, Transaction}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.Forward
@@ -132,8 +132,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
     val eventListener = TestProbe()
+    val eventListener1 = TestProbe()
     node1.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
-    node2.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
+    node2.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
     val sender = TestProbe()
     sender.send(node1.switchboard, NewConnection(
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
@@ -141,8 +142,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat)))))
     sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
     // waiting for channel to publish funding tx
-    awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED)
-    awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED)
+
+    awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_INTERNAL1)
+    awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
   }
 
   test("connect nodes") {
@@ -151,6 +153,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     //        |     / \
     //        --E--'   F{1,2,3,4}
     //
+    val eventListeners = nodes.values.map(s => {
+      val eventListener = TestProbe()
+      s.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
+      eventListener
+    })
 
     connect(nodes("A"), nodes("B"), 10000000, 0)
     connect(nodes("B"), nodes("C"), 2000000, 0)
@@ -163,8 +170,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     connect(nodes("C"), nodes("F4"), 5000000, 0)
     // confirming funding txes
     val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("generate", 6))
+    sender.send(bitcoincli, BitcoinReq("generate", 3))
     sender.expectMsgType[JValue](10 seconds)
+
+    eventListeners.map(eventListener => awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED))
   }
 
   def awaitAnnouncements(subset: Map[String, Setup], nodes: Int, channels: Int, updates: Int) = {
