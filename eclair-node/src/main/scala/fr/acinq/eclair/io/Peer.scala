@@ -48,7 +48,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   import scala.concurrent.ExecutionContext.Implicits.global
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
-  context.system.scheduler.schedule(30 seconds, 30 seconds, self, 'ping)
+  context.system.scheduler.schedule(nodeParams.pingInterval, nodeParams.pingInterval, self, 'ping)
 
   when(DISCONNECTED) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
@@ -126,13 +126,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   when(CONNECTED) {
     case (Event('ping, ConnectedData(transport, _, _))) =>
-      // TODO: use random sizes
-      transport ! Ping(100, BinaryData("00" * 50))
+      val pingSize = Random.nextInt(1000)
+      val pongSize = Random.nextInt(1000)
+      transport ! Ping(pongSize, BinaryData("00" * pingSize))
       stay
 
     case Event(Ping(pongLength, _), ConnectedData(transport, _, _)) =>
       // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
-      transport ! Pong(BinaryData("00" * pongLength))
+      if (pongLength > 0) {
+        transport ! Pong(BinaryData("00" * pongLength))
+      }
       stay
 
     case Event(Pong(data), ConnectedData(transport, _, _)) =>
