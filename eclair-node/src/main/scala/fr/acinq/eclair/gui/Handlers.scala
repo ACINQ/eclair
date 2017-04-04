@@ -27,7 +27,7 @@ class Handlers(setup: Setup) extends Logging {
 
   import setup._
 
-  private var notifsController:Option[NotificationsController] = None
+  private var notifsController: Option[NotificationsController] = None
 
   def initNotifications (controller: NotificationsController) = {
     notifsController = Option(controller)
