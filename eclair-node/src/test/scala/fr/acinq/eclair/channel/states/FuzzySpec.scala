@@ -1,8 +1,11 @@
 package fr.acinq.eclair.channel.states
 
+import java.util.concurrent.atomic.AtomicBoolean
+
 import akka.actor.{ActorRef, Cancellable, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -62,25 +65,27 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     test((alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB))
   }
 
-  def buildCmdAdd(paymentHash: BinaryData) = {
-    val channelUpdate_ab = ChannelUpdate("00" * 64, 0, 0, "0000", cltvExpiryDelta = 4, feeBaseMsat = 642000, feeProportionalMillionths = 7, htlcMinimumMsat = 0)
-    val hops = Hop(Alice.nodeParams.privateKey.publicKey, Bob.nodeParams.privateKey.publicKey, channelUpdate_ab) :: Nil
+  def buildCmdAdd(paymentHash: BinaryData, dest: PublicKey) = {
     // we don't want to be below htlcMinimumMsat
-    val amount = Random.nextInt(1000000) + 1000
-    PaymentLifecycle.buildCommand(amount, paymentHash, hops, 444000)
+    val amount = Random.nextInt(1000000) + 10000
+    val onion = PaymentLifecycle.buildOnion(dest :: Nil, Nil, paymentHash)
+
+    CMD_ADD_HTLC(amount, paymentHash, Globals.blockCount.get() + PaymentLifecycle.defaultHtlcExpiry, onion.onionPacket, upstream_opt = None, commit = true)
   }
 
-  def gatling(parallel: Int, total: Int, channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef): Unit = {
+  def gatling(parallel: Int, total: Int, channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, destination: PublicKey): Unit = {
     for (i <- 0 until total / parallel) {
       // we don't want to be above maxHtlcValueInFlightMsat or maxAcceptedHtlcs
       awaitCond(channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size < 10 && channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size < 10)
       val senders = for (i <- 0 until parallel) yield TestProbe()
       senders.foreach(_.send(paymentHandler, 'genh))
       val paymentHashes = senders.map(_.expectMsgType[BinaryData])
-      val cmds = paymentHashes.map(buildCmdAdd(_))
-      senders.zip(cmds).foreach(x => x._1.send(channel, x._2))
+      val cmds = paymentHashes.map(h => buildCmdAdd(h, destination))
+      senders.zip(cmds).foreach {
+        case (s, cmd) => s.send(channel, cmd)
+      }
       val oks = senders.map(_.expectMsgType[String])
-      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc])
+      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc](10 seconds))
     }
   }
 
@@ -99,28 +104,43 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   test("fuzzy testing with only one party sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+      val success1 = new AtomicBoolean(false)
       val gatling1 = new Thread(new Runnable {
-        override def run(): Unit = gatling(5, 100, alice, paymentHandlerB)
+        override def run(): Unit = {
+          gatling(5, 100, alice, paymentHandlerB, Bob.id)
+          success1.set(true)
+        }
       })
       gatling1.start()
       val chaosMonkey = randomDisconnect(pipe)
       gatling1.join()
+      assert(success1.get())
       chaosMonkey.cancel()
   }
 
-  test("fuzzy testing with only both parties sending HTLCs") {
+  test("fuzzy testing with both parties sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+      val success1 = new AtomicBoolean(false)
       val gatling1 = new Thread(new Runnable {
-        override def run(): Unit = gatling(4, 100, alice, paymentHandlerB)
+        override def run(): Unit = {
+          gatling(4, 100, alice, paymentHandlerB, Bob.id)
+          success1.set(true)
+        }
       })
       gatling1.start()
+      val success2 = new AtomicBoolean(false)
       val gatling2 = new Thread(new Runnable {
-        override def run(): Unit = gatling(4, 100, bob, paymentHandlerA)
+        override def run(): Unit = {
+          gatling(4, 100, bob, paymentHandlerA, Alice.id)
+          success2.set(true)
+        }
       })
       gatling2.start()
       val chaosMonkey = randomDisconnect(pipe)
       gatling1.join()
+      assert(success1.get())
       gatling2.join()
+      assert(success2.get())
       chaosMonkey.cancel()
   }
 
