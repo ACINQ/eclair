@@ -53,6 +53,7 @@ object Helpers {
       case (_, _, _, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => Nil
+      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_INTERNAL1) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CREATED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
@@ -120,6 +121,17 @@ object Helpers {
     def announceChannel(localLocalFeatures: BinaryData, remoteLocalFeature: BinaryData): Boolean =
       Features.isSet(localLocalFeatures, CHANNELS_PUBLIC_BIT) && Features.isSet(remoteLocalFeature, CHANNELS_PUBLIC_BIT)
 
+    def malleateTx(tx: Transaction): Transaction = {
+      val inputs1 = tx.txIn.map(input => Script.parse(input.signatureScript) match {
+        case OP_PUSHDATA(sig, _) :: OP_PUSHDATA(pub, _) :: Nil if pub.length == 33 && Try(Crypto.decodeSignature(sig)).isSuccess =>
+          val (r, s) = Crypto.decodeSignature(sig)
+          val s1 = Crypto.curve.getN.subtract(s)
+          val sig1 = Crypto.encodeSignature(r, s1)
+          input.copy(signatureScript = Script.write(OP_PUSHDATA(sig1) :: OP_PUSHDATA(pub) :: Nil))
+      })
+      val tx1 = tx.copy(txIn = inputs1)
+      tx1
+    }
   }
 
   object Closing extends Logging {

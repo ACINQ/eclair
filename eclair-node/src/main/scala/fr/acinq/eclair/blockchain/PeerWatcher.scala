@@ -118,7 +118,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       } else publish(tx)
 
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw) =>
-      client.makeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
+      client.makeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw).map(r => MakeFundingTxResponse(r._1, r._2, r._3, r._4)).pipeTo(sender)
 
     case ParallelGetRequest(ann) => client.getParallel(ann).pipeTo(sender)
 

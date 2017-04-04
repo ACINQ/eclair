@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, SupervisorStrategy}
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -213,11 +213,38 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int), DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
-      // our wallet provided us with a funding tx
-      log.info(s"funding tx txid=${fundingTx.txid}")
+    case Event(MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
+      blockchain ! WatchConfirmed(self, parentTx.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+      parentTx.txIn.map(input => {
+        log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
+        blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
+      })
+      goto(WAIT_FOR_FUNDING_INTERNAL1) using DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingTx, fundingTxOutputIndex, priv, data)
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+
+    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+  })
+
+  when(WAIT_FOR_FUNDING_INTERNAL1)(handleExceptions {
+    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_INTERNAL1(oldFundingTx, fundingTxOutputIndex, priv, data)) =>
+      blockchain ! WatchConfirmed(self, spendingTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(spendingTx))
+      stay()
+
+    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_INTERNAL1(oldFundingTx, fundingTxOutputIndex, priv, data)) =>
+      // spendingTx is the parent of our funding tx
+      val input = oldFundingTx.txIn(0)
+      val input1 = input.copy(outPoint = input.outPoint.copy(hash = tx.hash))
+      val unsignedfundingTx = oldFundingTx.copy(txIn = Seq(input1))
+      val pub = priv.publicKey
+      val sig = Transaction.signInput(unsignedfundingTx, 0, Script.pay2pkh(pub), SIGHASH_ALL | SIGHASH_ANYONECANPAY, tx.txOut(0).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
+      val fundingTx = unsignedfundingTx.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
+      Transaction.correctlySpends(fundingTx, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // let's create the first commitment tx that spends the yet uncommitted funding tx
+      import data._
       val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
       val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
@@ -232,12 +259,6 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
       context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
       goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), fundingCreated)
-
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
-
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
-
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
@@ -937,6 +958,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   whenUnhandled {
+    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(tx), spendingTx), _) =>
+      if (spendingTx.txid != tx.txid) {
+        log.error(s"our transaction ${tx.txid} is conflicted by ${spendingTx.txid}")
+      }
+      stay()
 
     case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(new RuntimeException(s"initiating local commit"), d)
 

@@ -30,6 +30,7 @@ case object WAIT_FOR_INIT_INTERNAL extends State
 case object WAIT_FOR_OPEN_CHANNEL extends State
 case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_INTERNAL extends State
+case object WAIT_FOR_FUNDING_INTERNAL1 extends State
 case object WAIT_FOR_FUNDING_CREATED extends State
 case object WAIT_FOR_FUNDING_SIGNED extends State
 case object WAIT_FOR_FUNDING_CONFIRMED extends State
@@ -76,7 +77,9 @@ case object BITCOIN_NEXTREMOTECOMMIT_DONE extends BitcoinEvent
 case object BITCOIN_PENALTY_DONE extends BitcoinEvent
 case object BITCOIN_CLOSE_DONE extends BitcoinEvent
 case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId: Long) extends BitcoinEvent
+case class BITCOIN_TX_CONFIRMED(tx: Transaction) extends BitcoinEvent
 case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEvent
+case class BITCOIN_INPUT_SPENT(tx: Transaction) extends BitcoinEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
@@ -129,6 +132,7 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
+final case class DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingTx: Transaction, outputIndex: Int, priv: PrivateKey, data: DATA_WAIT_FOR_FUNDING_INTERNAL) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments

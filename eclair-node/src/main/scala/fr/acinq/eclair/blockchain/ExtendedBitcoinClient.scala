@@ -161,7 +161,8 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(tx2Hex(tx))
 
-  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+
+  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Transaction, Int, PrivateKey)] = {
     // this is the funding tx that we want to publish
     val (partialTx, pubkeyScript) = Transactions.makePartialFundingTx(amount, localFundingPubkey, remoteFundingPubkey)
     val parentFee = Satoshi(250 * 2 * 2 * feeRatePerKw / 1024)
@@ -179,13 +180,10 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       pos = Transactions.findPubKeyScriptIndex(tx2, Script.pay2wpkh(pub))
       // now we update our funding tx to spend from our segwit tx
       tx3 = partialTx.copy(txIn = TxIn(OutPoint(tx2, pos), sequence = TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil)
-      sig = Transaction.signInput(tx3, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx2.txOut(pos).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      tx4 = tx3.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
-      _ = Transaction.correctlySpends(tx4, tx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       // TODO: we publish the parent tx. we assume that the peer will reply very soon and our child funding tx
       // will be mined in the same block
       _ <- publishTransaction(tx2)
-    } yield (tx4, 0)
+    } yield (tx2, tx3, 0, priv)
 
     future
   }

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
@@ -92,7 +93,7 @@ trait StateTestsHelperMethods extends TestKitBase {
       txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
       lockTime = 0
     )
-    MakeFundingTxResponse(anchorTx, 0)
+    MakeFundingTxResponse(anchorTx, anchorTx, 0, PrivateKey(BinaryData("01" * 32)))
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {

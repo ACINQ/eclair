@@ -1,8 +1,8 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Block, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient.SignTransactionResponse
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, NewBlock, NewTransaction}
@@ -24,13 +24,13 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
     override def run(): Unit = system.eventStream.publish(NewBlock(DUMMY_BLOCK)) // blocks are not actually interpreted
   })
 
-  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
+  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Transaction, Int, PrivateKey)] = {
     val anchorTx = Transaction(version = 1,
       txIn = Seq.empty[TxIn],
       txOut = TxOut(amount, Script.pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,
       lockTime = 0
     )
-    Future.successful((anchorTx, 0))
+    Future.successful((anchorTx, anchorTx, 0, PrivateKey(BinaryData("01" * 32))))
   }
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = {

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import fr.acinq.eclair.channel.BitcoinEvent
 import fr.acinq.eclair.wire.{ChannelAnnouncement, LightningMessage}
@@ -35,7 +35,9 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   */
 final case class PublishAsap(tx: Transaction)
 final case class MakeFundingTx(localCommitPub: PublicKey, remoteCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)
-final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int)
+final case class MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey)
+final case class GetTx(blockHeight: Int, txIndex: Int, outputIndex: Int, ctx: LightningMessage)
+final case class GetTxResponse(tx: Transaction, isSpendable: Boolean, ctx: LightningMessage)
 final case class ParallelGetRequest(ann: Seq[ChannelAnnouncement])
 final case class IndividualResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean)
 final case class ParallelGetResponse(r: Seq[IndividualResult])
