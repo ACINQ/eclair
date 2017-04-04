@@ -16,7 +16,7 @@ import com.sun.javafx.application.LauncherImpl
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.blockchain.zmq.ZeroMQClient
+import fr.acinq.eclair.blockchain.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.gui.{FxApp, FxPreloader}
@@ -99,7 +99,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
 
-  val zmq = new ZeroMQClient(config.getString("bitcoind.zmq"), system.eventStream)
+  val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"))), "zmq", SupervisorStrategy.Restart))
   val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
   val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
     case "local" => Props[LocalPaymentHandler]
