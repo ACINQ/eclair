@@ -70,6 +70,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(Terminated(actor), d@DisconnectedData(offlineChannels)) if offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.isDefined =>
       val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
+
+    case Event(Rebroadcast(announcements), _) => stay // ignored
   }
 
   when(INITIALIZING) {

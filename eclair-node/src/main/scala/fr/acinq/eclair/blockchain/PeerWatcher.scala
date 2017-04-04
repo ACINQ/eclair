@@ -5,10 +5,12 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.feerateKB2Kw
+import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{Globals, NodeParams}
+import fr.acinq.eclair.wire.ChannelAnnouncement
+import fr.acinq.eclair.{Globals, NodeParams, feerateKB2Kw, fromShortId}
+import org.json4s.JsonAST.{JArray, JNull, JString}
 
 import scala.collection.SortedMap
 import scala.concurrent.duration._
@@ -22,6 +24,8 @@ import scala.util.Try
   * Created by PM on 21/02/2016.
   */
 class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+
+  import PeerWatcher._
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
@@ -121,15 +125,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
     case MakeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw) =>
       client.makeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw).map(r => MakeFundingTxResponse(r._1, r._2)).pipeTo(sender)
 
-    case GetTx(blockHeight, txIndex, outputIndex, ctx) =>
-      (for {
-        tx <- client.getTransaction(blockHeight, txIndex)
-        spendable <- client.isTransactionOuputSpendable(tx.txid.toString(), outputIndex, true)
-      } yield GetTxResponse(tx, spendable, ctx)).recover {
-        case t: Throwable =>
-          log.error(t, s"could not retrieve tx at blockHeight=$blockHeight, txIndex=$txIndex, outputIndex=$txIndex, ctx=$ctx")
-          GetTxResponse(null, false, ctx)
-      }.pipeTo(sender)
+    case ParallelGetRequest(ann) => client.getParallel(ann).pipeTo(sender)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor

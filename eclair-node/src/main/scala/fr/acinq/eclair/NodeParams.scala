@@ -41,7 +41,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       channelsDb: SimpleTypedDb[BinaryData, Data],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
                       announcementsDb: SimpleTypedDb[String, LightningMessage],
-                      routerBroadcastInterval: FiniteDuration)
+                      routerBroadcastInterval: FiniteDuration,
+                      routerValidateInterval: FiniteDuration)
 
 object NodeParams {
 
@@ -98,7 +99,8 @@ object NodeParams {
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
-      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS)
+      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
+      routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS)
     )
   }
 }

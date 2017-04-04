@@ -44,4 +44,16 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
       }
     } yield jsonRpcRes.result
 
+  def invoke(request: Seq[(String, Seq[Any])])(implicit ec: ExecutionContext): Future[Seq[JValue]] =
+    for {
+      entity <- Marshal(request.map(r => JsonRPCRequest(method = r._1, params = r._2))).to[RequestEntity]
+      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
+      jsonRpcRes <- Unmarshal(httpRes).to[Seq[JsonRPCResponse]].map {
+        //case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
+        case o => o
+      } recover {
+        case t: Throwable if httpRes.status == StatusCodes.Unauthorized => throw new RuntimeException("bitcoind replied with 401/Unauthorized (bad user/password?)", t)
+      }
+    } yield jsonRpcRes.map(_.result)
+
 }
