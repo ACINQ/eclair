@@ -212,8 +212,8 @@
                         </ImageView>
                         <VBox spacing="10.0" GridPane.columnIndex="1">
                             <children>
-                                <Label fx:id="message" styleClass="text-strong" text="Connection lost to Bitcoin Core..." wrapText="true" />
-                                <Label fx:id="details" text="Make sure Bitcoin core is up and running." wrapText="true" />
+                                <Label fx:id="message" styleClass="text-strong" text="Lost connection to Bitcoin Core..." wrapText="true" />
+                                <Label fx:id="details" text="Make sure that Bitcoin core is up and running." wrapText="true" />
                             </children>
                         </VBox>
                     </children>
