@@ -6,12 +6,14 @@ import fr.acinq.eclair.blockchain.{NewBlock, NewTransaction}
 import org.zeromq.ZMQ.Event
 import org.zeromq.{ZContext, ZMQ, ZMsg}
 
+import scala.concurrent.Promise
 import scala.concurrent.duration._
+import scala.util.Try
 
 /**
   * Created by PM on 04/04/2017.
   */
-class ZMQActor(address: String) extends Actor with ActorLogging {
+class ZMQActor(address: String, connected: Promise[Boolean]) extends Actor with ActorLogging {
 
   val ctx = new ZContext
 
@@ -51,6 +53,7 @@ class ZMQActor(address: String) extends Actor with ActorLogging {
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>
         log.info(s"connected to ${event.getAddress}")
+        Try(connected.success(true))
         context.system.eventStream.publish(ZMQConnected)
       case ZMQ.EVENT_DISCONNECTED =>
         log.warning(s"disconnected from ${event.getAddress}")

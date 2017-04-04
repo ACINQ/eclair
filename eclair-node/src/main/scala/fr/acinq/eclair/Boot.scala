@@ -29,7 +29,7 @@ import org.json4s.JsonAST.JString
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Promise}
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"), ".eclair"), headless: Boolean = false)
 
@@ -99,7 +99,10 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
 
-  val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"))), "zmq", SupervisorStrategy.Restart))
+  val zmqConnected = Promise[Boolean]()
+  val zmqDelay = akka.pattern.after(3 seconds, using = system.scheduler)(Future.failed(ZMQConnectionTimeoutException))
+  val zmqTimeout = Future firstCompletedOf Seq(zmqConnected.future, zmqDelay)
+  val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), zmqConnected)), "zmq", SupervisorStrategy.Restart))
   val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
   val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
     case "local" => Props[LocalPaymentHandler]
@@ -124,6 +127,8 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
     override val system: ActorSystem = _setup.system
   }
   Await.result(Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }, 10 seconds)
+
+  Await.result(zmqTimeout, 3 seconds)
 
   val tasks = new Thread(new Runnable() {
     override def run(): Unit = {
@@ -156,3 +161,4 @@ object LogSetup {
 }
 
 case class TCPBindException(port: Int) extends RuntimeException
+case object ZMQConnectionTimeoutException extends RuntimeException
