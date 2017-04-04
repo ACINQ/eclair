@@ -886,8 +886,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
             blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
           }
+          self ! CMD_SIGN
           goto(NORMAL)
-        case _: DATA_SHUTDOWN => goto(SHUTDOWN)
+        case _: DATA_SHUTDOWN =>
+          self ! CMD_SIGN
+          goto(SHUTDOWN)
         case _: DATA_NEGOTIATING => goto(NEGOTIATING)
       }
 
