@@ -75,6 +75,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels diff h)
 
     case Event(Rebroadcast(announcements), _) => stay // ignored
+
+    case Event('ping, _) =>
+      log.debug(s"ignore ping message when disconnected")
+      stay()
   }
 
   when(INITIALIZING) {
@@ -122,10 +126,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   when(CONNECTED) {
     case (Event('ping, ConnectedData(transport, _, _))) =>
+      // TODO: use random sizes
       transport ! Ping(100, BinaryData("00" * 50))
       stay
 
     case Event(Ping(pongLength, _), ConnectedData(transport, _, _)) =>
+      // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
       transport ! Pong(BinaryData("00" * pongLength))
       stay
 
