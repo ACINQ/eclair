@@ -85,7 +85,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
         case (s, cmd) => s.send(channel, cmd)
       }
       val oks = senders.map(_.expectMsgType[String])
-      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc])
+      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc](10 seconds))
     }
   }
 
