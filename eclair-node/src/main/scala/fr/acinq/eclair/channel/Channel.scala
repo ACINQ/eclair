@@ -255,7 +255,6 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           // we haven't anything at stake yet, we can just stop
           goto(CLOSED)
         case Success(_) =>
-          log.info(s"signing remote tx: $remoteCommitTx")
           val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
           val channelId = toLongId(fundingTxHash, fundingTxOutputIndex)
           val fundingSigned = FundingSigned(
