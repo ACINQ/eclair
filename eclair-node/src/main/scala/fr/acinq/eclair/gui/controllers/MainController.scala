@@ -4,6 +4,7 @@ import java.text.NumberFormat
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import javafx.animation.{FadeTransition, ParallelTransition, SequentialTransition, TranslateTransition}
 import javafx.application.{HostServices, Platform}
 import javafx.beans.property._
 import javafx.beans.value.{ChangeListener, ObservableValue}
@@ -14,12 +15,12 @@ import javafx.fxml.FXML
 import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
 import javafx.scene.input.ContextMenuEvent
-import javafx.scene.layout.{BorderPane, VBox}
+import javafx.scene.layout.{AnchorPane, HBox, StackPane, VBox}
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
 import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
-import javafx.util.Callback
+import javafx.util.{Callback, Duration}
 
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
@@ -34,7 +35,7 @@ import grizzled.slf4j.Logging
   */
 class MainController(val handlers: Handlers, val setup: Setup, val hostServices: HostServices) extends Logging {
 
-  @FXML var root: BorderPane = _
+  @FXML var root: AnchorPane = _
   var contextMenu: ContextMenu = _
 
   // menu
@@ -98,6 +99,9 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var paymentRelayedFeesColumn: TableColumn[PaymentRelayed, Number] = _
   @FXML var paymentRelayedHashColumn: TableColumn[PaymentRelayed, String] = _
   @FXML var paymentRelayedDateColumn: TableColumn[PaymentRelayed, String] = _
+
+  @FXML var blocker: StackPane = _
+  @FXML var blockerDialog: HBox = _
 
   val PAYMENT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
   val moneyFormatter = NumberFormat.getInstance(Locale.getDefault)
@@ -358,36 +362,67 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     val fileChooser = new FileChooser
     fileChooser.setTitle("Save as")
     fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
-    val file = fileChooser.showSaveDialog(root.getScene.getWindow)
+    val file = fileChooser.showSaveDialog(getWindow.getOrElse(null))
     if (file != null) handlers.exportToDot(file)
   }
 
   @FXML def handleOpenChannel = {
     val openChannelStage = new OpenChannelStage(handlers, setup)
-    openChannelStage.initOwner(root.getScene.getWindow)
+    openChannelStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(openChannelStage)
     openChannelStage.show
   }
 
   @FXML def handleSendPayment = {
     val sendPaymentStage = new SendPaymentStage(handlers, setup)
-    sendPaymentStage.initOwner(root.getScene.getWindow)
+    sendPaymentStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(sendPaymentStage)
     sendPaymentStage.show
   }
 
   @FXML def handleReceivePayment = {
     val receiveStage = new ReceivePaymentStage(handlers, setup)
-    receiveStage.initOwner(root.getScene.getWindow)
+    receiveStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(receiveStage)
     receiveStage.show
   }
 
-  @FXML def handleCloseRequest = root.getScene.getWindow.fireEvent(new WindowEvent(root.getScene.getWindow, WindowEvent.WINDOW_CLOSE_REQUEST))
+  def showBlockerModal = {
+    val fadeTransition = new FadeTransition(Duration.millis(300))
+    fadeTransition.setFromValue(0)
+    fadeTransition.setToValue(1)
+    val translateTransition = new TranslateTransition(Duration.millis(300))
+    translateTransition.setFromY(20)
+    translateTransition.setToY(0)
+    blocker.setVisible(true)
+    val ftCover = new FadeTransition(Duration.millis(200), blocker)
+    ftCover.setFromValue(0)
+    ftCover.setToValue(1)
+    ftCover.play
+    val t = new ParallelTransition(blockerDialog, fadeTransition, translateTransition)
+    t.setDelay(Duration.millis(200))
+    t.play
+  }
+  def hideBlockerModal = {
+    val ftCover = new FadeTransition(Duration.millis(400))
+    ftCover.setFromValue(1)
+    ftCover.setToValue(0)
+    val s = new SequentialTransition(blocker, ftCover)
+    s.setOnFinished(new EventHandler[ActionEvent]() {
+      override def handle(event: ActionEvent): Unit = blocker.setVisible(false)
+    })
+    s.play
+  }
+
+  private def getWindow: Option[Window] = {
+    Option(root).map(_.getScene.getWindow)
+  }
+
+  @FXML def handleCloseRequest = getWindow.map(_.fireEvent(new WindowEvent(getWindow.get, WindowEvent.WINDOW_CLOSE_REQUEST)))
 
   @FXML def handleOpenAbout = {
     val aboutStage = new AboutStage(hostServices)
-    aboutStage.initOwner(root.getScene.getWindow)
+    aboutStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(aboutStage)
     aboutStage.show
   }
@@ -395,7 +430,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML def openNodeIdContext(event: ContextMenuEvent) = contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
 
   def positionAtCenter(childStage: Stage) = {
-    childStage.setX(root.getScene.getWindow.getX + root.getScene.getWindow.getWidth / 2 - childStage.getWidth / 2)
-    childStage.setY(root.getScene.getWindow.getY + root.getScene.getWindow.getHeight / 2 - childStage.getHeight / 2)
+    childStage.setX(getWindow.map(w => w.getX + w.getWidth / 2 - childStage.getWidth / 2).getOrElse(0))
+    childStage.setY(getWindow.map(w => w.getY + w.getHeight / 2 - childStage.getHeight / 2).getOrElse(0))
   }
 }

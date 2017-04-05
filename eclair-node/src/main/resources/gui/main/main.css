@@ -171,3 +171,15 @@
     -fx-text-fill: rgb(166,169,171);
     -fx-padding: 2px 7px 0 0;
 }
+
+/* --------------- Blocker modal ----------------- */
+.blocker-cover {
+    -fx-background-color: rgba(0,0,0,0.3);
+}
+
+.blocker-dialog {
+    -fx-padding: 15px;
+    -fx-border-width: 1px;
+    -fx-border-color: #888888;
+    -fx-background-color: #f4f4f4;
+}

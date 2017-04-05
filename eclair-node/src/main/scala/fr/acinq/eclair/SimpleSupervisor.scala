@@ -2,6 +2,8 @@ package fr.acinq.eclair
 
 import akka.actor.{Actor, ActorLogging, OneForOneStrategy, Props, SupervisorStrategy}
 
+import scala.concurrent.duration._
+
 /**
   * This supervisor will supervise a single child actor using the provided SupervisorStrategy
   * All incoming messages will be forwarded to the child actor.
@@ -16,7 +18,8 @@ class SimpleSupervisor(childProps: Props, childName: String, strategy: Superviso
     case msg => child forward msg
   }
 
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => strategy }
+  // we allow at most <maxNrOfRetries> within <withinTimeRange>, otherwise the child actor is not restarted (this avoids restart loops)
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true, maxNrOfRetries = 100, withinTimeRange = 1 minute) { case _ => strategy }
 }
 
 object SimpleSupervisor {

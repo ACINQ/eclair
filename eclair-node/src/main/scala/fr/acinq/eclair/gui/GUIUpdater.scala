@@ -9,14 +9,13 @@ import javafx.scene.layout.VBox
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.Setup
+import fr.acinq.eclair.blockchain.zmq.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
 import fr.acinq.eclair.io.Reconnect
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
-import org.jgrapht.graph.{DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
 
@@ -24,14 +23,7 @@ import scala.collection.JavaConversions._
 /**
   * Created by PM on 16/08/2016.
   */
-class GUIUpdater(mainController: MainController, setup: Setup) extends Actor with ActorLogging {
-
-  class NamedEdge(val id: BinaryData) extends DefaultEdge {
-    override def toString: String = s"${id.toString.take(8)}..."
-  }
-
-  val graph = new SimpleGraph[BinaryData, NamedEdge](classOf[NamedEdge])
-  graph.addVertex(setup.nodeParams.privateKey.publicKey)
+class GUIUpdater(mainController: MainController) extends Actor with ActorLogging {
 
   def receive: Receive = main(Map())
 
@@ -153,5 +145,13 @@ class GUIUpdater(mainController: MainController, setup: Setup) extends Actor wit
     case p: PaymentRelayed =>
       log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amount}, feesEarned=${p.feesEarned}")
       mainController.paymentRelayedList.prepend(p)
+
+    case ZMQConnected =>
+      log.debug("ZMQ connection online")
+      mainController.hideBlockerModal
+
+    case ZMQDisconnected =>
+      log.debug("ZMQ connection lost")
+      mainController.showBlockerModal
   }
 }

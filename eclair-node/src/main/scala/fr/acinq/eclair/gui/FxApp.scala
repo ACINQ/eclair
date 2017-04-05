@@ -11,11 +11,12 @@ import javafx.stage.{Popup, Screen, Stage, WindowEvent}
 
 import akka.actor.{Props, SupervisorStrategy}
 import akka.stream.StreamTcpException
+import fr.acinq.eclair.blockchain.zmq.ZMQEvents
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
-import fr.acinq.eclair.{Setup, SimpleSupervisor, TCPBindException}
+import fr.acinq.eclair.{Setup, SimpleSupervisor, TCPBindException, ZMQConnectionTimeoutException}
 import grizzled.slf4j.Logging
 
 
@@ -40,10 +41,11 @@ class FxApp extends Application with Logging {
           val setup = new Setup(datadir)
           val handlers = new Handlers(setup)
           val controller = new MainController(handlers, setup, getHostServices)
-          val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller, setup), "gui-updater", SupervisorStrategy.Resume))
+          val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvents])
 
           Platform.runLater(new Runnable {
             override def run(): Unit = {
@@ -74,8 +76,11 @@ class FxApp extends Application with Logging {
           case TCPBindException(port) =>
             notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
           case _: ConnectException | _: StreamTcpException =>
-            notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin-core.", null))
-            notifyPreloader(new AppNotification(InfoAppNotification, "Please check that Bitcoin-core is started and that the RPC user, password and port are correct."))
+            notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", null))
+            notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
+          case ZMQConnectionTimeoutException =>
+            notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
+            notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
           case t: Throwable =>
             notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
         }

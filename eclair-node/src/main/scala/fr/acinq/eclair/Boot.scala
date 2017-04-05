@@ -2,7 +2,6 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import javafx.application.Platform
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
@@ -16,7 +15,7 @@ import com.sun.javafx.application.LauncherImpl
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.blockchain.zmq.ZeroMQClient
+import fr.acinq.eclair.blockchain.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.gui.{FxApp, FxPreloader}
@@ -30,6 +29,7 @@ import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Promise}
+import scala.util.Try
 
 case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"), ".eclair"), headless: Boolean = false)
 
@@ -45,11 +45,16 @@ object Boot extends App with Logging {
     opt[Unit]("headless").optional().action((_, c) => c.copy(headless = true)).text("runs eclair without a gui")
   }
   parser.parse(args, CmdLineConfig()) match {
-    case Some(config) if config.headless =>
+    case Some(config) if config.headless => try {
       val s = new Setup(config.datadir.getAbsolutePath)
       s.boostrap
+    } catch {
+      case t: Throwable =>
+        logger.error(s"fatal error: ${t.getMessage}")
+        System.exit(1)
+    }
     case Some(config) => LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(config.datadir.getAbsolutePath))
-    case None => Platform.exit()
+    case None => System.exit(0)
   }
 }
 
@@ -99,7 +104,8 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
   val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
 
-  val zmq = new ZeroMQClient(config.getString("bitcoind.zmq"), system.eventStream)
+  val zmqConnected = Promise[Boolean]()
+  val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
   val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
   val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
     case "local" => Props[LocalPaymentHandler]
@@ -110,9 +116,8 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
   val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, router, relayer, finalScriptPubKey), "switchboard", SupervisorStrategy.Resume))
   val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
-  val bound = Promise[Unit]()
-  val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(bound)), "server", SupervisorStrategy.Restart))
-  Await.result(bound.future.recover { case _ => throw new TCPBindException(config.getInt("server.port")) }, 10 seconds)
+  val tcpBound = Promise[Unit]()
+  val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
 
   val _setup = this
   val api = new Service {
@@ -123,7 +128,11 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
     override val system: ActorSystem = _setup.system
   }
-  Await.result(Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }, 10 seconds)
+  val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
+
+  Try(Await.result(zmqConnected.future, 5 seconds)).recover { case _ => throw ZMQConnectionTimeoutException }.get
+  Try(Await.result(tcpBound.future, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("server.port")) }.get
+  Try(Await.result(httpBound, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }.get
 
   val tasks = new Thread(new Runnable() {
     override def run(): Unit = {
@@ -156,3 +165,5 @@ object LogSetup {
 }
 
 case class TCPBindException(port: Int) extends RuntimeException
+
+case object ZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
