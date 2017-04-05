@@ -2,7 +2,6 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import javafx.application.Platform
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
@@ -29,7 +28,8 @@ import org.json4s.JsonAST.JString
 import org.slf4j.LoggerFactory
 
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future, Promise}
+import scala.concurrent.{Await, ExecutionContext, Promise}
+import scala.util.Try
 
 case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"), ".eclair"), headless: Boolean = false)
 
@@ -45,11 +45,16 @@ object Boot extends App with Logging {
     opt[Unit]("headless").optional().action((_, c) => c.copy(headless = true)).text("runs eclair without a gui")
   }
   parser.parse(args, CmdLineConfig()) match {
-    case Some(config) if config.headless =>
+    case Some(config) if config.headless => try {
       val s = new Setup(config.datadir.getAbsolutePath)
       s.boostrap
+    } catch {
+      case t: Throwable =>
+        logger.error(s"fatal error: ${t.getMessage}")
+        System.exit(1)
+    }
     case Some(config) => LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(config.datadir.getAbsolutePath))
-    case None => Platform.exit()
+    case None => System.exit(0)
   }
 }
 
@@ -125,9 +130,9 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   }
   val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
 
-  Await.result(zmqConnected.future.recover { case _ => throw ZMQConnectionTimeoutException}, 10 seconds)
-  Await.result(tcpBound.future.recover { case _ => throw new TCPBindException(config.getInt("server.port")) }, 10 seconds)
-  Await.result(httpBound.recover { case _ => throw new TCPBindException(config.getInt("api.port")) }, 10 seconds)
+  Try(Await.result(zmqConnected.future, 5 seconds)).recover { case _ => throw ZMQConnectionTimeoutException }.get
+  Try(Await.result(tcpBound.future, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("server.port")) }.get
+  Try(Await.result(httpBound, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }.get
 
   val tasks = new Thread(new Runnable() {
     override def run(): Unit = {
@@ -160,4 +165,5 @@ object LogSetup {
 }
 
 case class TCPBindException(port: Int) extends RuntimeException
-case object ZMQConnectionTimeoutException extends RuntimeException
+
+case object ZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
