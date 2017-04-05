@@ -5,12 +5,9 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.ChannelAnnouncement
-import fr.acinq.eclair.{Globals, NodeParams, feerateKB2Kw, fromShortId}
-import org.json4s.JsonAST.{JArray, JNull, JString}
+import fr.acinq.eclair.{Globals, NodeParams, feerateKB2Kw}
 
 import scala.collection.SortedMap
 import scala.concurrent.duration._
@@ -25,8 +22,6 @@ import scala.util.Try
   */
 class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
-  import PeerWatcher._
-
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
@@ -36,7 +31,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
+      //log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
       watches.collect {
         case w@WatchSpentBasic(_, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpentBasic(event))

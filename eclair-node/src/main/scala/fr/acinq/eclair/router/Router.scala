@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import java.io.StringWriter
 
-import akka.actor.{ActorRef, LoggingFSM, Props}
+import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -46,7 +46,7 @@ case object WAITING_FOR_VALIDATION extends State
   * Created by PM on 24/05/2016.
   */
 
-class Router(nodeParams: NodeParams, watcher: ActorRef) extends LoggingFSM[State, Data] {
+class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data] {
 
   import Router._
 
