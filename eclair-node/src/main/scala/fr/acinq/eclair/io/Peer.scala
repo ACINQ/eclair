@@ -143,6 +143,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.debug(s"received pong with ${data.length} bytes")
       stay
 
+    case Event(state: HasCommitments, d@ConnectedData(_, _, channels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(channels = channels + (state.channelId -> channel))
+
     case Event(err@Error(channelId, reason), ConnectedData(transport, _, channels)) if channelId == CHANNELID_ZERO =>
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
       channels.values.foreach(_ forward err)
