@@ -162,7 +162,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     publishTransaction(tx2Hex(tx))
 
 
-  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Transaction, Int, PrivateKey)] = {
+  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     // this is the funding tx that we want to publish
     val (partialTx, pubkeyScript) = Transactions.makePartialFundingTx(amount, localFundingPubkey, remoteFundingPubkey)
     val parentFee = Satoshi(250 * 2 * 2 * feeRatePerKw / 1024)
@@ -183,7 +183,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       // TODO: we publish the parent tx. we assume that the peer will reply very soon and our child funding tx
       // will be mined in the same block
       _ <- publishTransaction(tx2)
-    } yield (tx2, tx3, 0, priv)
+    } yield MakeFundingTxResponse(tx2, tx3, 0, priv).sign
 
     future
   }

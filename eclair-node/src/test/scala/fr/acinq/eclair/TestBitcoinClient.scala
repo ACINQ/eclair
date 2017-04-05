@@ -24,7 +24,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
     override def run(): Unit = system.eventStream.publish(NewBlock(DUMMY_BLOCK)) // blocks are not actually interpreted
   })
 
-  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Transaction, Int, PrivateKey)] = {
+  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
     val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2wpkh(priv.publicKey)) :: Nil, lockTime = 0)
     val anchorTx = Transaction(version = 2,
@@ -32,7 +32,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
       txOut = TxOut(amount, Script.pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,
       lockTime = 0
     )
-    Future.successful((parentTx, anchorTx, 0, priv))
+    Future.successful(MakeFundingTxResponse(parentTx, anchorTx, 0, priv))
   }
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = {

@@ -213,14 +213,14 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
-    case Event(MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
+    case Event(fundingResponse@MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
       log.info(s"parentTx: ${parentTx.txid} fundingTx: ${fundingTx.txid}")
       blockchain ! WatchConfirmed(self, parentTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(parentTx))
       parentTx.txIn.map(input => {
         log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
         blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
       })
-      goto(WAIT_FOR_FUNDING_INTERNAL1) using DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingTx, fundingTxOutputIndex, priv, data)
+      goto(WAIT_FOR_FUNDING_INTERNAL1) using DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingResponse, data)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -230,42 +230,34 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL1)(handleExceptions {
-    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_INTERNAL1(oldFundingTx, fundingTxOutputIndex, priv, data)) =>
-      log.info(s"input of parent tx ${parentTx.txid} spent by ${spendingTx.txid}, our funding tx is ${oldFundingTx.txid}")
+    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingResponse, data)) =>
+      log.info(s"input of parent tx ${parentTx.txid} spent by ${spendingTx.txid}, our funding tx is ${fundingResponse.fundingTx.txid}")
       blockchain ! WatchConfirmed(self, spendingTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(spendingTx))
       stay()
 
-    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_INTERNAL1(oldFundingTx, fundingTxOutputIndex, priv, data)) =>
+    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingResponse, data)) =>
       // spendingTx is the parent of our funding tx
-      val utxo = tx.txOut(oldFundingTx.txIn(0).outPoint.index.toInt)
-      if(utxo.publicKeyScript == Script.write(Script.pay2wpkh(priv.publicKey))) {
-        val input = oldFundingTx.txIn(0)
-        val input1 = input.copy(outPoint = input.outPoint.copy(hash = tx.hash))
-        val unsignedfundingTx = oldFundingTx.copy(txIn = Seq(input1))
-        val pub = priv.publicKey
-        val sig = Transaction.signInput(unsignedfundingTx, 0, Script.pay2pkh(pub), SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-        val fundingTx = unsignedfundingTx.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
-        Transaction.correctlySpends(fundingTx, tx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Try(fundingResponse.replaceParent(tx)) match {
+        case Success(MakeFundingTxResponse(_, fundingTx, fundingTxOutputIndex, _)) =>
+          // let's create the first commitment tx that spends the yet uncommitted funding tx
+          import data._
+          val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
 
-        // let's create the first commitment tx that spends the yet uncommitted funding tx
-        import data._
-        val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint)
-
-        val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
-        // signature of their initial commitment tx that pays remote pushMsat
-        val fundingCreated = FundingCreated(
-          temporaryChannelId = temporaryChannelId,
-          fundingTxid = fundingTx.hash,
-          fundingOutputIndex = fundingTxOutputIndex,
-          signature = localSigOfRemoteTx
-        )
-        val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
-        context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
-        context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
-        goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), fundingCreated)
-      } else {
-        log.warning(s"confirmed tx ${tx.txid} is not an input to our funding tx")
-        stay()
+          val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
+          // signature of their initial commitment tx that pays remote pushMsat
+          val fundingCreated = FundingCreated(
+            temporaryChannelId = temporaryChannelId,
+            fundingTxid = fundingTx.hash,
+            fundingOutputIndex = fundingTxOutputIndex,
+            signature = localSigOfRemoteTx
+          )
+          val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
+          context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+          context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
+          goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), fundingCreated)
+        case Failure(cause) =>
+          log.warning(s"confirmed tx ${tx.txid} is not an input to our funding tx")
+          stay()
       }
   })
 

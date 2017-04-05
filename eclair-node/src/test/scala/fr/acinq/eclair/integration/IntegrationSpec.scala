@@ -10,7 +10,7 @@ import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction}
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
