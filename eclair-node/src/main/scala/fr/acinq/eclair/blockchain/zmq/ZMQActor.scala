@@ -13,15 +13,15 @@ import scala.util.Try
 /**
   * Created by PM on 04/04/2017.
   */
-class ZMQActor(address: String, connected: Promise[Boolean]) extends Actor with ActorLogging {
+class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) extends Actor with ActorLogging {
 
   val ctx = new ZContext
 
   val subscriber = ctx.createSocket(ZMQ.SUB)
+  subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
   subscriber.connect(address)
   subscriber.subscribe("rawblock".getBytes(ZMQ.CHARSET))
   subscriber.subscribe("rawtx".getBytes(ZMQ.CHARSET))
-  subscriber.monitor("inproc://events", ZMQ.EVENT_CONNECTED | ZMQ.EVENT_DISCONNECTED)
 
   val monitor = ctx.createSocket(ZMQ.PAIR)
   monitor.connect("inproc://events")
@@ -53,7 +53,7 @@ class ZMQActor(address: String, connected: Promise[Boolean]) extends Actor with 
     case event: Event => event.getEvent match {
       case ZMQ.EVENT_CONNECTED =>
         log.info(s"connected to ${event.getAddress}")
-        Try(connected.success(true))
+        Try(connected.map(_.success(true)))
         context.system.eventStream.publish(ZMQConnected)
       case ZMQ.EVENT_DISCONNECTED =>
         log.warning(s"disconnected from ${event.getAddress}")
