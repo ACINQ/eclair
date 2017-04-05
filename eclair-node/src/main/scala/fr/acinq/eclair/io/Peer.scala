@@ -14,6 +14,7 @@ import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, NodeParams}
 
 import scala.util.Random
+import scala.concurrent.duration._
 
 // @formatter:off
 
@@ -44,8 +45,10 @@ case class PeerRecord(id: PublicKey, address: InetSocketAddress)
 class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
 
   import Peer._
+  import scala.concurrent.ExecutionContext.Implicits.global
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
+  context.system.scheduler.schedule(nodeParams.pingInterval, nodeParams.pingInterval, self, 'ping)
 
   when(DISCONNECTED) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
@@ -72,6 +75,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels diff h)
 
     case Event(Rebroadcast(announcements), _) => stay // ignored
+
+    case Event('ping, _) =>
+      log.debug(s"ignore ping message when disconnected")
+      stay()
   }
 
   when(INITIALIZING) {
@@ -118,6 +125,28 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   when(CONNECTED) {
+    case (Event('ping, ConnectedData(transport, _, _))) =>
+      val pingSize = Random.nextInt(1000)
+      val pongSize = Random.nextInt(1000)
+      transport ! Ping(pongSize, BinaryData("00" * pingSize))
+      stay
+
+    case Event(Ping(pongLength, _), ConnectedData(transport, _, _)) =>
+      // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
+      if (pongLength > 0) {
+        transport ! Pong(BinaryData("00" * pongLength))
+      }
+      stay
+
+    case Event(Pong(data), ConnectedData(transport, _, _)) =>
+      // TODO: compute latency for remote peer ?
+      log.debug(s"received pong with ${data.length} bytes")
+      stay
+
+    case Event(state: HasCommitments, d@ConnectedData(_, _, channels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(channels = channels + (state.channelId -> channel))
 
     case Event(err@Error(channelId, reason), ConnectedData(transport, _, channels)) if channelId == CHANNELID_ZERO =>
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")

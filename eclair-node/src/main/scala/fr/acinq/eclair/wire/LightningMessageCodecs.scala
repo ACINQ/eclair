@@ -95,6 +95,13 @@ object LightningMessageCodecs {
     ("channelId" | binarydata(32)) ::
       ("data" | varsizebinarydata)).as[Error]
 
+  val pingCodec: Codec[Ping] = (
+    ("pongLength" | uint16) ::
+      ("data" | varsizebinarydata)).as[Ping]
+
+  val pongCodec: Codec[Pong] =
+    ("data" | varsizebinarydata).as[Pong]
+
   val openChannelCodec: Codec[OpenChannel] = (
     ("temporaryChannelId" | binarydata(32)) ::
       ("fundingSatoshis" | uint64) ::
@@ -235,9 +242,12 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
+
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
     .typecase(17, errorCodec)
+    .typecase(18, pingCodec)
+    .typecase(19, pongCodec)
     .typecase(32, openChannelCodec)
     .typecase(33, acceptChannelCodec)
     .typecase(34, fundingCreatedCodec)
