@@ -3,7 +3,7 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import fr.acinq.eclair.{randomKey, toShortId}
@@ -66,9 +66,9 @@ object AnnouncementsValidationSpec {
     val amount = Satoshi(1000000)
     // first we publish the funding tx
     val fundingTxFuture = extendedBitcoinClient.makeFundingTx(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey, amount, 10000)
-    val fundingTx = Await.result(fundingTxFuture, 10 seconds)
-    Await.result(extendedBitcoinClient.publishTransaction(fundingTx._1), 10 seconds)
-    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, fundingTx._1, fundingTx._2)
+    val MakeFundingTxResponse(_, fundingTx, fundingOutputIndex, _) = Await.result(fundingTxFuture, 10 seconds)
+    Await.result(extendedBitcoinClient.publishTransaction(fundingTx), 10 seconds)
+    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, fundingTx, fundingOutputIndex)
   }
 
   def makeChannelAnnouncement(c: SimulatedChannel)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): ChannelAnnouncement = {

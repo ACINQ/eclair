@@ -220,7 +220,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
         blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
       })
-      goto(WAIT_FOR_FUNDING_INTERNAL1) using DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingResponse, data)
+      goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, data)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -229,13 +229,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
 
-  when(WAIT_FOR_FUNDING_INTERNAL1)(handleExceptions {
-    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingResponse, data)) =>
+  when(WAIT_FOR_FUNDING_PARENT)(handleExceptions {
+    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, data)) =>
       log.info(s"input of parent tx ${parentTx.txid} spent by ${spendingTx.txid}, our funding tx is ${fundingResponse.fundingTx.txid}")
       blockchain ! WatchConfirmed(self, spendingTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(spendingTx))
       stay()
 
-    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_INTERNAL1(fundingResponse, data)) =>
+    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, data)) =>
       // spendingTx is the parent of our funding tx
       Try(fundingResponse.replaceParent(tx)) match {
         case Success(MakeFundingTxResponse(_, fundingTx, fundingTxOutputIndex, _)) =>

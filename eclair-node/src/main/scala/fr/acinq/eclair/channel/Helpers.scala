@@ -32,7 +32,7 @@ object Helpers {
     case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
     case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
-    case d: DATA_WAIT_FOR_FUNDING_INTERNAL1 => d.data.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_PARENT => d.data.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
     case d: HasCommitments => d.channelId
@@ -54,7 +54,7 @@ object Helpers {
       case (_, _, _, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => Nil
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_INTERNAL1) => Nil
+      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_PARENT) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CREATED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
