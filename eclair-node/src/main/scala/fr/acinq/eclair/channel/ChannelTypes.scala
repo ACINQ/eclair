@@ -63,7 +63,7 @@ case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we w
 case object INPUT_PUBLISH_LOCALCOMMIT // used in tests
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef)
-case class INPUT_RESTORED(data: HasCommitments)
+case class INPUT_RESTORED(data: Data)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
@@ -133,7 +133,7 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse: MakeFundingTxResponse, data: DATA_WAIT_FOR_FUNDING_INTERNAL) extends Data
+final case class DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse: MakeFundingTxResponse, parentCandidates: Seq[Transaction], data: DATA_WAIT_FOR_FUNDING_INTERNAL) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments

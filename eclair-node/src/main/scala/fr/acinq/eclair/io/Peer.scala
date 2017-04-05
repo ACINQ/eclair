@@ -51,6 +51,21 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   context.system.scheduler.schedule(nodeParams.pingInterval, nodeParams.pingInterval, self, 'ping)
 
   when(DISCONNECTED) {
+    case Event(state: DATA_WAIT_FOR_FUNDING_PARENT, d@DisconnectedData(offlineChannels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.data.temporaryChannelId, channel))
+
+    case Event(state: DATA_WAIT_FOR_FUNDING_CREATED, d@DisconnectedData(offlineChannels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.temporaryChannelId, channel))
+
+    case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.channelId, channel))
+
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
       val channel = spawnChannel(nodeParams, context.system.deadLetters)
       channel ! INPUT_RESTORED(state)
@@ -82,6 +97,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   when(INITIALIZING) {
+    case Event(state: DATA_WAIT_FOR_FUNDING_PARENT, d@InitializingData(_, offlineChannels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.data.temporaryChannelId, channel))
+
+    case Event(state: DATA_WAIT_FOR_FUNDING_CREATED, d@InitializingData(_, offlineChannels)) =>
+      val channel = spawnChannel(nodeParams, context.system.deadLetters)
+      channel ! INPUT_RESTORED(state)
+      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.temporaryChannelId, channel))
+
     case Event(state: HasCommitments, d@InitializingData(_, offlineChannels)) =>
       val channel = spawnChannel(nodeParams, context.system.deadLetters)
       channel ! INPUT_RESTORED(state)
