@@ -225,7 +225,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
     case Event(fundingResponse@MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
       log.info(s"parentTx: ${parentTx.txid} fundingTx: ${fundingTx.txid}")
+
+      // we wait for our funding parent tx to be confirmed
       blockchain ! WatchConfirmed(self, parentTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(parentTx))
+
+      // but we also watch each of its input: they could be spend by the parent tx or one of its malleated avatars
       parentTx.txIn.map(input => {
         log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
         blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
@@ -240,14 +244,19 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_FUNDING_PARENT)(handleExceptions {
+    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) if parentCandidates.contains(spendingTx) =>
+      stay()
+
     case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) =>
+      // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
+      // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
       log.info(s"input of parent tx ${parentTx.txid} spent by ${spendingTx.txid}, our funding tx is ${fundingResponse.fundingTx.txid}")
       blockchain ! WatchConfirmed(self, spendingTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(spendingTx))
       goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, spendingTx +: parentCandidates, data)
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) =>
-      // spendingTx is the parent of our funding tx
-      Try(fundingResponse.replaceParent(tx)) match {
+      // a potential parent for our funding tx has been confirmed, let's update our funding tx
+      Try(Helpers.Funding.replaceParent(fundingResponse, tx)) match {
         case Success(MakeFundingTxResponse(_, fundingTx, fundingTxOutputIndex, _)) =>
           // let's create the first commitment tx that spends the yet uncommitted funding tx
           import data._

@@ -9,6 +9,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.Features.CHANNELS_PUBLIC_BIT
+import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Features, Globals, NodeParams}
 import grizzled.slf4j.Logging
@@ -133,6 +134,47 @@ object Helpers {
       val tx1 = tx.copy(txIn = inputs1)
       tx1
     }
+
+    /**
+      *
+      * @param fundingTxResponse funding transaction response, which includes a funding tx, its parent, and the private key
+      *                          that we need to re-sign the funding
+      * @param newParentTx       new parent tx
+      * @return an updated funding transaction response where the funding tx now spends from newParentTx
+      */
+    def replaceParent(fundingTxResponse: MakeFundingTxResponse, newParentTx: Transaction): MakeFundingTxResponse = {
+      // find the output that we are spending from
+      val utxo = newParentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
+
+      // check that it matches what we expect, which is a P2WPKH output to our public key
+      require(utxo.publicKeyScript == Script.write(Script.pay2wpkh(fundingTxResponse.priv.publicKey)))
+
+      // update our tx input we the hash of the new parent
+      val input = fundingTxResponse.fundingTx.txIn(0)
+      val input1 = input.copy(outPoint = input.outPoint.copy(hash = newParentTx.hash))
+      val unsignedfundingTx = fundingTxResponse.fundingTx.copy(txIn = Seq(input1))
+
+      // and re-sign it
+      Helpers.Funding.sign(MakeFundingTxResponse(newParentTx, unsignedfundingTx, fundingTxResponse.fundingTxOutputIndex, fundingTxResponse.priv))
+    }
+
+    /**
+      *
+      * @param fundingTxResponse a funding tx response
+      * @return an updated funding tx response that is properly sign
+      */
+    def sign(fundingTxResponse: MakeFundingTxResponse): MakeFundingTxResponse = {
+      // find the output that we are spending from
+      val utxo = fundingTxResponse.parentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
+
+      // re-sign our tx and update its witness
+      val pub = fundingTxResponse.priv.publicKey
+      val sig = Transaction.signInput(fundingTxResponse.fundingTx, 0, Script.pay2pkh(pub), SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, fundingTxResponse.priv)
+      val fundingTx1 = fundingTxResponse.fundingTx.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
+      Transaction.correctlySpends(fundingTx1, fundingTxResponse.parentTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      fundingTxResponse.copy(fundingTx = fundingTx1)
+    }
+
   }
 
   object Closing extends Logging {

@@ -4,6 +4,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.channel.Helpers
 import fr.acinq.eclair.fromShortId
 import fr.acinq.eclair.transactions.{Scripts, Transactions}
 import fr.acinq.eclair.wire.ChannelAnnouncement
@@ -183,7 +184,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       // TODO: we publish the parent tx. we assume that the peer will reply very soon and our child funding tx
       // will be mined in the same block
       _ <- publishTransaction(tx2)
-    } yield MakeFundingTxResponse(tx2, tx3, 0, priv).sign
+    } yield Helpers.Funding.sign(MakeFundingTxResponse(tx2, tx3, 0, priv))
 
     future
   }

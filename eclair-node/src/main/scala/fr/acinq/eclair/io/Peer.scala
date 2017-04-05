@@ -66,11 +66,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       channel ! INPUT_RESTORED(state)
       stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.channelId, channel))
 
-    case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
-      val channel = spawnChannel(nodeParams, context.system.deadLetters)
-      channel ! INPUT_RESTORED(state)
-      stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.channelId, channel))
-
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels)) =>
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 

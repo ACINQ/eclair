@@ -8,9 +8,10 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction}
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.Setup
+import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
@@ -20,7 +21,6 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsValidationSpec}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Setup, randomKey, toShortId}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -145,6 +145,20 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
     awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
+  }
+
+  def reconnect(node1: Setup, node2: Setup) = {
+    val eventListener = TestProbe()
+    node1.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
+    val sender = TestProbe()
+    sender.send(node1.switchboard, NewConnection(
+      remoteNodeId = node2.nodeParams.privateKey.publicKey,
+      address = node2.nodeParams.address,
+      newChannel_opt = None))
+    sender.expectMsg("connected")
+    // waiting for channel to publish funding tx
+    awaitCond(eventListener.expectMsgType[ChannelStateChanged](5 seconds).previousState == OFFLINE)
+    node1.system.eventStream.unsubscribe(eventListener.ref)
   }
 
   test("connect nodes") {
@@ -440,6 +454,57 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 20 seconds, interval = 1 second)
   }
+
+  test("disconnect and reconnect A") {
+    Await.result(nodes("A").system.terminate(), 20 seconds)
+
+    import collection.JavaConversions._
+    val commonConfig = ConfigFactory.parseMap(Map("eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second"))
+    instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 29730, "eclair.api.port" -> 28080)).withFallback(commonConfig))
+    nodes("A").boostrap
+
+    reconnect(nodes("A"), nodes("B"))
+
+    val sender = TestProbe()
+    awaitCond({
+      sender.send(nodes("A").router, 'channels)
+      sender.expectMsgType[Iterable[ChannelAnnouncement]].toSeq.length >= 3
+    }, max = 20 seconds, interval = 1 second)
+
+    // first we retrieve a payment hash from D
+    sender.send(nodes("D").paymentHandler, 'genh)
+    val paymentHash = sender.expectMsgType[BinaryData]
+    // then we make the actual payment
+    sender.send(nodes("A").paymentInitiator, CreatePayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey))
+    sender.expectMsgType[PaymentSucceeded]
+  }
+
+  //  test("disconnect and reconnect all nodes") {
+  //    import system.dispatcher
+  //
+  //    val futures = Seq(setupA, setupB, setupC, setupD).map(_.system.terminate())
+  //    Await.result(Future.sequence(futures), 20 seconds)
+  //
+  //    val setupA1 = new Setup(PATH_ECLAIR_DATADIR_A.toString)
+  //    val setupB1 = new Setup(PATH_ECLAIR_DATADIR_B.toString)
+  //    val setupC1 = new Setup(PATH_ECLAIR_DATADIR_C.toString)
+  //    val setupD1 = new Setup(PATH_ECLAIR_DATADIR_D.toString)
+  //    setupA1.boostrap
+  //    setupB1.boostrap
+  //    setupC1.boostrap
+  //    setupD1.boostrap
+  //    reconnect(setupA1, setupB1)
+  //    reconnect(setupB1, setupC1)
+  //    reconnect(setupC1, setupD1)
+  //
+  //    val sender = TestProbe()
+  //    // first we retrieve a payment hash from D
+  //    sender.send(setupA1.paymentHandler, 'genh)
+  //    val paymentHash = sender.expectMsgType[BinaryData]
+  //    // then we make the actual payment
+  //    sender.send(setupD1.paymentInitiator, CreatePayment(1000000, paymentHash, setupA1.nodeParams.privateKey.publicKey))
+  //    sender.expectMsgType[PaymentSucceeded]
+  //  }
 
   test("generate and validate lots of channels") {
     implicit val extendedClient = new ExtendedBitcoinClient(bitcoinrpcclient)
