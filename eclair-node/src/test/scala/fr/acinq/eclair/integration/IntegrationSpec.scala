@@ -139,7 +139,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
       address = node2.nodeParams.address,
       newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat)))))
-    sender.expectMsgAnyOf("connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
+    sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
     // waiting for channel to publish funding tx
     awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED)
     awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED)
