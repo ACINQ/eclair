@@ -214,15 +214,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
     case Event(fundingResponse@MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
-      log.info(s"publishing parent tx with txid=${parentTx.txid}")
-      // first we publish the parent tx
-      blockchain ! PublishAsap(parentTx)
-      // and we also watch each of its input: they could be spend by a malleated avatar of the parent tx
-      parentTx.txIn.map {
-        case input =>
-          log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
-          blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
-      }
+      // we watch the first input of the parent tx, so that we can detect when it is spent by a malleated avatar
+      val input0 = parentTx.txIn.head
+      blockchain ! WatchSpent(self, input0.outPoint.txid, input0.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
+      // and we publish the parent tx
+      log.info(s"publishing parent tx: txid=${parentTx.txid} tx=${Transaction.write(parentTx)}")
+      // we use a small delay so that we are sure Publish doesn't race with WatchSpent (which is ok but generates unnecessary warnings)
+      context.system.scheduler.scheduleOnce(100 milliseconds, blockchain, PublishAsap(parentTx))
       goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentTx :: Nil, data)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -235,10 +233,12 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   when(WAIT_FOR_FUNDING_PARENT)(handleExceptions {
 
     case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) =>
-      // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
-      // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
-      log.info(s"input of parent tx ${parentTx.txid} spent by ${spendingTx.txid}, our funding tx is ${fundingResponse.fundingTx.txid}")
-      blockchain ! WatchConfirmed(self, spendingTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(spendingTx))
+      if (parentTx.txid != spendingTx.txid) {
+        // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
+        // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
+        log.warning(s"parent tx has been malleated: originalParentTxid=${parentTx.txid} malleated=${spendingTx.txid}")
+      }
+      blockchain ! WatchConfirmed(self, spendingTx.txid, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
       stay using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, spendingTx +: parentCandidates, data)
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, _, data)) =>

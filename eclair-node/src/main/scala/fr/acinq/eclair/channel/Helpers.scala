@@ -123,18 +123,6 @@ object Helpers {
     def announceChannel(localLocalFeatures: BinaryData, remoteLocalFeature: BinaryData): Boolean =
       Features.isSet(localLocalFeatures, CHANNELS_PUBLIC_BIT) && Features.isSet(remoteLocalFeature, CHANNELS_PUBLIC_BIT)
 
-    def malleateTx(tx: Transaction): Transaction = {
-      val inputs1 = tx.txIn.map(input => Script.parse(input.signatureScript) match {
-        case OP_PUSHDATA(sig, _) :: OP_PUSHDATA(pub, _) :: Nil if pub.length == 33 && Try(Crypto.decodeSignature(sig)).isSuccess =>
-          val (r, s) = Crypto.decodeSignature(sig)
-          val s1 = Crypto.curve.getN.subtract(s)
-          val sig1 = Crypto.encodeSignature(r, s1)
-          input.copy(signatureScript = Script.write(OP_PUSHDATA(sig1) :: OP_PUSHDATA(pub) :: Nil))
-      })
-      val tx1 = tx.copy(txIn = inputs1)
-      tx1
-    }
-
     /**
       *
       * @param fundingTxResponse funding transaction response, which includes a funding tx, its parent, and the private key

@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient.SignTransactionResponse
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain._
@@ -10,6 +10,7 @@ import fr.acinq.eclair.transactions.Scripts
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Try
 
 /**
   * Created by PM on 26/04/2016.
@@ -45,6 +46,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 }
 
 object TestBitcoinClient {
+
   def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
     val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
     val parentTx = Transaction(version = 2,
@@ -56,5 +58,17 @@ object TestBitcoinClient {
       txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
       lockTime = 0)
     MakeFundingTxResponse(parentTx, anchorTx, 0, priv)
+  }
+
+  def malleateTx(tx: Transaction): Transaction = {
+    val inputs1 = tx.txIn.map(input => Script.parse(input.signatureScript) match {
+      case OP_PUSHDATA(sig, _) :: OP_PUSHDATA(pub, _) :: Nil if pub.length == 33 && Try(Crypto.decodeSignature(sig)).isSuccess =>
+        val (r, s) = Crypto.decodeSignature(sig)
+        val s1 = Crypto.curve.getN.subtract(s)
+        val sig1 = Crypto.encodeSignature(r, s1)
+        input.copy(signatureScript = Script.write(OP_PUSHDATA(sig1) :: OP_PUSHDATA(pub) :: Nil))
+    })
+    val tx1 = tx.copy(txIn = inputs1)
+    tx1
   }
 }

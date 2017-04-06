@@ -8,9 +8,10 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction}
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.Setup
+import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
@@ -20,7 +21,6 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsValidationSpec}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Setup, randomKey, toShortId}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -29,7 +29,6 @@ import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
 import scala.compat.Platform
-import scala.concurrent.{Await, Future}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.sys.process._
@@ -130,21 +129,20 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     nodes.values.foreach(_.boostrap)
   }
 
-  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
-    val eventListener = TestProbe()
+  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long): Seq[TestProbe] = {
     val eventListener1 = TestProbe()
-    node1.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
-    node2.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
+    val eventListener2 = TestProbe()
+    node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
+    node2.system.eventStream.subscribe(eventListener2.ref, classOf[ChannelStateChanged])
     val sender = TestProbe()
     sender.send(node1.switchboard, NewConnection(
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
       address = node2.nodeParams.address,
       newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat)))))
     sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
-    // waiting for channel to publish funding tx
-
-    awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
-    awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
+    awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
+    awaitCond(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
+    eventListener1 :: eventListener2 :: Nil
   }
 
   test("connect nodes") {
@@ -153,27 +151,34 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     //        |     / \
     //        --E--'   F{1,2,3,4}
     //
-    val eventListeners = nodes.values.map(s => {
-      val eventListener = TestProbe()
-      s.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged])
-      eventListener
-    })
 
-    connect(nodes("A"), nodes("B"), 10000000, 0)
-    connect(nodes("B"), nodes("C"), 2000000, 0)
-    connect(nodes("C"), nodes("D"), 5000000, 0)
-    connect(nodes("B"), nodes("E"), 5000000, 0)
-    connect(nodes("E"), nodes("C"), 5000000, 0)
-    connect(nodes("C"), nodes("F1"), 5000000, 0)
-    connect(nodes("C"), nodes("F2"), 5000000, 0)
-    connect(nodes("C"), nodes("F3"), 5000000, 0)
+    val eventListeners =
+    connect(nodes("A"), nodes("B"), 10000000, 0) ++
+    connect(nodes("B"), nodes("C"), 2000000, 0) ++
+    connect(nodes("C"), nodes("D"), 5000000, 0) ++
+    connect(nodes("B"), nodes("E"), 5000000, 0) ++
+    connect(nodes("E"), nodes("C"), 5000000, 0) ++
+    connect(nodes("C"), nodes("F1"), 5000000, 0) ++
+    connect(nodes("C"), nodes("F2"), 5000000, 0) ++
+    connect(nodes("C"), nodes("F3"), 5000000, 0) ++
     connect(nodes("C"), nodes("F4"), 5000000, 0)
-    // confirming funding txes
+
+    Thread.sleep(3000)
+
+    // confirming the parent tx of the funding
     val sender = TestProbe()
-    sender.send(bitcoincli, BitcoinReq("generate", 3))
+    sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
 
-    eventListeners.map(eventListener => awaitCond(eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED))
+    eventListeners.foreach(el => awaitCond(el.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED))
+
+    Thread.sleep(3000)
+
+    // confirming the funding tx
+    sender.send(bitcoincli, BitcoinReq("generate", 2))
+    sender.expectMsgType[JValue](10 seconds)
+
+    eventListeners.foreach(el => awaitCond(el.expectMsgType[ChannelStateChanged](10 seconds).currentState == NORMAL))
   }
 
   def awaitAnnouncements(subset: Map[String, Setup], nodes: Int, channels: Int, updates: Int) = {
@@ -183,22 +188,22 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         awaitCond({
           sender.send(setup.router, 'nodes)
           sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
-        }, max = 40 seconds, interval = 1 second)
+        }, max = 60 seconds, interval = 1 second)
         awaitCond({
           sender.send(setup.router, 'channels)
           sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
-        }, max = 40 seconds, interval = 1 second)
+        }, max = 60 seconds, interval = 1 second)
         awaitCond({
           sender.send(setup.router, 'updates)
           sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
-        }, max = 40 seconds, interval = 1 second)
+        }, max = 60 seconds, interval = 1 second)
     }
   }
 
   test("wait for network announcements") {
     val sender = TestProbe()
     // generating more blocks so that all funding txes are buried under at least 6 blocks
-    sender.send(bitcoincli, BitcoinReq("generate", 6))
+    sender.send(bitcoincli, BitcoinReq("generate", 4))
     sender.expectMsgType[JValue]
     awaitAnnouncements(nodes, 9, 9, 18)
   }
@@ -311,6 +316,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 20 seconds, interval = 1 second)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 8, 16)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
@@ -367,6 +373,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 20 seconds, interval = 1 second)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 7, 14)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -402,6 +409,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 20 seconds, interval = 1 second)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 6, 12)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
@@ -439,6 +447,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 20 seconds, interval = 1 second)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 5, 10)
   }
 
   test("generate and validate lots of channels") {

@@ -50,8 +50,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
       val dummyFundingTx = TestBitcoinClient.makeDummyFundingTx(makeFundingTx)
       alice ! dummyFundingTx
-      alice2blockchain.expectMsgType[PublishAsap]
       val w = alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[PublishAsap]
       alice ! WatchEventSpent(w.event, dummyFundingTx.parentTx)
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
