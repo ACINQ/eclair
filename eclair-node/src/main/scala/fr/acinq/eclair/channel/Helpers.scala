@@ -9,6 +9,7 @@ import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.Features.CHANNELS_PUBLIC_BIT
+import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Features, Globals, NodeParams}
 import grizzled.slf4j.Logging
@@ -32,6 +33,7 @@ object Helpers {
     case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
     case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
+    case d: DATA_WAIT_FOR_FUNDING_PARENT => d.data.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
     case d: HasCommitments => d.channelId
@@ -53,6 +55,7 @@ object Helpers {
       case (_, _, _, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => Nil
+      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_PARENT) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CREATED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
@@ -119,6 +122,48 @@ object Helpers {
 
     def announceChannel(localLocalFeatures: BinaryData, remoteLocalFeature: BinaryData): Boolean =
       Features.isSet(localLocalFeatures, CHANNELS_PUBLIC_BIT) && Features.isSet(remoteLocalFeature, CHANNELS_PUBLIC_BIT)
+
+    /**
+      *
+      * @param fundingTxResponse funding transaction response, which includes a funding tx, its parent, and the private key
+      *                          that we need to re-sign the funding
+      * @param newParentTx       new parent tx
+      * @return an updated funding transaction response where the funding tx now spends from newParentTx
+      */
+    def replaceParent(fundingTxResponse: MakeFundingTxResponse, newParentTx: Transaction): MakeFundingTxResponse = {
+      // find the output that we are spending from
+      val utxo = newParentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
+
+      // check that it matches what we expect, which is a P2WPKH output to our public key
+      require(utxo.publicKeyScript == Script.write(Script.pay2sh(Script.pay2wpkh(fundingTxResponse.priv.publicKey))))
+
+      // update our tx input we the hash of the new parent
+      val input = fundingTxResponse.fundingTx.txIn(0)
+      val input1 = input.copy(outPoint = input.outPoint.copy(hash = newParentTx.hash))
+      val unsignedFundingTx = fundingTxResponse.fundingTx.copy(txIn = Seq(input1))
+
+      // and re-sign it
+      Helpers.Funding.sign(MakeFundingTxResponse(newParentTx, unsignedFundingTx, fundingTxResponse.fundingTxOutputIndex, fundingTxResponse.priv))
+    }
+
+    /**
+      *
+      * @param fundingTxResponse a funding tx response
+      * @return an updated funding tx response that is properly sign
+      */
+    def sign(fundingTxResponse: MakeFundingTxResponse): MakeFundingTxResponse = {
+      // find the output that we are spending from
+      val utxo = fundingTxResponse.parentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
+
+      val pub = fundingTxResponse.priv.publicKey
+      val pubKeyScript = Script.pay2pkh(pub)
+      val sig = Transaction.signInput(fundingTxResponse.fundingTx, 0, pubKeyScript, SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, fundingTxResponse.priv)
+      val witness = ScriptWitness(Seq(sig, pub.toBin))
+      val fundingTx1 = fundingTxResponse.fundingTx.updateSigScript(0, OP_PUSHDATA(Script.write(Script.pay2wpkh(pub))) :: Nil).updateWitness(0, witness)
+
+      Transaction.correctlySpends(fundingTx1, fundingTxResponse.parentTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      fundingTxResponse.copy(fundingTx = fundingTx1)
+    }
 
   }
 

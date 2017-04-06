@@ -1,11 +1,11 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, JsonRPCError}
+import fr.acinq.eclair.channel.Helpers
 import fr.acinq.eclair.fromShortId
-import fr.acinq.eclair.transactions.{Scripts, Transactions}
+import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
@@ -161,34 +161,29 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
     publishTransaction(tx2Hex(tx))
 
-  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[(Transaction, Int)] = {
-    // this is the funding tx that we want to publish
-    val (partialTx, pubkeyScript) = Transactions.makePartialFundingTx(amount, localFundingPubkey, remoteFundingPubkey)
-    val parentFee = Satoshi(250 * 2 * 2 * feeRatePerKw / 1024)
-    val future = for {
+
+  def makeFundingTx(localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
+    for {
     // ask for a new address and the corresponding private key
       JString(address) <- client.invoke("getnewaddress")
       JString(wif) <- client.invoke("dumpprivkey", address)
+      JString(segwitAddress) <- client.invoke("addwitnessaddress", address)
       priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
       pub = priv.publicKey
-      // create a tx that sends money to a WPKH output that matches our private key
-      tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + parentFee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0L)
-      FundTransactionResponse(tx1, changePos, fee) <- fundTransaction(tx)
+      _ = require(segwitAddress == Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, Crypto.hash160(Script.write(Script.pay2wpkh(priv.publicKey.hash160)))))
+      // create a tx that sends money to a P2SH(WPKH) output that matches our private key
+      parentFee = Satoshi(250 * 2 * 2 * feeRatePerKw / 1024)
+      partialParentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + parentFee, Script.pay2sh(Script.pay2wpkh(pub))) :: Nil, lockTime = 0L)
+      FundTransactionResponse(unsignedParentTx, _, _) <- fundTransaction(partialParentTx)
       // this is the first tx that we will publish, a standard tx which send money to our p2wpkh address
-      SignTransactionResponse(tx2, true) <- signTransaction(tx1)
-      pos = Transactions.findPubKeyScriptIndex(tx2, Script.pay2wpkh(pub))
-      // now we update our funding tx to spend from our segwit tx
-      tx3 = partialTx.copy(txIn = TxIn(OutPoint(tx2, pos), sequence = TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil)
-      sig = Transaction.signInput(tx3, 0, Script.pay2pkh(pub), SIGHASH_ALL, tx2.txOut(pos).amount, SigVersion.SIGVERSION_WITNESS_V0, priv)
-      tx4 = tx3.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
-      _ = Transaction.correctlySpends(tx4, tx2 :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      // TODO: we publish the parent tx. we assume that the peer will reply very soon and our child funding tx
-      // will be mined in the same block
-      _ <- publishTransaction(tx2)
-    } yield (tx4, 0)
+      SignTransactionResponse(parentTx, true) <- signTransaction(unsignedParentTx)
+      // now we create the funding tx
+      (partialFundingTx, _) = Transactions.makePartialFundingTx(amount, localFundingPubkey, remoteFundingPubkey)
+      // and update it to spend from our segwit tx
+      pos = Transactions.findPubKeyScriptIndex(parentTx, Script.pay2sh(Script.pay2wpkh(pub)))
+      unsignedFundingTx = partialFundingTx.copy(txIn = TxIn(OutPoint(parentTx, pos), sequence = TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil)
+    } yield Helpers.Funding.sign(MakeFundingTxResponse(parentTx, unsignedFundingTx, 0, priv))
 
-    future
-  }
 
   /**
     * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent

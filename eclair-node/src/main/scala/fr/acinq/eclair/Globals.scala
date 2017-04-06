@@ -36,6 +36,7 @@ object Globals {
       */
     val UPDATE_FEE_MAX_DIFF_RATIO = 0.3
   }
+
 }
 
 

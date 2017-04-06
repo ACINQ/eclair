@@ -1,7 +1,8 @@
 package fr.acinq.eclair.channel.states
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -9,7 +10,7 @@ import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, TestConstants}
+import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
 
 import scala.util.Random
 
@@ -63,8 +64,13 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
     val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
-    val dummyFundingTx = makeDummyFundingTx(makeFundingTx)
+    val dummyFundingTx = TestBitcoinClient.makeDummyFundingTx(makeFundingTx)
     alice ! dummyFundingTx
+    val w = alice2blockchain.expectMsgType[WatchSpent]
+    alice2blockchain.expectMsgType[PublishAsap]
+    alice ! WatchEventSpent(w.event, dummyFundingTx.parentTx)
+    alice2blockchain.expectMsgType[WatchConfirmed]
+    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingSigned]
@@ -84,15 +90,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2alice.forward(alice)
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
-  }
-
-  def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
-    val anchorTx = Transaction(version = 1,
-      txIn = Seq.empty[TxIn],
-      txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
-      lockTime = 0
-    )
-    MakeFundingTxResponse(anchorTx, 0)
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {
