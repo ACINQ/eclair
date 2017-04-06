@@ -310,6 +310,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
     case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+
+    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_SIGNED)(handleExceptions {
