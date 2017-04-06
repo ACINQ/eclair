@@ -147,7 +147,7 @@ object Helpers {
       val utxo = newParentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
 
       // check that it matches what we expect, which is a P2WPKH output to our public key
-      require(utxo.publicKeyScript == Script.write(Script.pay2wpkh(fundingTxResponse.priv.publicKey)))
+      require(utxo.publicKeyScript == Script.write(Script.pay2sh(Script.pay2wpkh(fundingTxResponse.priv.publicKey))))
 
       // update our tx input we the hash of the new parent
       val input = fundingTxResponse.fundingTx.txIn(0)
@@ -167,10 +167,12 @@ object Helpers {
       // find the output that we are spending from
       val utxo = fundingTxResponse.parentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
 
-      // re-sign our tx and update its witness
       val pub = fundingTxResponse.priv.publicKey
-      val sig = Transaction.signInput(fundingTxResponse.fundingTx, 0, Script.pay2pkh(pub), SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, fundingTxResponse.priv)
-      val fundingTx1 = fundingTxResponse.fundingTx.updateWitness(0, ScriptWitness(sig :: pub.toBin :: Nil))
+      val pubKeyScript = Script.pay2pkh(pub)
+      val sig = Transaction.signInput(fundingTxResponse.fundingTx, 0, pubKeyScript, SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, fundingTxResponse.priv)
+      val witness = ScriptWitness(Seq(sig, pub.toBin))
+      val fundingTx1 = fundingTxResponse.fundingTx.updateSigScript(0, OP_PUSHDATA(Script.write(Script.pay2wpkh(pub))) :: Nil).updateWitness(0, witness)
+
       Transaction.correctlySpends(fundingTx1, fundingTxResponse.parentTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       fundingTxResponse.copy(fundingTx = fundingTx1)
     }

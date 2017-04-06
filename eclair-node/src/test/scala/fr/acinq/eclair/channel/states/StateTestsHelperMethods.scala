@@ -91,7 +91,7 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
     val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
-    val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(makeFundingTx.amount, Script.pay2wpkh(priv.publicKey)) :: Nil, lockTime = 0)
+    val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(makeFundingTx.amount, Script.pay2sh(Script.pay2wpkh(priv.publicKey))) :: Nil, lockTime = 0)
     val anchorTx = Transaction(version = 2,
       txIn = TxIn(OutPoint(parentTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,

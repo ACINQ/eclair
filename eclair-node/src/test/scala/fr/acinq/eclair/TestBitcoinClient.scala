@@ -26,7 +26,7 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 
   override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
     val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
-    val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2wpkh(priv.publicKey)) :: Nil, lockTime = 0)
+    val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2sh(Script.pay2wpkh(priv.publicKey))) :: Nil, lockTime = 0)
     val anchorTx = Transaction(version = 2,
       txIn = TxIn(OutPoint(parentTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
       txOut = TxOut(amount, Script.pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,

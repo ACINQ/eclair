@@ -171,20 +171,24 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
     // ask for a new address and the corresponding private key
       JString(address) <- client.invoke("getnewaddress")
       JString(wif) <- client.invoke("dumpprivkey", address)
+      JString(segwitAddress) <- client.invoke("addwitnessaddress", address)
       priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
       pub = priv.publicKey
-      // create a tx that sends money to a WPKH output that matches our private key
-      tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + parentFee, Script.pay2wpkh(pub)) :: Nil, lockTime = 0L)
+      _ = require(segwitAddress == Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, Crypto.hash160(Script.write(Script.pay2wpkh(priv.publicKey.hash160)))))
+      // create a tx that sends money to a P2SH(WPKH) output that matches our private key
+      tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + parentFee, Script.pay2sh(Script.pay2wpkh(pub))) :: Nil, lockTime = 0L)
       FundTransactionResponse(tx1, changePos, fee) <- fundTransaction(tx)
       // this is the first tx that we will publish, a standard tx which send money to our p2wpkh address
       SignTransactionResponse(tx2, true) <- signTransaction(tx1)
-      pos = Transactions.findPubKeyScriptIndex(tx2, Script.pay2wpkh(pub))
+      pos = Transactions.findPubKeyScriptIndex(tx2, Script.pay2sh(Script.pay2wpkh(pub)))
       // now we update our funding tx to spend from our segwit tx
       tx3 = partialTx.copy(txIn = TxIn(OutPoint(tx2, pos), sequence = TxIn.SEQUENCE_FINAL, signatureScript = Nil) :: Nil)
       // TODO: we publish the parent tx. we assume that the peer will reply very soon and our child funding tx
       // will be mined in the same block
       _ <- publishTransaction(tx2)
-    } yield Helpers.Funding.sign(MakeFundingTxResponse(tx2, tx3, 0, priv))
+    } yield {
+      Helpers.Funding.sign(MakeFundingTxResponse(tx2, tx3, 0, priv))
+    }
 
     future
   }
