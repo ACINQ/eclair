@@ -4,7 +4,7 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import fr.acinq.eclair.channel.BitcoinEvent
-import fr.acinq.eclair.wire.{ChannelAnnouncement, LightningMessage}
+import fr.acinq.eclair.wire.ChannelAnnouncement
 
 /**
   * Created by PM on 19/01/2016.

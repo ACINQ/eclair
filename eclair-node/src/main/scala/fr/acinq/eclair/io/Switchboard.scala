@@ -6,7 +6,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Stat
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.{DATA_WAIT_FOR_FUNDING_CREATED, DATA_WAIT_FOR_FUNDING_PARENT, HasCommitments}
+import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router.Router.Rebroadcast
 
