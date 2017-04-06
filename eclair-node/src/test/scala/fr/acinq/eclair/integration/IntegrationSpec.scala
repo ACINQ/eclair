@@ -179,7 +179,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   def awaitAnnouncements(subset: Map[String, Setup], nodes: Int, channels: Int, updates: Int) = {
     val sender = TestProbe()
     subset.foreach {
-      case (name, setup) =>
+      case (_, setup) =>
         awaitCond({
           sender.send(setup.router, 'nodes)
           sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes

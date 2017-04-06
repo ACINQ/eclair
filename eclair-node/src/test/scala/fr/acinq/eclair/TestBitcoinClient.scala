@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.ExtendedBitcoinClient.SignTransactionResponse
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse, NewBlock, NewTransaction}
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.transactions.Scripts
 
 import scala.concurrent.duration._
@@ -24,16 +24,8 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
     override def run(): Unit = system.eventStream.publish(NewBlock(DUMMY_BLOCK)) // blocks are not actually interpreted
   })
 
-  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] = {
-    val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
-    val parentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2sh(Script.pay2wpkh(priv.publicKey))) :: Nil, lockTime = 0)
-    val anchorTx = Transaction(version = 2,
-      txIn = TxIn(OutPoint(parentTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-      txOut = TxOut(amount, Script.pay2wsh(Scripts.multiSig2of2(ourCommitPub, theirCommitPub))) :: Nil,
-      lockTime = 0
-    )
-    Future.successful(MakeFundingTxResponse(parentTx, anchorTx, 0, priv))
-  }
+  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
+    Future.successful(TestBitcoinClient.makeDummyFundingTx(MakeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw)))
 
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = {
     system.eventStream.publish(NewTransaction(tx))
@@ -50,4 +42,19 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 
   override def getTransactionShortId(txId: String)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((400000, 42))
 
+}
+
+object TestBitcoinClient {
+  def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
+    val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
+    val parentTx = Transaction(version = 2,
+      txIn = TxIn(OutPoint("42" * 32, 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txOut = TxOut(makeFundingTx.amount, Script.pay2sh(Script.pay2wpkh(priv.publicKey))) :: Nil,
+      lockTime = 0)
+    val anchorTx = Transaction(version = 2,
+      txIn = TxIn(OutPoint(parentTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
+      txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
+      lockTime = 0)
+    MakeFundingTxResponse(parentTx, anchorTx, 0, priv)
+  }
 }

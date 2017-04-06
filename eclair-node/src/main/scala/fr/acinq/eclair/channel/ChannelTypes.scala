@@ -63,7 +63,7 @@ case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we w
 case object INPUT_PUBLISH_LOCALCOMMIT // used in tests
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef)
-case class INPUT_RESTORED(data: Data)
+case class INPUT_RESTORED(data: HasCommitments)
 
 sealed trait BitcoinEvent
 case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent

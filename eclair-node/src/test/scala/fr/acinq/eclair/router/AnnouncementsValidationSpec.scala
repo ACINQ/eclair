@@ -66,7 +66,8 @@ object AnnouncementsValidationSpec {
     val amount = Satoshi(1000000)
     // first we publish the funding tx
     val fundingTxFuture = extendedBitcoinClient.makeFundingTx(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey, amount, 10000)
-    val MakeFundingTxResponse(_, fundingTx, fundingOutputIndex, _) = Await.result(fundingTxFuture, 10 seconds)
+    val MakeFundingTxResponse(parentTx, fundingTx, fundingOutputIndex, _) = Await.result(fundingTxFuture, 10 seconds)
+    Await.result(extendedBitcoinClient.publishTransaction(parentTx), 10 seconds)
     Await.result(extendedBitcoinClient.publishTransaction(fundingTx), 10 seconds)
     SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, fundingTx, fundingOutputIndex)
   }

@@ -152,10 +152,10 @@ object Helpers {
       // update our tx input we the hash of the new parent
       val input = fundingTxResponse.fundingTx.txIn(0)
       val input1 = input.copy(outPoint = input.outPoint.copy(hash = newParentTx.hash))
-      val unsignedfundingTx = fundingTxResponse.fundingTx.copy(txIn = Seq(input1))
+      val unsignedFundingTx = fundingTxResponse.fundingTx.copy(txIn = Seq(input1))
 
       // and re-sign it
-      Helpers.Funding.sign(MakeFundingTxResponse(newParentTx, unsignedfundingTx, fundingTxResponse.fundingTxOutputIndex, fundingTxResponse.priv))
+      Helpers.Funding.sign(MakeFundingTxResponse(newParentTx, unsignedFundingTx, fundingTxResponse.fundingTxOutputIndex, fundingTxResponse.priv))
     }
 
     /**

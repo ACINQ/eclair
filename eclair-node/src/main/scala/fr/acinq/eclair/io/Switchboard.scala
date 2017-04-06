@@ -26,18 +26,6 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       val peer = createOrGetPeer(peers, remoteNodeId, Some(address))
       context become main(peers + (remoteNodeId -> peer), connections)
 
-    case channelState: DATA_WAIT_FOR_FUNDING_PARENT =>
-      val remoteNodeId = channelState.data.remoteParams.nodeId
-      val peer = createOrGetPeer(peers, remoteNodeId, None)
-      peer forward channelState
-      context become main(peers + (remoteNodeId -> peer), connections)
-
-    case channelState: DATA_WAIT_FOR_FUNDING_CREATED =>
-      val remoteNodeId = channelState.remoteParams.nodeId
-      val peer = createOrGetPeer(peers, remoteNodeId, None)
-      peer forward channelState
-      context become main(peers + (remoteNodeId -> peer), connections)
-
     case channelState: HasCommitments =>
       val remoteNodeId = channelState.commitments.remoteParams.nodeId
       val peer = createOrGetPeer(peers, remoteNodeId, None)

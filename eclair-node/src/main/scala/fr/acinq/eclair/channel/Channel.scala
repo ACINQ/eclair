@@ -96,10 +96,10 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(INPUT_RESTORED(data), _) =>
       log.info(s"restoring channel $data")
+      context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data))
       data match {
         //NB: order matters!
         case closing: DATA_CLOSING =>
-          context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, closing.commitments.localParams.isFunder, closing.channelId, data))
           closing.mutualClosePublished.map(doPublish(_))
           closing.localCommitPublished.foreach(doPublish(_))
           closing.remoteCommitPublished.foreach(doPublish(_, BITCOIN_REMOTECOMMIT_DONE))
@@ -108,18 +108,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
 
-        case d: DATA_WAIT_FOR_FUNDING_PARENT =>
-          context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, true, d.data.temporaryChannelId, data))
-          d.parentCandidates.map(parentTx => blockchain ! WatchConfirmed(self, parentTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(parentTx)))
-          goto(OFFLINE) using d
-
-        case d: DATA_WAIT_FOR_FUNDING_CREATED =>
-          context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, false, d.temporaryChannelId, data))
-          goto(OFFLINE) using d
-
         case d: HasCommitments =>
           // TODO: should we wait for an acknowledgment from the watcher?
-          context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, d.commitments.localParams.isFunder, d.channelId, data))
           blockchain ! WatchSpent(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.outPoint.index.toInt, BITCOIN_FUNDING_SPENT)
           blockchain ! WatchLost(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           d match {
@@ -224,16 +214,15 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
     case Event(fundingResponse@MakeFundingTxResponse(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, _)) =>
-      log.info(s"parentTx: ${parentTx.txid} fundingTx: ${fundingTx.txid}")
-
-      // we wait for our funding parent tx to be confirmed
-      blockchain ! WatchConfirmed(self, parentTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(parentTx))
-
-      // but we also watch each of its input: they could be spend by the parent tx or one of its malleated avatars
-      parentTx.txIn.map(input => {
-        log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
-        blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
-      })
+      log.info(s"publishing parent tx with txid=${parentTx.txid}")
+      // first we publish the parent tx
+      blockchain ! PublishAsap(parentTx)
+      // and we also watch each of its input: they could be spend by a malleated avatar of the parent tx
+      parentTx.txIn.map {
+        case input =>
+          log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
+          blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
+      }
       goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentTx :: Nil, data)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
@@ -244,17 +233,15 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_FUNDING_PARENT)(handleExceptions {
-    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) if parentCandidates.contains(spendingTx) =>
-      stay()
 
     case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) =>
       // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
       // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
       log.info(s"input of parent tx ${parentTx.txid} spent by ${spendingTx.txid}, our funding tx is ${fundingResponse.fundingTx.txid}")
       blockchain ! WatchConfirmed(self, spendingTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(spendingTx))
-      goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, spendingTx +: parentCandidates, data)
+      stay using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, spendingTx +: parentCandidates, data)
 
-    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), blockHeight, txIndex), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) =>
+    case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, _, data)) =>
       // a potential parent for our funding tx has been confirmed, let's update our funding tx
       Try(Helpers.Funding.replaceParent(fundingResponse, tx)) match {
         case Success(MakeFundingTxResponse(_, fundingTx, fundingTxOutputIndex, _)) =>
@@ -912,36 +899,19 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   when(OFFLINE) {
-    case Event(INPUT_RECONNECTED(r), d: Data) =>
+    case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
       forwarder ! r
       d match {
-        case DATA_WAIT_FOR_FUNDING_PARENT(_, parentCandidates, _) =>
-          parentCandidates.last.txIn.map(input => {
-            log.info(s"watching funding parent input ${input.outPoint.txid}:${input.outPoint.index.toInt}")
-            blockchain ! WatchSpent(self, input.outPoint.txid, input.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentCandidates.last))
-          })
-          parentCandidates.map(parentTx => {
-            log.info(s"watching funding parent candidate ${parentTx.txid}")
-            blockchain ! WatchConfirmed(self, parentTx.txid, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(parentTx))
-          })
-          goto(WAIT_FOR_FUNDING_PARENT)
-
-        case _: DATA_WAIT_FOR_FUNDING_CREATED =>
-          goto(WAIT_FOR_FUNDING_CREATED)
-
-        case _: DATA_WAIT_FOR_FUNDING_SIGNED =>
-          goto(WAIT_FOR_FUNDING_SIGNED)
-
-        case DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, _, _) =>
+        case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
           // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-          blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+          blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           goto(WAIT_FOR_FUNDING_CONFIRMED)
         case _: DATA_WAIT_FOR_FUNDING_LOCKED => goto(WAIT_FOR_FUNDING_LOCKED)
         case d1: DATA_NORMAL =>
           // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-          if (Funding.announceChannel(d1.commitments.localParams.localFeatures, d1.commitments.remoteParams.localFeatures) && d1.shortChannelId.isEmpty) {
+          if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) && d1.shortChannelId.isEmpty) {
             // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
-            blockchain ! WatchConfirmed(self, d1.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
+            blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
           }
           self ! CMD_SIGN
           goto(NORMAL)
@@ -994,11 +964,6 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   whenUnhandled {
-    case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(tx), spendingTx), _) =>
-      if (spendingTx.txid != tx.txid) {
-        log.error(s"our transaction ${tx.txid} is conflicted by ${spendingTx.txid}")
-      }
-      stay()
 
     case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(new RuntimeException(s"initiating local commit"), d)
 
