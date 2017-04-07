@@ -17,7 +17,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 ---
 
 ## Lightning Network Specification Compliance
-[Eclair 0.2-alpha1](https://github.com/ACINQ/eclair/releases/tag/v0.2-alpha1) is compliant with the BOLTs at commit [06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02](https://github.com/lightningnetwork/lightning-rfc/commit/06a5e6cbdbb4c6f8b8dab444de497cdb9c7d7f02), with the following caveats:
+[Eclair 0.2-alpha2](https://github.com/ACINQ/eclair/releases/tag/v0.2-alpha2) is compliant with the BOLTs at commit [f048a2c298448eca7520ccf1d7d61b1860e319b7](https://github.com/lightningnetwork/lightning-rfc/commit/f048a2c298448eca7520ccf1d7d61b1860e319b7), with the following caveats:
 
   - [X] BOLT 1: Base Protocol
   - [X] BOLT 2: Peer Protocol for Channel Management
@@ -35,7 +35,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 
 ## Installation
 
-:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha1](https://github.com/ACINQ/eclair/blob/v0.2-alpha1/README.md#installation)**.
+:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha2](https://github.com/ACINQ/eclair/blob/v0.2-alpha2/README.md#installation)**.
 
 ### Configuring Bitcoin Core
 
