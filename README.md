@@ -17,17 +17,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
 ---
 
 ## Lightning Network Specification Compliance
-[Eclair 0.2-alpha2](https://github.com/ACINQ/eclair/releases/tag/v0.2-alpha2) is compliant with the BOLTs at commit [f048a2c298448eca7520ccf1d7d61b1860e319b7](https://github.com/lightningnetwork/lightning-rfc/commit/f048a2c298448eca7520ccf1d7d61b1860e319b7), with the following caveats:
-
-  - [X] BOLT 1: Base Protocol
-  - [X] BOLT 2: Peer Protocol for Channel Management
-  - [X] BOLT 3: Bitcoin Transaction and Script Formats
-  - [X] BOLT 4: Onion Routing Protocol
-  - [X] BOLT 5: Recommendations for On-chain Transaction Handling
-    * If a revoked commitment tx is published, only the offender's main output will be stolen as punishment, not the HTLCs.
-  - [X] BOLT 7: P2P Node and Channel Discovery
-  - [X] BOLT 8: Encrypted and Authenticated Transport
-  - [X] BOLT 9: Assigned Feature Flags
+Please see the latest [release note](https://github.com/ACINQ/eclair/releases) for detailed information on BOLT compliance.
 
 ## Overview
 
