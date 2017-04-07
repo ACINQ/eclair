@@ -11,7 +11,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Setup
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
@@ -129,7 +129,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     nodes.values.foreach(_.boostrap)
   }
 
-  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long): Seq[TestProbe] = {
+  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
     val eventListener1 = TestProbe()
     val eventListener2 = TestProbe()
     node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
@@ -140,9 +140,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       address = node2.nodeParams.address,
       newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat)))))
     sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
-    awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
-    awaitCond(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
-    eventListener1 :: eventListener2 :: Nil
+    // funder transitions
+    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_ACCEPT_CHANNEL)
+    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_INTERNAL)
+    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
+    // fundee transitions
+    assert(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_OPEN_CHANNEL)
+    assert(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
   }
 
   test("connect nodes") {
@@ -152,33 +156,58 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     //        --E--'   F{1,2,3,4}
     //
 
-    val eventListeners =
-    connect(nodes("A"), nodes("B"), 10000000, 0) ++
-    connect(nodes("B"), nodes("C"), 2000000, 0) ++
-    connect(nodes("C"), nodes("D"), 5000000, 0) ++
-    connect(nodes("B"), nodes("E"), 5000000, 0) ++
-    connect(nodes("E"), nodes("C"), 5000000, 0) ++
-    connect(nodes("C"), nodes("F1"), 5000000, 0) ++
-    connect(nodes("C"), nodes("F2"), 5000000, 0) ++
-    connect(nodes("C"), nodes("F3"), 5000000, 0) ++
+    connect(nodes("A"), nodes("B"), 10000000, 0)
+    connect(nodes("B"), nodes("C"), 2000000, 0)
+    connect(nodes("C"), nodes("D"), 5000000, 0)
+    connect(nodes("B"), nodes("E"), 5000000, 0)
+    connect(nodes("E"), nodes("C"), 5000000, 0)
+    connect(nodes("C"), nodes("F1"), 5000000, 0)
+    connect(nodes("C"), nodes("F2"), 5000000, 0)
+    connect(nodes("C"), nodes("F3"), 5000000, 0)
     connect(nodes("C"), nodes("F4"), 5000000, 0)
 
-    Thread.sleep(3000)
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
+
+    // a channel has two endpoints
+    val channelEndpointsCount = nodes.values.foldLeft(0) {
+      case (sum, setup) =>
+        sender.send(setup.register, 'channels)
+        val channels = sender.expectMsgType[Map[BinaryData, ActorRef]]
+        sum + channels.size
+    }
+
+    // each funder sets up a WatchConfirmed on the parent tx, we need to make sure it has been received by the watcher
+    awaitCond({
+      nodes.values.foldLeft(Set.empty[Watch]) {
+        case (watches, setup) =>
+          sender.send(setup.watcher, 'watches)
+          watches ++ sender.expectMsgType[Set[Watch]]
+      }.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount / 2
+    }, max = 10 seconds, interval = 1 second)
 
     // confirming the parent tx of the funding
-    val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
 
-    eventListeners.foreach(el => awaitCond(el.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED))
-
-    Thread.sleep(3000)
+    within(30 seconds) {
+      var count = 0
+      while(count < channelEndpointsCount) {
+        if (eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED) count = count + 1
+      }
+    }
 
     // confirming the funding tx
     sender.send(bitcoincli, BitcoinReq("generate", 2))
     sender.expectMsgType[JValue](10 seconds)
 
-    eventListeners.foreach(el => awaitCond(el.expectMsgType[ChannelStateChanged](10 seconds).currentState == NORMAL))
+    within(60 seconds) {
+      var count = 0
+      while(count < channelEndpointsCount) {
+        if (eventListener.expectMsgType[ChannelStateChanged](30 seconds).currentState == NORMAL) count = count + 1
+      }
+    }
   }
 
   def awaitAnnouncements(subset: Map[String, Setup], nodes: Int, channels: Int, updates: Int) = {

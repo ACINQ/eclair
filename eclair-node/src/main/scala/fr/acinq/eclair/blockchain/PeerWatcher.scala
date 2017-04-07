@@ -127,6 +127,8 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       val deprecatedWatches = watches.filter(_.channel == channel)
       context.become(watching(watches -- deprecatedWatches, block2tx, None))
 
+    case 'watches => sender ! watches
+
   }
 
   def addWatch(w: Watch, watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]) = {
