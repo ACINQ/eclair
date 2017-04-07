@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
+import fr.acinq.eclair.router.Router.{NoLocalChannels, RouteNotFound}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{randomKey, toShortId}
@@ -105,24 +106,21 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(a, f))
-    val res = sender.expectMsgType[Failure]
-    assert(res.cause.getMessage === "route not found")
+    sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route not found (non-existing source)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(randomKey.publicKey, f))
-    val res = sender.expectMsgType[Failure]
-    assert(res.cause.getMessage === "graph must contain the source vertex")
+    sender.expectMsg(Failure(NoLocalChannels))
   }
 
   test("route not found (non-existing target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(a, randomKey.publicKey))
-    val res = sender.expectMsgType[Failure]
-    assert(res.cause.getMessage === "graph must contain the sink vertex")
+    sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route found") { case (router, _) =>

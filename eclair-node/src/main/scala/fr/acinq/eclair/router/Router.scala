@@ -20,6 +20,7 @@ import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Failure, Success, Try}
 
 // @formatter:off
 
@@ -282,7 +283,8 @@ object Router {
       .filterNot(u => ignoreChannels.contains(u._1.id))
 
   def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
-    require(localNodeId != targetNodeId, "cannot route to self")
+    if (localNodeId == targetNodeId) throw CannotRouteToSelf
+    if (!channels.exists(c => c.a == localNodeId || c.b == localNodeId)) throw NoLocalChannels
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
     val g = new DefaultDirectedGraph[BinaryData, DescEdge](classOf[DescEdge])
     channels.foreach(d => {
@@ -290,11 +292,15 @@ object Router {
       g.addVertex(d.b)
       g.addEdge(d.a, d.b, new DescEdge(d))
     })
-    Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId)) match {
-      case Some(path) => path.getEdgeList.map(_.desc)
-      case None => throw new RuntimeException("route not found")
+    Try(Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))) match {
+      case Success(Some(path)) => path.getEdgeList.map(_.desc)
+      case _ => throw RouteNotFound
     }
   }
+
+  object NoLocalChannels extends RuntimeException("No local channels")
+  object RouteNotFound extends RuntimeException("Route not found")
+  object CannotRouteToSelf extends RuntimeException("Cannot route to self")
 
   def findRoute(localNodeId: BinaryData, targetNodeId: BinaryData, updates: Map[ChannelDesc, ChannelUpdate])(implicit ec: ExecutionContext): Future[Seq[Hop]] = Future {
     findRouteDijkstra(localNodeId, targetNodeId, updates.keys)

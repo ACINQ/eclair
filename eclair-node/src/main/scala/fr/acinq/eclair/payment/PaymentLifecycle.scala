@@ -55,7 +55,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, attempts + 1, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(f@Failure(t), WaitingForRoute(s, c, _)) =>
-      s ! PaymentFailed(c.paymentHash, error = None)
+      s ! f
       stop(FSM.Normal)
   }
 

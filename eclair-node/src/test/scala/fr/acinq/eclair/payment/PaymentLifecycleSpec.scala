@@ -1,11 +1,13 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.BaseRouterSpec
+import fr.acinq.eclair.router.Router.RouteNotFound
 import fr.acinq.eclair.wire.{TemporaryChannelFailure, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -31,7 +33,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     sender.send(paymentFSM, request)
     val Transition(_, WAITING_FOR_REQUEST, WAITING_FOR_ROUTE) = monitor.expectMsgClass(classOf[Transition[_]])
 
-    sender.expectMsgType[PaymentFailed]
+    sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("payment failed (htlc failed)") { case (router, _) =>
@@ -42,7 +44,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
     val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
 
-    val request = CreatePayment(142000L, "42" * 32, d)
+    val request = CreatePayment(142000L, "42" * 32, d, maxAttempts = 1)
     sender.send(paymentFSM, request)
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)

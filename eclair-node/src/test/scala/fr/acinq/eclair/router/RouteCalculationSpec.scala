@@ -2,6 +2,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.eclair.router.Router.{CannotRouteToSelf, NoLocalChannels, RouteNotFound}
 import fr.acinq.eclair.wire.ChannelUpdate
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -9,6 +10,7 @@ import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
+import scala.util.{Failure, Try}
 
 /**
   * Created by PM on 31/05/2016.
@@ -32,6 +34,19 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
+  test("no local channels") {
+
+    val channels = List(
+      ChannelDesc(2L, b, c),
+      ChannelDesc(4L, d, e)
+    )
+
+    val exc = intercept[RuntimeException] {
+      Router.findRouteDijkstra(a, e, channels)
+    }
+    assert(exc == NoLocalChannels)
+  }
+
   test("route not found") {
 
     val channels = List(
@@ -40,9 +55,24 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(4L, d, e)
     )
 
-    intercept[RuntimeException] {
+    val exc = intercept[RuntimeException] {
       Router.findRouteDijkstra(a, e, channels)
     }
+    assert(exc == RouteNotFound)
+  }
+
+  test("route not found (unknown destination)") {
+
+    val channels = List(
+      ChannelDesc(1L, a, b),
+      ChannelDesc(2L, b, c),
+      ChannelDesc(3L, c, d)
+    )
+
+    val exc = intercept[RuntimeException] {
+      Router.findRouteDijkstra(a, e, channels)
+    }
+    assert(exc == RouteNotFound)
   }
 
   test("route to self") {
@@ -54,9 +84,10 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(4L, d, e)
     )
 
-    intercept[RuntimeException] {
+    val exc = intercept[RuntimeException] {
       Router.findRouteDijkstra(a, a, channels)
     }
+    assert(exc == CannotRouteToSelf)
   }
 
   test("route to immediate neighbor") {
