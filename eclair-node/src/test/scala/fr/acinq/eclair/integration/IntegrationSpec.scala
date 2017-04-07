@@ -299,13 +299,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
     // C will extract the preimage from the blockchain and fulfill the payment upstream
-    paymentSender.expectMsgType[PaymentSucceeded](20 seconds)
+    paymentSender.expectMsgType[PaymentSucceeded](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       res.filter(_ \ "address" == JString(nodes("F1").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
     // we then generate enough blocks so that C gets its main delayed output
     sender.send(bitcoincli, BitcoinReq("generate", 145))
     sender.expectMsgType[JValue](10 seconds)
@@ -315,7 +315,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 8, 16)
   }
 
@@ -355,7 +355,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
     // C will extract the preimage from the blockchain and fulfill the payment upstream
-    paymentSender.expectMsgType[PaymentSucceeded](20 seconds)
+    paymentSender.expectMsgType[PaymentSucceeded](30 seconds)
     // at this point F should have 1 recv transactions: the redeemed htlc
     // we then generate enough blocks so that F gets its htlc-success delayed output
     sender.send(bitcoincli, BitcoinReq("generate", 145))
@@ -365,14 +365,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       res.filter(_ \ "address" == JString(nodes("F2").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
     // and C will have its main output
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 7, 14)
   }
 
@@ -398,7 +398,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 11))
     sender.expectMsgType[JValue](10 seconds)
     // this will fail the htlc
-    paymentSender.expectMsg(20 seconds, PaymentFailed(paymentHash, Some(ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))))
+    paymentSender.expectMsg(30 seconds, PaymentFailed(paymentHash, Some(ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))))
     // we then generate enough blocks to confirm all delayed transactions
     sender.send(bitcoincli, BitcoinReq("generate", 150))
     sender.expectMsgType[JValue](10 seconds)
@@ -408,7 +408,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 6, 12)
   }
 
@@ -436,7 +436,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 11))
     sender.expectMsgType[JValue](10 seconds)
     // this will fail the htlc
-    paymentSender.expectMsg(20 seconds, PaymentFailed(paymentHash, Some(ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))))
+    paymentSender.expectMsg(30 seconds, PaymentFailed(paymentHash, Some(ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))))
     // we then generate enough blocks to confirm all delayed transactions
     sender.send(bitcoincli, BitcoinReq("generate", 145))
     sender.expectMsgType[JValue](10 seconds)
@@ -446,7 +446,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
-    }, max = 20 seconds, interval = 1 second)
+    }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 5, 10)
   }
 
