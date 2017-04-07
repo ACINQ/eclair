@@ -70,7 +70,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   val networkChannelsList: ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
   @FXML var networkChannelsTab: Tab = _
   @FXML var networkChannelsTable: TableView[ChannelAnnouncement] = _
-  @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, Number] = _
+  @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, String] = _
   @FXML var networkChannelsNode1Column: TableColumn[ChannelAnnouncement, String] = _
   @FXML var networkChannelsNode2Column: TableColumn[ChannelAnnouncement, String] = _
 
@@ -186,8 +186,8 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     networkChannelsList.addListener(new ListChangeListener[ChannelAnnouncement] {
       override def onChanged(c: Change[_ <: ChannelAnnouncement]) = updateTabHeader(networkChannelsTab, "All Channels", networkChannelsList)
     })
-    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, Number], ObservableValue[Number]]() {
-      def call(pc: CellDataFeatures[ChannelAnnouncement, Number]) = new SimpleLongProperty(pc.getValue.shortChannelId)
+    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.shortChannelId.toHexString)
     })
     networkChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.nodeId1.toString)
