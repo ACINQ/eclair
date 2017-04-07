@@ -12,7 +12,6 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.zmq.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
-import fr.acinq.eclair.io.Reconnect
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
@@ -38,9 +37,6 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
     channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
-    })
-    channelPaneController.reconnect.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = peer ! Reconnect
     })
 
     // set the node alias if the node has already been announced
@@ -94,8 +90,6 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
-          // enable reconnect if channel OFFLINE and this node is the funder of the channel
-          channelPaneController.reconnect.setDisable(!(OFFLINE == currentState && "Yes".equals(channelPaneController.funder.getText)))
           channelPaneController.close.setText( if (OFFLINE == currentState) "Force close" else "Close")
           channelPaneController.state.setText(currentState.toString)
         }
