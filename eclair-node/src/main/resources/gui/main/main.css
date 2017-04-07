@@ -29,7 +29,7 @@
 .status-bar .label.chain.regtest {
 	-fx-text-fill: rgb(20,208,255);
 }
-.status-bar .label.chain.testnet {
+.status-bar .label.chain.testnet, .status-bar .label.chain.test {
 	-fx-text-fill: rgb(54,207,26);
 }
 .status-bar .label.chain.segnet4 {
