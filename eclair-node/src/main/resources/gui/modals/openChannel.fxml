@@ -11,8 +11,9 @@
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.RowConstraints?>
 <?import javafx.scene.layout.VBox?>
-
 <?import javafx.scene.control.Separator?>
+<?import javafx.scene.control.CheckBox?>
+
 <GridPane styleClass="grid" prefWidth="550.0" prefHeight="350.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="180.0" minWidth="10.0" prefWidth="180.0" halignment="RIGHT" />
@@ -21,6 +22,7 @@
     </columnConstraints>
     <rowConstraints>
         <RowConstraints vgrow="SOMETIMES" />
+        <RowConstraints vgrow="SOMETIMES" maxHeight="10.0"/>
         <RowConstraints vgrow="SOMETIMES" />
         <RowConstraints vgrow="SOMETIMES" minHeight="30.0" valignment="BOTTOM"/>
         <RowConstraints vgrow="SOMETIMES" />
@@ -39,14 +41,17 @@
         <Label fx:id="hostError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid URI" mouseTransparent="true"
                GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2" />
 
-        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="1">
+        <CheckBox fx:id="simpleConnection" mnemonicParsing="false" text="Simple connection (no channel)" styleClass="text-sm"
+                  GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
+
+        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="2">
             <children>
                 <Label styleClass="text-strong" text="Capacity" />
                 <Label styleClass="label-description" text="Funding capacity of the channel" textAlignment="RIGHT" wrapText="true" />
             </children>
         </VBox>
-        <TextField fx:id="fundingSatoshis" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="1" />
-        <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="1">
+        <TextField fx:id="fundingSatoshis" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="2" />
+        <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="2">
             <items>
                 <FXCollections fx:factory="observableArrayList">
                     <String fx:id="milliBTC" fx:value="milliBTC" />
@@ -56,25 +61,25 @@
             </items>
         </ComboBox>
         <Label fx:id="fundingSatoshisError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid Funding"
-               GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
+               GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2" />
 
-        <Label styleClass="text-muted" text="Optional Parameters" wrapText="true" GridPane.columnIndex="0" GridPane.rowIndex="2" />
-        <Separator styleClass="options-separator" GridPane.columnIndex="1" GridPane.rowIndex="2" GridPane.columnSpan="2"/>
+        <Label styleClass="text-muted" text="Optional Parameters" wrapText="true" GridPane.columnIndex="0" GridPane.rowIndex="3" />
+        <Separator styleClass="options-separator" GridPane.columnIndex="1" GridPane.rowIndex="3" GridPane.columnSpan="2"/>
 
-        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="3">
+        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="4">
             <children>
                 <Label styleClass="text-strong" text="Push Amount (msat)" />
                 <Label styleClass="label-description" text="Sent when opening channel" textAlignment="RIGHT" wrapText="true" />
             </children>
         </VBox>
-        <TextField fx:id="pushMsat" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="3" />
+        <TextField fx:id="pushMsat" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4" />
         <Label fx:id="pushMsatError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid Push"
-               GridPane.columnIndex="1" GridPane.rowIndex="3" />
+               GridPane.columnIndex="1" GridPane.rowIndex="4" />
 
         <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect"
-              GridPane.columnIndex="1" GridPane.rowIndex="4" GridPane.valignment="BOTTOM" />
+              GridPane.columnIndex="1" GridPane.rowIndex="5" GridPane.valignment="BOTTOM" />
         <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
-              GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="4" GridPane.valignment="BOTTOM" />
+              GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="5" GridPane.valignment="BOTTOM" />
     </children>
     <stylesheets>
         <URL value="@../commons/globals.css" />

@@ -33,14 +33,24 @@ class Handlers(setup: Setup) extends Logging {
     notifsController = Option(controller)
   }
 
-  def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
+  /**
+    * Opens a connection to a node. If `withChannel` is true, this will also open a channel with the node, with a
+    * `fundingSatoshis` capacity and `pushMsat` amount.
+    *
+    * @param hostPort
+    * @param fundingSatoshis
+    * @param pushMsat
+    * @param withChannel
+    */
+  def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, withChannel: Boolean = true) = {
     hostPort match {
       case GUIValidators.hostRegex(remoteNodeId, host, port) =>
         logger.info(s"opening a channel with remoteNodeId=$remoteNodeId")
         (for {
           address <- Future(new InetSocketAddress(host, port.toInt))
           pubkey = PublicKey(remoteNodeId)
-          conn <- setup.switchboard ? NewConnection(pubkey, address, Some(NewChannel(fundingSatoshis, pushMsat)))
+          conn <- setup.switchboard ?
+            NewConnection(pubkey, address, if (withChannel) Some(NewChannel(fundingSatoshis, pushMsat)) else None)
         } yield conn) onFailure {
           case t =>
             notification("Connection failed", s"$host:$port", NOTIFICATION_ERROR)
