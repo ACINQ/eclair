@@ -14,6 +14,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.payment.LocalPaymentHandler.NewPaymentRequest
 import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentResult, PaymentSucceeded}
 import grizzled.slf4j.Logging
 
@@ -72,11 +73,11 @@ class Handlers(setup: Setup) extends Logging {
     }
   }
 
-  def getPaymentRequest(amountMsat: Long, textarea: TextArea) = {
-    (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
-      Platform.runLater(new Runnable() {
+  def getPaymentRequest(amountMsat: MilliSatoshi, textarea: TextArea) = {
+    (paymentHandler ? NewPaymentRequest(amountMsat)).mapTo[String].map { pr =>
+      Platform.runLater(new Runnable {
         override def run = {
-          textarea.setText(s"${setup.nodeParams.privateKey.publicKey}:$amountMsat:${h.toString()}")
+          textarea.setText(pr)
           textarea.requestFocus
           textarea.selectAll
         }

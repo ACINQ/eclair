@@ -11,7 +11,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -32,8 +31,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val pipe = system.actorOf(Props(new Pipe()))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
-    val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-a")
-    val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler()), name = "payment-handler-b")
+    val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler(Alice.nodeParams)), name = "payment-handler-a")
+    val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler(Bob.nodeParams)), name = "payment-handler-b")
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandlerA), "relayer-a")
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandlerB), "relayer-b")
     val router = TestProbe()

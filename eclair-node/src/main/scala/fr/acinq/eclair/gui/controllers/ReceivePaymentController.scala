@@ -40,16 +40,14 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
               // amount has too many decimals, regex validation has failed somehow
               throw new NumberFormatException("incorrect amount")
           }
-          logger.debug(s"Parsed amount for payment request = int $parsedInt dec $amountDec")
           val smartAmount = unit.getValue match {
             case "milliBTC" => MilliSatoshi(parsedInt.toLong * 100000000L + amountDec.toLong * 100000L)
             case "Satoshi" => MilliSatoshi(parsedInt.toLong * 1000L + amountDec.toLong)
             case "milliSatoshi" => MilliSatoshi(amount.getText.toLong)
           }
-          logger.debug(s"Final amount for payment request = $smartAmount")
           if (GUIValidators.validate(amountError, "Amount must be greater than 0", smartAmount.amount > 0)
             && GUIValidators.validate(amountError, "Must be less than 4 294 967 295 msat (~0.042 BTC)", smartAmount.amount < 4294967295L)) {
-            handlers.getPaymentRequest(smartAmount.amount, paymentRequest)
+            handlers.getPaymentRequest(smartAmount, paymentRequest)
           }
         } catch {
           case e: NumberFormatException =>

@@ -108,7 +108,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
   val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
   val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
-    case "local" => Props[LocalPaymentHandler]
+    case "local" => LocalPaymentHandler.props(nodeParams)
     case "noop" => Props[NoopPaymentHandler]
   }, "payment-handler", SupervisorStrategy.Resume))
   val register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
