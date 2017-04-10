@@ -44,7 +44,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       context.become(run(h2r + (h -> r)))
 
     case NewPaymentRequest(amount) =>
-      sender ! Status.Failure(new RuntimeException("amount is not valid: must be > 0 and < 42.945 mBTC"))
+      sender ! Status.Failure(new RuntimeException("amount is not valid: must be > 0 and < 42.95 mBTC"))
 
     case htlc: UpdateAddHtlc if h2r.contains(htlc.paymentHash) =>
       val r = h2r(htlc.paymentHash)
