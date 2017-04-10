@@ -16,7 +16,7 @@ import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
-import fr.acinq.eclair.{Setup, SimpleSupervisor, TCPBindException, ZMQConnectionTimeoutException}
+import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 
 
@@ -75,10 +75,10 @@ class FxApp extends Application with Logging {
         } catch {
           case TCPBindException(port) =>
             notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
-          case _: ConnectException | _: StreamTcpException =>
+          case BitcoinRPCConnectionException =>
             notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", null))
             notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
-          case ZMQConnectionTimeoutException =>
+          case BitcoinZMQConnectionTimeoutException =>
             notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
             notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
           case t: Throwable =>
