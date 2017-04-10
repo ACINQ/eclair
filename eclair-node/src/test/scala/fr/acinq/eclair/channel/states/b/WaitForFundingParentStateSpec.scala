@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel.states.b
 
-import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -17,9 +17,9 @@ import scala.concurrent.duration._
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
+class WaitForFundingParentStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
+  type FixtureParam = Tuple5[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, Transaction]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
@@ -33,30 +33,34 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
-    }
-    test((alice, alice2bob, bob2alice, alice2blockchain))
-  }
-
-  test("recv funding transaction") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
-    within(30 seconds) {
       val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
       val dummyFundingTx = TestBitcoinClient.makeDummyFundingTx(makeFundingTx)
       alice ! dummyFundingTx
-      val w = alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[PublishAsap]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_PARENT)
+      test((alice, alice2bob, bob2alice, alice2blockchain, dummyFundingTx.parentTx))
     }
   }
 
-  test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
+  test("recv BITCOIN_INPUT_SPENT and then BITCOIN_TX_CONFIRMED") { case (alice, alice2bob, _, alice2blockchain, parentTx) =>
+    within(30 seconds) {
+      alice ! WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), parentTx)
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(parentTx), 400000, 42)
+      alice2bob.expectMsgType[FundingCreated]
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
+    }
+  }
+
+  test("recv Error") { case (bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
+  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSED)
