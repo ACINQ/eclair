@@ -221,7 +221,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       log.info(s"publishing parent tx: txid=${parentTx.txid} tx=${Transaction.write(parentTx)}")
       // we use a small delay so that we are sure Publish doesn't race with WatchSpent (which is ok but generates unnecessary warnings)
       context.system.scheduler.scheduleOnce(100 milliseconds, blockchain, PublishAsap(parentTx))
-      goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentTx :: Nil, data)
+      goto(WAIT_FOR_FUNDING_PARENT) using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, Set(parentTx), data)
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
@@ -231,7 +231,6 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_FUNDING_PARENT)(handleExceptions {
-
     case Event(WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates, data)) =>
       if (parentTx.txid != spendingTx.txid) {
         // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
@@ -239,7 +238,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         log.warning(s"parent tx has been malleated: originalParentTxid=${parentTx.txid} malleated=${spendingTx.txid}")
       }
       blockchain ! WatchConfirmed(self, spendingTx.txid, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
-      stay using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, spendingTx +: parentCandidates, data)
+      stay using DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, parentCandidates + spendingTx, data)
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse, _, data)) =>
       // a potential parent for our funding tx has been confirmed, let's update our funding tx
@@ -265,6 +264,12 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           log.warning(s"confirmed tx ${tx.txid} is not an input to our funding tx")
           stay()
       }
+
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+
+    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+
+    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
