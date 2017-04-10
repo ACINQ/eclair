@@ -33,7 +33,7 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
       override def run = {
         contextMenu = ContextMenuUtils.buildCopyContext(List(
           new CopyAction("Copy Channel Id", channelId.getText),
-          new CopyAction("Copy Node Pubkey", theirNodeIdValue)
+          new CopyAction("Copy Peer Pubkey", theirNodeIdValue)
         ))
         contextMenu.getStyleClass.add("context-channel")
         channelId.setContextMenu(contextMenu)
