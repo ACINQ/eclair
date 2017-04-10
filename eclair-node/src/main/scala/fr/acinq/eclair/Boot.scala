@@ -50,6 +50,7 @@ object Boot extends App with Logging {
       s.boostrap
     } catch {
       case t: Throwable =>
+        System.err.println(s"fatal error: ${t.getMessage}")
         logger.error(s"fatal error: ${t.getMessage}")
         System.exit(1)
     }
@@ -80,7 +81,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
 
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
-  val (chain, blockCount, progress) = Await.result(bitcoinClient.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)
+  val (chain, blockCount, progress) = Try(Await.result(bitcoinClient.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
   logger.info(s"using chain=$chain")
   chain match {
     case "test" | "regtest" => {}
@@ -130,7 +131,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   }
   val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
 
-  Try(Await.result(zmqConnected.future, 5 seconds)).recover { case _ => throw ZMQConnectionTimeoutException }.get
+  Try(Await.result(zmqConnected.future, 5 seconds)).recover { case _ => throw BitcoinZMQConnectionTimeoutException }.get
   Try(Await.result(tcpBound.future, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("server.port")) }.get
   Try(Await.result(httpBound, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }.get
 
@@ -166,4 +167,6 @@ object LogSetup {
 
 case class TCPBindException(port: Int) extends RuntimeException
 
-case object ZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
+case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
+
+case object BitcoinRPCConnectionException extends RuntimeException("could not connect to bitcoind using json-rpc")
