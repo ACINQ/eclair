@@ -48,9 +48,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   import scala.concurrent.ExecutionContext.Implicits.global
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
+  if (nodeParams.autoReconnect) self ! Reconnect
   context.system.scheduler.schedule(nodeParams.pingInterval, nodeParams.pingInterval, self, 'ping)
 
-  when(DISCONNECTED) {
+  when(DISCONNECTED, stateTimeout = if (nodeParams.autoReconnect) 60 seconds else null) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
       val channel = spawnChannel(nodeParams, context.system.deadLetters)
       channel ! INPUT_RESTORED(state)
@@ -74,11 +75,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
 
-    case Event(Rebroadcast(announcements), _) => stay // ignored
+    case Event(Rebroadcast(_), _) => stay // ignored
 
     case Event('ping, _) =>
       log.debug(s"ignore ping message when disconnected")
       stay()
+
+    case Event(StateTimeout, _) =>
+      log.info(s"attempting a reconnect")
+      self ! Reconnect
+      stay
   }
 
   when(INITIALIZING) {

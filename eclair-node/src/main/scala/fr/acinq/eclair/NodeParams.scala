@@ -45,7 +45,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       routerValidateInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
                       maxFeerateMismatch: Double,
-                      updateFeeMinDiffRatio: Double)
+                      updateFeeMinDiffRatio: Double,
+                      autoReconnect: Boolean)
 
 object NodeParams {
 
@@ -106,6 +107,7 @@ object NodeParams {
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
-      updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"))
+      updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
+      autoReconnect = config.getBoolean("auto-reconnect"))
   }
 }
