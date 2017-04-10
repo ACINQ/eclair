@@ -43,7 +43,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       announcementsDb: SimpleTypedDb[String, LightningMessage],
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
-                      pingInterval: FiniteDuration)
+                      pingInterval: FiniteDuration,
+                      maxFeerateMismatch: Double)
 
 object NodeParams {
 
@@ -102,6 +103,7 @@ object NodeParams {
       announcementsDb = Dbs.makeAnnouncementDb(db),
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),
-      pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS))
+      pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
+      maxFeerateMismatch = config.getDouble("max-feerate-mismatch"))
   }
 }

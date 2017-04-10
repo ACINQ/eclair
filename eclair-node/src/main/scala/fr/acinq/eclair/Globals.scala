@@ -29,12 +29,6 @@ object Globals {
       * than this ratio.
       */
     val UPDATE_FEE_MIN_DIFF_RATIO = 0.1
-
-    /**
-      * Fundee will unilaterally close the channel if the difference between the feeratePerKw proposed by the funder in an UpdateFee and
-      * actual current network fee is greater than this ratio.
-      */
-    val UPDATE_FEE_MAX_DIFF_RATIO = 0.3
   }
 
 }

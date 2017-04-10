@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.Globals.Constants.{UPDATE_FEE_MAX_DIFF_RATIO, UPDATE_FEE_MIN_DIFF_RATIO}
+import fr.acinq.eclair.Globals.Constants.UPDATE_FEE_MIN_DIFF_RATIO
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -69,9 +69,9 @@ object Helpers {
   // negative feerate can happen in regtest mode
     networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
 
-  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Boolean =
+  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
   // negative feerate can happen in regtest mode
-    remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > UPDATE_FEE_MAX_DIFF_RATIO
+    remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > maxFeerateMismatchRatio
 
   object Funding {
 
@@ -103,7 +103,7 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
         val localFeeratePerKw = Globals.feeratePerKw.get()
-        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw)) {
+        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, localParams.maxFeerateMismatch)) {
           throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
         }
         val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
