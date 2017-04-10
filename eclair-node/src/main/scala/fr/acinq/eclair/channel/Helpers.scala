@@ -69,9 +69,10 @@ object Helpers {
   // negative feerate can happen in regtest mode
     networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
 
-  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean =
-  // negative feerate can happen in regtest mode
-    remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > maxFeerateMismatchRatio
+  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = {
+    // negative feerate can happen in regtest mode
+    remoteFeeratePerKw > 0 && Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw)) > maxFeerateMismatchRatio
+  }
 
   object Funding {
 

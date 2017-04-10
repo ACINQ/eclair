@@ -439,9 +439,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
-      sender.send(bob, UpdateFee("00" * 32, 50000))
+      sender.send(bob, UpdateFee("00" * 32, 65000))
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=50000 localFeeratePerKw=10000")
+      assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=65000 localFeeratePerKw=10000")
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -502,7 +502,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { case (_, bob, _, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val event = CurrentFeerate(20000)
+      val event = CurrentFeerate(1000)
       sender.send(bob, event)
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[PublishAsap]

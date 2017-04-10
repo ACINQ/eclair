@@ -47,7 +47,7 @@ object TestConstants {
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
-      maxFeerateMismatch = 3.0)
+      maxFeerateMismatch = 1.5)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -89,7 +89,7 @@ object TestConstants {
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
-      maxFeerateMismatch = 5.0)
+      maxFeerateMismatch = 1.0)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
