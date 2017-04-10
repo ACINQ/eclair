@@ -2,7 +2,7 @@ package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
 
-import akka.actor.{Actor, ActorRef, FSM, LoggingFSM, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, Terminated}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -26,7 +26,7 @@ import scala.util.{Failure, Success, Try}
   * @param rs      remote node static public key (which must be known before we initiate communication)
   * @param connection    actor that represents the other node's
   */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with LoggingFSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
 
   import TransportHandler._
 
