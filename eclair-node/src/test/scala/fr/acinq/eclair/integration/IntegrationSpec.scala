@@ -307,7 +307,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
     val sender = TestProbe()
-    // first we are in sync with current blockchain height
+    // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
@@ -367,7 +367,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
     val sender = TestProbe()
-    // first we are in sync with current blockchain height
+    // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
@@ -428,7 +428,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
     val sender = TestProbe()
-    // first we are in sync with current blockchain height
+    // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
@@ -468,7 +468,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
     val sender = TestProbe()
-    // first we are in sync with current blockchain height
+    // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
