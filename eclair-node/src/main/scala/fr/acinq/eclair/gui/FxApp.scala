@@ -56,9 +56,9 @@ class FxApp extends Application with Logging {
 
               primaryStage.setTitle("Eclair")
               primaryStage.setMinWidth(600)
-              primaryStage.setWidth(650)
+              primaryStage.setWidth(960)
               primaryStage.setMinHeight(400)
-              primaryStage.setHeight(400)
+              primaryStage.setHeight(640)
               primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
                 override def handle(event: WindowEvent) {
                   System.exit(0)
