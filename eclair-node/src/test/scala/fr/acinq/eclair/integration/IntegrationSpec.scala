@@ -10,9 +10,9 @@ import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.Setup
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient
+import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
@@ -129,7 +129,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     nodes.values.foreach(_.boostrap)
   }
 
-  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long): Seq[TestProbe] = {
+  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
     val eventListener1 = TestProbe()
     val eventListener2 = TestProbe()
     node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
@@ -140,9 +140,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       address = node2.nodeParams.address,
       newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat)))))
     sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
-    awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
-    awaitCond(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
-    eventListener1 :: eventListener2 :: Nil
+    // funder transitions
+    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_ACCEPT_CHANNEL)
+    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_INTERNAL)
+    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_PARENT)
+    // fundee transitions
+    assert(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_OPEN_CHANNEL)
+    assert(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
   }
 
   test("connect nodes") {
@@ -152,33 +156,71 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     //        --E--'   F{1,2,3,4}
     //
 
-    val eventListeners =
-    connect(nodes("A"), nodes("B"), 10000000, 0) ++
-    connect(nodes("B"), nodes("C"), 2000000, 0) ++
-    connect(nodes("C"), nodes("D"), 5000000, 0) ++
-    connect(nodes("B"), nodes("E"), 5000000, 0) ++
-    connect(nodes("E"), nodes("C"), 5000000, 0) ++
-    connect(nodes("C"), nodes("F1"), 5000000, 0) ++
-    connect(nodes("C"), nodes("F2"), 5000000, 0) ++
-    connect(nodes("C"), nodes("F3"), 5000000, 0) ++
+    connect(nodes("A"), nodes("B"), 10000000, 0)
+    connect(nodes("B"), nodes("C"), 2000000, 0)
+    connect(nodes("C"), nodes("D"), 5000000, 0)
+    connect(nodes("B"), nodes("E"), 5000000, 0)
+    connect(nodes("E"), nodes("C"), 5000000, 0)
+    connect(nodes("C"), nodes("F1"), 5000000, 0)
+    connect(nodes("C"), nodes("F2"), 5000000, 0)
+    connect(nodes("C"), nodes("F3"), 5000000, 0)
     connect(nodes("C"), nodes("F4"), 5000000, 0)
 
-    Thread.sleep(3000)
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
+
+    // a channel has two endpoints
+    val channelEndpointsCount = nodes.values.foldLeft(0) {
+      case (sum, setup) =>
+        sender.send(setup.register, 'channels)
+        val channels = sender.expectMsgType[Map[BinaryData, ActorRef]]
+        sum + channels.size
+    }
+
+    // each funder sets up a WatchConfirmed on the parent tx, we need to make sure it has been received by the watcher
+    var watches1 = Set.empty[Watch]
+    awaitCond({
+      watches1 = nodes.values.foldLeft(Set.empty[Watch]) {
+        case (watches, setup) =>
+          sender.send(setup.watcher, 'watches)
+          watches ++ sender.expectMsgType[Set[Watch]]
+      }
+      watches1.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount / 2
+    }, max = 10 seconds, interval = 1 second)
 
     // confirming the parent tx of the funding
-    val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
 
-    eventListeners.foreach(el => awaitCond(el.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED))
+    within(30 seconds) {
+      var count = 0
+      while (count < channelEndpointsCount) {
+        if (eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED) count = count + 1
+      }
+    }
 
-    Thread.sleep(3000)
+    // we make sure all channels have set up their WatchConfirmed for the funding tx
+    awaitCond({
+      val watches2 = nodes.values.foldLeft(Set.empty[Watch]) {
+        case (watches, setup) =>
+          sender.send(setup.watcher, 'watches)
+          watches ++ sender.expectMsgType[Set[Watch]]
+      }
+      (watches2 -- watches1).count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
+    }, max = 10 seconds, interval = 1 second)
+
 
     // confirming the funding tx
     sender.send(bitcoincli, BitcoinReq("generate", 2))
     sender.expectMsgType[JValue](10 seconds)
 
-    eventListeners.foreach(el => awaitCond(el.expectMsgType[ChannelStateChanged](10 seconds).currentState == NORMAL))
+    within(60 seconds) {
+      var count = 0
+      while (count < channelEndpointsCount) {
+        if (eventListener.expectMsgType[ChannelStateChanged](30 seconds).currentState == NORMAL) count = count + 1
+      }
+    }
   }
 
   def awaitAnnouncements(subset: Map[String, Setup], nodes: Int, channels: Int, updates: Int) = {
@@ -264,8 +306,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we make sure we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
@@ -320,8 +366,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we make sure we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
@@ -377,8 +427,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we make sure we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
@@ -413,8 +467,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we make sure we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
