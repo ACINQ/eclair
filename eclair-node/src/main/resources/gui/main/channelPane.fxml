@@ -38,9 +38,13 @@
                              progress="0.0" snapToPixel="false" focusTraversable="false"
                              GridPane.columnSpan="4" GridPane.hgrow="ALWAYS" GridPane.rowIndex="1"/>
 
-                <Label styleClass="text-muted" text="Remote node id" GridPane.rowIndex="2"/>
+                <Label styleClass="text-muted" text="Alias" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+                <Label fx:id="nodeAlias" text="Not announced yet" focusTraversable="false"
+                           GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+
+                <Label styleClass="text-muted" text="Remote node id" GridPane.columnIndex="2" GridPane.rowIndex="2"/>
                 <TextField fx:id="nodeId" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
-                           GridPane.columnIndex="1" GridPane.columnSpan="3" GridPane.rowIndex="2"/>
+                           GridPane.columnIndex="3" GridPane.rowIndex="2"/>
 
                 <Label styleClass="text-muted" text="Your balance (milliBTC)" GridPane.rowIndex="3"/>
                 <TextField fx:id="amountUs" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"

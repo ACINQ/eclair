@@ -3,7 +3,7 @@ package fr.acinq.eclair.gui.controllers
 import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.fxml.FXML
-import javafx.scene.control.{Button, ContextMenu, ProgressBar, TextField}
+import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.VBox
 
@@ -13,11 +13,12 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 23/09/2016.
   */
-class ChannelPaneController(theirNodeIdValue: String) extends Logging {
+class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
 
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _
   @FXML var balanceBar: ProgressBar = _
+  @FXML var nodeAlias: Label = _
   @FXML var amountUs: TextField = _
   @FXML var nodeId: TextField = _
   @FXML var capacity: TextField = _
@@ -60,5 +61,9 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
 
   @FXML def closeChannelContext(event: MouseEvent) {
     if (contextMenu != null) contextMenu.hide
+  }
+
+  def updateRemoteNodeAlias (alias: String) {
+    Option(nodeAlias).map((n :Label) => n.setText(alias))
   }
 }
