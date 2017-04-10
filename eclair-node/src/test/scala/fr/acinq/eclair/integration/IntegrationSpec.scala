@@ -11,8 +11,8 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Setup
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
@@ -179,12 +179,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }
 
     // each funder sets up a WatchConfirmed on the parent tx, we need to make sure it has been received by the watcher
+    var watches1 = Set.empty[Watch]
     awaitCond({
-      nodes.values.foldLeft(Set.empty[Watch]) {
+      watches1 = nodes.values.foldLeft(Set.empty[Watch]) {
         case (watches, setup) =>
           sender.send(setup.watcher, 'watches)
           watches ++ sender.expectMsgType[Set[Watch]]
-      }.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount / 2
+      }
+      watches1.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount / 2
     }, max = 10 seconds, interval = 1 second)
 
     // confirming the parent tx of the funding
@@ -193,10 +195,21 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     within(30 seconds) {
       var count = 0
-      while(count < channelEndpointsCount) {
+      while (count < channelEndpointsCount) {
         if (eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED) count = count + 1
       }
     }
+
+    // we make sure all channels have set up their WatchConfirmed for the funding tx
+    awaitCond({
+      val watches2 = nodes.values.foldLeft(Set.empty[Watch]) {
+        case (watches, setup) =>
+          sender.send(setup.watcher, 'watches)
+          watches ++ sender.expectMsgType[Set[Watch]]
+      }
+      (watches2 -- watches1).count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
+    }, max = 10 seconds, interval = 1 second)
+
 
     // confirming the funding tx
     sender.send(bitcoincli, BitcoinReq("generate", 2))
@@ -204,7 +217,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
     within(60 seconds) {
       var count = 0
-      while(count < channelEndpointsCount) {
+      while (count < channelEndpointsCount) {
         if (eventListener.expectMsgType[ChannelStateChanged](30 seconds).currentState == NORMAL) count = count + 1
       }
     }
