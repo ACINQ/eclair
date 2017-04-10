@@ -49,7 +49,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   startWith(DISCONNECTED, DisconnectedData(Nil))
   if (nodeParams.autoReconnect) self ! Reconnect
-  context.system.scheduler.schedule(nodeParams.pingInterval, nodeParams.pingInterval, self, 'ping)
 
   when(DISCONNECTED, stateTimeout = if (nodeParams.autoReconnect) 60 seconds else null) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
@@ -76,10 +75,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels diff h)
 
     case Event(Rebroadcast(_), _) => stay // ignored
-
-    case Event('ping, _) =>
-      log.debug(s"ignore ping message when disconnected")
-      stay()
 
     case Event(StateTimeout, _) =>
       log.info(s"attempting a reconnect")
@@ -130,8 +125,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels diff h)
   }
 
-  when(CONNECTED) {
-    case (Event('ping, ConnectedData(transport, _, _))) =>
+  when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
+    case Event(StateTimeout, ConnectedData(transport, _, _)) =>
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
       transport ! Ping(pongSize, BinaryData("00" * pingSize))
