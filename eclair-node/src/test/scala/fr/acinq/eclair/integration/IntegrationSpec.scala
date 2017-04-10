@@ -10,7 +10,7 @@ import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.Setup
+import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
@@ -306,8 +306,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
@@ -362,8 +366,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
@@ -419,8 +427,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
@@ -455,8 +467,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
-    // first we retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     val sender = TestProbe()
+    // first we are in sync with current blockchain height
+    sender.send(bitcoincli, BitcoinReq("getblockcount"))
+    val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
+    awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
+    // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
