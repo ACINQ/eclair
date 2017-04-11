@@ -94,7 +94,7 @@ trait Service extends Logging {
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
-                case JsonRPCBody(_,_, "genPaymentRequest", JInt(amountMsat) :: Nil) =>
+                case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: Nil) =>
                   (paymentHandler ? NewPaymentRequest(new MilliSatoshi(amountMsat.toLong))).mapTo[String]
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? CreatePayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]

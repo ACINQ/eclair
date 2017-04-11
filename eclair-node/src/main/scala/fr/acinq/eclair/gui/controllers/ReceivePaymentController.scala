@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui.controllers
 
+import javafx.application.Platform
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control.{ComboBox, Label, TextArea, TextField}
@@ -10,6 +11,8 @@ import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
 import grizzled.slf4j.Logging
+
+import scala.util.{Success, Failure}
 
 /**
   * Created by DPA on 23/09/2016.
@@ -47,7 +50,18 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
           }
           if (GUIValidators.validate(amountError, "Amount must be greater than 0", smartAmount.amount > 0)
             && GUIValidators.validate(amountError, "Must be less than 4 294 967 295 msat (~0.042 BTC)", smartAmount.amount < 4294967295L)) {
-            handlers.getPaymentRequest(smartAmount, paymentRequest)
+            import scala.concurrent.ExecutionContext.Implicits.global
+            handlers.receive(smartAmount) onComplete {
+              case Success(s) => Platform.runLater(new Runnable {
+                def run = {
+                  paymentRequest.setText(s)
+                  paymentRequest.requestFocus
+                  paymentRequest.selectAll
+                }})
+              case Failure(t) => Platform.runLater(new Runnable {
+                def run = GUIValidators.validate(amountError, "The payment request could not be generated", false)
+              })
+            }
           }
         } catch {
           case e: NumberFormatException =>

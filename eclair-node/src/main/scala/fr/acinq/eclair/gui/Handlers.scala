@@ -4,8 +4,6 @@ import java.io.{File, FileWriter}
 import java.net.InetSocketAddress
 import java.text.NumberFormat
 import java.util.Locale
-import javafx.application.Platform
-import javafx.scene.control.TextArea
 
 import akka.pattern.ask
 import fr.acinq.bitcoin.BinaryData
@@ -73,17 +71,8 @@ class Handlers(setup: Setup) extends Logging {
     }
   }
 
-  def getPaymentRequest(amountMsat: MilliSatoshi, textarea: TextArea) = {
-    (paymentHandler ? NewPaymentRequest(amountMsat)).mapTo[String].map { pr =>
-      Platform.runLater(new Runnable {
-        override def run = {
-          textarea.setText(pr)
-          textarea.requestFocus
-          textarea.selectAll
-        }
-      })
-    }
-  }
+  def receive(amountMsat: MilliSatoshi): Future[String] =
+    (paymentHandler ? NewPaymentRequest(amountMsat)).mapTo[String]
 
   def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
     dot => printToFile(file)(writer => writer.write(dot)))
