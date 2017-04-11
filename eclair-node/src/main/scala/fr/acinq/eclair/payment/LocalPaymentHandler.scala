@@ -35,16 +35,17 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       sender ! h
       context.become(run(h2r + (h -> r)))
 
-    case NewPaymentRequest(amount) if amount.amount > 0 && amount.amount < 4294967295L =>
-      val r = generateR
-      val h: BinaryData = Crypto.sha256(r)
-      val pr = s"${nodeParams.privateKey.publicKey}:${amount.amount}:${h.toString}"
-      log.debug(s"generated payment request=$pr from amount=$amount")
-      sender ! pr
-      context.become(run(h2r + (h -> r)))
-
     case NewPaymentRequest(amount) =>
-      sender ! Status.Failure(new RuntimeException("amount is not valid: must be > 0 and < 42.95 mBTC"))
+      if (amount.amount > 0 && amount.amount < 4294967295L) {
+        val r = generateR
+        val h: BinaryData = Crypto.sha256(r)
+        val pr = s"${nodeParams.privateKey.publicKey}:${amount.amount}:${h.toString}"
+        log.debug(s"generated payment request=$pr from amount=$amount")
+        sender ! pr
+        context.become(run(h2r + (h -> r)))
+      } else {
+        sender ! Status.Failure(new RuntimeException("amount is not valid: must be > 0 and < 42.95 mBTC"))
+      }
 
     case htlc: UpdateAddHtlc if h2r.contains(htlc.paymentHash) =>
       val r = h2r(htlc.paymentHash)
