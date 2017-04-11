@@ -13,8 +13,8 @@ import fr.acinq.eclair.wire._
 import scodec.Attempt
 
 // @formatter:off
-
-case class CreatePayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, maxAttempts: Int = 5)
+case class ReceivePayment(amountMsat: MilliSatoshi)
+case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, maxAttempts: Int = 5)
 
 sealed trait PaymentResult
 case class PaymentSucceeded(paymentPreimage: BinaryData) extends PaymentResult
@@ -22,8 +22,8 @@ case class PaymentFailed(paymentHash: BinaryData, error: Option[ErrorPacket]) ex
 
 sealed trait Data
 case object WaitingForRequest extends Data
-case class WaitingForRoute(sender: ActorRef, c: CreatePayment, attempts: Int) extends Data
-case class WaitingForComplete(sender: ActorRef, c: CreatePayment, cmd: CMD_ADD_HTLC, attempts: Int, sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long], hops: Seq[Hop]) extends Data
+case class WaitingForRoute(sender: ActorRef, c: SendPayment, attempts: Int) extends Data
+case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, attempts: Int, sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long], hops: Seq[Hop]) extends Data
 
 sealed trait State
 case object WAITING_FOR_REQUEST extends State
@@ -42,7 +42,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
   when(WAITING_FOR_REQUEST) {
-    case Event(c: CreatePayment, WaitingForRequest) =>
+    case Event(c: SendPayment, WaitingForRequest) =>
       router ! RouteRequest(sourceNodeId, c.targetNodeId)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, attempts = 0)
   }

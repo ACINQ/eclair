@@ -6,7 +6,6 @@ import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
-import fr.acinq.eclair.payment.LocalPaymentHandler.NewPaymentRequest
 import fr.acinq.eclair.wire.UpdateAddHtlc
 import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
@@ -32,7 +31,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.expectMsgType[CMD_FULFILL_HTLC]
     eventListener.expectMsg(PaymentReceived(MilliSatoshi(add.amountMsat), add.paymentHash))
 
-    sender.send(handler, NewPaymentRequest(MilliSatoshi(100000000))) // 1 milliBTC
+    sender.send(handler, ReceivePayment(MilliSatoshi(100000000))) // 1 milliBTC
     sender.expectMsgType[String]
   }
 
@@ -43,22 +42,22 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     // negative amount should fail
-    sender.send(handler, NewPaymentRequest(MilliSatoshi(-50)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(-50)))
     val negativeError = sender.expectMsgType[Failure]
     assert(new String(negativeError.cause.getMessage) === "amount is not valid: must be > 0 and < 42.95 mBTC")
 
     // amount = 0 should fail
-    sender.send(handler, NewPaymentRequest(MilliSatoshi(0)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(0)))
     val zeroError = sender.expectMsgType[Failure]
     assert(new String(zeroError.cause.getMessage) === "amount is not valid: must be > 0 and < 42.95 mBTC")
 
     // large amount should fail (> 42.95 mBTC)
-    sender.send(handler, NewPaymentRequest(MilliSatoshi(4294967296L)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(4294967296L)))
     val largeAmountError = sender.expectMsgType[Failure]
     assert(new String(largeAmountError.cause.getMessage) === "amount is not valid: must be > 0 and < 42.95 mBTC")
 
     // success with 1 mBTC
-    sender.send(handler, NewPaymentRequest(MilliSatoshi(100000000L)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(100000000L)))
     val success = sender.expectMsgType[String]
     assert(success.contains(s"${Alice.nodeParams.privateKey.publicKey}:100000000:"))
   }

@@ -17,8 +17,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.LocalPaymentHandler.NewPaymentRequest
-import fr.acinq.eclair.payment.{CreatePayment, PaymentResult}
+import fr.acinq.eclair.payment.{SendPayment, ReceivePayment, PaymentResult}
 import fr.acinq.eclair.wire.NodeAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JInt, JString}
@@ -95,9 +94,9 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "genh", _) =>
                   (paymentHandler ? 'genh).mapTo[BinaryData]
                 case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: Nil) =>
-                  (paymentHandler ? NewPaymentRequest(new MilliSatoshi(amountMsat.toLong))).mapTo[String]
+                  (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong))).mapTo[String]
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
-                  (paymentInitiator ? CreatePayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
+                  (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "close", JString(channelIdHex) :: JString(scriptPubKey) :: Nil) =>
                   getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
                 case JsonRPCBody(_, _, "close", JString(channelIdHex) :: Nil) =>

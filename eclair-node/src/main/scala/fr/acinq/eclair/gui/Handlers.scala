@@ -12,8 +12,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.LocalPaymentHandler.NewPaymentRequest
-import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentResult, PaymentSucceeded}
+import fr.acinq.eclair.payment.{SendPayment, ReceivePayment, PaymentFailed, PaymentResult, PaymentSucceeded}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Future
@@ -58,7 +57,7 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long) = {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
-    (paymentInitiator ? CreatePayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
+    (paymentInitiator ? SendPayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
       case Success(PaymentSucceeded(_)) =>
         val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat/1000)} satoshis"
         notification("Payment Sent", message, NOTIFICATION_SUCCESS)
@@ -72,7 +71,7 @@ class Handlers(setup: Setup) extends Logging {
   }
 
   def receive(amountMsat: MilliSatoshi): Future[String] =
-    (paymentHandler ? NewPaymentRequest(amountMsat)).mapTo[String]
+    (paymentHandler ? ReceivePayment(amountMsat)).mapTo[String]
 
   def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
     dot => printToFile(file)(writer => writer.write(dot)))

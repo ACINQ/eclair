@@ -10,7 +10,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 class PaymentInitiator(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends Actor with ActorLogging {
 
   override def receive: Receive = {
-    case c: CreatePayment =>
+    case c: SendPayment =>
       val payFsm = context.actorOf(PaymentLifecycle.props(sourceNodeId, router, register))
       payFsm forward c
   }
