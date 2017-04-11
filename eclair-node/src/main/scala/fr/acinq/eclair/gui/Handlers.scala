@@ -6,13 +6,13 @@ import java.text.NumberFormat
 import java.util.Locale
 
 import akka.pattern.ask
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{SendPayment, ReceivePayment, PaymentFailed, PaymentResult, PaymentSucceeded}
+import fr.acinq.eclair.payment.{PaymentFailed, PaymentResult, PaymentSucceeded, ReceivePayment, SendPayment}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Future
