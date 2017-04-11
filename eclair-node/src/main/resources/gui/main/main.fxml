@@ -114,7 +114,7 @@
                                         </TabPane>
                                         <Label AnchorPane.rightAnchor="0.0" AnchorPane.topAnchor="0.0" textAlignment="RIGHT"
                                                maxWidth="180.0" wrapText="true" styleClass="activity-disclaimer"
-                                               text="Payment history will be erased when the node is shutdown." />
+                                               text="Payment history will be cleared when the node is shut down." />
                                     </children>
                                 </AnchorPane>
                             </content>

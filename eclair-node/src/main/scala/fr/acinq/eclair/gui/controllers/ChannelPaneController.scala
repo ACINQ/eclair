@@ -3,7 +3,7 @@ package fr.acinq.eclair.gui.controllers
 import javafx.application.Platform
 import javafx.beans.value.{ChangeListener, ObservableValue}
 import javafx.fxml.FXML
-import javafx.scene.control.{Button, ContextMenu, ProgressBar, TextField}
+import javafx.scene.control._
 import javafx.scene.input.{ContextMenuEvent, MouseEvent}
 import javafx.scene.layout.VBox
 
@@ -13,7 +13,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 23/09/2016.
   */
-class ChannelPaneController(theirNodeIdValue: String) extends Logging {
+class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
 
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _
@@ -33,7 +33,7 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
       override def run = {
         contextMenu = ContextMenuUtils.buildCopyContext(List(
           new CopyAction("Copy Channel Id", channelId.getText),
-          new CopyAction("Copy Node Pubkey", theirNodeIdValue)
+          new CopyAction("Copy Peer Pubkey", theirNodeIdValue)
         ))
         contextMenu.getStyleClass.add("context-channel")
         channelId.setContextMenu(contextMenu)
@@ -47,7 +47,7 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
   }
 
   @FXML def initialize = {
-    channelId.textProperty().addListener(new ChangeListener[String] {
+    channelId.textProperty.addListener(new ChangeListener[String] {
       override def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = buildChannelContextMenu
     })
     buildChannelContextMenu
@@ -60,5 +60,9 @@ class ChannelPaneController(theirNodeIdValue: String) extends Logging {
 
   @FXML def closeChannelContext(event: MouseEvent) {
     if (contextMenu != null) contextMenu.hide
+  }
+
+  def updateRemoteNodeAlias (alias: String) {
+    Option(nodeId).map((n: TextField) => n.setText(s"$theirNodeIdValue ($alias)"))
   }
 }

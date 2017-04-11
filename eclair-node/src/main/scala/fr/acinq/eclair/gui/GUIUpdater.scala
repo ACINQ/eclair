@@ -42,6 +42,12 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     channelPaneController.reconnect.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = peer ! Reconnect
     })
+
+    // set the node alias if the node has already been announced
+    mainController.networkNodesList
+      .find(na => na.nodeId.toString.equals(remoteNodeId.toString))
+      .map(na => channelPaneController.updateRemoteNodeAlias(na.alias))
+
     (channelPaneController, root)
   }
 
@@ -114,6 +120,11 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
       if(!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
         mainController.networkNodesList.add(nodeAnnouncement)
+        m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.theirNodeIdValue)) {
+          Platform.runLater(new Runnable() {
+            override def run = f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
+          })
+        })
       }
 
     case NodeLost(nodeId) =>

@@ -8,8 +8,8 @@ import javafx.application.Platform
 import javafx.scene.control.TextArea
 
 import akka.pattern.ask
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
@@ -33,14 +33,22 @@ class Handlers(setup: Setup) extends Logging {
     notifsController = Option(controller)
   }
 
-  def open(hostPort: String, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi) = {
+  /**
+    * Opens a connection to a node. If the channel option exists this will also open a channel with the node, with a
+    * `fundingSatoshis` capacity and `pushMsat` amount.
+    *
+    * @param hostPort
+    * @param channel
+    */
+  def open(hostPort: String, channel: Option[NewChannel]) = {
     hostPort match {
       case GUIValidators.hostRegex(remoteNodeId, host, port) =>
         logger.info(s"opening a channel with remoteNodeId=$remoteNodeId")
         (for {
           address <- Future(new InetSocketAddress(host, port.toInt))
           pubkey = PublicKey(remoteNodeId)
-          conn <- setup.switchboard ? NewConnection(pubkey, address, Some(NewChannel(fundingSatoshis, pushMsat)))
+          conn <- setup.switchboard ?
+            NewConnection(pubkey, address, channel)
         } yield conn) onFailure {
           case t =>
             notification("Connection failed", s"$host:$port", NOTIFICATION_ERROR)
