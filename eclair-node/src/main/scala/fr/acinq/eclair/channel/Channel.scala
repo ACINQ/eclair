@@ -413,7 +413,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   when(NORMAL)(handleExceptions {
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.commitments.unackedShutdown().isDefined =>
-      handleCommandError(sender, new RuntimeException("cannot send new htlcs, closing in progress"))
+      handleCommandError(sender, ClosingInProgress)
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
       Try(Commitments.sendAdd(commitments, c)) match {
@@ -422,9 +422,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           relayer ! AddHtlcSucceeded(add, origin)
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
-        case Success(Left((failure, errorMessage))) =>
+        case Success(Left((failure, error))) =>
           relayer ! AddHtlcFailed(c, failure)
-          handleCommandError(sender, new RuntimeException(errorMessage))
+          handleCommandError(sender, error)
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
@@ -436,7 +436,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fulfill)) =>
+        case Success((commitments1, _)) =>
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
@@ -453,7 +453,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(c@CMD_FAIL_HTLC(id, reason, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendFail(d.commitments, c, nodeParams.privateKey)) match {
-        case Success((commitments1, fail)) =>
+        case Success((commitments1, _)) =>
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
@@ -461,7 +461,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(c@CMD_FAIL_MALFORMED_HTLC(id, onionHash, failureCode, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendFailMalformed(d.commitments, c)) match {
-        case Success((commitments1, fail)) =>
+        case Success((commitments1, _)) =>
           if (do_commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1))
         case Failure(cause) => handleCommandError(sender, cause)
@@ -558,20 +558,20 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
       if (d.commitments.unackedShutdown().isDefined)
-        handleCommandError(sender, new RuntimeException("closing already in progress"))
+        handleCommandError(sender, ClosingAlreadyInProgress)
       else if (Commitments.localHasChanges(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
-        handleCommandError(sender, new RuntimeException("cannot close when there are pending changes"))
+        handleCommandError(sender, CannotCloseWithPendingChanges)
       else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
-        handleCommandError(sender, new RuntimeException("invalid final script"))
+        handleCommandError(sender, InvalidFinalScript)
       else
         handleCommandSuccess(sender, d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ Shutdown(d.channelId, localScriptPubKey))))
 
     case Event(Shutdown(_, _), d@DATA_NORMAL(commitments, _)) if commitments.remoteChanges.proposed.size > 0 =>
-      handleLocalError(new RuntimeException("it is illegal to send a shutdown while having unsigned changes"), d)
+      handleLocalError(CannotCloseWithPendingChanges, d)
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments, _)) =>
-      require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
+      if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) throw InvalidFinalScript
       Try(d.commitments.unackedShutdown().map(s => (s, commitments)).getOrElse {
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(commitments)) {
@@ -592,8 +592,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       }
 
     case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      // TODO: fail htlc in upstream channel?
-      handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
+      handleLocalError(HtlcTimedout, d)
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_NORMAL) =>
       d.commitments.localParams.isFunder match {
@@ -601,7 +600,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
         case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
-          handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
+          handleLocalError(FeerateTooDifferent(localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
         case _ => stay
       }
 
@@ -787,7 +786,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       }
 
     case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      handleLocalError(new RuntimeException(s"one or more htlcs timedout at blockheight=$count, closing the channel"), d)
+      handleLocalError(HtlcTimedout, d)
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_SHUTDOWN) =>
       d.commitments.localParams.isFunder match {
@@ -795,7 +794,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
         case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
-          handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
+          handleLocalError(FeerateTooDifferent(localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
         case _ => stay
       }
 
@@ -833,7 +832,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
-          throw new RuntimeException("cannot verify their close signature", cause)
+          throw InvalidCloseSignature
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(d.localClosingSigned.feeSatoshis))._1.tx.txid =>
@@ -936,26 +935,25 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           relayer ! AddHtlcSucceeded(add, origin)
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left((failure, errorMessage))) =>
+        case Success(Left((failure, error))) =>
           relayer ! AddHtlcFailed(c, failure)
-          handleCommandError(sender, new RuntimeException(errorMessage))
+          handleCommandError(sender, error)
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_NORMAL) =>
       log.info(s"we are disconnected so we just include the fulfill in our commitments")
       Try(Commitments.sendFulfill(d.commitments, c)) match {
-        case Success((commitments1, fulfill)) =>
+        case Success((commitments1, _)) =>
           sender ! "ok"
           goto(stateName) using d.copy(commitments = commitments1)
         case Failure(cause) => handleCommandError(sender, cause)
       }
 
-    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(new RuntimeException("can't do a mutual close while disconnected, doing an unilateral close instead"), d)
+    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while disconnected"), d)
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      // TODO: fail htlc in upstream channel?
-      handleLocalError(new RuntimeException(s"one or more htlcs timed out at blockheight=$count, closing the channel"), d)
+      handleLocalError(HtlcTimedout, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -972,7 +970,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   whenUnhandled {
 
-    case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(new RuntimeException(s"initiating local commit"), d)
+    case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(ForcedLocalCommit("manual unilateral close"), d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(OFFLINE)
 
@@ -1026,8 +1024,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   def handleCommandError(sender: ActorRef, cause: Throwable) = {
-    log.error(cause, "")
-    sender ! cause.getMessage
+    cause match {
+      case _: ChannelException => log.error(s"$cause")
+      case _ => log.error(cause, "")
+    }
+    sender ! Failure(cause)
     goto(stateName)
   }
 

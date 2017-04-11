@@ -13,6 +13,7 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
+import scala.util.Failure
 
 /**
   * Created by PM on 05/07/2016.
@@ -90,7 +91,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FULFILL_HTLC(42, "12" * 32))
-      sender.expectMsg("unknown htlc id=42")
+      sender.expectMsg(Failure(UnknownHtlcId(42)))
       assert(initialState == bob.stateData)
     }
   }
@@ -100,7 +101,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FULFILL_HTLC(1, "00" * 32))
-      sender.expectMsg("invalid htlc preimage for htlc id=1")
+      sender.expectMsg(Failure(InvalidHtlcPreimage(1)))
       assert(initialState == bob.stateData)
     }
   }
@@ -173,7 +174,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
-      sender.expectMsg("unknown htlc id=42")
+      sender.expectMsg(Failure(UnknownHtlcId(42)))
       assert(initialState == bob.stateData)
     }
   }
@@ -393,7 +394,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_UPDATE_FEE(20000))
-      sender.expectMsg("only the funder should send update_fee messages")
+      sender.expectMsg(Failure(FundeeCannotSendUpdateFee))
       assert(initialState == bob.stateData)
     }
   }
@@ -428,7 +429,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Globals.feeratePerKw.set(fee.feeratePerKw)
       sender.send(bob, fee)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === "can't pay the fee: missing=72120000 reserve=20000 fees=72400000")
+      assert(new String(error.data) === CannotAffordFees(missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis=72400000L).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
