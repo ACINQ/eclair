@@ -43,6 +43,11 @@ object Helpers {
     require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
   }
 
+  def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData): Unit = {
+    require(nodeParams.chainHash == chainHash, s"invalid chain hash $chainHash (we are on ${nodeParams.chainHash})")
+    validateParams(nodeParams, channelReserveSatoshis, fundingSatoshis)
+  }
+
   def extractOutgoingMessages(currentState: State, nextState: State, currentData: Data, nextData: Data): Seq[LightningMessage] = {
     (currentState, nextState, currentData, nextData) match {
       case (_, OFFLINE, _, _) => Nil // we are not connected anymore (or not yet connected after a restore), we will re-send messages when we leave OFFLINE state
