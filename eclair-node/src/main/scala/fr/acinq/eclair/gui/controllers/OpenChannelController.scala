@@ -11,6 +11,7 @@ import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
+import fr.acinq.eclair.io.Switchboard.NewChannel
 import grizzled.slf4j.Logging
 
 /**
@@ -37,7 +38,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
   @FXML var unit: ComboBox[String] = _
   @FXML var button: Button = _
 
-  @FXML def initialize(): Unit = {
+  @FXML def initialize = {
     unit.setValue(unit.getItems.get(0))
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
@@ -49,11 +50,11 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
     })
   }
 
-  @FXML def handleOpen(event: ActionEvent): Unit = {
+  @FXML def handleOpen(event: ActionEvent) = {
     if (GUIValidators.validate(host.getText, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)) {
       if (simpleConnection.isSelected) {
-        handlers.open(host.getText, MilliSatoshi(0), MilliSatoshi(0), false)
-        stage.close()
+        handlers.open(host.getText, None)
+        stage.close
       } else {
         if (GUIValidators.validate(fundingSatoshis.getText, fundingSatoshisError, "Funding must be numeric", GUIValidators.amountRegex)
           && GUIValidators.validate(fundingSatoshisError, "Funding must be greater than 0", fundingSatoshis.getText.toLong > 0)) {
@@ -68,21 +69,18 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
               // pushMsat is optional, so we validate field only if it isn't empty
               if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push msat must be numeric", GUIValidators.amountRegex)
                 && GUIValidators.validate(pushMsatError, "Push msat must be 16 777 216 000 msat (~0.167 BTC) or less", pushMsat.getText.toLong <= maxPushMsat)) {
-                handlers.open(host.getText, smartFunding, MilliSatoshi(pushMsat.getText.toLong))
-                stage.close()
+                handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong))))
+                stage.close
               }
             } else {
-              handlers.open(host.getText, smartFunding, MilliSatoshi(0))
-              stage.close()
+              handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(0))))
+              stage.close
             }
           }
         }
       }
     }
-
   }
 
-  @FXML def handleClose(event: ActionEvent): Unit = {
-    stage.close()
-  }
+  @FXML def handleClose(event: ActionEvent) = stage.close
 }

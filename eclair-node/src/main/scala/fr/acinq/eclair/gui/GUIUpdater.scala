@@ -45,7 +45,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     // set the node alias if the node has already been announced
     mainController.networkNodesList
-      .filter(na => na.nodeId.toString.equals(remoteNodeId.toString)).headOption
+      .find(na => na.nodeId.toString.equals(remoteNodeId.toString))
       .map(na => channelPaneController.updateRemoteNodeAlias(na.alias))
 
     (channelPaneController, root)

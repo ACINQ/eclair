@@ -18,7 +18,6 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _
   @FXML var balanceBar: ProgressBar = _
-  @FXML var nodeAlias: Label = _
   @FXML var amountUs: TextField = _
   @FXML var nodeId: TextField = _
   @FXML var capacity: TextField = _
@@ -48,7 +47,7 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
   }
 
   @FXML def initialize = {
-    channelId.textProperty().addListener(new ChangeListener[String] {
+    channelId.textProperty.addListener(new ChangeListener[String] {
       override def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = buildChannelContextMenu
     })
     buildChannelContextMenu
@@ -64,6 +63,6 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
   }
 
   def updateRemoteNodeAlias (alias: String) {
-    Option(nodeAlias).map((n :Label) => n.setText(alias))
+    Option(nodeId).map((n: TextField) => n.setText(s"$theirNodeIdValue ($alias)"))
   }
 }
