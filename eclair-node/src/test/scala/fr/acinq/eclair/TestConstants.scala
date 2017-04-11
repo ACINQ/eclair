@@ -3,7 +3,7 @@ package fr.acinq.eclair
 import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, Script}
+import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
 import fr.acinq.eclair.db.{Dbs, DummyDb}
 import fr.acinq.eclair.io.Peer
 import scala.concurrent.duration._
@@ -49,7 +49,8 @@ object TestConstants {
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
-      autoReconnect = false)
+      autoReconnect = false,
+      chainHash = Block.RegtestGenesisBlock.blockId)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -93,7 +94,8 @@ object TestConstants {
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
-      autoReconnect = false)
+      autoReconnect = false,
+      chainHash = Block.RegtestGenesisBlock.blockId)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

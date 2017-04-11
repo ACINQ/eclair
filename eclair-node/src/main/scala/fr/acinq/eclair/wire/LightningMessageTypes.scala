@@ -30,7 +30,8 @@ case class Ping(pongLength: Int, data: BinaryData) extends SetupMessage
 
 case class Pong(data: BinaryData) extends SetupMessage
 
-case class OpenChannel(temporaryChannelId: BinaryData,
+case class OpenChannel(chainHash: BinaryData,
+                       temporaryChannelId: BinaryData,
                        fundingSatoshis: Long,
                        pushMsat: Long,
                        dustLimitSatoshis: Long,

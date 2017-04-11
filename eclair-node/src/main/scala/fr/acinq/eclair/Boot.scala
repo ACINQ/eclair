@@ -12,7 +12,7 @@ import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.{Logger, LoggerContext}
 import ch.qos.logback.core.FileAppender
 import com.sun.javafx.application.LauncherImpl
-import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import fr.acinq.bitcoin.{Base58Check, Block, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.zmq.ZMQActor
@@ -66,8 +66,6 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   val config = NodeParams.loadConfiguration(new File(datadir))
-  val nodeParams = NodeParams.makeNodeParams(new File(datadir), config)
-  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
 
   implicit lazy val system = ActorSystem(actorSystemName)
   implicit val materializer = ActorMaterializer()
@@ -83,11 +81,15 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   implicit val ec = ExecutionContext.Implicits.global
   val (chain, blockCount, progress) = Try(Await.result(bitcoinClient.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long], (json \ "verificationprogress").extract[Double])), 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
   logger.info(s"using chain=$chain")
-  chain match {
-    case "test" | "regtest" => {}
+  val chainHash = chain match {
+    case "test" => Block.TestnetGenesisBlock.blockId
+    case "regtest" => Block.RegtestGenesisBlock.blockId
     case _ => throw new RuntimeException("only regtest and testnet are supported for now")
   }
+  val nodeParams = NodeParams.makeNodeParams(new File(datadir), config, chainHash)
+  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   assert(progress > 0.99, "bitcoind should be synchronized")
+
   Globals.blockCount.set(blockCount)
   val defaultFeeratePerKw = config.getLong("default-feerate-perkw")
   val feeratePerKw = if (chain == "regtest") defaultFeeratePerKw else {

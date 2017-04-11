@@ -72,7 +72,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-      val open = OpenChannel(temporaryChannelId = temporaryChannelId,
+      val open = OpenChannel(nodeParams.chainHash,
+        temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
         pushMsat = pushMsat,
         dustLimitSatoshis = localParams.dustLimitSatoshis,
@@ -124,6 +125,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
+    case Event(open: OpenChannel, _) if open.chainHash != nodeParams.chainHash =>
+      log.error(s"invalid open message for chain hash ${open.chainHash}, we are on ${nodeParams.chainHash}")
+      forwarder ! Error(open.temporaryChannelId, "invalid chain hash".getBytes)
+      goto(CLOSED)
+
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit))) =>
       Try(Helpers.validateParams(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis)) match {
         case Failure(t) =>
