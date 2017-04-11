@@ -18,7 +18,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Disconnect
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentSucceeded}
+import fr.acinq.eclair.payment.{SendPayment, PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsValidationSpec}
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
@@ -256,7 +256,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("D").paymentHandler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
     // then we make the actual payment
-    sender.send(nodes("A").paymentInitiator, CreatePayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey))
+    sender.send(nodes("A").paymentInitiator, SendPayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey))
     sender.expectMsgType[PaymentSucceeded]
   }
 
@@ -272,7 +272,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("D").paymentHandler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
     // then we make the actual payment
-    val paymentReq = CreatePayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    val paymentReq = SendPayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, paymentReq)
     // A will receive an error from C that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
@@ -290,7 +290,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("D").paymentHandler, 'genh)
     val paymentHash = sender.expectMsgType[BinaryData]
     // then we make the payment (C-D has a smaller capacity than A-B and B-C)
-    val paymentReq = CreatePayment(300000000L, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    val paymentReq = SendPayment(300000000L, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, paymentReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsgType[PaymentSucceeded](5 seconds)
@@ -299,7 +299,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   test("send an HTLC A->D with an unknown payment hash") {
     val sender = TestProbe()
     val paymentHash = "42" * 32
-    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, paymentReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsg(PaymentFailed(paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, UnknownPaymentHash))))
@@ -322,7 +322,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F1").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F1").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -382,7 +382,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F2").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F2").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -443,7 +443,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F3").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F3").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc
@@ -483,7 +483,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val preimage: BinaryData = "42" * 32
     val paymentHash = Crypto.sha256(preimage)
     // A sends a payment to F
-    val paymentReq = CreatePayment(100000000L, paymentHash, nodes("F4").nodeParams.privateKey.publicKey, maxAttempts = 1)
+    val paymentReq = SendPayment(100000000L, paymentHash, nodes("F4").nodeParams.privateKey.publicKey, maxAttempts = 1)
     val paymentSender = TestProbe()
     paymentSender.send(nodes("A").paymentInitiator, paymentReq)
     // F gets the htlc

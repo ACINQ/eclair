@@ -4,17 +4,15 @@ import java.io.{File, FileWriter}
 import java.net.InetSocketAddress
 import java.text.NumberFormat
 import java.util.Locale
-import javafx.application.Platform
-import javafx.scene.control.TextArea
 
 import akka.pattern.ask
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{CreatePayment, PaymentFailed, PaymentResult, PaymentSucceeded}
+import fr.acinq.eclair.payment.{PaymentFailed, PaymentResult, PaymentSucceeded, ReceivePayment, SendPayment}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Future
@@ -59,7 +57,7 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long) = {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
-    (paymentInitiator ? CreatePayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
+    (paymentInitiator ? SendPayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
       case Success(PaymentSucceeded(_)) =>
         val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat/1000)} satoshis"
         notification("Payment Sent", message, NOTIFICATION_SUCCESS)
@@ -72,17 +70,8 @@ class Handlers(setup: Setup) extends Logging {
     }
   }
 
-  def getPaymentRequest(amountMsat: Long, textarea: TextArea) = {
-    (paymentHandler ? 'genh).mapTo[BinaryData].map { h =>
-      Platform.runLater(new Runnable() {
-        override def run = {
-          textarea.setText(s"${setup.nodeParams.privateKey.publicKey}:$amountMsat:${h.toString()}")
-          textarea.requestFocus
-          textarea.selectAll
-        }
-      })
-    }
-  }
+  def receive(amountMsat: MilliSatoshi): Future[String] =
+    (paymentHandler ? ReceivePayment(amountMsat)).mapTo[String]
 
   def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
     dot => printToFile(file)(writer => writer.write(dot)))
