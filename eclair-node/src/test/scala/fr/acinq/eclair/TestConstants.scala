@@ -46,7 +46,9 @@ object TestConstants {
       announcementsDb = Dbs.makeAnnouncementDb(db),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
-      pingInterval = 30 seconds)
+      pingInterval = 30 seconds,
+      maxFeerateMismatch = 1.5,
+      updateFeeMinDiffRatio = 0.1)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -87,7 +89,9 @@ object TestConstants {
       announcementsDb = Dbs.makeAnnouncementDb(db),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
-      pingInterval = 30 seconds)
+      pingInterval = 30 seconds,
+      maxFeerateMismatch = 1.0,
+      updateFeeMinDiffRatio = 0.1)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

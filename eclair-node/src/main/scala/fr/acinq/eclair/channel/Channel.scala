@@ -597,10 +597,10 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_NORMAL) =>
       d.commitments.localParams.isFunder match {
-        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
-        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
           handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
         case _ => stay
       }
@@ -791,10 +791,10 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_SHUTDOWN) =>
       d.commitments.localParams.isFunder match {
-        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
-        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw) =>
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
           handleLocalError(new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${d.commitments.localCommit.spec.feeratePerKw} localFeeratePerKw=$feeratePerKw"), d)
         case _ => stay
       }

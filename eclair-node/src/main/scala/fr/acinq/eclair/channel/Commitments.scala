@@ -290,7 +290,7 @@ object Commitments extends Logging {
         }
 
         val localFeeratePerKw = Globals.feeratePerKw.get()
-        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw)) {
+        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, commitments.localParams.maxFeerateMismatch)) {
           throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${fee.feeratePerKw} localFeeratePerKw=$localFeeratePerKw")
         }
 

@@ -167,7 +167,8 @@ final case class LocalParams(nodeId: PublicKey,
                              shaSeed: BinaryData,
                              isFunder: Boolean,
                              globalFeatures: BinaryData,
-                             localFeatures: BinaryData)
+                             localFeatures: BinaryData,
+                             maxFeerateMismatch: Double)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,

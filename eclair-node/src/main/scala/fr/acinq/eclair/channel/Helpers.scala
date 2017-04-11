@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.Globals.Constants.{UPDATE_FEE_MAX_DIFF_RATIO, UPDATE_FEE_MIN_DIFF_RATIO}
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -65,13 +64,31 @@ object Helpers {
     }
   }
 
-  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long): Boolean =
-  // negative feerate can happen in regtest mode
-    networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
+  /**
+    *
+    * @param remoteFeeratePerKw remote fee rate per kiloweight
+    * @param localFeeratePerKw  local fee rate per kiloweight
+    * @return the "normalized" difference between local and remote fee rate, i.e. |remote - local| / avg(local, remote)
+    */
+  def feeRateMismatch(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Double =
+    Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw))
 
-  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Boolean =
+  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
   // negative feerate can happen in regtest mode
-    remoteFeeratePerKw > 0 && Math.abs((remoteFeeratePerKw - localFeeratePerKw) / localFeeratePerKw.toDouble) > UPDATE_FEE_MAX_DIFF_RATIO
+    networkFeeratePerKw > 0 && feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
+
+  /**
+    *
+    * @param remoteFeeratePerKw      remote fee rate per kiloweight
+    * @param localFeeratePerKw       local fee rate per kiloweight
+    * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
+    * @return true if the difference between local and remote fee rates is too high.
+    *         the actual check is |remote - local| / avg(local, remote) > mismatch ratio
+    */
+  def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = {
+    // negative feerate can happen in regtest mode
+    remoteFeeratePerKw > 0 && feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
+  }
 
   object Funding {
 
@@ -103,7 +120,7 @@ object Helpers {
       if (!localParams.isFunder) {
         // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
         val localFeeratePerKw = Globals.feeratePerKw.get()
-        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw)) {
+        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, localParams.maxFeerateMismatch)) {
           throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
         }
         val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
