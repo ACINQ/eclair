@@ -3,7 +3,6 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.Globals.Constants.UPDATE_FEE_MIN_DIFF_RATIO
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -65,13 +64,30 @@ object Helpers {
     }
   }
 
-  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long): Boolean =
-  // negative feerate can happen in regtest mode
-    networkFeeratePerKw > 0 && Math.abs((networkFeeratePerKw - commitmentFeeratePerKw) / commitmentFeeratePerKw.toDouble) > UPDATE_FEE_MIN_DIFF_RATIO
+  /**
+    *
+    * @param remoteFeeratePerKw remote fee rate per kiloweight
+    * @param localFeeratePerKw  local fee rate per kiloweight
+    * @return the "normalized" difference between local and remote fee rate, i.e. |remote - local| / avg(local, remote)
+    */
+  def feeRateMismatch(remoteFeeratePerKw: Long, localFeeratePerKw: Long): Double =
+    Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw))
 
+  def shouldUpdateFee(commitmentFeeratePerKw: Long, networkFeeratePerKw: Long, updateFeeMinDiffRatio: Double): Boolean =
+  // negative feerate can happen in regtest mode
+    networkFeeratePerKw > 0 && feeRateMismatch(networkFeeratePerKw, commitmentFeeratePerKw) > updateFeeMinDiffRatio
+
+  /**
+    *
+    * @param remoteFeeratePerKw      remote fee rate per kiloweight
+    * @param localFeeratePerKw       local fee rate per kiloweight
+    * @param maxFeerateMismatchRatio maximum fee rate mismatch ratio
+    * @return true if the difference between local and remote fee rates is too high.
+    *         the actual check is |remote - local| / avg(local, remote) > mismatch ratio
+    */
   def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = {
     // negative feerate can happen in regtest mode
-    remoteFeeratePerKw > 0 && Math.abs((2.0 * (remoteFeeratePerKw - localFeeratePerKw)) / (localFeeratePerKw + remoteFeeratePerKw)) > maxFeerateMismatchRatio
+    remoteFeeratePerKw > 0 && feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
   }
 
   object Funding {
