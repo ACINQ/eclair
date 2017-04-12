@@ -309,6 +309,49 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.expectMsg(PaymentFailed(paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, UnknownPaymentHash))))
   }
 
+  test("send an HTLC A->D with a lower amount than requested") {
+    val sender = TestProbe()
+    // first we retrieve a payment hash from D for 2 mBTC
+    val amountMsat = MilliSatoshi(200000000L)
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    // A send payment of only 1 mBTC
+    val sendReq = SendPayment(100000000L, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    sender.send(nodes("A").paymentInitiator, sendReq)
+
+    // A will first receive an IncorrectPaymentAmount error from D
+    sender.expectMsg(PaymentFailed(pr.paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, IncorrectPaymentAmount))))
+  }
+
+  test("send an HTLC A->D with too much overpayment") {
+    val sender = TestProbe()
+    // first we retrieve a payment hash from D for 2 mBTC
+    val amountMsat = MilliSatoshi(200000000L)
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    // A send payment of 6 mBTC
+    val sendReq = SendPayment(600000000L, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    sender.send(nodes("A").paymentInitiator, sendReq)
+
+    // A will first receive an IncorrectPaymentAmount error from D
+    sender.expectMsg(PaymentFailed(pr.paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, IncorrectPaymentAmount))))
+  }
+
+  test("send an HTLC A->D with a reasonable overpayment") {
+    val sender = TestProbe()
+    // first we retrieve a payment hash from D for 2 mBTC
+    val amountMsat = MilliSatoshi(200000000L)
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
+
+    // A send payment of 3 mBTC, more than asked but it should still be accepted
+    val sendReq = SendPayment(300000000L, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    sender.send(nodes("A").paymentInitiator, sendReq)
+    sender.expectMsgType[PaymentSucceeded]
+  }
+
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (local commit)") {
     val sender = TestProbe()
     // first we make sure we are in sync with current blockchain height

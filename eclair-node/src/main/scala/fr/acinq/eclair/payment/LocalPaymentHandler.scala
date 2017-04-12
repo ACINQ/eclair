@@ -4,7 +4,7 @@ import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.wire.{UnknownPaymentHash, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{IncorrectPaymentAmount, UnknownPaymentHash, UpdateAddHtlc}
 
 import scala.util.{Failure, Random, Success, Try}
 
@@ -27,7 +27,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
   // TODO: store this map on file ?
   // TODO: add payment amount to the map: we need to be able to check that the amount matches what we expected
-  def run(h2r: Map[BinaryData, (BinaryData, MilliSatoshi)]): Receive = {
+  def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
     case ReceivePayment(amount) =>
       Try {
@@ -38,7 +38,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount")
           sender ! pr
-          context.become(run(h2r + (h -> (r, amount))))
+          context.become(run(h2r + (h -> (r, pr))))
         case Failure(t) =>
           sender ! Status.Failure(t)
       }
@@ -46,9 +46,17 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
     case htlc: UpdateAddHtlc =>
       if (h2r.contains(htlc.paymentHash)) {
         val r = h2r(htlc.paymentHash)._1
-        sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
-        context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
-        context.become(run(h2r - htlc.paymentHash))
+        val pr = h2r(htlc.paymentHash)._2
+        // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
+        // it must not be greater than two times the requested amount.
+        // see https://github.com/lightningnetwork/lightning-rfc/pull/139
+        if (pr.amount.amount <= htlc.amountMsat && htlc.amountMsat <= (2 * pr.amount.amount)) {
+          sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
+          context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
+          context.become(run(h2r - htlc.paymentHash))
+        } else {
+          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
+        }
       } else {
         sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
       }
