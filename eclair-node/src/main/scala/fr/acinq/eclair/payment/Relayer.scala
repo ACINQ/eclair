@@ -42,6 +42,10 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
   override def receive: Receive = main(Set(), Map(), Map(), Map())
 
+  def findChannel(channels: Set[OutgoingChannel], shortIds: Map[BinaryData, Long], shortId: Long): Option[OutgoingChannel] = {
+    shortIds.find(_._2 == shortId).map(_._1).flatMap(id => channels.find(_.channelId == id))
+  }
+
   def main(channels: Set[OutgoingChannel], bindings: Map[UpdateAddHtlc, Origin], shortIds: Map[BinaryData, Long], channelUpdates: Map[Long, ChannelUpdate]): Receive = {
 
     case ChannelStateChanged(channel, _, remoteNodeId, _, NORMAL, d: DATA_NORMAL) =>
@@ -71,13 +75,13 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
     case ForwardAdd(add) =>
       Try(Sphinx.parsePacket(nodeSecret, add.paymentHash, add.onionRoutingPacket))
         .map {
-          case ParsedPacket(payload, nextNodeAddress, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextNodeAddress, nextPacket, sharedSecret)
+          case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextPacket, sharedSecret)
         } match {
-        case Success((_, nextNodeAddress, _, sharedSecret)) if nextNodeAddress.forall(_ == 0) =>
+        case Success((_, nextPacket, sharedSecret)) if Sphinx.Packet.isLastPacket(nextPacket) =>
           log.info(s"looks like we are the final recipient of htlc #${add.id}")
           paymentHandler forward add
-        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextNodeAddress, nextPacket, sharedSecret)) if channels.exists(_.nodeAddress == nextNodeAddress) =>
-          val outgoingChannel = channels.find(_.nodeAddress == nextNodeAddress).get
+        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, sharedSecret)) if findChannel(channels, shortIds, perHopPayload.channel_id).isDefined =>
+          val outgoingChannel = findChannel(channels, shortIds, perHopPayload.channel_id).get
           val channelUpdate = shortIds.get(outgoingChannel.channelId).flatMap(shortId => channelUpdates.get(shortId))
           channelUpdate match {
             case None =>
@@ -95,10 +99,10 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
               log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
               downstream forward CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
           }
-        case Success((Attempt.Successful(DecodeResult(_, _)), nextNodeAddress, _, sharedSecret)) =>
-          log.warning(s"couldn't resolve downstream node address $nextNodeAddress, failing htlc #${add.id}")
+        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), _, sharedSecret)) =>
+          log.warning(s"couldn't resolve downstream channel ${perHopPayload.channel_id}, failing htlc #${add.id}")
           sender ! CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
-        case Success((Attempt.Failure(cause), _, _, sharedSecret)) =>
+        case Success((Attempt.Failure(cause), _, sharedSecret)) =>
           log.error(s"couldn't parse payload: $cause")
           sender ! CMD_FAIL_HTLC(add.id, Right(PermanentNodeFailure), commit = true)
         case Failure(t) =>

@@ -144,7 +144,7 @@ object PaymentLifecycle {
       .map {
         case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
-      } :+ BinaryData("00" * 20)
+      } :+ BinaryData("00" * Sphinx.PayloadLength)
 
     Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, associatedData)
   }
@@ -163,7 +163,7 @@ object PaymentLifecycle {
       case ((msat, expiry, payloads), hop) =>
         val feeMsat = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
         val expiryDelta = hop.lastUpdate.cltvExpiryDelta
-        (msat + feeMsat, expiry + expiryDelta, PerHopPayload(msat, expiry) +: payloads)
+        (msat + feeMsat, expiry + expiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
   // TODO: set correct initial expiry

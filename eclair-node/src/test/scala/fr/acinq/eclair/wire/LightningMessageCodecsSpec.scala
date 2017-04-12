@@ -4,6 +4,7 @@ import java.net.{InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire.LightningMessageCodecs.{lightningMessageCodec, rgb, socketaddress, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -145,7 +146,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val update_fee = UpdateFee(randomBytes(32), 2)
     val shutdown = Shutdown(randomBytes(32), bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes(32), 2, randomSignature)
-    val update_add_htlc = UpdateAddHtlc(randomBytes(32), 2, 3, 4, bin(32, 0), bin(1254, 0))
+    val update_add_htlc = UpdateAddHtlc(randomBytes(32), 2, 3, 4, bin(32, 0), bin(Sphinx.PacketLength, 0))
     val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes(32), 2, bin(32, 0))
     val update_fail_htlc = UpdateFailHtlc(randomBytes(32), 2, bin(154, 0))
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes(32), 2, randomBytes(32), 1111)
@@ -173,9 +174,9 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode per-hop payload") {
-    val payload = PerHopPayload(amt_to_forward = 142000, outgoing_cltv_value = 500000)
+    val payload = PerHopPayload(channel_id = 42, amt_to_forward = 142000, outgoing_cltv_value = 500000)
     val bin = LightningMessageCodecs.perHopPayloadCodec.encode(payload).toOption.get
-    assert(bin.toByteVector.size === 20)
+    assert(bin.toByteVector.size === 33)
     val payload1 = LightningMessageCodecs.perHopPayloadCodec.decode(bin).toOption.get.value
     assert(payload === payload1)
   }

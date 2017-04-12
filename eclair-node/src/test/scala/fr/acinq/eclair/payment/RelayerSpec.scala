@@ -136,7 +136,7 @@ class RelayerSpec extends TestkitBaseClass {
     val add_ab = {
       val (cmd, _) = buildCommand(finalAmountMsat, paymentHash, hops, currentBlockCount)
       // and then manually build an htlc
-      UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, "00" * 1254)
+      UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, "00" * Sphinx.PacketLength)
     }
 
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))

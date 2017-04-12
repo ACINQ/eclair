@@ -144,5 +144,6 @@ case class ChannelUpdate(signature: BinaryData,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
 
-case class PerHopPayload(amt_to_forward: Long,
+case class PerHopPayload(channel_id: Long,
+                         amt_to_forward: Long,
                          outgoing_cltv_value: Int)
