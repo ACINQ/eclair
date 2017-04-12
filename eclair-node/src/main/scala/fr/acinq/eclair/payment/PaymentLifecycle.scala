@@ -62,10 +62,6 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
   when(WAITING_FOR_PAYMENT_COMPLETE) {
     case Event("ok", _) => stay()
 
-    case Event(reason: String, w: WaitingForComplete) =>
-      w.sender ! Status.Failure(new RuntimeException(reason))
-      stop(FSM.Failure(reason))
-
     case Event(fulfill: UpdateFulfillHtlc, w: WaitingForComplete) =>
       w.sender ! PaymentSucceeded(fulfill.paymentPreimage)
       context.system.eventStream.publish(PaymentSent(MilliSatoshi(w.c.amountMsat), MilliSatoshi(w.cmd.amountMsat - w.c.amountMsat), w.cmd.paymentHash))
@@ -107,10 +103,16 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           stop(FSM.Normal)
       }
 
-    case Event(failure: Failure, w: WaitingForComplete) => {
-      w.sender ! failure
-      stop(FSM.Failure(failure.cause))
-    }
+    case Event(failure@Failure(cause), WaitingForComplete(s, c, _, attempts, _, ignoreNodes, ignoreChannels, hops)) =>
+      if (attempts < c.maxAttempts) {
+        log.info(s"received an error message from local, trying to use a different channel (failure=${cause.getMessage})")
+        router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels + hops.head.lastUpdate.shortChannelId)
+        goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, attempts)
+      } else {
+        s ! failure
+        stop(FSM.Failure(failure.cause))
+      }
+
   }
 }
 
