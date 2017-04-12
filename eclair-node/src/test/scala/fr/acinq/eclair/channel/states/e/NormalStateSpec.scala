@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel.states.e
 
+import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
@@ -16,7 +17,6 @@ import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
-import scala.util.Failure
 
 /**
   * Created by PM on 05/07/2016.

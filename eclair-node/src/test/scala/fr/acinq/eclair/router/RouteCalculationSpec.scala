@@ -2,7 +2,6 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.router.Router.{CannotRouteToSelf, NoLocalChannels, RouteNotFound}
 import fr.acinq.eclair.wire.ChannelUpdate
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -10,7 +9,6 @@ import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.util.{Failure, Try}
 
 /**
   * Created by PM on 31/05/2016.
@@ -44,7 +42,7 @@ class RouteCalculationSpec extends FunSuite {
     val exc = intercept[RuntimeException] {
       Router.findRouteDijkstra(a, e, channels)
     }
-    assert(exc == NoLocalChannels)
+    assert(exc == RouteNotFound)
   }
 
   test("route not found") {

@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, SupervisorStrategy}
+import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -1028,7 +1028,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       case _: ChannelException => log.error(s"$cause")
       case _ => log.error(cause, "")
     }
-    sender ! Failure(cause)
+    sender ! Status.Failure(cause)
     goto(stateName)
   }
 
