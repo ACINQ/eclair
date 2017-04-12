@@ -281,7 +281,7 @@ object Commitments extends Logging {
       commitments.remoteChanges.signed.contains(fee) ||
       commitments.remoteChanges.acked.contains(fee)
 
-  def receiveFee(commitments: Commitments, fee: UpdateFee): Commitments =
+  def receiveFee(commitments: Commitments, fee: UpdateFee, maxFeerateMismatch: Double): Commitments =
     isOldFee(commitments, fee) match {
       case true => commitments
       case false =>
@@ -290,7 +290,7 @@ object Commitments extends Logging {
         }
 
         val localFeeratePerKw = Globals.feeratePerKw.get()
-        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, commitments.localParams.maxFeerateMismatch)) {
+        if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
           throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=${fee.feeratePerKw} localFeeratePerKw=$localFeeratePerKw")
         }
 

@@ -46,8 +46,7 @@ object ChannelStateSpec {
     shaSeed = BinaryData("05" * 32),
     isFunder = true,
     globalFeatures = "foo".getBytes(),
-    localFeatures = "bar".getBytes(),
-    maxFeerateMismatch = 5.0)
+    localFeatures = "bar".getBytes())
 
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,

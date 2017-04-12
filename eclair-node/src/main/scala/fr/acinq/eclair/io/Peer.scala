@@ -258,8 +258,7 @@ object Peer {
       shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures,
-      maxFeerateMismatch = nodeParams.maxFeerateMismatch)
+      localFeatures = nodeParams.localFeatures)
   }
 
   def randomTemporaryChannelId: BinaryData = {
