@@ -60,8 +60,8 @@ class Handlers(setup: Setup) extends Logging {
       case Success(PaymentSucceeded(_)) =>
         val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat/1000)} satoshis"
         notification("Payment Sent", message, NOTIFICATION_SUCCESS)
-      case Success(PaymentFailed(_, reason)) =>
-        val message = reason.getOrElse("Unknown Error").toString
+      case Success(PaymentFailed(_, error)) =>
+        val message = error.map(_.failureMessage).getOrElse("Unknown Error").toString
         notification("Payment Failed", message, NOTIFICATION_ERROR)
       case Failure(t) =>
         val message = t.getMessage

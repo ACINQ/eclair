@@ -75,6 +75,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
         case e@Some(ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           // TODO: spec says: that MAY retry the payment in certain conditions, see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#receiving-failure-codes
+          log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           s ! PaymentFailed(c.paymentHash, error = e)
           stop(FSM.Normal)
         case Some(ErrorPacket(nodeId, failureMessage: Node)) =>
