@@ -17,7 +17,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{SendPayment, ReceivePayment, PaymentResult}
+import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.wire.NodeAnnouncement
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JInt, JString}
@@ -91,10 +91,8 @@ trait Service extends Logging {
                   getChannel(channelIdHex).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "network", _) =>
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
-                case JsonRPCBody(_, _, "genh", _) =>
-                  (paymentHandler ? 'genh).mapTo[BinaryData]
                 case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: Nil) =>
-                  (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong))).mapTo[String]
+                  (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write(_))
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "close", JString(channelIdHex) :: JString(scriptPubKey) :: Nil) =>
@@ -109,7 +107,7 @@ trait Service extends Logging {
                     "channels: list existing local channels",
                     "channel (channelIdHex): retrieve detailed informations about a given channel",
                     "network: list all the nodes announced in network",
-                    "genh: generate a payment H",
+                    "receive (amountMsat): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, pubkey): send a payment to a lightning node",
                     "close (channelIdHex): close a channel",
                     "close (channelIdHex, scriptPubKey): close a channel and send the funds to the given scriptPubKey",

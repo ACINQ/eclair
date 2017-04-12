@@ -4,7 +4,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 import akka.actor.{ActorRef, Cancellable, Props}
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
@@ -82,8 +82,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       // we don't want to be above maxHtlcValueInFlightMsat or maxAcceptedHtlcs
       awaitCond(channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size < 10 && channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size < 10)
       val senders = for (i <- 0 until parallel) yield TestProbe()
-      senders.foreach(_.send(paymentHandler, 'genh))
-      val paymentHashes = senders.map(_.expectMsgType[BinaryData])
+      senders.foreach(_.send(paymentHandler, ReceivePayment(MilliSatoshi(100000000))))
+      val paymentHashes = senders.map(_.expectMsgType[PaymentRequest]).map(pr => pr.paymentHash)
       val cmds = paymentHashes.map(h => buildCmdAdd(h, destination))
       senders.zip(cmds).foreach {
         case (s, cmd) => s.send(channel, cmd)

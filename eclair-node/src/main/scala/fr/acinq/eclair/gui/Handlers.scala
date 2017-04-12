@@ -12,7 +12,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{PaymentFailed, PaymentResult, PaymentSucceeded, ReceivePayment, SendPayment}
+import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Future
@@ -45,8 +45,7 @@ class Handlers(setup: Setup) extends Logging {
         (for {
           address <- Future(new InetSocketAddress(host, port.toInt))
           pubkey = PublicKey(remoteNodeId)
-          conn <- setup.switchboard ?
-            NewConnection(pubkey, address, channel)
+          conn <- setup.switchboard ? NewConnection(pubkey, address, channel)
         } yield conn) onFailure {
           case t =>
             notification("Connection failed", s"$host:$port", NOTIFICATION_ERROR)
@@ -71,7 +70,7 @@ class Handlers(setup: Setup) extends Logging {
   }
 
   def receive(amountMsat: MilliSatoshi): Future[String] =
-    (paymentHandler ? ReceivePayment(amountMsat)).mapTo[String]
+    (paymentHandler ? ReceivePayment(amountMsat)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
 
   def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
     dot => printToFile(file)(writer => writer.write(dot)))
@@ -81,7 +80,7 @@ class Handlers(setup: Setup) extends Logging {
     try {
       op(p)
     } finally {
-      p.close()
+      p.close
     }
   }
 

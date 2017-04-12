@@ -18,7 +18,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Disconnect
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{SendPayment, PaymentFailed, PaymentSucceeded}
+import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsValidationSpec}
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
@@ -252,11 +252,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("send an HTLC A->D") {
     val sender = TestProbe()
+    val amountMsat = MilliSatoshi(4200000)
     // first we retrieve a payment hash from D
-    sender.send(nodes("D").paymentHandler, 'genh)
-    val paymentHash = sender.expectMsgType[BinaryData]
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
-    sender.send(nodes("A").paymentInitiator, SendPayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey))
+    sender.send(nodes("A").paymentInitiator,
+      SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey))
     sender.expectMsgType[PaymentSucceeded]
   }
 
@@ -269,11 +271,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val channelUpdateCD = Announcements.makeChannelUpdate(nodes("C").nodeParams.privateKey, nodes("D").nodeParams.privateKey.publicKey, shortIdCD, nodes("D").nodeParams.expiryDeltaBlocks + 1, nodes("D").nodeParams.htlcMinimumMsat, nodes("D").nodeParams.feeBaseMsat, nodes("D").nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
     sender.send(nodes("C").relayer, channelUpdateCD)
     // first we retrieve a payment hash from D
-    sender.send(nodes("D").paymentHandler, 'genh)
-    val paymentHash = sender.expectMsgType[BinaryData]
+    val amountMsat = MilliSatoshi(4200000)
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
-    val paymentReq = SendPayment(4200000, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
-    sender.send(nodes("A").paymentInitiator, paymentReq)
+    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    sender.send(nodes("A").paymentInitiator, sendReq)
     // A will receive an error from C that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
@@ -287,11 +290,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   test("send an HTLC A->D with an amount greater than capacity of C-D") {
     val sender = TestProbe()
     // first we retrieve a payment hash from D
-    sender.send(nodes("D").paymentHandler, 'genh)
-    val paymentHash = sender.expectMsgType[BinaryData]
+    val amountMsat = MilliSatoshi(300000000L)
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
     // then we make the payment (C-D has a smaller capacity than A-B and B-C)
-    val paymentReq = SendPayment(300000000L, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
-    sender.send(nodes("A").paymentInitiator, paymentReq)
+    val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+    sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
     sender.expectMsgType[PaymentSucceeded](5 seconds)
   }
