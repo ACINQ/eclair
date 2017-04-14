@@ -327,8 +327,9 @@ object Sphinx {
     */
   def forwardErrorPacket(packet: BinaryData, sharedSecret: BinaryData): BinaryData = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
-    val filler = Sphinx.generateFiller("ammag", Seq(sharedSecret), ErrorPacketLength, 1)
-    Sphinx.xor(packet, filler)
+    val key = generateKey("ammag", sharedSecret)
+    val stream = generateStream(key, ErrorPacketLength)
+    Sphinx.xor(packet, stream)
   }
 
   /**
