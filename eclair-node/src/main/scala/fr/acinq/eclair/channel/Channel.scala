@@ -571,8 +571,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       handleLocalError(new RuntimeException("it is illegal to send a shutdown while having unsigned changes"), d)
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments, _)) =>
+      require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
       Try(d.commitments.unackedShutdown().map(s => (s, commitments)).getOrElse {
-        require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(commitments)) {
           val (commitments1, commit) = Commitments.sendCommit(d.commitments)
