@@ -90,8 +90,8 @@ object Transactions {
   }
 
   def commitTxFee(dustLimit: Satoshi, spec: CommitmentSpec): Satoshi = {
-    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec).map(htlc => MilliSatoshi(htlc.add.amountMsat))
-    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec).map(htlc => MilliSatoshi(htlc.add.amountMsat))
+    val trimmedOfferedHtlcs = trimOfferedHtlcs(dustLimit, spec)
+    val trimmedReceivedHtlcs = trimReceivedHtlcs(dustLimit, spec)
     val weight = commitWeight + 172 * (trimmedOfferedHtlcs.size + trimmedReceivedHtlcs.size)
     weight2fee(spec.feeratePerKw, weight)
   }
