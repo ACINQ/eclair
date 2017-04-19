@@ -1077,6 +1077,22 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == CLOSING)
     }
   }
+ 
+  test("recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      sender.send(bob, CMD_CLOSE(None))
+      bob2alice.expectMsgType[Shutdown]
+      // actual test begins
+      sender.send(bob, Shutdown("00" * 32, BinaryData("00112233445566778899")))
+      bob2alice.expectMsgType[Error]
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      awaitCond(bob.stateName == CLOSING)
+    }
+  }
 
   test("recv Shutdown (with signed htlcs)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
     within(30 seconds) {
