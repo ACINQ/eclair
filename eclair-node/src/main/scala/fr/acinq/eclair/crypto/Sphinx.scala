@@ -21,7 +21,7 @@ object Sphinx {
   val Version = 1.toByte
 
   // length of a MAC
-  val MacLength = 20
+  val MacLength = 32
 
   // length of a payload: 33 bytes (1 bytes for realm, 32 bytes for a realm-specific packet)
   val PayloadLength = 33
@@ -118,10 +118,10 @@ object Sphinx {
       val version = in.read
       val publicKey = new Array[Byte](33)
       in.read(publicKey)
-      val hmac = new Array[Byte](MacLength)
-      in.read(hmac)
       val routingInfo = new Array[Byte](MaxHops * (PayloadLength + MacLength))
       in.read(routingInfo)
+      val hmac = new Array[Byte](MacLength)
+      in.read(hmac)
       Packet(version, publicKey, hmac, routingInfo)
     }
 
@@ -130,8 +130,8 @@ object Sphinx {
     def write(packet: Packet, out: OutputStream): OutputStream = {
       out.write(packet.version)
       out.write(packet.publicKey)
-      out.write(packet.hmac)
       out.write(packet.routingInfo)
+      out.write(packet.hmac)
       out
     }
 
