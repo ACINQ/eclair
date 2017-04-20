@@ -46,7 +46,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       pingInterval: FiniteDuration,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
-                      autoReconnect: Boolean)
+                      autoReconnect: Boolean,
+                      chainHash: BinaryData)
 
 object NodeParams {
 
@@ -61,7 +62,7 @@ object NodeParams {
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData): NodeParams = {
 
     val seedPath = Paths.get(datadir.getAbsolutePath, "seed.dat")
     val seed: BinaryData = Files.exists(seedPath) match {
@@ -108,6 +109,7 @@ object NodeParams {
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
-      autoReconnect = config.getBoolean("auto-reconnect"))
+      autoReconnect = config.getBoolean("auto-reconnect"),
+      chainHash = chainHash)
   }
 }

@@ -38,9 +38,14 @@ object Helpers {
     case d: HasCommitments => d.channelId
   }
 
-  def validateParams(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+  def validateParamsFunder(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
     val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
     require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
+  }
+
+  def validateParamsFundee(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData): Unit = {
+    require(nodeParams.chainHash == chainHash, s"invalid chain hash $chainHash (we are on ${nodeParams.chainHash})")
+    validateParamsFunder(nodeParams, channelReserveSatoshis, fundingSatoshis)
   }
 
   def extractOutgoingMessages(currentState: State, nextState: State, currentData: Data, nextData: Data): Seq[LightningMessage] = {

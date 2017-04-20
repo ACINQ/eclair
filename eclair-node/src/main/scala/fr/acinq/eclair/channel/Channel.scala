@@ -72,7 +72,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
-      val open = OpenChannel(temporaryChannelId = temporaryChannelId,
+      val open = OpenChannel(nodeParams.chainHash,
+        temporaryChannelId = temporaryChannelId,
         fundingSatoshis = fundingSatoshis,
         pushMsat = pushMsat,
         dustLimitSatoshis = localParams.dustLimitSatoshis,
@@ -125,7 +126,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit))) =>
-      Try(Helpers.validateParams(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis)) match {
+      Try(Helpers.validateParamsFundee(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis, open.chainHash)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           forwarder ! Error(open.temporaryChannelId, t.getMessage.getBytes)
@@ -176,7 +177,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit), open)) =>
-      Try(Helpers.validateParams(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
+      Try(Helpers.validateParamsFunder(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           forwarder ! Error(temporaryChannelId, t.getMessage.getBytes)

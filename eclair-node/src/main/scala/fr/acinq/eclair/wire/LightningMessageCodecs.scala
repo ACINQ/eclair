@@ -103,7 +103,8 @@ object LightningMessageCodecs {
     ("data" | varsizebinarydata).as[Pong]
 
   val openChannelCodec: Codec[OpenChannel] = (
-    ("temporaryChannelId" | binarydata(32)) ::
+    ("chainHash" | binarydata(32)) ::
+      ("temporaryChannelId" | binarydata(32)) ::
       ("fundingSatoshis" | uint64) ::
       ("pushMsat" | uint64) ::
       ("dustLimitSatoshis" | uint64) ::
