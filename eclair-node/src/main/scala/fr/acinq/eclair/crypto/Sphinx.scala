@@ -146,7 +146,7 @@ object Sphinx {
 
   /**
     *
-    * @param payload      paylod for this node
+    * @param payload      payload for this node
     * @param nextPacket   packet for the next node
     * @param sharedSecret shared secret for the sending node, which we will need to return error messages
     */
