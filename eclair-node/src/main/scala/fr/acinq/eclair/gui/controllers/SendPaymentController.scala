@@ -13,6 +13,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
+import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -32,9 +33,8 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
 
   @FXML def initialize(): Unit = {
     // ENTER or TAB events in the paymentRequest textarea insted fire or focus sendButton
-    paymentRequest.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent]() {
+    paymentRequest.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent] {
       def handle(event: KeyEvent) = {
-        val parent = paymentRequest.getParent()
         event.getCode match {
           case ENTER =>
             sendButton.fire
@@ -46,13 +46,20 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
         }
       }
     })
-    paymentRequest.textProperty().addListener(new ChangeListener[String] {
+    paymentRequest.textProperty.addListener(new ChangeListener[String] {
       def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = {
         if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
-          val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
-          amountField.setText(amount)
-          nodeIdField.setText(nodeId)
-          hashField.setText(hash)
+          Try(PaymentRequest.read(paymentRequest.getText)) match {
+            case Success(pr) =>
+              amountField.setText(pr.amount.amount.toString)
+              nodeIdField.setText(pr.nodeId.toString)
+              hashField.setText(pr.paymentHash.toString)
+            case Failure(f) =>
+              GUIValidators.validate(paymentRequestError, "Please use a valid payment request", false)
+              amountField.setText("0")
+              nodeIdField.setText("N/A")
+              hashField.setText("N/A")
+          }
         } else {
           amountField.setText("0")
           nodeIdField.setText("N/A")
@@ -68,7 +75,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
       Try(amount.toLong) match {
         case Success(amountLong) =>
           if (GUIValidators.validate(paymentRequestError, "Amount must be greater than 0", amountLong > 0)
-            && GUIValidators.validate(paymentRequestError, "Amount must be less than 4 294 967 295 msat (~0.042 BTC)", amountLong < 4294967295L)) {
+            && GUIValidators.validate(paymentRequestError, f"Amount must be less than ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)", amountLong < PaymentRequest.maxAmountMsat)) {
             Try (handlers.send(PublicKey(nodeId), BinaryData(hash), amountLong)) match {
               case Success(s) => stage.close
               case Failure(f) => GUIValidators.validate(paymentRequestError, s"Invalid Payment Request: ${f.getMessage}", false)
@@ -80,6 +87,6 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
   }
 
   @FXML def handleClose(event: ActionEvent) = {
-    stage.close()
+    stage.close
   }
 }

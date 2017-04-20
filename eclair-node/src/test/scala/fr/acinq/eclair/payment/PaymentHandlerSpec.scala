@@ -3,7 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorSystem
 import akka.actor.Status.Failure
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -23,16 +23,14 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
-    sender.send(handler, 'genh)
-    val paymentHash = sender.expectMsgType[BinaryData]
+    val amountMsat = MilliSatoshi(42000)
+    sender.send(handler, ReceivePayment(amountMsat))
+    val pr = sender.expectMsgType[PaymentRequest]
 
-    val add = UpdateAddHtlc("11" * 32, 0, 42000, 0, paymentHash, "")
+    val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, 0, pr.paymentHash, "")
     sender.send(handler, add)
     sender.expectMsgType[CMD_FULFILL_HTLC]
-    eventListener.expectMsg(PaymentReceived(MilliSatoshi(add.amountMsat), add.paymentHash))
-
-    sender.send(handler, ReceivePayment(MilliSatoshi(100000000))) // 1 milliBTC
-    sender.expectMsgType[String]
+    eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
   }
 
   test("Payment request generation should fail when the amount asked in not valid") {
@@ -44,21 +42,22 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     // negative amount should fail
     sender.send(handler, ReceivePayment(MilliSatoshi(-50)))
     val negativeError = sender.expectMsgType[Failure]
-    assert(new String(negativeError.cause.getMessage) === "amount is not valid: must be > 0 and < 42.95 mBTC")
+    assert(negativeError.cause.getMessage.contains("amount is not valid"))
 
     // amount = 0 should fail
     sender.send(handler, ReceivePayment(MilliSatoshi(0)))
     val zeroError = sender.expectMsgType[Failure]
-    assert(new String(zeroError.cause.getMessage) === "amount is not valid: must be > 0 and < 42.95 mBTC")
+    assert(zeroError.cause.getMessage.contains("amount is not valid"))
 
     // large amount should fail (> 42.95 mBTC)
-    sender.send(handler, ReceivePayment(MilliSatoshi(4294967296L)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(PaymentRequest.maxAmountMsat + 10)))
     val largeAmountError = sender.expectMsgType[Failure]
-    assert(new String(largeAmountError.cause.getMessage) === "amount is not valid: must be > 0 and < 42.95 mBTC")
+    assert(largeAmountError.cause.getMessage.contains("amount is not valid"))
 
     // success with 1 mBTC
     sender.send(handler, ReceivePayment(MilliSatoshi(100000000L)))
-    val success = sender.expectMsgType[String]
-    assert(success.contains(s"${Alice.nodeParams.privateKey.publicKey}:100000000:"))
+    val pr = sender.expectMsgType[PaymentRequest]
+    assert(pr.amount.amount == 100000000L
+      && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
   }
 }
