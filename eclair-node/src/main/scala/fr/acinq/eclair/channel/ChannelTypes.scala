@@ -142,7 +142,7 @@ final case class DATA_NORMAL(commitments: Commitments, shortChannelId: Option[Lo
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned, shortChannelId: Option[Long] = None) extends Data with HasCommitments
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
                               mutualClosePublished: Option[Transaction] = None,
                               localCommitPublished: Option[LocalCommitPublished] = None,
