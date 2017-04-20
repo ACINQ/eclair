@@ -126,7 +126,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit))) =>
-      Try(Helpers.validateParams(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis, open.chainHash)) match {
+      Try(Helpers.validateParamsFundee(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis, open.chainHash)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           forwarder ! Error(open.temporaryChannelId, t.getMessage.getBytes)
@@ -177,7 +177,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit), open)) =>
-      Try(Helpers.validateParams(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
+      Try(Helpers.validateParamsFunder(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           forwarder ! Error(temporaryChannelId, t.getMessage.getBytes)
