@@ -6,8 +6,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.router.BaseRouterSpec
-import fr.acinq.eclair.router.Router.RouteNotFound
+import fr.acinq.eclair.router.{BaseRouterSpec, RouteNotFound}
 import fr.acinq.eclair.wire.{TemporaryChannelFailure, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner

@@ -284,7 +284,6 @@ object Router {
 
   def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
-    if (!channels.exists(c => c.a == localNodeId || c.b == localNodeId)) throw NoLocalChannels
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
     val g = new DefaultDirectedGraph[BinaryData, DescEdge](classOf[DescEdge])
     channels.foreach(d => {
@@ -297,10 +296,6 @@ object Router {
       case _ => throw RouteNotFound
     }
   }
-
-  object NoLocalChannels extends RuntimeException("No local channels")
-  object RouteNotFound extends RuntimeException("Route not found")
-  object CannotRouteToSelf extends RuntimeException("Cannot route to self")
 
   def findRoute(localNodeId: BinaryData, targetNodeId: BinaryData, updates: Map[ChannelDesc, ChannelUpdate])(implicit ec: ExecutionContext): Future[Seq[Hop]] = Future {
     findRouteDijkstra(localNodeId, targetNodeId, updates.keys)

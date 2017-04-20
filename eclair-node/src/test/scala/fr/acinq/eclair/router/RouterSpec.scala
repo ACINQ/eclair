@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
-import fr.acinq.eclair.router.Router.{NoLocalChannels, RouteNotFound}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{randomKey, toShortId}
@@ -113,7 +112,7 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     // no route a->f
     sender.send(router, RouteRequest(randomKey.publicKey, f))
-    sender.expectMsg(Failure(NoLocalChannels))
+    sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route not found (non-existing target)") { case (router, _) =>
