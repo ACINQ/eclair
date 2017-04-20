@@ -50,8 +50,8 @@ class RelayerSpec extends TestkitBaseClass {
     val channel_bc = TestProbe()
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
     sender.send(relayer, 'channels)
-    val upstreams = sender.expectMsgType[Set[OutgoingChannel]]
-    assert(upstreams === Set(OutgoingChannel(channelId_bc, channel_bc.ref, nodeId_c.hash160)))
+    val upstreams = sender.expectMsgType[Map[BinaryData, ActorRef]]
+    assert(upstreams === Map(channelId_bc -> channel_bc.ref))
   }
 
   test("remove a channel (mutual close)") { case (relayer, _) =>
@@ -60,13 +60,13 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
     sender.send(relayer, 'channels)
-    val upstreams1 = sender.expectMsgType[Set[OutgoingChannel]]
-    assert(upstreams1 === Set(OutgoingChannel(channelId_bc, channel_bc.ref, nodeId_c.hash160)))
+    val upstreams1 = sender.expectMsgType[Map[BinaryData, ActorRef]]
+    assert(upstreams1 === Map(channelId_bc -> channel_bc.ref))
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, SHUTDOWN, NEGOTIATING, DATA_NEGOTIATING(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), null, null, null)))
     sender.send(relayer, 'channels)
-    val upstreams2 = sender.expectMsgType[Set[OutgoingChannel]]
-    assert(upstreams2 === Set.empty)
+    val upstreams2 = sender.expectMsgType[Map[BinaryData, ActorRef]]
+    assert(upstreams2 === Map.empty)
   }
 
   test("remove a channel (unilateral close)") { case (relayer, _) =>
@@ -75,14 +75,14 @@ class RelayerSpec extends TestkitBaseClass {
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
     sender.send(relayer, 'channels)
-    val upstreams1 = sender.expectMsgType[Set[OutgoingChannel]]
-    assert(upstreams1 === Set(OutgoingChannel(channelId_bc, channel_bc.ref, nodeId_c.hash160)))
+    val upstreams1 = sender.expectMsgType[Map[BinaryData, ActorRef]]
+    assert(upstreams1 === Map(channelId_bc -> channel_bc.ref))
 
     sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, NORMAL, CLOSING, DATA_CLOSING(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), Some(null), None, None, None, Nil)))
     sender.send(relayer, 'channels)
 
-    val upstreams2 = sender.expectMsgType[Set[OutgoingChannel]]
-    assert(upstreams2 === Set.empty)
+    val upstreams2 = sender.expectMsgType[Map[BinaryData, ActorRef]]
+    assert(upstreams2 === Map.empty)
   }
 
   test("relay an htlc-add") { case (relayer, paymentHandler) =>
