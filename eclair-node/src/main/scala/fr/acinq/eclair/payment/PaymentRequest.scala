@@ -9,7 +9,10 @@ import scala.util.{Failure, Success, Try}
   * Created by DPA on 11/04/2017.
   */
 object PaymentRequest extends Logging {
-  val maxAmountMsat = 4294967295L;
+
+  // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
+  val maxAmountMsat = 4294967296L
+
   def write(pr: PaymentRequest): String = {
     s"${pr.nodeId.toString}:${pr.amount.amount}:${pr.paymentHash.toString}"
   }
@@ -35,7 +38,6 @@ object PaymentRequest extends Logging {
 }
 
 case class PaymentRequest(nodeId: BinaryData, amount: MilliSatoshi, paymentHash: BinaryData) {
-  if (amount.amount <= 0 || amount.amount >= PaymentRequest.maxAmountMsat) {
-    throw new RuntimeException("amount is not valid: must be > 0 and < 42.9497 mBTC")
-  }
+  require(amount.amount > 0 && amount.amount < PaymentRequest.maxAmountMsat,
+    f"amount is not valid: must be > 0 and < ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)")
 }

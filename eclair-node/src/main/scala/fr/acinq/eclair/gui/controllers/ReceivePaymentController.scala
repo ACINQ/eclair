@@ -10,9 +10,10 @@ import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
+import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
-import scala.util.{Success, Failure}
+import scala.util.{Failure, Success}
 
 /**
   * Created by DPA on 23/09/2016.
@@ -49,7 +50,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
             case "milliSatoshi" => MilliSatoshi(amount.getText.toLong)
           }
           if (GUIValidators.validate(amountError, "Amount must be greater than 0", smartAmount.amount > 0)
-            && GUIValidators.validate(amountError, "Must be less than 4 294 967 295 msat (~0.042 BTC)", smartAmount.amount < 4294967295L)) {
+            && GUIValidators.validate(amountError, f"Amount must be less than ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)", smartAmount.amount < PaymentRequest.maxAmountMsat)) {
             import scala.concurrent.ExecutionContext.Implicits.global
             handlers.receive(smartAmount) onComplete {
               case Success(s) => Platform.runLater(new Runnable {

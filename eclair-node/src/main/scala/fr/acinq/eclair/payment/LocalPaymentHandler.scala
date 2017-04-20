@@ -25,15 +25,13 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
   override def receive: Receive = run(Map())
 
-  // TODO: store this map on file ?
-  // TODO: add payment amount to the map: we need to be able to check that the amount matches what we expected
   def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
     case ReceivePayment(amount) =>
       Try {
         val r = generateR
         val h = Crypto.sha256(r)
-        (r, h, PaymentRequest(nodeParams.privateKey.publicKey, amount, h))
+        (r, h, new PaymentRequest(nodeParams.privateKey.publicKey, amount, h))
       } match {
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount")
@@ -49,7 +47,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         val pr = h2r(htlc.paymentHash)._2
         // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
         // it must not be greater than two times the requested amount.
-        // see https://github.com/lightningnetwork/lightning-rfc/pull/139
+        // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
         if (pr.amount.amount <= htlc.amountMsat && htlc.amountMsat <= (2 * pr.amount.amount)) {
           sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
           context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
