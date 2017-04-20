@@ -59,6 +59,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   when(Handshake) {
     case Event(Received(data), HandshakeData(reader, buffer)) =>
+      log.debug(s"received ${BinaryData(data)}")
       val buffer1 = buffer ++ data
       if (buffer1.length < expectedLength(reader))
         stay using HandshakeData(reader, buffer1)
@@ -132,13 +133,15 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       stop(FSM.Normal)
 
     case Event(Terminated(actor), _) if actor == connection =>
+      log.warning(s"connection terminated, stopping the transport")
       // this can be the connection or the listener, either way it is a cause of death
       stop(FSM.Normal)
-
-    case Event(message, _) =>
-      log.warning(s"unhandled $message")
-      stay()
   }
+
+  override def aroundPostStop(): Unit = connection ! Close
+
+  initialize()
+
 }
 
 object TransportHandler {

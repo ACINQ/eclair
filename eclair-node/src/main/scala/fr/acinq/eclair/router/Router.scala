@@ -252,6 +252,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case _ -> NORMAL => log.info(s"current status channels=${nextStateData.channels.size} nodes=${nextStateData.nodes.size} updates=${nextStateData.updates.size}")
   }
 
+  initialize()
+
 }
 
 object Router {

@@ -114,6 +114,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       }
 
   }
+
+  initialize()
 }
 
 object PaymentLifecycle {

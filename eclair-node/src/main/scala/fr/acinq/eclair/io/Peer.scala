@@ -47,8 +47,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   import Peer._
   import scala.concurrent.ExecutionContext.Implicits.global
 
-  startWith(DISCONNECTED, DisconnectedData(Nil))
-  if (nodeParams.autoReconnect) self ! Reconnect
+  startWith(DISCONNECTED, DisconnectedData(Nil), if (nodeParams.autoReconnect) Some(3 seconds) else None)
 
   when(DISCONNECTED, stateTimeout = if (nodeParams.autoReconnect) 60 seconds else null) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
@@ -228,6 +227,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   // a failing channel won't be restarted, it should handle its states
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
+
+  initialize()
 
 }
 
