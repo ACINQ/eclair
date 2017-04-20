@@ -73,7 +73,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         .map {
           case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextPacket, sharedSecret)
         } match {
-        case Success((_, nextPacket, _)) if Sphinx.Packet.isLastPacket(nextPacket) =>
+        case Success((_, nextPacket, _)) if nextPacket.isLastPacket =>
           log.info(s"looks like we are the final recipient of htlc #${add.id}")
           paymentHandler forward add
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) =>
@@ -93,7 +93,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
                   sender ! CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true)
                 case _ =>
                   log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
-                  downstream forward CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket, upstream_opt = Some(add), commit = true)
+                  downstream forward CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket.serialize, upstream_opt = Some(add), commit = true)
               }
             case None =>
               log.warning(s"couldn't resolve downstream channel ${perHopPayload.channel_id}, failing htlc #${add.id}")

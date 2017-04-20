@@ -31,12 +31,9 @@ object Sphinx {
 
   // onion packet length
   val PacketLength = 1 + 33 + MacLength + MaxHops * (PayloadLength + MacLength)
-
-  // last address; means that we are the final destination for an onion packet
-  val LAST_ADDRESS = zeroes(PayloadLength)
-
+  
   // last packet (all zeroes except for the version byte)
-  val LAST_PACKET: BinaryData = Version +: zeroes(PacketLength - 1)
+  val LAST_PACKET = Packet(Version, zeroes(33), zeroes(MacLength), zeroes(MaxHops * (PayloadLength + MacLength)))
 
   def hmac256(key: Seq[Byte], message: Seq[Byte]): Seq[Byte] = {
     val mac = new HMac(new SHA256Digest())
@@ -111,6 +108,8 @@ object Sphinx {
     require(routingInfo.length == MaxHops * (PayloadLength + MacLength), s"onion packet routing info length should be ${MaxHops * (PayloadLength + MacLength)}")
 
     def isLastPacket: Boolean = hmac == zeroes(MacLength)
+
+    def serialize: BinaryData = Packet.write(this)
   }
 
   object Packet {
@@ -150,7 +149,7 @@ object Sphinx {
     * @param nextPacket   packet for the next node
     * @param sharedSecret shared secret for the sending node, which we will need to return error messages
     */
-  case class ParsedPacket(payload: BinaryData, nextPacket: BinaryData, sharedSecret: BinaryData)
+  case class ParsedPacket(payload: BinaryData, nextPacket: Packet, sharedSecret: BinaryData)
 
   /**
     *
@@ -179,14 +178,14 @@ object Sphinx {
 
     val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
-    ParsedPacket(payload, Packet.write(Packet(Version, nextPubKey, hmac, nextRoutinfo)), sharedSecret)
+    ParsedPacket(payload, Packet(Version, nextPubKey, hmac, nextRoutinfo), sharedSecret)
   }
 
   @tailrec
   def extractSharedSecrets(packet: BinaryData, privateKey: PrivateKey, associatedData: BinaryData, acc: Seq[BinaryData] = Nil): Seq[BinaryData] = {
     parsePacket(privateKey, associatedData, packet) match {
-      case ParsedPacket(nextAddress, _, sharedSecret) if nextAddress == LAST_ADDRESS => acc :+ sharedSecret
-      case ParsedPacket(_, nextPacket, sharedSecret) => extractSharedSecrets(nextPacket, privateKey, associatedData, acc :+ sharedSecret)
+      case ParsedPacket(_, nextPacket, sharedSecret) if nextPacket.isLastPacket => acc :+ sharedSecret
+      case ParsedPacket(_, nextPacket, sharedSecret) => extractSharedSecrets(nextPacket.serialize, privateKey, associatedData, acc :+ sharedSecret)
     }
   }
 
@@ -205,29 +204,28 @@ object Sphinx {
     * @param routingInfoFiller   optional routing info filler, needed only when you're constructing the last packet
     * @return the next packet
     */
-  def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: BinaryData, routingInfoFiller: BinaryData = BinaryData.empty): BinaryData = {
+  def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
     require(payload.length == PayloadLength)
-    val onion = Packet.read(packet)
 
     val nextRoutingInfo = {
-      val routingInfo1 = payload ++ onion.hmac ++ onion.routingInfo.dropRight(PayloadLength + MacLength)
+      val routingInfo1 = payload ++ packet.hmac ++ packet.routingInfo.dropRight(PayloadLength + MacLength)
       val routingInfo2 = xor(routingInfo1, generateStream(generateKey("rho", sharedSecret), MaxHops * (PayloadLength + MacLength)))
       routingInfo2.dropRight(routingInfoFiller.length) ++ routingInfoFiller
     }
 
     val nextHmac: BinaryData = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ associatedData)
-    val nextOnion = Packet(Version, ephemerealPublicKey, nextHmac, nextRoutingInfo)
-    Packet.write(nextOnion)
+    val nextPacket = Packet(Version, ephemerealPublicKey, nextHmac, nextRoutingInfo)
+    nextPacket
   }
 
 
   /**
     *
-    * @param onionPacket   onion packet
+    * @param packet        onion packet
     * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
     *                      packet. Empty if you're just forwarding the packet to the next node
     */
-  case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)])
+  case class PacketAndSecrets(packet: Packet, sharedSecrets: Seq[(BinaryData, PublicKey)])
 
   /**
     * A properly decoded error from a node in the route
@@ -247,14 +245,14 @@ object Sphinx {
     * @return an OnionPacket(onion packet, shared secrets). the onion packet can be sent to the first node in the list, and the
     *         shared secrets (one per node) can be used to parse returned error messages if needed
     */
-  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): OnionPacket = {
+  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): PacketAndSecrets = {
     val (ephemerealPublicKeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, MaxHops)
 
     val lastPacket = makeNextPacket(payloads.last, associatedData, ephemerealPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler)
 
     @tailrec
-    def loop(hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: BinaryData): BinaryData = {
+    def loop(hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: Packet): Packet = {
       if (hoppayloads.isEmpty) packet else {
         val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
         loop(hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
@@ -262,7 +260,7 @@ object Sphinx {
     }
 
     val packet = loop(payloads.dropRight(1), ephemerealPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
-    OnionPacket(packet, sharedsecrets.zip(publicKeys))
+    PacketAndSecrets(packet, sharedsecrets.zip(publicKeys))
   }
 
   /*
