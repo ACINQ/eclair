@@ -175,9 +175,16 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   test("encode/decode per-hop payload") {
     val payload = PerHopPayload(channel_id = 42, amt_to_forward = 142000, outgoing_cltv_value = 500000)
-    val bin = LightningMessageCodecs.perHopPayloadCodec.encode(payload).toOption.get
+    val bin = LightningMessageCodecs.perHopPayloadCodec.encode(payload).require
     assert(bin.toByteVector.size === 33)
-    val payload1 = LightningMessageCodecs.perHopPayloadCodec.decode(bin).toOption.get.value
+    val payload1 = LightningMessageCodecs.perHopPayloadCodec.decode(bin).require.value
     assert(payload === payload1)
+
+    // realm (the first byte) should be 0
+    val bin1 = bin.toByteVector.update(0, 1)
+    intercept[IllegalArgumentException] {
+      val payload2 = LightningMessageCodecs.perHopPayloadCodec.decode(bin1.toBitVector).require.value
+      assert(payload2 === payload1)
+    }
   }
 }

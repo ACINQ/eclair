@@ -269,7 +269,7 @@ object LightningMessageCodecs {
     .typecase(259, announcementSignaturesCodec)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
-    ("realm" | ignore(8 * 1)) ::
+    ("realm" | constant(ByteVector.fromByte(0))) ::
       ("channel_id" | uint64) ::
       ("amt_to_forward" | uint32) ::
       ("outgoing_cltv_value" | int32) :: // we use a signed int32, it is enough to store cltv for 40 000 years
