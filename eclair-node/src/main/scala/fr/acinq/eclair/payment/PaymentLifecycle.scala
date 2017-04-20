@@ -112,6 +112,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       stop(FSM.Failure(failure.cause))
     }
   }
+
+  initialize()
 }
 
 object PaymentLifecycle {

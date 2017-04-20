@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.NodeParams
@@ -23,9 +23,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
 
   IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil)
 
-  def receive() = main(Set())
-
-  def main(transports: Set[ActorRef]): Receive = {
+  def receive() = {
     case Bound(localAddress) =>
       bound.map(_.success())
       log.info(s"bound on $localAddress")
@@ -44,9 +42,9 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
           connection = connection,
           serializer = LightningMessageSerializer)))
       connection ! akka.io.Tcp.Register(transport)
-      context become main(transports + transport)
 
     case h: HandshakeCompleted =>
+      log.info(s"handshake completed with ${h.remoteNodeId}")
       switchboard ! h
   }
 

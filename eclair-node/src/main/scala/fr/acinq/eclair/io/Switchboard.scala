@@ -42,7 +42,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
           sender ! s"already connected to nodeId=$remoteNodeId"
           connection
         case None =>
-          log.info(s"connecting to $remoteNodeId @ $address")
+          log.info(s"connecting to $remoteNodeId @ $address on behalf of $sender")
           val connection = context.actorOf(Client.props(nodeParams, self, address, remoteNodeId, sender))
           context watch (connection)
           connection

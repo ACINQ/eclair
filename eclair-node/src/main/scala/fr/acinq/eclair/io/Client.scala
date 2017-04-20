@@ -38,17 +38,24 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
           serializer = LightningMessageSerializer)))
       connection ! akka.io.Tcp.Register(transport)
       context watch transport
-      context become connected(transport)
+      context become authenticating(transport)
   }
 
-  def connected(transport: ActorRef): Receive = {
+  def authenticating(transport: ActorRef): Receive = {
     case Terminated(actor) if actor == transport =>
       origin ! Status.Failure(new RuntimeException("authentication failed"))
       context stop self
 
     case h: HandshakeCompleted =>
+      log.info(s"handshake completed with ${h.remoteNodeId}")
       origin ! "connected"
       switchboard ! h
+      context unwatch transport
+      context become connected(transport)
+  }
+
+  def connected(transport: ActorRef): Receive = {
+    case msg => log.warning(s"unexpected message $msg")
   }
 
   // we should not restart a failing transport

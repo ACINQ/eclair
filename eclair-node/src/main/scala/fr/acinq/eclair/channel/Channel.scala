@@ -996,6 +996,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   onTransition {
+    case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => {} // called at channel initialization
     case WAIT_FOR_INIT_INTERNAL -> OFFLINE =>
       context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, WAIT_FOR_INIT_INTERNAL, OFFLINE, nextStateData))
     case state -> nextState =>
@@ -1211,6 +1212,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   // we let the peer decide what to do
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Escalate }
+
+  initialize()
 
 }
 
