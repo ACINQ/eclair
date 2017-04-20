@@ -266,7 +266,7 @@ object Sphinx {
   /*
     error packet format:
     +----------------+----------------------------------+-----------------+----------------------+-----+
-    | HMAC(20 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+    | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
     +----------------+----------------------------------+-----------------+----------------------+-----+
     with failure message length + pad length = 128
    */
