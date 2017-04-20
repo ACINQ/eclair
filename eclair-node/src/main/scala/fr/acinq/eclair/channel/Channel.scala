@@ -571,8 +571,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       handleLocalError(new RuntimeException("it is illegal to send a shutdown while having unsigned changes"), d)
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d@DATA_NORMAL(commitments, _)) =>
+      require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
       Try(d.commitments.unackedShutdown().map(s => (s, commitments)).getOrElse {
-        require(Closing.isValidFinalScriptPubkey(remoteScriptPubKey), "invalid final script")
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(commitments)) {
           val (commitments1, commit) = Commitments.sendCommit(d.commitments)
@@ -582,7 +582,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         (shutdown, commitments2.copy(unackedMessages = commitments2.unackedMessages :+ shutdown))
       }) match {
         case Success((localShutdown, commitments3))
-          if (commitments3.remoteNextCommitInfo.isRight && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.localCommit.spec.htlcs.size == 0)
+          if (commitments3.remoteNextCommitInfo.isRight && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteCommit.spec.htlcs.size == 0)
             || (commitments3.remoteNextCommitInfo.isLeft && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteNextCommitInfo.left.get.nextRemoteCommit.spec.htlcs.size == 0) =>
           val closingSigned = Closing.makeFirstClosingTx(commitments3, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           goto(NEGOTIATING) using DATA_NEGOTIATING(commitments3.copy(unackedMessages = commitments3.unackedMessages :+ closingSigned), localShutdown, remoteShutdown, closingSigned)
