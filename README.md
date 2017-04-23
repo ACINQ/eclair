@@ -33,7 +33,7 @@ Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _non-prunin
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 ```
-regtest=1
+testnet=1
 server=1
 rpcuser=XXX
 rpcpassword=XXX
