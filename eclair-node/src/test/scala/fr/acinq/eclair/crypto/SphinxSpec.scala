@@ -52,102 +52,68 @@ class SphinxSpec extends FunSuite {
   }
 
   /*
-  filler = 0x80b23adf2c3947dab3b92bb1c5f70fa32f866cc09aff45c5bc4da1ed291660791aa9a1c5d28fbf8f4ecb4bf7c0a9454c82923e24c7fd0d192ea8e2ead1f17388341f313915949b602d5de1f5cb94b77d42c7dfe84edc13cf9acf541e8243989d967e7d568f26f9209bb52d9f90bfa902f3ec6e3ae9d6215c432206cd3132b69257408002aa020f2fbae32a2d5abee0a3c9fd56329b033939cd6366fbb339aa14
-  hop_filler = 0x2e86897a3ae52daba4a5940cfc305ae15e9a0f8a8ac1033a15d8a14819acab6503c9df44cdaaf30629283e3458844a44a5c4bfdebdcb15fd3edb8e286124d7b47fa7a56bcc5655d2ad9809f108f238e5
+  filler = 0xc6b008cf6414ed6e4c42c291eb505e9f22f5fe7d0ecdd15a833f4d016ac974d33adc6ea3293e20859e87ebfb937ba406abd025d14af692b12e9c9c2adbe307a679779259676211c071e614fdb386d1ff02db223a5b2fae03df68d321c7b29f7c7240edd3fa1b7cb6903f89dc01abf41b2eb0b49b6b8d73bb0774b58204c0d0e96d3cce45ad75406be0bc009e327b3e712a4bd178609c00b41da2daf8a4b0e1319f07a492ab4efb056f0f599f75e6dc7e0d10ce1cf59088ab6e873de377343880f7a24f0e36731a0b72092f8d5bc8cd346762e93b2bf203d00264e4bc136fc142de8f7b69154deb05854ea88e2d7506222c95ba1aab065c8a851391377d3406a35a9af3ac
    */
   test("generate filler") {
     val (_, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = generateFiller("rho", sharedsecrets.dropRight(1), 40, 20)
-    assert(filler == BinaryData("0x80b23adf2c3947dab3b92bb1c5f70fa32f866cc09aff45c5bc4da1ed291660791aa9a1c5d28fbf8f4ecb4bf7c0a9454c82923e24c7fd0d192ea8e2ead1f17388341f313915949b602d5de1f5cb94b77d42c7dfe84edc13cf9acf541e8243989d967e7d568f26f9209bb52d9f90bfa902f3ec6e3ae9d6215c432206cd3132b69257408002aa020f2fbae32a2d5abee0a3c9fd56329b033939cd6366fbb339aa14"))
-
-    val hopFiller = generateFiller("gamma", sharedsecrets.dropRight(1), 20, 20)
-    assert(hopFiller == BinaryData("0x2e86897a3ae52daba4a5940cfc305ae15e9a0f8a8ac1033a15d8a14819acab6503c9df44cdaaf30629283e3458844a44a5c4bfdebdcb15fd3edb8e286124d7b47fa7a56bcc5655d2ad9809f108f238e5"))
+    val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, 20)
+    assert(filler == BinaryData("0xc6b008cf6414ed6e4c42c291eb505e9f22f5fe7d0ecdd15a833f4d016ac974d33adc6ea3293e20859e87ebfb937ba406abd025d14af692b12e9c9c2adbe307a679779259676211c071e614fdb386d1ff02db223a5b2fae03df68d321c7b29f7c7240edd3fa1b7cb6903f89dc01abf41b2eb0b49b6b8d73bb0774b58204c0d0e96d3cce45ad75406be0bc009e327b3e712a4bd178609c00b41da2daf8a4b0e1319f07a492ab4efb056f0f599f75e6dc7e0d10ce1cf59088ab6e873de377343880f7a24f0e36731a0b72092f8d5bc8cd346762e93b2bf203d00264e4bc136fc142de8f7b69154deb05854ea88e2d7506222c95ba1aab065c8a851391377d3406a35a9af3ac"))
   }
 
-  test("parse packet") {
-    val packet: BinaryData = "0x0102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866195fcf66568cad9ad9d61c8b05ffeb2ef00bf32dbff12a026817cd410d83bd65c4fc27db8a75033c527e678028eb2b95f58d04baa9986e83030fb5577e0543f62394cca6d995cf368aface565d15e778db79b7ff43a21abbd556d1e1b33753959a62e6bcb5220cda916d603c2702554c4dc17a8896af5d54c7815efcd093a0f6bad14a4d7622df88ee7cd1fe512882beb43b81f7cf3e7e633262538a7eca5f76f8434bd2215c7dda800d49ef34caf74bb4f1064f72e28fa39de96ff993cf51e26512faa0e98fa387f517c3bc4a65f6d8ca27af1d81025a85edf9e3ea7f580854c5d3ce537b955ff216c7a88dfc0bb795bfdf053300c70a1f6f23126c83b3c96a806e0cda3c3bb5cf1c57e77e25aafd117f2c559c914797cdd27440d7d033ef987178e337a899b597a34cd6f471ce40ca44b234fa0730603b1d4ad215bce719d02b98882268551912ce1f14a3a8c968649b09fb9acf69f48046e2464536d734f705e2d4a996c176786ec437b5d0f62731b251c56f67ae4169167fab24673af60d88d3252bf38f8c1ebd85986bbe25f7f0a4399d947d5b15b7ad9050b3a4f67b0720e372a56fa2da6468ec436ca7425bfedccb4186dbbc28663941a2b5473ff853dbfce8327ffb1209940d5b3c9f8d6643d11238da66e35715b5d5410b93bb5c9ed25e7695c3d2a8073e7e5373dcbdab46c50aba3d238573b333b68bdf1c209933e75e27960fc78880e8429a88c24878c2abd541a0afd0e0c364517e0e8064a94ff1cde8885b19d60d30304c5f7bbc7afa64befbdd2095b47730fdcc6aacd6cf927b6c981efad29de9c575c8663b545dc57e7dbc1b7a09bf6584d5c5b1e748c0300903d09b8b33adf548b0f4a9198c7b0f5c4b4c0e3af9fcc9af4860a23aec993996e36aefff3157259147f0536ea64d23329178f3dd95e37e0019e5ab4654325b59544bf3caa891617b59978b3d21785d36166721358a99c90bd2b8364c475b7f8058219269e561303dfd1d84042543e85d954bcd5eeb4ff897aeb2988ed3d905b3c73377be03ef8817d8595f2596e7afa6a0aa121b176738fd578be920b9cf778bd92808e5bd3d8d0decd00bdc2560a22921f138af042f38c923693494237844c13c85b4d0235c462af39d519d4fbb0309805fff51a51d2a1675eb1be407e116535f455d966fc5a33d05d1b7b7aa4cee07f1bfff801a9bd08a9c6e730771a4bf6a646c2f9e2a90bda866a6fecb3e79981f0048309aac743972adda805075163ed26a5af81bc8fe32606fc23d362dd240c5b601b78cfb31fc350de0cacc356fd62dbf6d6fcdaed073647490573c6eca5432b566cde10369f984b036310991b8965d71c85a667ee5b1d2d043aa4e4d239fda39474626a7840708cb9b7a5311d6f187f8f485ec91e5768007db224e38ff189dd809b1604cf067fa3fd54fee9c9176396cef8664557e2550f89858071da37a96c17c2a5c1e73feeab9b09d32ba7efbc6b18f9b1c4d85abb2dfb4648e0e6b12a3dd9fe96e6e5317ffe32c7b4b3796e8599b7a4caf4ad1b980350b8e7c8544871d7702f3e8c0a265bd658389fde9850570877856e66e29e16bdd9f2a6f6106e454e531d8b7062d3086b8c61f88677bfdb5e0b8bb6654e206e2123edb48d2b18c4316ab393ae41e570e144af52a7e5d3515260b387750e205596828940376ae31e55476b7fa3d5d4abf2ab586ece8acf42c4b2ca0c4"
+  test("create packet (reference test vector)") {
+    val Sphinx.PacketAndSecrets(onion, sharedSecrets) = Sphinx.makePacket(sessionKey, publicKeys, payloads, associatedData)
+    assert(onion.serialize == BinaryData("0x0102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f283686619e5f14350c2a76fc232b5e46d421e9615471ab9e0bc887beff8c95fdb878f7b3a716a996c7845c93d90e4ecbb9bde4ece2f69425c99e4bc820e44485455f135edc0d10f7d61ab590531cf08000179a333a347f8b4072f216400406bdf3bf038659793d4a1fd7b246979e3150a0a4cb052c9ec69acf0f48c3d39cd55675fe717cb7d80ce721caad69320c3a469a202f1e468c67eaf7a7cd8226d0fd32f7b48084dca885d56047694762b67021713ca673929c163ec36e04e40ca8e1c6d17569419d3039d9a1ec866abe044a9ad635778b961fc0776dc832b3a451bd5d35072d2269cf9b040f6b7a7dad84fb114ed413b1426cb96ceaf83825665ed5a1d002c1687f92465b49ed4c7f0218ff8c6c7dd7221d589c65b3b9aaa71a41484b122846c7c7b57e02e679ea8469b70e14fe4f70fee4d87b910cf144be6fe48eef24da475c0b0bcc6565ae82cd3f4e3b24c76eaa5616c6111343306ab35c1fe5ca4a77c0e314ed7dba39d6f1e0de791719c241a939cc493bea2bae1c1e932679ea94d29084278513c77b899cc98059d06a27d171b0dbdf6bee13ddc4fc17a0c4d2827d488436b57baa167544138ca2e64a11b43ac8a06cd0c2fba2d4d900ed2d9205305e2d7383cc98dacb078133de5f6fb6bed2ef26ba92cea28aafc3b9948dd9ae5559e8bd6920b8cea462aa445ca6a95e0e7ba52961b181c79e73bd581821df2b10173727a810c92b83b5ba4a0403eb710d2ca10689a35bec6c3a708e9e92f7d78ff3c5d9989574b00c6736f84c199256e76e19e78f0c98a9d580b4a658c84fc8f2096c2fbea8f5f8c59d0fdacb3be2802ef802abbecb3aba4acaac69a0e965abd8981e9896b1f6ef9d60f7a164b371af869fd0e48073742825e9434fc54da837e120266d53302954843538ea7c6c3dbfb4ff3b2fdbe244437f2a153ccf7bdb4c92aa08102d4f3cff2ae5ef86fab4653595e6a5837fa2f3e29f27a9cde5966843fb847a4a61f1e76c281fe8bb2b0a181d096100db5a1a5ce7a910238251a43ca556712eaadea167fb4d7d75825e440f3ecd782036d7574df8bceacb397abefc5f5254d2722215c53ff54af8299aaaad642c6d72a14d27882d9bbd539e1cc7a527526ba89b8c037ad09120e98ab042d3e8652b31ae0e478516bfaf88efca9f3676ffe99d2819dcaeb7610a626695f53117665d267d3f7abebd6bbd6733f645c72c389f03855bdf1e4b8075b516569b118233a0f0971d24b83113c0b096f5216a207ca99a7cddc81c130923fe3d91e7508c9ac5f2e914ff5dccab9e558566fa14efb34ac98d878580814b94b73acbfde9072f30b881f7f0fff42d4045d1ace6322d86a97d164aa84d93a60498065cc7c20e636f5862dc81531a88c60305a2e59a985be327a6902e4bed986dbf4a0b50c217af0ea7fdf9ab37f9ea1a1aaa72f54cf40154ea9b269f1a7c09f9f43245109431a175d50e2db0132337baa0ef97eed0fcf20489da36b79a1172faccc2f7ded7c60e00694282d93359c4682135642bc81f433574aa8ef0c97b4ade7ca372c5ffc23c7eddd839bab4e0f14d6df15c9dbeab176bec8b5701cf054eb3072f6dadc98f88819042bf10c407516ee58bce33fbe3b3d86a54255e577db4598e30a135361528c101683a5fcde7e8ba53f3456254be8f45fe3a56120ae96ea3773631fcb3873aa3abd91bcff00bd38bd43697a2e789e00da6077482e7b1b1a677b5afae4c54e6cbdf7377b694eb7d7a5b913476a5be923322d3de06060fd5e819635232a2cf4f0731da13b8546d1d6d4f8d75b9fce6c2341a71b0ea6f780df54bfdb0dd5cd9855179f602f9172307c7268724c3618e6817abd793adc214a0dc0bc616816632f27ea336fb56dfd"))
 
-    val ParsedPacket(payload0, address0, packet1, sharedSecret0) = parsePacket(privKeys(0), associatedData, packet)
-    val ParsedPacket(payload1, address1, packet2, sharedSecret1) = parsePacket(privKeys(1), associatedData, packet1)
-    val ParsedPacket(payload2, address2, packet3, sharedSecret2) = parsePacket(privKeys(2), associatedData, packet2)
-    val ParsedPacket(payload3, address3, packet4, sharedSecret3) = parsePacket(privKeys(3), associatedData, packet3)
-    val ParsedPacket(payload4, address4, packet5, sharedSecret4) = parsePacket(privKeys(4), associatedData, packet4)
-
+    val Sphinx.ParsedPacket(payload0, nextPacket0, sharedSecret0) = Sphinx.parsePacket(privKeys(0), associatedData, onion.serialize)
+    val Sphinx.ParsedPacket(payload1, nextPacket1, sharedSecret1) = Sphinx.parsePacket(privKeys(1), associatedData, nextPacket0.serialize)
+    val Sphinx.ParsedPacket(payload2, nextPacket2, sharedSecret2) = Sphinx.parsePacket(privKeys(2), associatedData, nextPacket1.serialize)
+    val Sphinx.ParsedPacket(payload3, nextPacket3, sharedSecret3) = Sphinx.parsePacket(privKeys(3), associatedData, nextPacket2.serialize)
+    val Sphinx.ParsedPacket(payload4, nextPacket4, sharedSecret4) = Sphinx.parsePacket(privKeys(4), associatedData, nextPacket3.serialize)
     assert(Seq(payload0, payload1, payload2, payload3, payload4) == payloads)
-    assert(Seq(address0, address1, address2, address3, address4) == Seq(publicKeys(1).hash160, publicKeys(2).hash160, publicKeys(3).hash160, publicKeys(4).hash160, zeroes(20)))
 
-    val (_, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    assert(Seq(sharedSecret0, sharedSecret1, sharedSecret2, sharedSecret3, sharedSecret4) == sharedsecrets)
-  }
-
-  test("generate last packet") {
-    val (ephemerealPublicKeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = generateFiller("rho", sharedsecrets.dropRight(1), 40, 20)
-    val hopFiller = generateFiller("gamma", sharedsecrets.dropRight(1), 20, 20)
-
-    // build the last packet and apply obfuscation in reverse node order
-    val nextPacket = makeNextPacket(LAST_ADDRESS, payloads(4), associatedData, ephemerealPublicKeys(4), sharedsecrets(4), LAST_PACKET, filler, hopFiller)
-    val nextPacket1 = makeNextPacket(publicKeys(4).hash160, payloads(3), associatedData, ephemerealPublicKeys(3), sharedsecrets(3), nextPacket)
-    val nextPacket2 = makeNextPacket(publicKeys(3).hash160, payloads(2), associatedData, ephemerealPublicKeys(2), sharedsecrets(2), nextPacket1)
-    val nextPacket3 = makeNextPacket(publicKeys(2).hash160, payloads(1), associatedData, ephemerealPublicKeys(1), sharedsecrets(1), nextPacket2)
-    val nextPacket4 = makeNextPacket(publicKeys(1).hash160, payloads(0), associatedData, ephemerealPublicKeys(0), sharedsecrets(0), nextPacket3)
-    assert(nextPacket4 == BinaryData("0x0102eec7245d6b7d2ccb30380bfbe2a3648cd7a942653f5aa340edcea1f2836866195fcf66568cad9ad9d61c8b05ffeb2ef00bf32dbff12a026817cd410d83bd65c4fc27db8a75033c527e678028eb2b95f58d04baa9986e83030fb5577e0543f62394cca6d995cf368aface565d15e778db79b7ff43a21abbd556d1e1b33753959a62e6bcb5220cda916d603c2702554c4dc17a8896af5d54c7815efcd093a0f6bad14a4d7622df88ee7cd1fe512882beb43b81f7cf3e7e633262538a7eca5f76f8434bd2215c7dda800d49ef34caf74bb4f1064f72e28fa39de96ff993cf51e26512faa0e98fa387f517c3bc4a65f6d8ca27af1d81025a85edf9e3ea7f580854c5d3ce537b955ff216c7a88dfc0bb795bfdf053300c70a1f6f23126c83b3c96a806e0cda3c3bb5cf1c57e77e25aafd117f2c559c914797cdd27440d7d033ef987178e337a899b597a34cd6f471ce40ca44b234fa0730603b1d4ad215bce719d02b98882268551912ce1f14a3a8c968649b09fb9acf69f48046e2464536d734f705e2d4a996c176786ec437b5d0f62731b251c56f67ae4169167fab24673af60d88d3252bf38f8c1ebd85986bbe25f7f0a4399d947d5b15b7ad9050b3a4f67b0720e372a56fa2da6468ec436ca7425bfedccb4186dbbc28663941a2b5473ff853dbfce8327ffb1209940d5b3c9f8d6643d11238da66e35715b5d5410b93bb5c9ed25e7695c3d2a8073e7e5373dcbdab46c50aba3d238573b333b68bdf1c209933e75e27960fc78880e8429a88c24878c2abd541a0afd0e0c364517e0e8064a94ff1cde8885b19d60d30304c5f7bbc7afa64befbdd2095b47730fdcc6aacd6cf927b6c981efad29de9c575c8663b545dc57e7dbc1b7a09bf6584d5c5b1e748c0300903d09b8b33adf548b0f4a9198c7b0f5c4b4c0e3af9fcc9af4860a23aec993996e36aefff3157259147f0536ea64d23329178f3dd95e37e0019e5ab4654325b59544bf3caa891617b59978b3d21785d36166721358a99c90bd2b8364c475b7f8058219269e561303dfd1d84042543e85d954bcd5eeb4ff897aeb2988ed3d905b3c73377be03ef8817d8595f2596e7afa6a0aa121b176738fd578be920b9cf778bd92808e5bd3d8d0decd00bdc2560a22921f138af042f38c923693494237844c13c85b4d0235c462af39d519d4fbb0309805fff51a51d2a1675eb1be407e116535f455d966fc5a33d05d1b7b7aa4cee07f1bfff801a9bd08a9c6e730771a4bf6a646c2f9e2a90bda866a6fecb3e79981f0048309aac743972adda805075163ed26a5af81bc8fe32606fc23d362dd240c5b601b78cfb31fc350de0cacc356fd62dbf6d6fcdaed073647490573c6eca5432b566cde10369f984b036310991b8965d71c85a667ee5b1d2d043aa4e4d239fda39474626a7840708cb9b7a5311d6f187f8f485ec91e5768007db224e38ff189dd809b1604cf067fa3fd54fee9c9176396cef8664557e2550f89858071da37a96c17c2a5c1e73feeab9b09d32ba7efbc6b18f9b1c4d85abb2dfb4648e0e6b12a3dd9fe96e6e5317ffe32c7b4b3796e8599b7a4caf4ad1b980350b8e7c8544871d7702f3e8c0a265bd658389fde9850570877856e66e29e16bdd9f2a6f6106e454e531d8b7062d3086b8c61f88677bfdb5e0b8bb6654e206e2123edb48d2b18c4316ab393ae41e570e144af52a7e5d3515260b387750e205596828940376ae31e55476b7fa3d5d4abf2ab586ece8acf42c4b2ca0c4"))
-
-    // same as above but in one single step
-    // this is what clients will use
-    val OnionPacket(packet, _) = makePacket(sessionKey, publicKeys, payloads, associatedData)
-    assert(packet == nextPacket4)
-  }
-
-  test("generate return messages") {
-    val failure = TemporaryChannelFailure
-    val (ephkeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-
-    // error packet created by the last node
-    val error0 = createErrorPacket(sharedsecrets.last, failure)
-
-    // error packet received by the origin node
-    val error = sharedsecrets.dropRight(1).reverse.foldLeft(error0)(forwardErrorPacket)
-
-    val Some(ErrorPacket(pubkey, failure1)) = parseErrorPacket(error, sharedsecrets.zip(publicKeys))
-    assert(pubkey == publicKeys.last)
-    assert(failure1 == failure)
+    val packets = Seq(nextPacket0, nextPacket1, nextPacket2, nextPacket3, nextPacket4)
+    assert(packets(0).hmac == BinaryData("0x2bdc5227c8eb8ba5fcfc15cfc2aa578ff208c106646d0652cd289c0a37e445bb"))
+    assert(packets(1).hmac == BinaryData("0x28430b210c0af631ef80dc8594c08557ce4626bdd3593314624a588cc083a1d9"))
+    assert(packets(2).hmac == BinaryData("0x4e888d0cc6a90e7f857af18ac858834ac251d0d1c196d198df48a0c5bf816803"))
+    assert(packets(3).hmac == BinaryData("0x42c10947e06bda75b35ac2a9e38005479a6feac51468712e751c71a1dcf3e31b"))
+    // this means that node #4 us the last node
+    assert(packets(4).hmac == BinaryData("0x0000000000000000000000000000000000000000000000000000000000000000"))
   }
 
   test("last node replies with an error message") {
     // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
 
     // origin build the onion packet
-    val OnionPacket(packet, sharedSecrets) = makePacket(sessionKey, publicKeys, payloads, associatedData)
+    val PacketAndSecrets(packet, sharedSecrets) = makePacket(sessionKey, publicKeys, payloads, associatedData)
 
     // each node parses and forwards the packet
     // node #0
-    val ParsedPacket(payload0, address0, packet1, sharedSecret0) = parsePacket(privKeys(0), associatedData, packet)
+    val ParsedPacket(payload0, packet1, sharedSecret0) = parsePacket(privKeys(0), associatedData, packet.serialize)
     // node #1
-    val ParsedPacket(payload1, address1, packet2, sharedSecret1) = parsePacket(privKeys(1), associatedData, packet1)
+    val ParsedPacket(payload1, packet2, sharedSecret1) = parsePacket(privKeys(1), associatedData, packet1.serialize)
     // node #2
-    val ParsedPacket(payload2, address2, packet3, sharedSecret2) = parsePacket(privKeys(2), associatedData, packet2)
+    val ParsedPacket(payload2, packet3, sharedSecret2) = parsePacket(privKeys(2), associatedData, packet2.serialize)
     // node #3
-    val ParsedPacket(payload3, address3, packet4, sharedSecret3) = parsePacket(privKeys(3), associatedData, packet3)
+    val ParsedPacket(payload3, packet4, sharedSecret3) = parsePacket(privKeys(3), associatedData, packet3.serialize)
     // node #4
-    val ParsedPacket(payload4, address4, packet5, sharedSecret4) = parsePacket(privKeys(4), associatedData, packet4)
-    assert(address4 == LAST_ADDRESS)
+    val ParsedPacket(payload4, packet5, sharedSecret4) = parsePacket(privKeys(4), associatedData, packet4.serialize)
+    assert(packet5.isLastPacket)
 
     // node #4 want to reply with an error message
     val error = createErrorPacket(sharedSecret4, TemporaryNodeFailure)
-    assert(error == BinaryData("69b1e5a3e05a7b5478e6529cd1749fdd8c66da6ffa31d2eb0f2dbbf4394713c6a8c9b16ab5f12fd45edd73c1b0c8b33002df376801ff58aaa94000bf8a86f92620f343baef38a580102395ae3abf9128d1047a0736ff9b83d456740ebbb4aeb3aa9737f18fb4afb4aa074fb26c4d702f42968888550a3bded8c05247e045b866baef0499f079fdaeef6538f31d44deafffdfd3afa2fb4ca9"))
+    assert(error == BinaryData("69b1e5a3e05a7b5478e6529cd1749fdd8c66da6f6db42078ff8497ac4e117e91a8cb9168b58f2fd45edd73c1b0c8b33002df376801ff58aaa94000bf8a86f92620f343baef38a580102395ae3abf9128d1047a0736ff9b83d456740ebbb4aeb3aa9737f18fb4afb4aa074fb26c4d702f42968888550a3bded8c05247e045b866baef0499f079fdaeef6538f31d44deafffdfd3afa2fb4ca9082b8f1c465371a9894dd8c2"))
     // error sent back to 3, 2, 1 and 0
     val error1 = forwardErrorPacket(error, sharedSecret3)
-    assert(error1 == BinaryData("08cd44478211b8a4370ab1368b5ffe8c9c92fb8398715ffdcba31d358e842c21a0839ab361940011585323930fa5b9fae0c85770a2279ff59ec427ad1bbff9001c0cd1497004bd2a0f68b50704cf6d6a4bf3c8b6a0833399a24b3456961ba00736785112594f65b6b2d44d9f5ea4e49b5e1ec2af978cbe31c67114440ac51a62081df0ed46d4a3df295da0b0fe25c0115019f03f15ec86fa"))
+    assert(error1 == BinaryData("08cd44478211b8a4370ab1368b5ffe8c9c92fb830ff4ad6e3b0a316df9d24176a081bab161ea0011585323930fa5b9fae0c85770a2279ff59ec427ad1bbff9001c0cd1497004bd2a0f68b50704cf6d6a4bf3c8b6a0833399a24b3456961ba00736785112594f65b6b2d44d9f5ea4e49b5e1ec2af978cbe31c67114440ac51a62081df0ed46d4a3df295da0b0fe25c0115019f03f15ec86fabb4c852f83449e812f141a93"))
 
     val error2 = forwardErrorPacket(error1, sharedSecret2)
-    assert(error2 == BinaryData("6984b0ccd86f37995857363df13670acd064bfd132c517b23a7dfb4470e7d16aff98e25d41d3dfb7466e74f81b3e545563cdd8f5524dae873de61d7bdfccd496af2584930d2b566b4f8d3881f8c043df92224f38cf094cfc09d92655989531524593ec6d6caec1863bdfaa79229b5020acc034cd6deeea1021c50586947b9b8e6faa83b81fbfa6133c0af5d6b07c017f7158fa94f0d206ba"))
+    assert(error2 == BinaryData("6984b0ccd86f37995857363df13670acd064bfd1a540e521cad4d71c07b1bc3dff9ac25f41addfb7466e74f81b3e545563cdd8f5524dae873de61d7bdfccd496af2584930d2b566b4f8d3881f8c043df92224f38cf094cfc09d92655989531524593ec6d6caec1863bdfaa79229b5020acc034cd6deeea1021c50586947b9b8e6faa83b81fbfa6133c0af5d6b07c017f7158fa94f0d206baf12dda6b68f785b773b360fd"))
 
     val error3 = forwardErrorPacket(error2, sharedSecret1)
-    assert(error3 == BinaryData("669478a3ddf9ba4049df8fa51f73ac712b9c20389b5fb185663f16115045868ab7dd8db956128dae8857add94e6702fb4c3a4de22e2e669e1ed926b04447fc73034bb730f4932acd62727b75348a648a1128744657ca6a4e713b9b646c3ca66cac02cdab44dd3439890ef3aaf61708714f7375349b8da541b2548d452d84de7084bb95b3ac2345201d624d31f4d52078aa0fa05a88b4e202"))
+    assert(error3 == BinaryData("669478a3ddf9ba4049df8fa51f73ac712b9c20380cda431696963a492713ebddb7dfadbb566c8dae8857add94e6702fb4c3a4de22e2e669e1ed926b04447fc73034bb730f4932acd62727b75348a648a1128744657ca6a4e713b9b646c3ca66cac02cdab44dd3439890ef3aaf61708714f7375349b8da541b2548d452d84de7084bb95b3ac2345201d624d31f4d52078aa0fa05a88b4e20202bd2b86ac5b52919ea305a8"))
 
     val error4 = forwardErrorPacket(error3, sharedSecret0)
-    assert(error4 == BinaryData("500d8596f76d3045bfdbf99914b98519fe76ea139a47d1ab34da8730a01515e63a04819d896f45610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5"))
+    assert(error4 == BinaryData("500d8596f76d3045bfdbf99914b98519fe76ea130dc22338c473ab68d74378b13a06a19f891145610741c83ad40b7712aefaddec8c6baf7325d92ea4ca4d1df8bce517f7e54554608bf2bd8071a4f52a7a2f7ffbb1413edad81eeea5785aa9d990f2865dc23b4bc3c301a94eec4eabebca66be5cf638f693ec256aec514620cc28ee4a94bd9565bc4d4962b9d3641d4278fb319ed2b84de5b665f307a2db0f7fbb757366"))
 
 
     // origin parses error packet and can see that it comes from node #4
@@ -160,15 +126,15 @@ class SphinxSpec extends FunSuite {
     // route: origin -> node #0 -> node #1 -> node #2 -> node #3 -> node #4
 
     // origin build the onion packet
-    val OnionPacket(packet, sharedSecrets) = makePacket(sessionKey, publicKeys, payloads, associatedData)
+    val PacketAndSecrets(packet, sharedSecrets) = makePacket(sessionKey, publicKeys, payloads, associatedData)
 
     // each node parses and forwards the packet
     // node #0
-    val ParsedPacket(payload0, address0, packet1, sharedSecret0) = parsePacket(privKeys(0), associatedData, packet)
+    val ParsedPacket(payload0, packet1, sharedSecret0) = parsePacket(privKeys(0), associatedData, packet.serialize)
     // node #1
-    val ParsedPacket(payload1, address1, packet2, sharedSecret1) = parsePacket(privKeys(1), associatedData, packet1)
+    val ParsedPacket(payload1, packet2, sharedSecret1) = parsePacket(privKeys(1), associatedData, packet1.serialize)
     // node #2
-    val ParsedPacket(payload2, address2, packet3, sharedSecret2) = parsePacket(privKeys(2), associatedData, packet2)
+    val ParsedPacket(payload2, packet3, sharedSecret2) = parsePacket(privKeys(2), associatedData, packet2.serialize)
 
     // node #2 want to reply with an error message
     val error = createErrorPacket(sharedSecret2, InvalidRealm)
@@ -203,11 +169,11 @@ object SphinxSpec {
 
   val sessionKey: PrivateKey = PrivateKey(BinaryData("0x4141414141414141414141414141414141414141414141414141414141414141"), compressed = true)
   val payloads = Seq(
-    BinaryData("0x4141414141414141414141414141414141414141"),
-    BinaryData("0x4141414141414141414141414141414141414141"),
-    BinaryData("0x4141414141414141414141414141414141414141"),
-    BinaryData("0x4141414141414141414141414141414141414141"),
-    BinaryData("0x4141414141414141414141414141414141414141")
-  )
+    BinaryData("0x000000000000000000000000000000000000000000000000000000000000000000"),
+    BinaryData("0x000101010101010101000000010000000100000000000000000000000000000000"),
+    BinaryData("0x000202020202020202000000020000000200000000000000000000000000000000"),
+    BinaryData("0x000303030303030303000000030000000300000000000000000000000000000000"),
+    BinaryData("0x000404040404040404000000040000000400000000000000000000000000000000"))
+
   val associatedData: BinaryData = "0x4242424242424242424242424242424242424242424242424242424242424242"
 }

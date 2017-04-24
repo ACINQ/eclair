@@ -2,7 +2,7 @@ package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.crypto.Sphinx.{OnionPacket, ParsedPacket}
+import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Hop
@@ -37,44 +37,40 @@ class HtlcGenerationSpec extends FunSuite {
     assert(firstAmountMsat === amount_ab)
     assert(firstExpiry === expiry_ab)
     assert(payloads ===
-      PerHopPayload(amount_bc, expiry_bc) ::
-        PerHopPayload(amount_cd, expiry_cd) ::
-        PerHopPayload(amount_de, expiry_de) :: Nil)
+      PerHopPayload(channelUpdate_bc.shortChannelId, amount_bc, expiry_bc) ::
+        PerHopPayload(channelUpdate_cd.shortChannelId, amount_cd, expiry_cd) ::
+        PerHopPayload(channelUpdate_de.shortChannelId, amount_de, expiry_de) :: Nil)
   }
 
   test("build onion") {
 
     val (_, _, payloads) = buildRoute(finalAmountMsat, hops.drop(1), currentBlockCount)
     val nodes = hops.map(_.nextNodeId)
-    val OnionPacket(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
-    assert(packet_b.size === 1254)
+    val PacketAndSecrets(packet_b, _) = buildOnion(nodes, payloads, paymentHash)
+    assert(packet_b.serialize.size === Sphinx.PacketLength)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, address_c, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, packet_b)
+    val ParsedPacket(bin_b, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, packet_b.serialize)
     val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
-    assert(address_c === c.hash160)
-    assert(packet_c.size === 1254)
+    assert(packet_c.serialize.size === Sphinx.PacketLength)
     assert(payload_b.amt_to_forward === amount_bc)
     assert(payload_b.outgoing_cltv_value === expiry_bc)
 
-    val ParsedPacket(bin_c, address_d, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c)
+    val ParsedPacket(bin_c, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c.serialize)
     val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).toOption.get.value
-    assert(address_d === d.hash160)
-    assert(packet_d.size === 1254)
+    assert(packet_d.serialize.size === Sphinx.PacketLength)
     assert(payload_c.amt_to_forward === amount_cd)
     assert(payload_c.outgoing_cltv_value === expiry_cd)
 
-    val ParsedPacket(bin_d, address_e, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d)
+    val ParsedPacket(bin_d, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d.serialize)
     val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).toOption.get.value
-    assert(address_e === e.hash160)
-    assert(packet_e.size === 1254)
+    assert(packet_e.serialize.size === Sphinx.PacketLength)
     assert(payload_d.amt_to_forward === amount_de)
     assert(payload_d.outgoing_cltv_value === expiry_de)
 
-    val ParsedPacket(bin_e, address_null, packet_random, _) = Sphinx.parsePacket(priv_e, paymentHash, packet_e)
-    assert(bin_e === BinaryData("00" * 20))
-    assert(address_null === BinaryData("00" * 20))
-    assert(packet_random.size === 1254)
+    val ParsedPacket(bin_e, packet_random, _) = Sphinx.parsePacket(priv_e, paymentHash, packet_e.serialize)
+    assert(bin_e === BinaryData("00" * Sphinx.PayloadLength))
+    assert(packet_random.serialize.size === Sphinx.PacketLength)
   }
 
   test("build a command including the onion") {
@@ -84,34 +80,30 @@ class HtlcGenerationSpec extends FunSuite {
     assert(add.amountMsat > finalAmountMsat)
     assert(add.expiry === currentBlockCount + defaultHtlcExpiry + channelUpdate_de.cltvExpiryDelta + channelUpdate_cd.cltvExpiryDelta + channelUpdate_bc.cltvExpiryDelta)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.length === 1254)
+    assert(add.onion.length === Sphinx.PacketLength)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, address_c, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
+    val ParsedPacket(bin_b, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
     val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).toOption.get.value
-    assert(address_c === c.hash160)
-    assert(packet_c.size === 1254)
+    assert(packet_c.serialize.size === Sphinx.PacketLength)
     assert(payload_b.amt_to_forward === amount_bc)
     assert(payload_b.outgoing_cltv_value === expiry_bc)
 
-    val ParsedPacket(bin_c, address_d, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c)
+    val ParsedPacket(bin_c, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c.serialize)
     val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).toOption.get.value
-    assert(address_d === d.hash160)
-    assert(packet_d.size === 1254)
+    assert(packet_d.serialize.size === Sphinx.PacketLength)
     assert(payload_c.amt_to_forward === amount_cd)
     assert(payload_c.outgoing_cltv_value === expiry_cd)
 
-    val ParsedPacket(bin_d, address_e, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d)
+    val ParsedPacket(bin_d, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d.serialize)
     val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).toOption.get.value
-    assert(address_e === e.hash160)
-    assert(packet_e.size === 1254)
+    assert(packet_e.serialize.size === Sphinx.PacketLength)
     assert(payload_d.amt_to_forward === amount_de)
     assert(payload_d.outgoing_cltv_value === expiry_de)
 
-    val ParsedPacket(bin_e, address_null, packet_random, _) = Sphinx.parsePacket(priv_e, paymentHash, packet_e)
-    assert(bin_e === BinaryData("00" * 20))
-    assert(address_null === BinaryData("00" * 20))
-    assert(packet_random.size === 1254)
+    val ParsedPacket(bin_e, packet_random, _) = Sphinx.parsePacket(priv_e, paymentHash, packet_e.serialize)
+    assert(bin_e === BinaryData("00" * Sphinx.PayloadLength))
+    assert(packet_random.serialize.size === Sphinx.PacketLength)
   }
 
   test("build a command with no hops") {
@@ -120,13 +112,12 @@ class HtlcGenerationSpec extends FunSuite {
     assert(add.amountMsat === finalAmountMsat)
     assert(add.expiry === currentBlockCount + defaultHtlcExpiry)
     assert(add.paymentHash === paymentHash)
-    assert(add.onion.size === 1254)
+    assert(add.onion.size === Sphinx.PacketLength)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, address_null, packet_random, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
-    assert(bin_b === BinaryData("00" * 20))
-    assert(address_null === BinaryData("00" * 20))
-    assert(packet_random.size === 1254)
+    val ParsedPacket(bin_b, packet_random, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
+    assert(bin_b === BinaryData("00" * Sphinx.PayloadLength))
+    assert(packet_random.serialize.size === Sphinx.PacketLength)
   }
 
 }

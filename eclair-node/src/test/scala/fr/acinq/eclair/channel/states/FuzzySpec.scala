@@ -10,6 +10,7 @@ import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
@@ -77,7 +78,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     val amount = requiredAmount + Random.nextInt(requiredAmount)
     val onion = PaymentLifecycle.buildOnion(dest :: Nil, Nil, paymentHash)
 
-    CMD_ADD_HTLC(amount, paymentHash, Globals.blockCount.get() + PaymentLifecycle.defaultHtlcExpiry, onion.onionPacket, upstream_opt = None, commit = true)
+    CMD_ADD_HTLC(amount, paymentHash, Globals.blockCount.get() + PaymentLifecycle.defaultHtlcExpiry, Sphinx.Packet.write(onion.packet), upstream_opt = None, commit = true)
   }
 
   def gatling(parallel: Int, total: Int, channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, destination: PublicKey): Unit = {

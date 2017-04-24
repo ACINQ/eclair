@@ -5,7 +5,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
-import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.crypto.{Generators, Sphinx}
 import fr.acinq.eclair.wire
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -164,7 +164,7 @@ object LightningMessageCodecs {
       ("amountMsat" | uint32) ::
       ("expiry" | uint32) ::
       ("paymentHash" | binarydata(32)) ::
-      ("onionRoutingPacket" | binarydata(1254))).as[UpdateAddHtlc]
+      ("onionRoutingPacket" | binarydata(Sphinx.PacketLength))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (
     ("channelId" | binarydata(32)) ::
@@ -269,9 +269,10 @@ object LightningMessageCodecs {
     .typecase(259, announcementSignaturesCodec)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
-    ("realm" | ignore(8 * 1)) ::
-      ("amt_to_forward" | uint64) ::
+    ("realm" | constant(ByteVector.fromByte(0))) ::
+      ("channel_id" | uint64) ::
+      ("amt_to_forward" | uint32) ::
       ("outgoing_cltv_value" | int32) :: // we use a signed int32, it is enough to store cltv for 40 000 years
-      ("unused_with_v0_version_on_header" | ignore(8 * 7))).as[PerHopPayload]
+      ("unused_with_v0_version_on_header" | ignore(8 * 16))).as[PerHopPayload]
 
 }

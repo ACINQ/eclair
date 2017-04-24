@@ -18,29 +18,22 @@ import scala.annotation.tailrec
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
   */
 object Sphinx {
-  // length of a MAC
-  val MacLength = 20
+  val Version = 1.toByte
 
-  // length of an address (hash160(publicKey))
-  val AddressLength = 20
+  // length of a MAC
+  val MacLength = 32
+
+  // length of a payload: 33 bytes (1 bytes for realm, 32 bytes for a realm-specific packet)
+  val PayloadLength = 33
 
   // max number of hops
   val MaxHops = 20
 
-  // per hop payload length
-  val PerHopPayloadLength = 20
-
-  // header length
-  val HeaderLength = 1 + 33 + MacLength + MaxHops * (AddressLength + MacLength)
-
   // onion packet length
-  val PacketLength = HeaderLength + MaxHops * PerHopPayloadLength
-
-  // last address; means that we are the final destination for an onion packet
-  val LAST_ADDRESS = zeroes(AddressLength)
-
+  val PacketLength = 1 + 33 + MacLength + MaxHops * (PayloadLength + MacLength)
+  
   // last packet (all zeroes except for the version byte)
-  val LAST_PACKET: BinaryData = 1.toByte +: zeroes(PacketLength - 1)
+  val LAST_PACKET = Packet(Version, zeroes(33), zeroes(MacLength), zeroes(MaxHops * (PayloadLength + MacLength)))
 
   def hmac256(key: Seq[Byte], message: Seq[Byte]): Seq[Byte] = {
     val mac = new HMac(new SHA256Digest())
@@ -109,93 +102,90 @@ object Sphinx {
     })
   }
 
-  case class Header(version: Int, publicKey: BinaryData, hmac: BinaryData, routingInfo: BinaryData) {
-    require(publicKey.length == 33, "onion header public key length should be 33")
-    require(hmac.length == MacLength, s"onion header hmac length should be $MacLength")
-    require(routingInfo.length == MaxHops * (AddressLength + MacLength), s"onion header routing info length should be ${MaxHops * (AddressLength + MacLength)}")
+  case class Packet(version: Int, publicKey: BinaryData, hmac: BinaryData, routingInfo: BinaryData) {
+    require(publicKey.length == 33, "onion packet public key length should be 33")
+    require(hmac.length == MacLength, s"onion packet hmac length should be $MacLength")
+    require(routingInfo.length == MaxHops * (PayloadLength + MacLength), s"onion packet routing info length should be ${MaxHops * (PayloadLength + MacLength)}")
+
+    def isLastPacket: Boolean = hmac == zeroes(MacLength)
+
+    def serialize: BinaryData = Packet.write(this)
   }
 
-  object Header {
-    def read(in: InputStream): Header = {
+  object Packet {
+    def read(in: InputStream): Packet = {
       val version = in.read
       val publicKey = new Array[Byte](33)
       in.read(publicKey)
+      val routingInfo = new Array[Byte](MaxHops * (PayloadLength + MacLength))
+      in.read(routingInfo)
       val hmac = new Array[Byte](MacLength)
       in.read(hmac)
-      val routingInfo = new Array[Byte](MaxHops * (AddressLength + MacLength))
-      in.read(routingInfo)
-      Header(version, publicKey, hmac, routingInfo)
+      Packet(version, publicKey, hmac, routingInfo)
     }
 
-    def read(in: BinaryData): Header = read(new ByteArrayInputStream(in))
+    def read(in: BinaryData): Packet = read(new ByteArrayInputStream(in))
 
-    def write(header: Header, out: OutputStream): OutputStream = {
-      out.write(header.version)
-      out.write(header.publicKey)
-      out.write(header.hmac)
-      out.write(header.routingInfo)
+    def write(packet: Packet, out: OutputStream): OutputStream = {
+      out.write(packet.version)
+      out.write(packet.publicKey)
+      out.write(packet.routingInfo)
+      out.write(packet.hmac)
       out
     }
 
-    def write(header: Header): BinaryData = {
-      val out = new ByteArrayOutputStream(HeaderLength)
-      write(header, out)
+    def write(packet: Packet): BinaryData = {
+      val out = new ByteArrayOutputStream(PacketLength)
+      write(packet, out)
       out.toByteArray
     }
+
+    def isLastPacket(packet: BinaryData): Boolean = Packet.read(packet).hmac == zeroes(MacLength)
   }
 
   /**
     *
-    * @param payload      paylod for this node
-    * @param nextAddress  next address in the route (all 0s if we're the final destination)
+    * @param payload      payload for this node
     * @param nextPacket   packet for the next node
     * @param sharedSecret shared secret for the sending node, which we will need to return error messages
     */
-  case class ParsedPacket(payload: BinaryData, nextAddress: BinaryData, nextPacket: BinaryData, sharedSecret: BinaryData)
+  case class ParsedPacket(payload: BinaryData, nextPacket: Packet, sharedSecret: BinaryData)
 
   /**
     *
     * @param privateKey     this node's private key
     * @param associatedData associated data
-    * @param packet         packet received by this node
-    * @return a (payload, address, packet, shared secret) tuple where:
+    * @param rawPacket      packet received by this node
+    * @return a ParsedPacket(payload, packet, shared secret) object where:
     *         - payload is the per-hop payload for this node
-    *         - address is the next destination. 0x0000000000000000000000000000000000000000 means this node was the final
-    *         destination
-    *         - packet is the next packet, to be forwarded to address
-    *         - shared secret is the secret we share with the node that send the packet. We need it to propagate failure
+    *         - packet is the next packet, to be forwarded using the info that is given in payload (channel id for now)
+    *         - shared secret is the secret we share with the node that sent the packet. We need it to propagate failure
     *         messages upstream.
     */
-  def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, packet: BinaryData): ParsedPacket = {
-    require(packet.length == PacketLength, "onion packet length should be 1254")
-    val header = Header.read(packet)
-    val perHopPayload = packet.drop(HeaderLength)
-    val sharedSecret = computeSharedSecret(PublicKey(header.publicKey), privateKey)
+  def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, rawPacket: BinaryData): ParsedPacket = {
+    require(rawPacket.length == PacketLength, s"onion packet length is ${rawPacket.length}, it should be ${PacketLength}")
+    val packet = Packet.read(rawPacket)
+    val sharedSecret = computeSharedSecret(PublicKey(packet.publicKey), privateKey)
     val mu = generateKey("mu", sharedSecret)
-    val check: BinaryData = mac(mu, header.routingInfo ++ perHopPayload ++ associatedData)
-    require(check == header.hmac, "invalid header mac")
+    val check: BinaryData = mac(mu, packet.routingInfo ++ associatedData)
+    require(check == packet.hmac, "invalid header mac")
 
     val rho = generateKey("rho", sharedSecret)
-    val bin = xor(header.routingInfo ++ zeroes(AddressLength + MacLength), generateStream(rho, AddressLength + MacLength + MaxHops * (AddressLength + MacLength)))
-    val address = bin.take(AddressLength)
-    val hmac = bin.slice(AddressLength, AddressLength + MacLength)
-    val nextRoutinfo = bin.drop(AddressLength + MacLength)
+    val bin = xor(packet.routingInfo ++ zeroes(PayloadLength + MacLength), generateStream(rho, PayloadLength + MacLength + MaxHops * (PayloadLength + MacLength)))
+    val payload = bin.take(PayloadLength)
+    val hmac = bin.slice(PayloadLength, PayloadLength + MacLength)
+    val nextRoutinfo = bin.drop(PayloadLength + MacLength)
 
-    val nextPubKey = blind(PublicKey(header.publicKey), computeblindingFactor(PublicKey(header.publicKey), sharedSecret))
+    val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
-    val gamma = generateKey("gamma", sharedSecret)
-    val bin1 = xor(perHopPayload ++ zeroes(PerHopPayloadLength), generateStream(gamma, PerHopPayloadLength + MaxHops * PerHopPayloadLength))
-    val payload = bin1.take(PerHopPayloadLength)
-    val nextPerHopPayloads = bin1.drop(PerHopPayloadLength)
-
-    ParsedPacket(payload, address, Header.write(Header(1, nextPubKey, hmac, nextRoutinfo)) ++ nextPerHopPayloads, sharedSecret)
+    ParsedPacket(payload, Packet(Version, nextPubKey, hmac, nextRoutinfo), sharedSecret)
   }
 
   @tailrec
   def extractSharedSecrets(packet: BinaryData, privateKey: PrivateKey, associatedData: BinaryData, acc: Seq[BinaryData] = Nil): Seq[BinaryData] = {
     parsePacket(privateKey, associatedData, packet) match {
-      case ParsedPacket(_, nextAddress, _, sharedSecret) if nextAddress == LAST_ADDRESS => acc :+ sharedSecret
-      case ParsedPacket(_, _, nextPacket, sharedSecret) => extractSharedSecrets(nextPacket, privateKey, associatedData, acc :+ sharedSecret)
+      case ParsedPacket(_, nextPacket, sharedSecret) if nextPacket.isLastPacket => acc :+ sharedSecret
+      case ParsedPacket(_, nextPacket, sharedSecret) => extractSharedSecrets(nextPacket.serialize, privateKey, associatedData, acc :+ sharedSecret)
     }
   }
 
@@ -206,47 +196,40 @@ object Sphinx {
     * - then you call makeNextPacket(...) until you've build the final onion packet that will be sent to the first node
     * in the route
     *
-    * @param address             next destination; all zeroes if this is the last packet
     * @param payload             payload for this packed
     * @param associatedData      associated data
     * @param ephemerealPublicKey ephemereal key for this packed
     * @param sharedSecret        shared secret
     * @param packet              current packet (1 + all zeroes if this is the last packet)
     * @param routingInfoFiller   optional routing info filler, needed only when you're constructing the last packet
-    * @param payloadsFiller      optional payload filler, needed only when you're constructing the last packet
     * @return the next packet
     */
-  def makeNextPacket(address: BinaryData, payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: BinaryData, routingInfoFiller: BinaryData = BinaryData.empty, payloadsFiller: BinaryData = BinaryData.empty): BinaryData = {
-    val header = Header.read(packet)
-    val hopPayloads = packet.drop(HeaderLength)
+  def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
+    require(payload.length == PayloadLength)
 
     val nextRoutingInfo = {
-      val routingInfo1 = address ++ header.hmac ++ header.routingInfo.dropRight(AddressLength + MacLength)
-      val routingInfo2 = xor(routingInfo1, generateStream(generateKey("rho", sharedSecret), MaxHops * (AddressLength + MacLength)))
+      val routingInfo1 = payload ++ packet.hmac ++ packet.routingInfo.dropRight(PayloadLength + MacLength)
+      val routingInfo2 = xor(routingInfo1, generateStream(generateKey("rho", sharedSecret), MaxHops * (PayloadLength + MacLength)))
       routingInfo2.dropRight(routingInfoFiller.length) ++ routingInfoFiller
     }
-    val nexHopPayloads = {
-      val hopPayloads1 = payload ++ hopPayloads.dropRight(PerHopPayloadLength)
-      val hopPayloads2 = xor(hopPayloads1, generateStream(generateKey("gamma", sharedSecret), MaxHops * PerHopPayloadLength))
-      hopPayloads2.dropRight(payloadsFiller.length) ++ payloadsFiller
-    }
 
-    val nextHmac: BinaryData = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ nexHopPayloads ++ associatedData)
-    val nextHeader = Header(1, ephemerealPublicKey, nextHmac, nextRoutingInfo)
-    Header.write(nextHeader) ++ nexHopPayloads
+    val nextHmac: BinaryData = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ associatedData)
+    val nextPacket = Packet(Version, ephemerealPublicKey, nextHmac, nextRoutingInfo)
+    nextPacket
   }
 
 
   /**
     *
-    * @param onionPacket   onion packet
+    * @param packet        onion packet
     * @param sharedSecrets shared secrets (one per node in the route). Known (and needed) only if you're creating the
     *                      packet. Empty if you're just forwarding the packet to the next node
     */
-  case class OnionPacket(onionPacket: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)])
+  case class PacketAndSecrets(packet: Packet, sharedSecrets: Seq[(BinaryData, PublicKey)])
 
   /**
     * A properly decoded error from a node in the route
+    *
     * @param originNode
     * @param failureMessage
     */
@@ -262,29 +245,28 @@ object Sphinx {
     * @return an OnionPacket(onion packet, shared secrets). the onion packet can be sent to the first node in the list, and the
     *         shared secrets (one per node) can be used to parse returned error messages if needed
     */
-  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): OnionPacket = {
+  def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): PacketAndSecrets = {
     val (ephemerealPublicKeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
-    val filler = generateFiller("rho", sharedsecrets.dropRight(1), AddressLength + MacLength, MaxHops)
-    val hopFiller = generateFiller("gamma", sharedsecrets.dropRight(1), PerHopPayloadLength, MaxHops)
+    val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, MaxHops)
 
-    val lastPacket = makeNextPacket(LAST_ADDRESS, payloads.last, associatedData, ephemerealPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler, hopFiller)
+    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemerealPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler)
 
     @tailrec
-    def loop(pubKeys: Seq[PublicKey], hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: BinaryData): BinaryData = {
+    def loop(hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: Packet): Packet = {
       if (hoppayloads.isEmpty) packet else {
-        val nextPacket = makeNextPacket(pubKeys.last.hash160, hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
-        loop(pubKeys.dropRight(1), hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
+        val nextPacket = makeNextPacket(hoppayloads.last, associatedData, ephkeys.last, sharedSecrets.last, packet)
+        loop(hoppayloads.dropRight(1), ephkeys.dropRight(1), sharedSecrets.dropRight(1), nextPacket)
       }
     }
 
-    val packet = loop(publicKeys, payloads.dropRight(1), ephemerealPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
-    OnionPacket(packet, sharedsecrets.zip(publicKeys))
+    val packet = loop(payloads.dropRight(1), ephemerealPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
+    PacketAndSecrets(packet, sharedsecrets.zip(publicKeys))
   }
 
   /*
     error packet format:
     +----------------+----------------------------------+-----------------+----------------------+-----+
-    | HMAC(20 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
+    | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
     +----------------+----------------------------------+-----------------+----------------------+-----+
     with failure message length + pad length = 128
    */

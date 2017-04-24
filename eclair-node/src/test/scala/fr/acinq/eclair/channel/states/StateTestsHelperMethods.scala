@@ -99,7 +99,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     val sender = TestProbe()
     val receiverPubkey = r.underlyingActor.nodeParams.privateKey.publicKey
     val onion = PaymentLifecycle.buildOnion(receiverPubkey :: Nil, Nil, H)
-    sender.send(s, CMD_ADD_HTLC(amountMsat, H, 400144, onion = onion.onionPacket))
+    sender.send(s, CMD_ADD_HTLC(amountMsat, H, 400144, onion = onion.packet.serialize))
     sender.expectMsg("ok")
     val htlc = s2r.expectMsgType[UpdateAddHtlc]
     s2r.forward(r)

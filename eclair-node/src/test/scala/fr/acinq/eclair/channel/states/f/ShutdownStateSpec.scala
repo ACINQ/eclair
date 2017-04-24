@@ -34,7 +34,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h1: BinaryData = Crypto.sha256(r1)
       val amount1 = 300000000
       val onion1 = PaymentLifecycle.buildOnion(TestConstants.Bob.nodeParams.privateKey.publicKey :: Nil, Nil, h1)
-      sender.send(alice, CMD_ADD_HTLC(amount1, h1, 400144, onion = onion1.onionPacket))
+      sender.send(alice, CMD_ADD_HTLC(amount1, h1, 400144, onion = onion1.packet.serialize))
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
@@ -44,7 +44,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h2: BinaryData = Crypto.sha256(r2)
       val amount2 = 200000000
       val onion2 = PaymentLifecycle.buildOnion(TestConstants.Bob.nodeParams.privateKey.publicKey :: Nil, Nil, h2)
-      sender.send(alice, CMD_ADD_HTLC(amount2, h2, 400144, onion = onion2.onionPacket))
+      sender.send(alice, CMD_ADD_HTLC(amount2, h2, 400144, onion = onion2.packet.serialize))
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
@@ -429,7 +429,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Globals.feeratePerKw.set(fee.feeratePerKw)
       sender.send(bob, fee)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === CannotAffordFees(missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis=72400000L).getMessage)
+      assert(new String(error.data) === CannotAffordFees(missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
