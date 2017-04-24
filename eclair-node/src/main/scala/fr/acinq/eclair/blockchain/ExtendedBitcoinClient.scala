@@ -168,9 +168,9 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
       JString(address) <- client.invoke("getnewaddress")
       JString(wif) <- client.invoke("dumpprivkey", address)
       JString(segwitAddress) <- client.invoke("addwitnessaddress", address)
-      priv = PrivateKey.fromBase58(wif, Base58.Prefix.SecretKeyTestnet)
+      (prefix, raw) = Base58Check.decode(wif)
+      priv = PrivateKey(raw, compressed = true)
       pub = priv.publicKey
-      _ = require(segwitAddress == Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, Crypto.hash160(Script.write(Script.pay2wpkh(priv.publicKey.hash160)))))
       // create a tx that sends money to a P2SH(WPKH) output that matches our private key
       parentFee = Satoshi(250 * 2 * 2 * feeRatePerKw / 1024)
       partialParentTx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount + parentFee, Script.pay2sh(Script.pay2wpkh(pub))) :: Nil, lockTime = 0L)
