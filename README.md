@@ -29,7 +29,7 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ### Configuring Bitcoin Core
 
-Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. This means that on Windows you will need Bitcoin Core 0.14.0.
+Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. This means that on Windows you will need Bitcoin Core 0.14+.
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 ```
