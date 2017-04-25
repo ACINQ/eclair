@@ -50,11 +50,13 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
       log.info(s"handshake completed with ${h.remoteNodeId}")
       origin ! "connected"
       switchboard ! h
-      context unwatch transport
       context become connected(transport)
   }
 
   def connected(transport: ActorRef): Receive = {
+    case Terminated(actor) if actor == transport =>
+      context stop self
+
     case msg => log.warning(s"unexpected message $msg")
   }
 
