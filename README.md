@@ -90,8 +90,8 @@ option                       | description               | default value
 
  method       |  params                                       | description
  -------------|-----------------------------------------------|-----------------------------------------------------------
-  connect     | host, port, pubkey                            | connect to another lightning node through a secure connection
-  open        | host, port, pubkey, fundingSatoshis, pushMsat | opens a channel with another lightning node
+  connect     | host, port, nodeId                            | connect to another lightning node through a secure connection
+  open        | host, port, nodeId, fundingSatoshis, pushMsat | opens a channel with another lightning node
   peers       |                                               | list existing local peers
   channels    |                                               | list existing local channels
   channel     | channelId                                     | retrieve detailed information about a given channel

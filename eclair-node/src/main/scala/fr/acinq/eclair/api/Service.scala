@@ -79,10 +79,10 @@ trait Service extends Logging {
           entity(as[JsonRPCBody]) {
             req =>
               val f_res: Future[AnyRef] = req match {
-                case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(pubkey) :: Nil) =>
-                  (switchboard ? NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
-                case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(pubkey) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>
-                  (switchboard ? NewConnection(PublicKey(pubkey), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong))))).mapTo[String]
+                case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(nodeId) :: Nil) =>
+                  (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
+                case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>
+                  (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong))))).mapTo[String]
                 case JsonRPCBody(_, _, "peers", _) =>
                   (switchboard ? 'peers).mapTo[Iterable[PublicKey]].map(_.map(_.toBin))
                 case JsonRPCBody(_, _, "channels", _) =>
@@ -101,14 +101,14 @@ trait Service extends Logging {
                   getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
-                    "connect (host, port, pubkey): connect to another lightning node through a secure connection",
-                    "open (host, port, pubkey, fundingSatoshi, pushMsat): open a channel with another lightning node",
+                    "connect (host, port, nodeId): connect to another lightning node through a secure connection",
+                    "open (host, port, nodeId, fundingSatoshi, pushMsat): open a channel with another lightning node",
                     "peers: list existing local peers",
                     "channels: list existing local channels",
-                    "channel (channelIdHex): retrieve detailed informations about a given channel",
+                    "channel (channelIdHex): retrieve detailed information about a given channel",
                     "network: list all the nodes announced in network",
                     "receive (amountMsat): generate a payment request for a given amount",
-                    "send (amountMsat, paymentHash, pubkey): send a payment to a lightning node",
+                    "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
                     "close (channelIdHex): close a channel",
                     "close (channelIdHex, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
