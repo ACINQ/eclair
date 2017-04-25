@@ -75,10 +75,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
     case Event(Rebroadcast(_), _) => stay // ignored
 
+    case Event("connected", _) => stay // ignored
+
+    case Event(StateTimeout, d: DisconnectedData) if d.offlineChannels.size == 0 => stay // ignored
+
     case Event(StateTimeout, _) =>
       log.info(s"attempting a reconnect")
       self ! Reconnect
       stay
+
   }
 
   when(INITIALIZING) {
