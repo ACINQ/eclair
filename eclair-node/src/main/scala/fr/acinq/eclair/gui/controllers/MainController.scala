@@ -335,7 +335,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     val copyChannelId = new MenuItem("Copy Channel Id")
     copyChannelId.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.shortChannelId.toString)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.shortChannelId.toHexString)
         case None =>
       }
     })
