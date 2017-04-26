@@ -27,6 +27,7 @@ import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JString
 import org.slf4j.LoggerFactory
 
+import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Promise}
 import scala.util.Try
@@ -151,6 +152,10 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
       nodeParams.announcementsDb.values.collect { case ann: ChannelAnnouncement => router ! ann }
       nodeParams.announcementsDb.values.collect { case ann: NodeAnnouncement => router ! ann }
       nodeParams.announcementsDb.values.collect { case ann: ChannelUpdate => router ! ann }
+      if (nodeParams.channelsDb.values.size > 0) {
+        val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
+        router ! nodeAnn
+      }
     }
   })
 
