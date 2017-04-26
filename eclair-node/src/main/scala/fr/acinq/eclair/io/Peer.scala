@@ -45,15 +45,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   import Peer._
 
-  startWith(DISCONNECTED, DisconnectedData(Nil), if (nodeParams.autoReconnect) Some(3 seconds) else None)
+  startWith(DISCONNECTED, DisconnectedData(Nil))
 
   when(DISCONNECTED, stateTimeout = if (nodeParams.autoReconnect) 60 seconds else null) {
     case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
       val channel = spawnChannel(nodeParams, context.system.deadLetters)
       channel ! INPUT_RESTORED(state)
+      self ! Reconnect
       stay using d.copy(offlineChannels = offlineChannels :+ HotChannel(state.channelId, channel))
 
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels)) =>
+      self ! Reconnect
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
     case Event(Reconnect, _) if address_opt.isDefined =>
