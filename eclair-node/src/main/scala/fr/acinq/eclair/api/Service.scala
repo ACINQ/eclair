@@ -67,10 +67,10 @@ trait Service extends Logging {
     `Cache-Control`(public, `no-store`, `max-age`(0)) ::
     `Access-Control-Allow-Headers`("x-requested-with") :: Nil
 
-  def getChannel(channelIdHex: String): Future[ActorRef] =
+  def getChannel(channelId: String): Future[ActorRef] =
     for {
       channels <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]]
-    } yield channels.get(BinaryData(channelIdHex)).getOrElse(throw new RuntimeException("unknown channel"))
+    } yield channels.get(BinaryData(channelId)).getOrElse(throw new RuntimeException("unknown channel"))
 
   val route =
     respondWithDefaultHeaders(customHeaders) {
