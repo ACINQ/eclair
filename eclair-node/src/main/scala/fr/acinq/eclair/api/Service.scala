@@ -84,33 +84,33 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>
                   (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong))))).mapTo[String]
                 case JsonRPCBody(_, _, "peers", _) =>
-                  (switchboard ? 'peers).mapTo[Iterable[PublicKey]].map(_.map(_.toBin))
+                  (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin))
                 case JsonRPCBody(_, _, "channels", _) =>
                   (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys)
-                case JsonRPCBody(_, _, "channel", JString(channelIdHex) :: Nil) =>
-                  getChannel(channelIdHex).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
+                case JsonRPCBody(_, _, "channel", JString(channelId) :: Nil) =>
+                  getChannel(channelId).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "network", _) =>
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
                 case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: Nil) =>
                   (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write(_))
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
-                case JsonRPCBody(_, _, "close", JString(channelIdHex) :: JString(scriptPubKey) :: Nil) =>
-                  getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
-                case JsonRPCBody(_, _, "close", JString(channelIdHex) :: Nil) =>
-                  getChannel(channelIdHex).flatMap(_ ? CMD_CLOSE(scriptPubKey = None)).mapTo[String]
+                case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
+                  getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
+                case JsonRPCBody(_, _, "close", JString(channelId) :: Nil) =>
+                  getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "connect (host, port, nodeId): connect to another lightning node through a secure connection",
                     "open (host, port, nodeId, fundingSatoshi, pushMsat): open a channel with another lightning node",
                     "peers: list existing local peers",
                     "channels: list existing local channels",
-                    "channel (channelIdHex): retrieve detailed information about a given channel",
+                    "channel (channelId): retrieve detailed information about a given channel",
                     "network: list all the nodes announced in network",
                     "receive (amountMsat): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
-                    "close (channelIdHex): close a channel",
-                    "close (channelIdHex, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
+                    "close (channelId): close a channel",
+                    "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
                 case _ => Future.failed(new RuntimeException("method not found"))
               }
