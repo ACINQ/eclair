@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, LoggingFSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel._
@@ -77,13 +77,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
     case Event("connected", _) => stay // ignored
 
-    case Event(StateTimeout, d: DisconnectedData) if d.offlineChannels.size == 0 => stay // ignored
+    case Event(StateTimeout, d: DisconnectedData) if d.offlineChannels.size == 0 =>
+      log.info(s"reconnect timeout triggered, but peer doesn't have any channels: closing the peer")
+      // NB: there is a possibility of a race with concurrent NewChannel requests because peer do not explicitly acknowledge them
+      // in that case the NewChannel request would simply go to DeadLetters (meaning: ignored)
+      stop(FSM.Normal)
 
     case Event(StateTimeout, _) =>
       log.info(s"attempting a reconnect")
       self ! Reconnect
       stay
-
   }
 
   when(INITIALIZING) {
@@ -212,8 +215,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       if (channels.size == 1) {
         log.info(s"that was the last open channel, closing the connection")
         transport ! PoisonPill
-        // NB: we could terminate the peer, but it would create a race issue with concurrent NewChannel requests that would go to DeadLetters without switchboard being aware
-        // for now we just leave it as-is
       }
       stay using d.copy(channels = channels - channelId)
 
