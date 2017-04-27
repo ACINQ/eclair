@@ -3,13 +3,12 @@ package fr.acinq.eclair.crypto
 import java.math.BigInteger
 import java.nio.ByteOrder
 
+import fr.acinq.eclair.randomBytes
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
 import grizzled.slf4j.Logging
 import org.bouncycastle.crypto.digests.SHA256Digest
 import org.bouncycastle.crypto.macs.HMac
 import org.bouncycastle.crypto.params.KeyParameter
-
-import scala.util.Random
 
 /**
   * see http://noiseprotocol.org/
@@ -295,13 +294,8 @@ object Noise {
   }
 
   object RandomBytes extends ByteStream {
-    val random = Random
 
-    override def nextBytes(length: Int) = {
-      val buffer = new Array[Byte](length)
-      random.nextBytes(buffer)
-      buffer
-    }
+    override def nextBytes(length: Int) = randomBytes(length)
   }
 
   sealed trait HandshakeState

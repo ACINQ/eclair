@@ -1,13 +1,27 @@
 package fr.acinq
 
+import java.security.SecureRandom
+
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, _}
 import scodec.Attempt
 import scodec.bits.BitVector
 
-import scala.util.Random
-
 package object eclair {
+
+  /**
+    * We are using 'new SecureRandom()' instead of 'SecureRandom.getInstanceStrong()' because the latter can hang on Linux
+    * See http://bugs.java.com/view_bug.do?bug_id=6521844 and https://tersesystems.com/2015/12/17/the-right-way-to-use-securerandom/
+    */
+  val secureRandom = new SecureRandom()
+
+  def randomBytes(length: Int): BinaryData = {
+    val buffer = new Array[Byte](length)
+    secureRandom.nextBytes(buffer)
+    buffer
+  }
+
+  def randomKey: PrivateKey = PrivateKey(randomBytes(32), compressed = true)
 
   def toLongId(fundingTxHash: BinaryData, fundingOutputIndex: Int): BinaryData = {
     require(fundingOutputIndex < 65536, "fundingOutputIndex must not be greater than FFFF")
@@ -35,12 +49,6 @@ package object eclair {
   def fromShortId(id: Long): (Int, Int, Int) =
     (((id >> 40) & 0xFFFFFF).toInt, ((id >> 16) & 0xFFFFFF).toInt, (id & 0xFFFF).toInt)
 
-  def randomKey: PrivateKey = PrivateKey({
-    val bin = Array.fill[Byte](32)(0)
-    // TODO: use secure random
-    Random.nextBytes(bin)
-    bin
-  }, compressed = true)
 
   def serializationResult(attempt: Attempt[BitVector]): BinaryData = attempt match {
     case Attempt.Successful(bin) => BinaryData(bin.toByteArray)

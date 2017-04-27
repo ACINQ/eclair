@@ -68,6 +68,10 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   val config = NodeParams.loadConfiguration(new File(datadir))
 
+  logger.info(s"initializing secure random generator")
+  // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
+  secureRandom.nextInt()
+
   implicit lazy val system = ActorSystem(actorSystemName)
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)

@@ -5,6 +5,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
+import fr.acinq.eclair.{secureRandom, randomBytes}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
@@ -134,6 +135,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
     case Event(StateTimeout, ConnectedData(transport, _, _)) =>
+      // no need to use secure random here
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
       transport ! Ping(pongSize, BinaryData("00" * pingSize))
@@ -179,7 +181,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val (channel, localParams) = createChannel(nodeParams, transport, funder = true, c.fundingSatoshis.toLong)
-      val temporaryChannelId = randomTemporaryChannelId
+      val temporaryChannelId = randomBytes(32)
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, Globals.feeratePerKw.get, localParams, transport, remoteInit)
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
@@ -249,7 +251,8 @@ object Peer {
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
     // all secrets are generated from the main seed
-    val keyIndex = Random.nextInt(1000).toLong
+    // TODO: check this
+    val keyIndex = secureRandom.nextInt(1000).toLong
     LocalParams(
       nodeId = nodeParams.privateKey.publicKey,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
@@ -269,9 +272,4 @@ object Peer {
       localFeatures = nodeParams.localFeatures)
   }
 
-  def randomTemporaryChannelId: BinaryData = {
-    val bin = Array.fill[Byte](32)(0)
-    Random.nextBytes(bin)
-    bin
-  }
 }
