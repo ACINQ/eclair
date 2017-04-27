@@ -53,8 +53,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   import ExecutionContext.Implicits.global
 
-  context.system.scheduler.schedule(5 seconds, nodeParams.routerBroadcastInterval, self, 'tick_broadcast)
-  context.system.scheduler.schedule(5 seconds, nodeParams.routerValidateInterval, self, 'tick_validate)
+  setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
+  setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
 
   startWith(NORMAL, Data(Map(), Map(), Map(), Nil, Nil, Nil))
 
@@ -63,7 +63,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event('tick_validate, d) =>
       require(d.awaiting.size == 0)
       var i = 0
-      // we extract a batch of at most 50 channel announcements from the stash
+      // we extract a batch of channel announcements from the stash
       val (channelAnns: Seq[ChannelAnnouncement]@unchecked, otherAnns) = d.stash.partition {
         case _: ChannelAnnouncement =>
           i = i + 1
