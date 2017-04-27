@@ -2,26 +2,17 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.wire.{IncorrectPaymentAmount, UnknownPaymentHash, UpdateAddHtlc}
 
-import scala.util.{Failure, Random, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by PM on 17/06/2016.
   */
 class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
-
-  // see http://bugs.java.com/view_bug.do?bug_id=6521844
-  // val random = SecureRandom.getInstanceStrong
-  val random = new Random()
-
-  def generateR(): BinaryData = {
-    val r = Array.fill[Byte](32)(0)
-    random.nextBytes(r)
-    r
-  }
 
   override def receive: Receive = run(Map())
 
@@ -29,7 +20,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
     case ReceivePayment(amount) =>
       Try {
-        val r = generateR
+        val r = randomBytes(32)
         val h = Crypto.sha256(r)
         (r, h, new PaymentRequest(nodeParams.privateKey.publicKey, amount, h))
       } match {
