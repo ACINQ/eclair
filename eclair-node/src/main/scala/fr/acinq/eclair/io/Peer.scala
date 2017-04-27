@@ -8,13 +8,12 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.router.Router.Rebroadcast
-import fr.acinq.eclair.router.SendRoutingState
+import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, NodeParams}
 
-import scala.util.Random
 import scala.concurrent.duration._
+import scala.util.Random
 
 // @formatter:off
 
@@ -45,7 +44,6 @@ case class PeerRecord(id: PublicKey, address: InetSocketAddress)
 class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
 
   import Peer._
-  import scala.concurrent.ExecutionContext.Implicits.global
 
   startWith(DISCONNECTED, DisconnectedData(Nil), if (nodeParams.autoReconnect) Some(3 seconds) else None)
 
@@ -73,7 +71,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       val h = offlineChannels.collectFirst { case h: HotChannel if h.a == actor => h }.toSeq
       stay using d.copy(offlineChannels = offlineChannels diff h)
 
-    case Event(Rebroadcast(_), _) => stay // ignored
+    case Event(_: Rebroadcast, _) => stay // ignored
 
     case Event("connected", _) => stay // ignored
 
@@ -188,8 +186,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       channel ! msg
       stay using d.copy(channels = channels + (temporaryChannelId -> channel))
 
-    case Event(Rebroadcast(announcements), ConnectedData(transport, _, _)) =>
-      announcements.foreach(transport forward _)
+    case Event(Rebroadcast(announcements, origins), ConnectedData(transport, _, _)) =>
+      // we filter out announcements that we received from this node
+      announcements.filterNot(ann => origins.getOrElse(ann, context.system.deadLetters) == self).foreach(transport forward _)
       stay
 
     case Event(msg: RoutingMessage, _) =>

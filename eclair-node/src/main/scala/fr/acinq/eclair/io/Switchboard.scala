@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.router.Router.Rebroadcast
+import fr.acinq.eclair.router.Rebroadcast
 
 /**
   * Ties network connections to peers.

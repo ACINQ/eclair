@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import java.io.StringWriter
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
+import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -18,9 +18,8 @@ import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
-import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.util.{Success, Try}
 
 // @formatter:off
 
@@ -29,13 +28,15 @@ case class Hop(nodeId: BinaryData, nextNodeId: BinaryData, lastUpdate: ChannelUp
 case class RouteRequest(source: BinaryData, target: BinaryData, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class SendRoutingState(to: ActorRef)
+case class Rebroadcast(ann: Seq[RoutingMessage], origins: Map[RoutingMessage, ActorRef])
 
 case class Data(nodes: Map[BinaryData, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   rebroadcast: Seq[RoutingMessage],
                   stash: Seq[RoutingMessage],
-                  awaiting: Seq[ChannelAnnouncement])
+                  awaiting: Seq[ChannelAnnouncement],
+                  origins: Map[RoutingMessage, ActorRef])
 
 sealed trait State
 case object NORMAL extends State
@@ -56,7 +57,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
 
-  startWith(NORMAL, Data(Map(), Map(), Map(), Nil, Nil, Nil))
+  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty))
 
   when(NORMAL) {
 
@@ -121,7 +122,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   whenUnhandled {
 
-    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _)) =>
+    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _)) =>
       log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
       channels.values.foreach(remote ! _)
       nodes.values.foreach(remote ! _)
@@ -139,7 +140,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay
       } else {
         log.debug(s"stashing $c")
-        stay using d.copy(stash = d.stash :+ c)
+        stay using d.copy(stash = d.stash :+ c, origins = d.origins + (c -> sender))
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
@@ -154,15 +155,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug(s"updated node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeUpdated(n))
         nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
-        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n)
+        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else if (d.channels.values.exists(c => isRelatedTo(c, n))) {
         log.debug(s"added node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeDiscovered(n))
         nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
-        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n)
+        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else if (d.awaiting.exists(c => isRelatedTo(c, n)) || d.stash.collectFirst { case c: ChannelAnnouncement if isRelatedTo(c, n) => c }.isDefined) {
         log.debug(s"stashing $n")
-        stay using d.copy(stash = d.stash :+ n)
+        stay using d.copy(stash = d.stash :+ n, origins = d.origins + (n -> sender))
       } else {
         log.warning(s"ignoring $n (no related channel found)")
         stay
@@ -183,11 +184,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         } else {
           log.debug(s"added/updated $u")
           nodeParams.announcementsDb.put(channelUpdateKey(u.shortChannelId, u.flags), u)
-          stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u)
+          stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
         }
       } else if (d.awaiting.exists(c => c.shortChannelId == u.shortChannelId) || d.stash.collectFirst { case c: ChannelAnnouncement if c.shortChannelId == u.shortChannelId => c }.isDefined) {
         log.debug(s"stashing $u")
-        stay using d.copy(stash = d.stash :+ u)
+        stay using d.copy(stash = d.stash :+ u, origins = d.origins + (u -> sender))
       } else {
         log.warning(s"ignoring announcement $u (unknown channel)")
         stay
@@ -219,11 +220,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event('tick_broadcast, d) =>
       d.rebroadcast match {
-        case Nil => stay
+        case Nil => stay using d.copy(origins = Map.empty)
         case _ =>
           log.info(s"broadcasting ${d.rebroadcast.size} routing messages")
-          context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast)
-          stay using d.copy(rebroadcast = Nil)
+          context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast, d.origins)
+          stay using d.copy(rebroadcast = Nil, origins = Map.empty)
       }
 
     case Event('nodes, d) =>
@@ -266,8 +267,6 @@ object Router {
   // @formatter:on
 
   val MAX_PARALLEL_JSONRPC_REQUESTS = 50
-
-  case class Rebroadcast(ann: Seq[RoutingMessage])
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
