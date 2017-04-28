@@ -396,11 +396,7 @@ object Commitments extends Logging {
         val htlcSigs = sortedHtlcTxs.map(Transactions.sign(_, localPaymentKey))
         val remotePaymentPubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
         // combine the sigs to make signed txes
-        val htlcTxsAndSigs = sortedHtlcTxs
-          .zip(htlcSigs)
-          .zip(commit.htlcSignatures) // this is a list of ((tx, localSig), remoteSig)
-          .map(e => (e._1._1, e._1._2, e._2)) // this is a list of (tx, localSig, remoteSig)
-          .collect {
+        val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
           case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
             require(Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isSuccess, "bad sig")
             HtlcTxAndSigs(htlcTx, localSig, remoteSig)
