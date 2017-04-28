@@ -156,9 +156,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.debug(s"received pong with ${data.length} bytes")
       stay
 
-    case Event(state: HasCommitments, d@ConnectedData(_, _, channels)) =>
+    case Event(state: HasCommitments, d@ConnectedData(transport, _, channels)) =>
       val channel = spawnChannel(nodeParams, context.system.deadLetters)
       channel ! INPUT_RESTORED(state)
+      channel ! INPUT_RECONNECTED(transport)
       stay using d.copy(channels = channels + (state.channelId -> channel))
 
     case Event(err@Error(channelId, reason), ConnectedData(transport, _, channels)) if channelId == CHANNELID_ZERO =>
