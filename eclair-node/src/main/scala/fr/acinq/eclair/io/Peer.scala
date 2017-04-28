@@ -59,8 +59,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       self ! Reconnect
       stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
-    case Event(Reconnect, _) if address_opt.isDefined =>
-      context.parent forward NewConnection(remoteNodeId, address_opt.get, None)
+    case Event(Reconnect, _) =>
+      address_opt match {
+        case Some(address) => context.parent forward NewConnection(remoteNodeId, address, None)
+        case None => {}
+      }
       stay
 
     case Event(HandshakeCompleted(transport, _), DisconnectedData(offlineChannels)) =>
