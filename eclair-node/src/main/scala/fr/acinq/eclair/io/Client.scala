@@ -36,7 +36,6 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
           Some(remoteNodeId),
           connection = connection,
           serializer = LightningMessageSerializer)))
-      connection ! akka.io.Tcp.Register(transport)
       context watch transport
       context become authenticating(transport)
   }

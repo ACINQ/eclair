@@ -30,6 +30,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   import TransportHandler._
 
+  connection ! akka.io.Tcp.Register(self)
+
   // it means we initiate the dialog
   val isWriter = rs.isDefined
 

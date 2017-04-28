@@ -35,13 +35,12 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
       val connection = sender
-      val transport = context.actorOf(Props(
+      context.actorOf(Props(
         new TransportHandler[LightningMessage](
           KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
           None,
           connection = connection,
           serializer = LightningMessageSerializer)))
-      connection ! akka.io.Tcp.Register(transport)
 
     case h: HandshakeCompleted =>
       log.info(s"handshake completed with ${h.remoteNodeId}")
