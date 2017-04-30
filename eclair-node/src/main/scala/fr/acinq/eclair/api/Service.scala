@@ -59,6 +59,8 @@ trait Service extends Logging {
 
   def paymentHandler: ActorRef
 
+  def receivedPayments: ActorRef
+
   def system: ActorSystem
 
   val customHeaders = `Access-Control-Allow-Origin`(*) ::
@@ -93,6 +95,10 @@ trait Service extends Logging {
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
                 case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: Nil) =>
                   (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+
+                case JsonRPCBody(_,_, "status", JString(paymentHash) :: Nil) =>
+                  (receivedPayments ? BinaryData(paymentHash)).mapTo[Option[Long]]
+
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
@@ -108,6 +114,7 @@ trait Service extends Logging {
                     "channel (channelId): retrieve detailed information about a given channel",
                     "network: list all the nodes announced in network",
                     "receive (amountMsat): generate a payment request for a given amount",
+                    "status (paymentHash): check if payment request has been fulfilled",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
