@@ -79,10 +79,11 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
 
   test("recv FundingCreated (fee too low)", Tag("fee_too_low")) { case (bob, alice2bob, bob2alice, bob2blockchain) =>
     within(30 seconds) {
-      alice2bob.expectMsgType[FundingCreated]
+      val fundingCreated = alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=100 localFeeratePerKw=10000")
+      // we check that the error uses the temporary channel id
+      assert(error === Error(fundingCreated.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=100 localFeeratePerKw=10000".getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }
