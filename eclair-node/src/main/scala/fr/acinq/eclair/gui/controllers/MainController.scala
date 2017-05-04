@@ -14,6 +14,7 @@ import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXML
 import javafx.scene.control.TableColumn.CellDataFeatures
 import javafx.scene.control._
+import javafx.scene.image.{Image, ImageView}
 import javafx.scene.input.ContextMenuEvent
 import javafx.scene.layout.{AnchorPane, HBox, StackPane, VBox}
 import javafx.scene.paint.Color
@@ -29,6 +30,8 @@ import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
+
+case class ChannelInfo(val announcement: ChannelAnnouncement, var isNode1Enabled: Boolean = true, var isNode2Enabled: Boolean = true)
 
 /**
   * Created by DPA on 22/09/2016.
@@ -67,12 +70,13 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList: ObservableList[ChannelAnnouncement] = FXCollections.observableArrayList[ChannelAnnouncement]()
+  val networkChannelsList: ObservableList[ChannelInfo] = FXCollections.observableArrayList[ChannelInfo]()
   @FXML var networkChannelsTab: Tab = _
-  @FXML var networkChannelsTable: TableView[ChannelAnnouncement] = _
-  @FXML var networkChannelsIdColumn: TableColumn[ChannelAnnouncement, String] = _
-  @FXML var networkChannelsNode1Column: TableColumn[ChannelAnnouncement, String] = _
-  @FXML var networkChannelsNode2Column: TableColumn[ChannelAnnouncement, String] = _
+  @FXML var networkChannelsTable: TableView[ChannelInfo] = _
+  @FXML var networkChannelsIdColumn: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsNode1Column: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsDirectionsColumn: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsNode2Column: TableColumn[ChannelInfo, String] = _
 
   // payment sent table
   val paymentSentList = FXCollections.observableArrayList[PaymentSent]()
@@ -183,20 +187,49 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
 
     // init all channels
     networkChannelsTable.setItems(networkChannelsList)
-    networkChannelsList.addListener(new ListChangeListener[ChannelAnnouncement] {
-      override def onChanged(c: Change[_ <: ChannelAnnouncement]) = updateTabHeader(networkChannelsTab, "All Channels", networkChannelsList)
+    networkChannelsList.addListener(new ListChangeListener[ChannelInfo] {
+      override def onChanged(c: Change[_ <: ChannelInfo]) = updateTabHeader(networkChannelsTab, "All Channels", networkChannelsList)
     })
-    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.shortChannelId.toHexString)
+    networkChannelsIdColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(pc.getValue.announcement.shortChannelId.toHexString)
     })
-    networkChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.nodeId1.toString)
+    networkChannelsNode1Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(pc.getValue.announcement.nodeId1.toString)
     })
-    networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelAnnouncement, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[ChannelAnnouncement, String]) = new SimpleStringProperty(pc.getValue.nodeId2.toString)
+    networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(pc.getValue.announcement.nodeId2.toString)
     })
-    networkChannelsTable.setRowFactory(new Callback[TableView[ChannelAnnouncement], TableRow[ChannelAnnouncement]]() {
-      override def call(table: TableView[ChannelAnnouncement]): TableRow[ChannelAnnouncement] = setupPeerChannelContextMenu
+    networkChannelsTable.setRowFactory(new Callback[TableView[ChannelInfo], TableRow[ChannelInfo]]() {
+      override def call(table: TableView[ChannelInfo]): TableRow[ChannelInfo] = setupPeerChannelContextMenu
+    })
+    networkChannelsDirectionsColumn.setCellFactory(new Callback[TableColumn[ChannelInfo, String], TableCell[ChannelInfo, String]]() {
+      def call(pn: TableColumn[ChannelInfo, String]) = {
+        new TableCell[ChannelInfo, String]() {
+          val directionImage = new ImageView
+          directionImage.setFitWidth(20)
+          directionImage.setFitHeight(20)
+          override def updateItem(item: String, empty: Boolean): Unit = {
+            super.updateItem(item, empty)
+            if (this.getIndex >= 0 && this.getIndex < networkChannelsList.size) {
+              (networkChannelsList.get(this.getIndex).isNode1Enabled, networkChannelsList.get(this.getIndex).isNode2Enabled) match {
+                case (true, true) =>
+                  directionImage.setImage(new Image("/gui/commons/images/in-out-11.png", false))
+                  setTooltip(new Tooltip("Both Node 1 and Node 2 are enabled"))
+                case (true, false) =>
+                  directionImage.setImage(new Image("/gui/commons/images/in-out-10.png", false))
+                  setTooltip(new Tooltip("Node 1 is enabled, but not Node 2"))
+                case (false, true) =>
+                  directionImage.setImage(new Image("/gui/commons/images/in-out-01.png", false))
+                  setTooltip(new Tooltip("Node 2 is enabled, but not Node 1"))
+                case (false, false) =>
+                  directionImage.setImage(new Image("/gui/commons/images/in-out-00.png", false))
+                  setTooltip(new Tooltip("Neither Node 1 nor Node 2 is enabled"))
+              }
+              setGraphic(directionImage)
+            }
+          }
+        }
+      }
     })
 
     // init payment sent
@@ -329,27 +362,27 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     *
     * @return TableRow the created row
     */
-  private def setupPeerChannelContextMenu(): TableRow[ChannelAnnouncement] = {
-    val row = new TableRow[ChannelAnnouncement]
+  private def setupPeerChannelContextMenu(): TableRow[ChannelInfo] = {
+    val row = new TableRow[ChannelInfo]
     val rowContextMenu = new ContextMenu
     val copyChannelId = new MenuItem("Copy Channel Id")
     copyChannelId.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.shortChannelId.toHexString)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.announcement.shortChannelId.toHexString)
         case None =>
       }
     })
     val copyNode1 = new MenuItem("Copy Node 1")
     copyNode1.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId1.toString)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.announcement.nodeId1.toString)
         case None =>
       }
     })
     val copyNode2 = new MenuItem("Copy Node 2")
     copyNode2.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = Option(row.getItem) match {
-        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.nodeId2.toString)
+        case Some(pc) => ContextMenuUtils.copyToClipboard(pc.announcement.nodeId2.toString)
         case None =>
       }
     })

@@ -59,6 +59,7 @@
                                             <columns>
                                                 <TableColumn fx:id="networkChannelsIdColumn" minWidth="120.0" prefWidth="170.0" maxWidth="300.0" text="Short Channel Id"/>
                                                 <TableColumn fx:id="networkChannelsNode1Column" text="Node 1"/>
+                                                <TableColumn fx:id="networkChannelsDirectionsColumn" minWidth="30.0" prefWidth="30.0" maxWidth="30.0"/>
                                                 <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
                                             </columns>
                                         </TableView>
