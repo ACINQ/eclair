@@ -949,18 +949,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       }
 
     case Event(c@CMD_ADD_HTLC(amountMsat, rHash, expiry, route, downstream_opt, do_commit), d@DATA_NORMAL(commitments, _)) =>
-      log.info(s"we are disconnected so we just include the add in our commitments")
-      Try(Commitments.sendAdd(commitments, c)) match {
-        case Success(Right((commitments1, add))) =>
-          val origin = downstream_opt.map(u => Relayed(sender, u)).getOrElse(Local(sender))
-          relayer ! AddHtlcSucceeded(add, origin)
-          sender ! "ok"
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left((failure, error))) =>
-          relayer ! AddHtlcFailed(c, failure)
-          handleCommandError(sender, error)
-        case Failure(cause) => handleCommandError(sender, cause)
-      }
+      log.info(s"rejecting htlc (disconnected)")
+      relayer ! AddHtlcFailed(c, TemporaryChannelFailure)
+      handleCommandError(sender, ChannelDisabled)
 
     case Event(c@CMD_FULFILL_HTLC(id, r, do_commit), d: DATA_NORMAL) =>
       log.info(s"we are disconnected so we just include the fulfill in our commitments")

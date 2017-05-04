@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import akka.actor.{ActorRef, Cancellable, Props}
+import akka.actor.{ActorRef, Cancellable, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
@@ -92,8 +92,14 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       senders.zip(cmds).foreach {
         case (s, cmd) => s.send(channel, cmd)
       }
-      val oks = senders.map(_.expectMsgType[String])
-      val fulfills = senders.map(_.expectMsgType[UpdateFulfillHtlc](10 seconds))
+      senders.map {
+        case sender =>
+          sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) match {
+            case _: String => sender.expectMsgType[UpdateFulfillHtlc](10 seconds)
+            case Status.Failure(ChannelDisabled) => // expected, since we keep disconnecting the channel
+            case Status.Failure(t) => throw t
+          }
+      }
     }
   }
 

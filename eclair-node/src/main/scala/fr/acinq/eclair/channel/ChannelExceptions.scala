@@ -10,6 +10,7 @@ case object DebugTriggeredException extends ChannelException("debug-mode trigger
 case object ClosingInProgress extends ChannelException("cannot send new htlcs, closing in progress")
 case object ClosingAlreadyInProgress extends ChannelException("closing already in progress")
 case object CannotCloseWithPendingChanges extends ChannelException("cannot close when there are pending changes")
+case object ChannelDisabled extends ChannelException("channel is disabled (offline or closing)")
 case object InvalidFinalScript extends ChannelException("invalid final script")
 case object HtlcTimedout extends ChannelException(s"one or more htlcs timed out")
 case class FeerateTooDifferent(localFeeratePerKw: Long, remoteFeeratePerKw: Long) extends ChannelException(s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")

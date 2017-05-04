@@ -77,9 +77,9 @@ object Commitments extends Logging {
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[(FailureMessage, Throwable), (Commitments, UpdateAddHtlc)] = {
-    if (System.getProperty("failhtlc") == "yes") {
+    /*if (System.getProperty("failhtlc") == "yes") {
       return Left(IncorrectPaymentAmount -> DebugTriggeredException)
-    }
+    }*/
 
     if (cmd.paymentHash.size != 32) {
       return Left(TemporaryChannelFailure -> InvalidPaymentHash)
