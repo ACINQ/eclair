@@ -76,6 +76,10 @@ object Announcements {
 
   def makeFlags(direction: Boolean, disable: Boolean): BinaryData = BitVector.bits(disable :: direction :: Nil).padLeft(16).toByteArray
 
+  def isNode1(flags: BinaryData) = BitVector(flags.data).reverse.get(0)
+
+  def isEnabled(flags: BinaryData) = !BitVector(flags.data).reverse.get(1)
+
   def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
     val isNode1 = LexicographicalOrdering.isLessThan(nodeSecret.publicKey.toBin, remoteNodeId.toBin)
     val flags = makeFlags(direction = isNode1, disable = !enable)
