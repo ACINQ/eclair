@@ -10,7 +10,6 @@ import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.{Globals, Setup}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
@@ -19,8 +18,9 @@ import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Disconnect
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{State => _, _}
-import fr.acinq.eclair.router.{Announcements, AnnouncementsValidationSpec}
+import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{Globals, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -28,7 +28,6 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.compat.Platform
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.sys.process._
@@ -268,7 +267,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // first we find out the short channel id for channel C-D, easiest way is to ask D's register which has only one channel
     sender.send(nodes("D").register, 'shortIds)
     val shortIdCD = sender.expectMsgType[Map[Long, BinaryData]].keys.head
-    val channelUpdateCD = Announcements.makeChannelUpdate(nodes("C").nodeParams.privateKey, nodes("D").nodeParams.privateKey.publicKey, shortIdCD, nodes("D").nodeParams.expiryDeltaBlocks + 1, nodes("D").nodeParams.htlcMinimumMsat, nodes("D").nodeParams.feeBaseMsat, nodes("D").nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+    val channelUpdateCD = Announcements.makeChannelUpdate(nodes("C").nodeParams.privateKey, nodes("D").nodeParams.privateKey.publicKey, shortIdCD, nodes("D").nodeParams.expiryDeltaBlocks + 1, nodes("D").nodeParams.htlcMinimumMsat, nodes("D").nodeParams.feeBaseMsat, nodes("D").nodeParams.feeProportionalMillionth)
     sender.send(nodes("C").relayer, channelUpdateCD)
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
@@ -566,13 +565,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         sender.send(bitcoincli, BitcoinReq("generate", 1))
         sender.expectMsgType[JValue](10 seconds)
       }
-      AnnouncementsValidationSpec.simulateChannel
+      AnnouncementsBatchValidationSpec.simulateChannel
     }
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
     logger.info(s"simulated ${channels.size} channels")
     // then we make the announcements
-    val announcements = channels.map(c => AnnouncementsValidationSpec.makeChannelAnnouncement(c))
+    val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
     announcements.foreach(ann => nodes("A").router ! ann)
     awaitCond({
       sender.send(nodes("D").router, 'channels)

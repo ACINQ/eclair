@@ -18,9 +18,9 @@ import scala.concurrent.{Await, ExecutionContext}
   * Created by PM on 31/05/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class AnnouncementsValidationSpec extends FunSuite {
+class AnnouncementsBatchValidationSpec extends FunSuite {
 
-  import AnnouncementsValidationSpec._
+  import AnnouncementsBatchValidationSpec._
 
   ignore("validate a batch of announcements") {
     import scala.concurrent.ExecutionContext.Implicits.global
@@ -51,7 +51,7 @@ class AnnouncementsValidationSpec extends FunSuite {
 
 }
 
-object AnnouncementsValidationSpec {
+object AnnouncementsBatchValidationSpec {
 
   case class SimulatedChannel(node1Key: PrivateKey, node2Key: PrivateKey, node1FundingKey: PrivateKey, node2FundingKey: PrivateKey, amount: Satoshi, fundingTx: Transaction, fundingOutputIndex: Int)
 

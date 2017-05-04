@@ -6,7 +6,10 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.serializationResult
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, LightningMessageCodecs, NodeAnnouncement}
+import scodec.bits.BitVector
 import shapeless.HNil
+
+import scala.compat.Platform
 
 
 /**
@@ -55,7 +58,7 @@ object Announcements {
     )
   }
 
-  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: (Byte, Byte, Byte), addresses: List[InetSocketAddress], timestamp: Long): NodeAnnouncement = {
+  def makeNodeAnnouncement(nodeSecret: PrivateKey, alias: String, color: (Byte, Byte, Byte), addresses: List[InetSocketAddress], timestamp: Long = Platform.currentTime / 1000): NodeAnnouncement = {
     require(alias.size <= 32)
     val witness = nodeAnnouncementWitnessEncode(timestamp, nodeSecret.publicKey, color, alias, "", addresses)
     val sig = Crypto.encodeSignature(Crypto.sign(witness, nodeSecret)) :+ 1.toByte
@@ -70,8 +73,13 @@ object Announcements {
     )
   }
 
-  def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, timestamp: Long): ChannelUpdate = {
-    val flags = if (LexicographicalOrdering.isLessThan(nodeSecret.publicKey.toBin, remoteNodeId.toBin)) "0000" else "0001"
+
+  def makeFlags(direction: Boolean, disable: Boolean): BinaryData = BitVector.bits(disable :: direction :: Nil).padLeft(16).toByteArray
+
+  def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
+    val isNode1 = LexicographicalOrdering.isLessThan(nodeSecret.publicKey.toBin, remoteNodeId.toBin)
+    val flags = makeFlags(direction = isNode1, disable = !enable)
+    require(flags.size == 2, "flags must be a 2-bytes field")
     val witness = channelUpdateWitnessEncode(shortChannelId, timestamp, flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
     val sig = Crypto.encodeSignature(Crypto.sign(witness, nodeSecret)) :+ 1.toByte
     ChannelUpdate(

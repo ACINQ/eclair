@@ -16,6 +16,7 @@ import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
+import scodec.bits.BitVector
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{ExecutionContext, Future}
@@ -183,6 +184,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           stay
         } else {
           log.debug(s"added/updated $u")
+          context.system.eventStream.publish(ChannelUpdateReceived(u))
           nodeParams.announcementsDb.put(channelUpdateKey(u.shortChannelId, u.flags), u)
           stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
         }
@@ -273,7 +275,7 @@ object Router {
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")
     // the least significant bit tells us if it is node1 or node2
-    if (u.flags.data(1) % 2 == 0) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
+    if (BitVector(u.flags.data).reverse.get(0)) ChannelDesc(u.shortChannelId, channel.nodeId1, channel.nodeId2) else ChannelDesc(u.shortChannelId, channel.nodeId2, channel.nodeId1)
   }
 
   def isRelatedTo(c: ChannelAnnouncement, n: NodeAnnouncement) = n.nodeId == c.nodeId1 || n.nodeId == c.nodeId2

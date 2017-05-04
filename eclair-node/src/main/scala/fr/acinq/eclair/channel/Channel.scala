@@ -12,7 +12,6 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 
-import scala.compat.Platform
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.{Failure, Left, Success, Try}
@@ -116,7 +115,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           d match {
             case DATA_NORMAL(_, Some(shortChannelId)) =>
               context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
-              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
               relayer ! channelUpdate
             case _ => ()
           }
@@ -580,6 +579,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           commitments1
         } else commitments
         val shutdown = Shutdown(d.channelId, commitments.localParams.defaultFinalScriptPubKey)
+        d.shortChannelId.map {
+          case shortChannelId =>
+            // we announce that channel is disabled
+            log.info(s"disabling the channel (closing initiated)")
+            val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
+            router ! channelUpdate
+        }
         (shutdown, commitments2.copy(unackedMessages = commitments2.unackedMessages :+ shutdown))
       }) match {
         case Success((localShutdown, commitments3))
@@ -621,8 +627,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
           import commitments.{localParams, remoteParams}
           val channelAnn = Announcements.makeChannelAnnouncement(localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
-          val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
-          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, localAnnSigs.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, Platform.currentTime / 1000)
+          val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil)
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, localAnnSigs.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
           router ! channelAnn
           router ! nodeAnn
           router ! channelUpdate
@@ -646,6 +652,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) => handleRemoteSpentOther(tx, d)
+
+    case Event(INPUT_DISCONNECTED, DATA_NORMAL(_, Some(shortChannelId))) =>
+      // we announce that channel is disabled
+      log.info(s"disabling the channel (disconnected)")
+      val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
+      router ! channelUpdate
+      goto(OFFLINE)
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
 
@@ -921,6 +934,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
           }
           self ! CMD_SIGN
+          d1.shortChannelId.map {
+            case shortChannelId =>
+              // we re-enable the channel
+              log.info(s"enabling the channel (reconnected)")
+              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
+              router ! channelUpdate
+          }
           goto(NORMAL)
         case _: DATA_SHUTDOWN =>
           self ! CMD_SIGN
