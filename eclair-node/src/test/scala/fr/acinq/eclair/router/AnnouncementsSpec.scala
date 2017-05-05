@@ -1,5 +1,7 @@
 package fr.acinq.eclair.router
 
+import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair._
 import fr.acinq.eclair.router.Announcements._
@@ -12,6 +14,14 @@ import org.scalatest.junit.JUnitRunner
   */
 @RunWith(classOf[JUnitRunner])
 class AnnouncementsSpec extends FunSuite {
+
+  test("check nodeId1/nodeId2 lexical ordering") {
+    val node1 = PublicKey("027710df7a1d7ad02e3572841a829d141d9f56b17de9ea124d2f83ea687b2e0461")
+    val node2 = PublicKey("0306a730778d55deec162a74409e006034a24c46d541c67c6c45f89a2adde3d9b4")
+    // NB: node1 < node2
+    assert(isNode1(node1.toBin, node2.toBin))
+    assert(!isNode1(node2.toBin, node1.toBin))
+  }
 
   test("create valid signed channel announcement") {
     val (node_a, node_b, bitcoin_a, bitcoin_b) = (randomKey, randomKey, randomKey, randomKey)
@@ -32,6 +42,30 @@ class AnnouncementsSpec extends FunSuite {
     val ann = makeChannelUpdate(Alice.nodeParams.privateKey, randomKey.publicKey, 45561, Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth)
     assert(checkSig(ann, Alice.nodeParams.privateKey.publicKey))
     assert(checkSig(ann, randomKey.publicKey) === false)
+  }
+
+  test("check flags") {
+    val node1_priv = PrivateKey("5f447b05d86de82de6b245a65359d22f844ae764e2ae3824ac4ace7d8e1c749b01")
+    val node2_priv = PrivateKey("eff467c5b601fdcc07315933767013002cd0705223d8e526cbb0c1bc75ccb62901")
+    // NB: node1 < node2 (public keys)
+    assert(isNode1(node1_priv.publicKey.toBin, node2_priv.publicKey.toBin))
+    assert(!isNode1(node2_priv.publicKey.toBin, node1_priv.publicKey.toBin))
+    val channelUpdate1 = makeChannelUpdate(node1_priv, node2_priv.publicKey, 0, 0, 0, 0, 0, enable = true)
+    val channelUpdate1_disabled = makeChannelUpdate(node1_priv, node2_priv.publicKey, 0, 0, 0, 0, 0, enable = false)
+    val channelUpdate2 = makeChannelUpdate(node2_priv, node1_priv.publicKey, 0, 0, 0, 0, 0, enable = true)
+    val channelUpdate2_disabled = makeChannelUpdate(node2_priv, node1_priv.publicKey, 0, 0, 0, 0, 0, enable = false)
+    assert(channelUpdate1.flags == BinaryData("0000")) // ....00
+    assert(channelUpdate1_disabled.flags == BinaryData("0002")) // ....10
+    assert(channelUpdate2.flags == BinaryData("0001")) // ....01
+    assert(channelUpdate2_disabled.flags == BinaryData("0003")) // ....11
+    assert(isNode1(channelUpdate1.flags))
+    assert(isNode1(channelUpdate1_disabled.flags))
+    assert(!isNode1(channelUpdate2.flags))
+    assert(!isNode1(channelUpdate2_disabled.flags))
+    assert(isEnabled(channelUpdate1.flags))
+    assert(!isEnabled(channelUpdate1_disabled.flags))
+    assert(isEnabled(channelUpdate2.flags))
+    assert(!isEnabled(channelUpdate2_disabled.flags))
   }
 
 }
