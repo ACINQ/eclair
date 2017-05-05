@@ -4,10 +4,11 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-SNAPSHOT</version>
+    <version>0.2-modules-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
+        <module>eclair-core</module>
         <module>eclair-node</module>
     </modules>
 

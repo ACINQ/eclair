@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-SNAPSHOT</version>
+        <version>0.2-modules-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-node_2.11</artifactId>
@@ -24,27 +24,6 @@
                         <goals>
                             <goal>revision</goal>
                         </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>com.googlecode.maven-download-plugin</groupId>
-                <artifactId>download-maven-plugin</artifactId>
-                <version>1.3.0</version>
-                <executions>
-                    <execution>
-                        <id>download-bitcoind</id>
-                        <phase>generate-test-resources</phase>
-                        <goals>
-                            <goal>wget</goal>
-                        </goals>
-                        <configuration>
-                            <url>${bitcoind.url}</url>
-                            <unpack>true</unpack>
-                            <outputDirectory>${project.build.directory}</outputDirectory>
-                            <md5>${bitcoind.md5}</md5>
-                            <sha1>${bitcoind.sha1}</sha1>
-                        </configuration>
                     </execution>
                 </executions>
             </plugin>
@@ -116,141 +95,11 @@
         </plugins>
     </build>
 
-    <profiles>
-        <profile>
-            <id>default</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-x86_64-linux-gnu.tar.gz</bitcoind.url>
-                <bitcoind.md5>c811c157d4d618f7d7f4b9f24834551c</bitcoind.md5>
-                <bitcoind.sha1>3ab7e537bd00bf35e6a78fca108d0d886f8289c1</bitcoind.sha1>
-            </properties>
-        </profile>
-        <profile>
-            <id>Windows</id>
-            <activation>
-                <os>
-                    <family>Windows</family>
-                </os>
-            </activation>
-            <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-win64.zip</bitcoind.url>
-                <bitcoind.md5>e84bc3a81ad3d1776299419eb7a04935</bitcoind.md5>
-                <bitcoind.sha1>d2e64fcabf6f85d56d64a52c76e007b6defc32ef</bitcoind.sha1>
-            </properties>
-        </profile>
-    </profiles>
-
     <dependencies>
-        <!-- AKKA -->
         <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-actor_${scala.version.short}</artifactId>
-            <version>${akka.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-slf4j_${scala.version.short}</artifactId>
-            <version>${akka.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.3</version>
-        </dependency>
-        <!-- JSON -->
-        <dependency>
-            <groupId>org.json4s</groupId>
-            <artifactId>json4s-jackson_${scala.version.short}</artifactId>
-            <version>3.5.0</version>
-        </dependency>
-        <dependency>
-            <groupId>de.heikoseeberger</groupId>
-            <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.11.0</version>
-        </dependency>
-        <!-- BITCOIN -->
-        <dependency>
-            <groupId>fr.acinq</groupId>
-            <artifactId>bitcoin-lib_${scala.version.short}</artifactId>
-            <version>${bitcoinlib.version}</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>com.google.protobuf</groupId>
-                    <artifactId>protobuf-java</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>org.zeromq</groupId>
-            <artifactId>jeromq</artifactId>
-            <version>0.4.0</version>
-        </dependency>
-        <!-- SERIALIZATION -->
-        <dependency>
-            <groupId>org.scodec</groupId>
-            <artifactId>scodec-core_${scala.version.short}</artifactId>
-            <version>1.10.3</version>
-        </dependency>
-        <!-- LOGGING -->
-        <dependency>
-            <groupId>org.clapper</groupId>
-            <artifactId>grizzled-slf4j_${scala.version.short}</artifactId>
-            <version>1.3.0</version>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.1.3</version>
-        </dependency>
-        <dependency>
-            <!--conditional logging -->
-            <groupId>janino</groupId>
-            <artifactId>janino</artifactId>
-            <version>2.5.10</version>
-        </dependency>
-        <!-- OTHER -->
-        <dependency>
-            <groupId>org.jgrapht</groupId>
-            <artifactId>jgrapht-core</artifactId>
-            <version>1.0.1</version>
-        </dependency>
-        <dependency>
-            <groupId>org.jgrapht</groupId>
-            <artifactId>jgrapht-ext</artifactId>
-            <version>1.0.1</version>
-            <exclusions>
-                <exclusion>
-                    <groupId>org.tinyjee.jgraphx</groupId>
-                    <artifactId>jgraphx</artifactId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-        <dependency>
-            <groupId>com.github.scopt</groupId>
-            <artifactId>scopt_${scala.version.short}</artifactId>
-            <version>3.5.0</version>
-        </dependency>
-        <dependency>
-            <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
-            <groupId>com.google.code.findbugs</groupId>
-            <artifactId>jsr305</artifactId>
-            <version>3.0.1</version>
-        </dependency>
-        <!-- TESTS -->
-        <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-testkit_${scala.version.short}</artifactId>
-            <version>${akka.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <version>18.0</version>
-            <scope>test</scope>
+            <groupId>fr.acinq.eclair</groupId>
+            <artifactId>eclair-core_${scala.version.short}</artifactId>
+            <version>${project.version}</version>
         </dependency>
     </dependencies>
 </project>

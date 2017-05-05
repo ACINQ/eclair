@@ -55,7 +55,7 @@ object NodeParams {
     * Order of precedence for the configuration parameters:
     * 1) Java environment variables (-D...)
     * 2) Configuration file eclair.conf
-    * 3) default values in application.conf
+    * 3) default values in reference.conf
     */
   def loadConfiguration(datadir: File) =
     ConfigFactory.parseProperties(System.getProperties)
