@@ -99,10 +99,6 @@ object Announcements {
 
   def makeFlags(isNode1: Boolean, enable: Boolean): BinaryData = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(16).toByteArray
 
-  def isNode1(flags: BinaryData) = BitVector(flags.data).reverse.get(0)
-
-  def isEnabled(flags: BinaryData) = !BitVector(flags.data).reverse.get(1)
-
   def makeChannelUpdate(nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
     val flags = makeFlags(isNode1 = isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), enable = enable)
     require(flags.size == 2, "flags must be a 2-bytes field")
