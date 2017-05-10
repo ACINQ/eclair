@@ -17,6 +17,7 @@ case object InvalidCloseSignature extends ChannelException("cannot verify their 
 case object InvalidCommitmentSignature extends ChannelException("invalid commitment signature")
 case class ForcedLocalCommit(reason: String) extends ChannelException(s"forced local commit: reason")
 case class UnexpectedHtlcId(expected: Long, actual: Long) extends ChannelException(s"unexpected htlc id: expected=$expected actual=$actual")
+case object InvalidPaymentHash extends ChannelException("invalid payment hash")
 case class ExpiryTooSmall(minimum: Long, actual: Long, blockCount: Long) extends ChannelException(s"expiry too small: required=$minimum actual=$actual blockCount=$blockCount")
 case class ExpiryCannotBeInThePast(expiry: Long, blockCount: Long) extends ChannelException(s"expiry can't be in the past: expiry=$expiry blockCount=$blockCount")
 case class HtlcValueTooSmall(minimum: Long, actual: Long) extends ChannelException(s"htlc value too small: mininmum=$minimum actual=$actual")
