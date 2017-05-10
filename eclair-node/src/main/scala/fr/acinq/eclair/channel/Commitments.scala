@@ -81,6 +81,10 @@ object Commitments extends Logging {
       return Left(IncorrectPaymentAmount -> DebugTriggeredException)
     }
 
+    if (cmd.paymentHash.size != 32) {
+      return Left(TemporaryChannelFailure -> InvalidPaymentHash)
+    }
+
     val blockCount = Globals.blockCount.get()
     if (cmd.expiry <= blockCount) {
       return Left(FinalExpiryTooSoon -> ExpiryCannotBeInThePast(cmd.expiry, blockCount))
@@ -129,6 +133,10 @@ object Commitments extends Logging {
 
         if (add.id != commitments.remoteNextHtlcId) {
           throw UnexpectedHtlcId(expected = commitments.remoteNextHtlcId, actual = add.id)
+        }
+
+        if (add.paymentHash.size != 32) {
+          throw InvalidPaymentHash
         }
 
         val blockCount = Globals.blockCount.get()
