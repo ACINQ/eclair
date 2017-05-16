@@ -195,6 +195,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
   }
 
+<<<<<<< HEAD
   test("fail to relay an htlc-add when expiry is too soon") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
@@ -217,6 +218,8 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
   }
 
+=======
+>>>>>>> implemented all failures as per lightningnetwork/lightning-rfc/pull/167
   test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
