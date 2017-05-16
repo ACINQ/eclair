@@ -1,9 +1,9 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.Status.Failure
-import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import akka.actor.{ActorRef, FSM, LoggingFSM, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
@@ -49,8 +49,10 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, attempts)) =>
+      log.info(s"route found: attempt=$attempts/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")}")
       val firstHop = hops.head
-      val (cmd, sharedSecrets) = buildCommand(c.amountMsat, c.paymentHash, hops, Globals.blockCount.get().toInt)
+      val finalExpiry = Globals.blockCount.get().toInt + defaultHtlcExpiry
+      val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, attempts + 1, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
@@ -133,33 +135,30 @@ object PaymentLifecycle {
   def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
 
   def buildOnion(nodes: Seq[BinaryData], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
-    require(nodes.size == payloads.size + 1, s"count mismatch: there should be one less payload than nodes (nodes=${nodes.size} payloads=${payloads.size})")
-
-    val pubkeys = nodes.map(PublicKey(_))
-
+    require(nodes.size == payloads.size)
     val sessionKey = randomKey
-
+    val pubkeys = nodes.map(PublicKey(_))
     val payloadsbin: Seq[BinaryData] = payloads
       .map(LightningMessageCodecs.perHopPayloadCodec.encode(_))
       .map {
         case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
-      } :+ BinaryData("00" * Sphinx.PayloadLength)
-
+      }
     Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, associatedData)
   }
 
   /**
     *
     * @param finalAmountMsat the final htlc amount in millisatoshis
+    * @param finalExpiry the final htlc expiry in number of blocks
     * @param hops            the hops as computed by the router
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
     *         - firstAmountMsat is the amount for the first htlc in the route
     *         - firstExpiry is the cltv expiry for the first htlc in the route
     *         - a sequence of payloads that will be used to build the onion
     */
-  def buildRoute(finalAmountMsat: Long, hops: Seq[Hop], currentBlockCount: Int): (Long, Int, Seq[PerHopPayload]) =
-    hops.reverse.foldLeft((finalAmountMsat, currentBlockCount + defaultHtlcExpiry, Seq.empty[PerHopPayload])) {
+  def buildPayloads(finalAmountMsat: Long, finalExpiry: Int, hops: Seq[Hop]): (Long, Int, Seq[PerHopPayload]) =
+    hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(0L, finalAmountMsat, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
         val feeMsat = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
         val expiryDelta = hop.lastUpdate.cltvExpiryDelta
@@ -169,8 +168,8 @@ object PaymentLifecycle {
   // TODO: set correct initial expiry
   val defaultHtlcExpiry = 10
 
-  def buildCommand(finalAmountMsat: Long, paymentHash: BinaryData, hops: Seq[Hop], currentBlockCount: Int): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
-    val (firstAmountMsat, firstExpiry, payloads) = buildRoute(finalAmountMsat, hops.drop(1), currentBlockCount)
+  def buildCommand(finalAmountMsat: Long, finalExpiry: Int, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
+    val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
     val onion = buildOnion(nodes, payloads, paymentHash)

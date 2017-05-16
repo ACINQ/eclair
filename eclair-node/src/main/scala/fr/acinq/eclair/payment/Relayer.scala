@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain.WatchEventSpent
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ParsedPacket
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
@@ -21,7 +22,7 @@ case class Local(sender: ActorRef) extends Origin
 case class Relayed(upstream: ActorRef, htlcIn: UpdateAddHtlc) extends Origin
 
 case class AddHtlcSucceeded(add: UpdateAddHtlc, origin: Origin)
-case class AddHtlcFailed(add: CMD_ADD_HTLC, failure: FailureMessage)
+case class AddHtlcFailed(add: CMD_ADD_HTLC, error: ChannelException)
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
 case class ForwardFail(fail: UpdateFailHtlc)
@@ -73,24 +74,35 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         .map {
           case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextPacket, sharedSecret)
         } match {
-        case Success((_, nextPacket, _)) if nextPacket.isLastPacket =>
+        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) if nextPacket.isLastPacket =>
           log.info(s"looks like we are the final recipient of htlc #${add.id}")
-          paymentHandler forward add
+          perHopPayload match {
+            case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
+              sender ! CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true)
+            case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.expiry =>
+              sender ! CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.expiry)), commit = true)
+            case _  if add.expiry < Globals.blockCount.get() + 3 => // TODO: check hardcoded value
+              sender ! CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true)
+            case _ =>
+              paymentHandler forward add
+          }
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) =>
           shortId2Channel(channels, shortIds, perHopPayload.channel_id) match {
             case Some(downstream) =>
-              val channelUpdate = channelUpdates.get(perHopPayload.channel_id)
-              channelUpdate match {
+              val channelUpdate_opt = channelUpdates.get(perHopPayload.channel_id)
+              channelUpdate_opt match {
                 case None =>
                   // TODO: clarify what we're supposed to to in the specs
-                  sender ! CMD_FAIL_HTLC(add.id, Right(TemporaryChannelFailure), commit = true)
+                  sender ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true)
+                case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
+                  sender ! CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true)
                 case Some(channelUpdate) if add.amountMsat < channelUpdate.htlcMinimumMsat =>
                   sender ! CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true)
                 case Some(channelUpdate) if add.expiry != perHopPayload.outgoing_cltv_value + channelUpdate.cltvExpiryDelta =>
                   sender ! CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.expiry, channelUpdate)), commit = true)
-                case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 =>
+                /*case Some(_) if add.expiry < Globals.blockCount.get() + 3 =>
                   // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
-                  sender ! CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true)
+                  sender ! CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true)*/
                 case _ =>
                   log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
                   downstream forward CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket.serialize, upstream_opt = Some(add), commit = true)
@@ -115,9 +127,25 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       }
       context become main(channels, shortIds, bindings + (downstream -> origin), channelUpdates)
 
-    case AddHtlcFailed(CMD_ADD_HTLC(_, _, _, _, Some(updateAddHtlc), _), failure) if channels.contains(updateAddHtlc.channelId) =>
+    case AddHtlcFailed(CMD_ADD_HTLC(_, _, _, _, Some(updateAddHtlc), _), error) if channels.contains(updateAddHtlc.channelId) =>
       val upstream = channels(updateAddHtlc.channelId)
-      upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(failure), commit = true)
+      val channelUpdate_opt = for {
+        channelId <- channels.map(_.swap).get(sender)
+        shortId <- shortIds.map(_.swap).get(channelId)
+        update <- channelUpdates.get(shortId)
+      } yield update
+      channelUpdate_opt match {
+        case None =>
+          // TODO: clarify what we're supposed to to in the specs
+          sender ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(TemporaryNodeFailure), commit = true)
+        case Some(channelUpdate) =>
+          val failure = error match {
+            case _: ExpiryCannotBeInThePast => ExpiryTooSoon(channelUpdate)
+            case _: HtlcValueTooSmall => PermanentChannelFailure
+            case _ => TemporaryChannelFailure(channelUpdate)
+          }
+          upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(failure), commit = true)
+      }
 
     case ForwardFulfill(fulfill) =>
       bindings.find(b => b._1.channelId == fulfill.channelId && b._1.id == fulfill.id) match {

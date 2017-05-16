@@ -5,9 +5,10 @@ import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals
+import fr.acinq.eclair.channel.ChannelUnavailable
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.{BaseRouterSpec, RouteNotFound}
-import fr.acinq.eclair.wire.{TemporaryChannelFailure, UpdateFailHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{TemporaryChannelFailure, TemporaryNodeFailure, UpdateFailHtlc, UpdateFulfillHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -49,7 +50,7 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
     val WaitingForComplete(_, c, cmd, _, sharedSecrets, _, _, _) = paymentFSM.stateData
 
-    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets(0)._1, TemporaryChannelFailure)))
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, Sphinx.createErrorPacket(sharedSecrets.last._1, TemporaryNodeFailure)))
 
     sender.expectMsgType[PaymentFailed]
   }

@@ -10,7 +10,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, FinalExpiryTooSoon, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryChannelFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, ExpiryTooSoon, PermanentChannelFailure, RevokeAndAck, Shutdown, TemporaryChannelFailure, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.Tag
@@ -106,8 +106,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
       sender.send(alice, add)
-      sender.expectMsg(Failure(ExpiryCannotBeInThePast(300000, 400000)))
-      relayer.expectMsg(AddHtlcFailed(add, FinalExpiryTooSoon))
+      val error = ExpiryCannotBeInThePast(300000, 400000)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -117,8 +118,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(50, "11" * 32, 400144)
       sender.send(alice, add)
-      sender.expectMsg(Failure(HtlcValueTooSmall(1000, 50)))
-      relayer.expectMsg(AddHtlcFailed(add, PermanentChannelFailure))
+      val error = HtlcValueTooSmall(1000, 50)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -128,8 +130,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(Int.MaxValue, "11" * 32, 400144)
       sender.send(alice, add)
-      sender.expectMsg(Failure(InsufficientFunds(amountMsat = Int.MaxValue, missingSatoshis = 1376443, reserveSatoshis = 20000, feesSatoshis = 8960)))
-      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
+      val error = InsufficientFunds(amountMsat = Int.MaxValue, missingSatoshis = 1376443, reserveSatoshis = 20000, feesSatoshis = 8960)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -151,8 +154,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[UpdateAddHtlc]
       val add = CMD_ADD_HTLC(1000000, "44" * 32, 400144)
       sender.send(alice, add)
-      sender.expectMsg(Failure(InsufficientFunds(amountMsat = 1000000, missingSatoshis = 1000, reserveSatoshis = 20000, feesSatoshis = 12400)))
-      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
+      val error = InsufficientFunds(amountMsat = 1000000, missingSatoshis = 1000, reserveSatoshis = 20000, feesSatoshis = 12400)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -170,8 +174,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[UpdateAddHtlc]
       val add = CMD_ADD_HTLC(500000000, "33" * 32, 400144)
       sender.send(alice, add)
-      sender.expectMsg(Failure(InsufficientFunds(amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400)))
-      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
+      val error = InsufficientFunds(amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -181,8 +186,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(151000000, "11" * 32, 400144)
       sender.send(bob, add)
-      sender.expectMsg(Failure(HtlcValueTooHighInFlight(maximum = 150000000, actual = 151000000)))
-      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
+      val error = HtlcValueTooHighInFlight(maximum = 150000000, actual = 151000000)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       bob2alice.expectNoMsg(200 millis)
     }
   }
@@ -199,8 +205,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       }
       val add = CMD_ADD_HTLC(10000000, "33" * 32, 400144)
       sender.send(alice, add)
-      sender.expectMsg(Failure(TooManyAcceptedHtlcs(maximum = 30)))
-      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
+      val error = TooManyAcceptedHtlcs(maximum = 30)
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
       alice2bob.expectNoMsg(200 millis)
     }
   }

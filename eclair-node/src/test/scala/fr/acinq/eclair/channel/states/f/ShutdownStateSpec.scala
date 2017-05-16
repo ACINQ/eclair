@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.PaymentLifecycle
+import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -33,8 +34,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val r1: BinaryData = "11" * 32
       val h1: BinaryData = Crypto.sha256(r1)
       val amount1 = 300000000
-      val onion1 = PaymentLifecycle.buildOnion(TestConstants.Bob.nodeParams.privateKey.publicKey :: Nil, Nil, h1)
-      sender.send(alice, CMD_ADD_HTLC(amount1, h1, 400144, onion = onion1.packet.serialize))
+      val expiry1 = 400144
+      val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey.toBin, null) :: Nil)._1.copy(commit = false)
+      sender.send(alice, cmd1)
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
@@ -43,8 +45,9 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val r2: BinaryData = "22" * 32
       val h2: BinaryData = Crypto.sha256(r2)
       val amount2 = 200000000
-      val onion2 = PaymentLifecycle.buildOnion(TestConstants.Bob.nodeParams.privateKey.publicKey :: Nil, Nil, h2)
-      sender.send(alice, CMD_ADD_HTLC(amount2, h2, 400144, onion = onion2.packet.serialize))
+      val expiry2 = 400144
+      val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey.toBin, null) :: Nil)._1.copy(commit = false)
+      sender.send(alice, cmd2)
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
