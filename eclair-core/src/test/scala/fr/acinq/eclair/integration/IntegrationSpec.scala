@@ -115,7 +115,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("starting eclair nodes") {
     import collection.JavaConversions._
-    val commonConfig = ConfigFactory.parseMap(Map("eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second"))
+    val commonConfig = ConfigFactory.parseMap(Map("eclair.local-features" -> "0a", "eclair.bitcoind.port" -> 28333, "eclair.bitcoind.rpcport" -> 28332, "eclair.bitcoind.zmq" -> "tcp://127.0.0.1:28334", "eclair.router-broadcast-interval" -> "2 second"))
     instantiateEclairNode("A", ConfigFactory.parseMap(Map("eclair.node-alias" -> "A", "eclair.server.port" -> 29730, "eclair.api.port" -> 28080)).withFallback(commonConfig))
     instantiateEclairNode("B", ConfigFactory.parseMap(Map("eclair.node-alias" -> "B", "eclair.server.port" -> 29731, "eclair.api.port" -> 28081)).withFallback(commonConfig))
     instantiateEclairNode("C", ConfigFactory.parseMap(Map("eclair.node-alias" -> "C", "eclair.server.port" -> 29732, "eclair.api.port" -> 28082)).withFallback(commonConfig))

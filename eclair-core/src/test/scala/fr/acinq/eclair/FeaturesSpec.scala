@@ -1,5 +1,8 @@
 package fr.acinq.eclair
 
+import java.nio.ByteOrder
+
+import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.Features._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -10,26 +13,23 @@ import org.scalatest.junit.JUnitRunner
   */
 @RunWith(classOf[JUnitRunner])
 class FeaturesSpec extends FunSuite {
-
   test("'channel_public' feature") {
-    assert(isSet("", CHANNELS_PUBLIC_BIT) == false)
-    assert(isSet("00", CHANNELS_PUBLIC_BIT) == false)
-    assert(isSet("01", CHANNELS_PUBLIC_BIT) == true)
-    assert(isSet("a602", CHANNELS_PUBLIC_BIT) == false)
+    assert(mustDisconnect("00", "03"))
   }
 
   test("'initial_routing_sync' feature") {
-    assert(isSet("", INITIAL_ROUTING_SYNC_BIT) == false)
-    assert(isSet("00", INITIAL_ROUTING_SYNC_BIT) == false)
-    assert(isSet("04", INITIAL_ROUTING_SYNC_BIT) == true)
-    assert(isSet("05", INITIAL_ROUTING_SYNC_BIT) == true)
+    assert(initialRoutingSync("08"))
   }
 
   test("features compatibility") {
-    for (i <- 0 until 16) assert(areSupported(Array[Byte](i.toByte)) == true)
+    val foo = Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_OPTIONAL | 1L << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)
+    assert(areSupported(Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
+    assert(areSupported(Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_MANDATORY, ByteOrder.BIG_ENDIAN)))
+    assert(!areSupported(Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_MANDATORY | 1L << CHANNELS_PUBLIC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
+    assert(!areSupported(Protocol.writeUInt64(1L << INITIAL_ROUTING_SYNC_BIT_MANDATORY, ByteOrder.BIG_ENDIAN)))
+    assert(areSupported(Protocol.writeUInt64(1l << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
     assert(areSupported("14") == false)
     assert(areSupported("0141") == false)
-    assert(areSupported("02af") == true)
   }
 
 }

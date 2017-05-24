@@ -7,7 +7,6 @@ import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.Features.CHANNELS_PUBLIC_BIT
 import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Features, Globals, NodeParams}
@@ -141,9 +140,6 @@ object Helpers {
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
-
-    def announceChannel(localLocalFeatures: BinaryData, remoteLocalFeature: BinaryData): Boolean =
-      Features.isSet(localLocalFeatures, CHANNELS_PUBLIC_BIT) && Features.isSet(remoteLocalFeature, CHANNELS_PUBLIC_BIT)
 
     /**
       *

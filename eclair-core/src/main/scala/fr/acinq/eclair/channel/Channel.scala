@@ -385,7 +385,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       // this clock will be used to detect htlc timeouts
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       context.system.eventStream.subscribe(self, classOf[CurrentFeerate])
-      if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures)) {
+      if (Features.announceChannels(d.commitments.localParams.localFeatures) && Features.announceChannels(d.commitments.remoteParams.localFeatures)) {
         // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
         blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
       }
@@ -624,7 +624,10 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
       goto(NORMAL) using d.copy(commitments = d.commitments.copy(unackedMessages = d.commitments.unackedMessages :+ annSignatures))
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d@DATA_NORMAL(commitments, None)) if Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) =>
+    case Event(remoteAnnSigs: AnnouncementSignatures, d@DATA_NORMAL(commitments, None)) if Features.announceChannels(d.commitments.localParams.localFeatures) && Features.announceChannels(d.commitments.remoteParams.localFeatures) =>
+      // announce channels only if we want to and our peer too
+      // we would already have closed the connection if we require channels to be announced (even feature bit) but our
+      // peer does not want channels to be announced
       d.commitments.unackedMessages.collectFirst({ case ann: AnnouncementSignatures => ann }) match {
         case Some(localAnnSigs) =>
           require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
@@ -933,7 +936,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         case _: DATA_WAIT_FOR_FUNDING_LOCKED => goto(WAIT_FOR_FUNDING_LOCKED)
         case d1: DATA_NORMAL =>
           // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-          if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) && d1.shortChannelId.isEmpty) {
+          if (Features.announceChannels(d.commitments.localParams.localFeatures) && d1.shortChannelId.isEmpty) {
             // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
             blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
           }

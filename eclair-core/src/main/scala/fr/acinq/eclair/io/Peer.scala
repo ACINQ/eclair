@@ -99,9 +99,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       // we store the ip upon successful connection
       address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
       import fr.acinq.eclair.Features._
-      log.info(s"$remoteNodeId has features: channelPublic=${Features.isSet(remoteInit.localFeatures, CHANNELS_PUBLIC_BIT)} initialRoutingSync=${Features.isSet(remoteInit.localFeatures, INITIAL_ROUTING_SYNC_BIT)}")
+      log.info(s"$remoteNodeId has features: channelPublic=${Features.announceChannels(remoteInit.localFeatures)} initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
-        if (Features.isSet(remoteInit.localFeatures, INITIAL_ROUTING_SYNC_BIT)) {
+        if (Features.initialRoutingSync(remoteInit.localFeatures)) {
           router ! SendRoutingState(transport)
         }
         // let's bring existing/requested channels online
