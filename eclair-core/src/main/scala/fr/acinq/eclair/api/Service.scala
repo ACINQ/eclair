@@ -47,7 +47,7 @@ trait Service extends Logging {
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
-  import Json4sSupport.{json4sMarshaller, json4sUnmarshaller}
+  import Json4sSupport.{marshaller, unmarshaller}
 
   def switchboard: ActorRef
 
