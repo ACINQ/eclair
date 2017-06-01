@@ -25,7 +25,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
 
   def receive() = {
     case Bound(localAddress) =>
-      bound.map(_.success())
+      bound.map(_.success(Unit))
       log.info(s"bound on $localAddress")
 
     case CommandFailed(_: Bind) =>

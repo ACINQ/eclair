@@ -186,7 +186,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
         import akka.pattern.after
 
         import scala.concurrent.duration._
-        after(3 seconds, context.system.scheduler)(Future.successful()).map(x => publish(tx, isRetry = true))
+        after(3 seconds, context.system.scheduler)(Future.successful(Unit)).map(x => publish(tx, isRetry = true))
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
     }
   }

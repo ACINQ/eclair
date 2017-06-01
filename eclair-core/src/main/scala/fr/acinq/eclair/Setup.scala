@@ -7,10 +7,6 @@ import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
-import ch.qos.logback.classic.encoder.PatternLayoutEncoder
-import ch.qos.logback.classic.spi.ILoggingEvent
-import ch.qos.logback.classic.{Logger, LoggerContext}
-import ch.qos.logback.core.FileAppender
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.Service
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
@@ -23,7 +19,6 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JString
-import org.slf4j.LoggerFactory
 
 import scala.compat.Platform
 import scala.concurrent.duration._
@@ -34,8 +29,6 @@ import scala.util.Try
   * Created by PM on 25/01/2016.
   */
 class Setup(datadir: String, actorSystemName: String = "default") extends Logging {
-
-  LogSetup.logTo(datadir)
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -137,23 +130,6 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   })
 
   def boostrap: Unit = tasks.start()
-}
-
-object LogSetup {
-  def logTo(datadir: String) = {
-    val lc = LoggerFactory.getILoggerFactory().asInstanceOf[LoggerContext]
-    val ple = new PatternLayoutEncoder()
-    ple.setPattern("%d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n")
-    ple.setContext(lc)
-    ple.start()
-    val fileAppender = new FileAppender[ILoggingEvent]()
-    fileAppender.setFile(new File(datadir, "eclair.log").getPath)
-    fileAppender.setEncoder(ple)
-    fileAppender.setContext(lc)
-    fileAppender.start()
-    val logger = LoggerFactory.getLogger("ROOT").asInstanceOf[Logger]
-    logger.addAppender(fileAppender)
-  }
 }
 
 case class TCPBindException(port: Int) extends RuntimeException

@@ -22,8 +22,12 @@ object JavafxBoot extends App with Logging {
 
   try {
     parser.parse(args, CmdLineConfig()) match {
-      case Some(config) if config.headless => new Setup(config.datadir.getAbsolutePath).boostrap
-      case Some(config) => LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(config.datadir.getAbsolutePath))
+      case Some(config) if config.headless =>
+        LogSetup.logTo(config.datadir)
+        new Setup(config.datadir.getAbsolutePath).boostrap
+      case Some(config) =>
+        LogSetup.logTo(config.datadir)
+        LauncherImpl.launchApplication(classOf[FxApp], classOf[FxPreloader], Array(config.datadir.getAbsolutePath))
       case None => System.exit(0)
     }
   } catch {

@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory
   * Created by PM on 01/06/2017.
   */
 object LogSetup {
-  def logTo(datadir: String) = {
+  def logTo(datadir: File) = {
     val lc = LoggerFactory.getILoggerFactory().asInstanceOf[LoggerContext]
     val ple = new PatternLayoutEncoder()
     ple.setPattern("%d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n")

@@ -18,7 +18,6 @@
             <plugin>
                 <groupId>pl.project13.maven</groupId>
                 <artifactId>git-commit-id-plugin</artifactId>
-                <version>2.1.13</version>
                 <executions>
                     <execution>
                         <goals>
@@ -75,7 +74,8 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-x86_64-linux-gnu.tar.gz
+                </bitcoind.url>
                 <bitcoind.md5>c811c157d4d618f7d7f4b9f24834551c</bitcoind.md5>
                 <bitcoind.sha1>3ab7e537bd00bf35e6a78fca108d0d886f8289c1</bitcoind.sha1>
             </properties>
@@ -110,7 +110,7 @@
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.6</version>
+            <version>10.0.7</version>
         </dependency>
         <!-- JSON -->
         <dependency>
@@ -121,7 +121,7 @@
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.15.0</version>
+            <version>1.16.1</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>
@@ -150,18 +150,7 @@
         <dependency>
             <groupId>org.clapper</groupId>
             <artifactId>grizzled-slf4j_${scala.version.short}</artifactId>
-            <version>1.3.0</version>
-        </dependency>
-        <dependency>
-            <groupId>ch.qos.logback</groupId>
-            <artifactId>logback-classic</artifactId>
-            <version>1.1.3</version>
-        </dependency>
-        <dependency>
-            <!--conditional logging -->
-            <groupId>janino</groupId>
-            <artifactId>janino</artifactId>
-            <version>2.5.10</version>
+            <version>1.3.1</version>
         </dependency>
         <!-- OTHER -->
         <dependency>
@@ -181,15 +170,10 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>com.github.scopt</groupId>
-            <artifactId>scopt_${scala.version.short}</artifactId>
-            <version>3.5.0</version>
-        </dependency>
-        <dependency>
             <!-- This is to get rid of '[WARNING] warning: Class javax.annotation.Nonnull not found - continuing with a stub.' compile errors -->
             <groupId>com.google.code.findbugs</groupId>
             <artifactId>jsr305</artifactId>
-            <version>3.0.1</version>
+            <version>3.0.2</version>
         </dependency>
         <!-- TESTS -->
         <dependency>
@@ -202,6 +186,12 @@
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
             <version>18.0</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
