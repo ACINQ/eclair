@@ -8,7 +8,7 @@
         <version>0.2-modules-B-SNAPSHOT</version>
     </parent>
 
-    <artifactId>eclair-node_2.11</artifactId>
+    <artifactId>eclair-node-javafx_2.11</artifactId>
     <packaging>jar</packaging>
 
     <name>${project.artifactId}</name>
@@ -54,12 +54,43 @@
                             <goal>build</goal>
                         </goals>
                         <configuration>
-                            <appClass>fr.acinq.eclair.Boot</appClass>
+                            <appClass>fr.acinq.eclair.JavafxBoot</appClass>
                             <type>fat</type>
                             <customDescriptor>-${git.commit.id.abbrev}-capsule-fat</customDescriptor>
                         </configuration>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>com.zenjava</groupId>
+                <artifactId>javafx-maven-plugin</artifactId>
+                <version>8.8.3</version>
+                <executions>
+                    <execution>
+                        <!-- required before build-native -->
+                        <id>create-jfxjar</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-jar</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>build-native</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <vendor>ACINQ</vendor>
+                    <needShortcut>true</needShortcut>
+                    <appName>Eclair (Alpha 3)</appName>
+                    <nativeReleaseVersion>0.2.0</nativeReleaseVersion>
+                    <mainClass>fr.acinq.eclair.JavafxBoot</mainClass>
+                    <verbose>false</verbose>
+                    <bundler>EXE</bundler>
+                    <updateExistingJar>true</updateExistingJar>
+                </configuration>
             </plugin>
         </plugins>
     </build>
@@ -67,7 +98,7 @@
     <dependencies>
         <dependency>
             <groupId>fr.acinq.eclair</groupId>
-            <artifactId>eclair-core_${scala.version.short}</artifactId>
+            <artifactId>eclair-node_${scala.version.short}</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>
