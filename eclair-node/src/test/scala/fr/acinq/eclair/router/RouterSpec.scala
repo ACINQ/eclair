@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
+import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{randomKey, toShortId}
@@ -128,6 +129,19 @@ class RouterSpec extends BaseRouterSpec {
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a.toBin :: b.toBin :: c.toBin :: Nil)
     assert(res.hops.last.nextNodeId === d.toBin)
+  }
+
+  test("route not found (channel disabled)") { case (router, _) =>
+    val sender = TestProbe()
+    sender.send(router, RouteRequest(a, d))
+    val res = sender.expectMsgType[RouteResponse]
+    assert(res.hops.map(_.nodeId).toList === a.toBin :: b.toBin :: c.toBin :: Nil)
+    assert(res.hops.last.nextNodeId === d.toBin)
+
+    val channelUpdate_cd1 = makeChannelUpdate(priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, enable = false)
+    sender.send(router, channelUpdate_cd1)
+    sender.send(router, RouteRequest(a, d))
+    sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("export graph in dot format") { case (router, _) =>

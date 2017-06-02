@@ -34,12 +34,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   //val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
-  val ann_a = makeNodeAnnouncement(priv_a, "node-A", (15, 10, -70), Nil, 0)
-  val ann_b = makeNodeAnnouncement(priv_b, "node-B", (50, 99, -80), Nil, 0)
-  val ann_c = makeNodeAnnouncement(priv_c, "node-C", (123, 100, -40), Nil, 0)
-  val ann_d = makeNodeAnnouncement(priv_d, "node-D", (-120, -20, 60), Nil, 0)
-  val ann_e = makeNodeAnnouncement(priv_e, "node-E", (-50, 0, 10), Nil, 0)
-  val ann_f = makeNodeAnnouncement(priv_f, "node-F", (30, 10, -50), Nil, 0)
+  val ann_a = makeNodeAnnouncement(priv_a, "node-A", (15, 10, -70), Nil)
+  val ann_b = makeNodeAnnouncement(priv_b, "node-B", (50, 99, -80), Nil)
+  val ann_c = makeNodeAnnouncement(priv_c, "node-C", (123, 100, -40), Nil)
+  val ann_d = makeNodeAnnouncement(priv_d, "node-D", (-120, -20, 60), Nil)
+  val ann_e = makeNodeAnnouncement(priv_e, "node-E", (-50, 0, 10), Nil)
+  val ann_f = makeNodeAnnouncement(priv_f, "node-F", (30, 10, -50), Nil)
 
   val channelId_ab = toShortId(420000, 1, 0)
   val channelId_bc = toShortId(420000, 2, 0)
@@ -57,16 +57,24 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
-  val channelUpdate_ab = makeChannelUpdate(priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, 0)
-  val channelUpdate_bc = makeChannelUpdate(priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1, 0)
-  val channelUpdate_cd = makeChannelUpdate(priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, 0)
-  val channelUpdate_ef = makeChannelUpdate(priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8, 0)
+  val channelUpdate_ab = makeChannelUpdate(priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val channelUpdate_bc = makeChannelUpdate(priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
+  val channelUpdate_cd = makeChannelUpdate(priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
+  val channelUpdate_ef = makeChannelUpdate(priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
 
   override def withFixture(test: OneArgTest) = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
 
     within(30 seconds) {
-      // first we set up the router
+
+      // first we make sure that we correctly resolve channelId+direction to nodeId
+      assert(Router.getDesc(channelUpdate_ab, chan_ab) === ChannelDesc(chan_ab.shortChannelId, priv_a.publicKey, priv_b.publicKey))
+      assert(Router.getDesc(channelUpdate_bc, chan_bc) === ChannelDesc(chan_bc.shortChannelId, priv_b.publicKey, priv_c.publicKey))
+      assert(Router.getDesc(channelUpdate_cd, chan_cd) === ChannelDesc(chan_cd.shortChannelId, priv_c.publicKey, priv_d.publicKey))
+      assert(Router.getDesc(channelUpdate_ef, chan_ef) === ChannelDesc(chan_ef.shortChannelId, priv_e.publicKey, priv_f.publicKey))
+
+
+      // let's we set up the router
       val watcher = TestProbe()
       val router = system.actorOf(Router.props(Alice.nodeParams, watcher.ref))
       // we announce channels

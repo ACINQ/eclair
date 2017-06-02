@@ -2,10 +2,9 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
-import fr.acinq.eclair.randomBytes
-import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
-import fr.acinq.eclair.wire.{IncorrectPaymentAmount, UnknownPaymentHash, UpdateAddHtlc}
+import fr.acinq.eclair.{Globals, NodeParams, randomBytes}
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, ExpiryTooSmall}
+import fr.acinq.eclair.wire._
 
 import scala.util.{Failure, Success, Try}
 
@@ -33,7 +32,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       }
 
     case htlc: UpdateAddHtlc =>
-      if (h2r.contains(htlc.paymentHash)) {
+     if (h2r.contains(htlc.paymentHash)) {
         val r = h2r(htlc.paymentHash)._1
         val pr = h2r(htlc.paymentHash)._2
         // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however

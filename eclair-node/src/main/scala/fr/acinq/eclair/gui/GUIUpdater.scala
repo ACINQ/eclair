@@ -11,10 +11,10 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.zmq.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.gui.controllers.{ChannelPaneController, MainController}
+import fr.acinq.eclair.gui.controllers.{ChannelInfo, ChannelPaneController, MainController}
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
-import fr.acinq.eclair.router.{ChannelDiscovered, ChannelLost, NodeDiscovered, NodeLost}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
+import fr.acinq.eclair.router._
+import fr.acinq.eclair.wire.NodeAnnouncement
 
 import scala.collection.JavaConversions._
 
@@ -127,17 +127,42 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
         override def test(na: NodeAnnouncement) = na.nodeId.equals(nodeId)
       })
 
+    case NodeUpdated(nodeAnnouncement) =>
+      log.debug(s"peer node with id=${nodeAnnouncement.nodeId} has been updated")
+      val idx = mainController.networkNodesList.indexWhere(na => na.nodeId == nodeAnnouncement.nodeId)
+      if (idx >= 0) {
+        mainController.networkNodesList.update(idx, nodeAnnouncement)
+        m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.theirNodeIdValue)) {
+          Platform.runLater(new Runnable() {
+            override def run = f._2.updateRemoteNodeAlias(nodeAnnouncement.alias)
+          })
+        })
+      }
+
     case ChannelDiscovered(channelAnnouncement, _) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
-      if(!mainController.networkChannelsList.exists(ca => ca.shortChannelId == channelAnnouncement.shortChannelId)) {
-        mainController.networkChannelsList.add(channelAnnouncement)
+      if(!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
+        mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement))
       }
 
     case ChannelLost(shortChannelId) =>
       log.debug(s"peer channel lost with channel id=${shortChannelId}")
-      mainController.networkChannelsList.removeIf(new Predicate[ChannelAnnouncement] {
-        override def test(ca: ChannelAnnouncement) = ca.shortChannelId == shortChannelId
+      mainController.networkChannelsList.removeIf(new Predicate[ChannelInfo] {
+        override def test(c: ChannelInfo) = c.announcement.shortChannelId == shortChannelId
       })
+
+    case ChannelUpdateReceived(channelUpdate) =>
+      log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated")
+      val idx = mainController.networkChannelsList.indexWhere(c => c.announcement.shortChannelId == channelUpdate.shortChannelId)
+      if (idx >= 0) {
+        val c = mainController.networkChannelsList.get(idx)
+        if (Announcements.isNode1(channelUpdate.flags)) {
+          c.isNode1Enabled = Announcements.isEnabled(channelUpdate.flags)
+        } else {
+          c.isNode2Enabled = Announcements.isEnabled(channelUpdate.flags)
+        }
+        mainController.networkChannelsList.update(idx, c)
+      }
 
     case p: PaymentSent =>
       log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.amount}, fees=${p.feesPaid}")

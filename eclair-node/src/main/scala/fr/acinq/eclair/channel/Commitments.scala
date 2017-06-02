@@ -76,22 +76,19 @@ object Commitments extends Logging {
     * @param cmd         add HTLC command
     * @return either Left(failure, error message) where failure is a failure message (see BOLT #4 and the Failure Message class) or Right((new commitments, updateAddHtlc)
     */
-  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[(FailureMessage, Throwable), (Commitments, UpdateAddHtlc)] = {
-    if (System.getProperty("failhtlc") == "yes") {
-      return Left(IncorrectPaymentAmount -> DebugTriggeredException)
-    }
+  def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
 
     if (cmd.paymentHash.size != 32) {
-      return Left(TemporaryChannelFailure -> InvalidPaymentHash)
+      return Left(InvalidPaymentHash)
     }
 
     val blockCount = Globals.blockCount.get()
     if (cmd.expiry <= blockCount) {
-      return Left(FinalExpiryTooSoon -> ExpiryCannotBeInThePast(cmd.expiry, blockCount))
+      return Left(ExpiryCannotBeInThePast(cmd.expiry, blockCount))
     }
 
     if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
-      return Left(PermanentChannelFailure -> HtlcValueTooSmall(minimum = commitments.remoteParams.htlcMinimumMsat, actual = cmd.amountMsat))
+      return Left(HtlcValueTooSmall(minimum = commitments.remoteParams.htlcMinimumMsat, actual = cmd.amountMsat))
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
@@ -102,13 +99,13 @@ object Commitments extends Logging {
     val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
       // TODO: this should be a specific UPDATE error
-      return Left(TemporaryChannelFailure -> HtlcValueTooHighInFlight(maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
+      return Left(HtlcValueTooHighInFlight(maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
     }
 
     // the HTLC we are about to create is outgoing, but from their point of view it is incoming
     val acceptedHtlcs = reduced.htlcs.count(_.direction == IN)
     if (acceptedHtlcs > commitments1.remoteParams.maxAcceptedHtlcs) {
-      return Left(TemporaryChannelFailure -> TooManyAcceptedHtlcs(maximum = commitments1.remoteParams.maxAcceptedHtlcs))
+      return Left(TooManyAcceptedHtlcs(maximum = commitments1.remoteParams.maxAcceptedHtlcs))
     }
 
     // a node cannot spend pending incoming htlcs, and need to keep funds above the reserve required by the counterparty, after paying the fee
@@ -116,7 +113,7 @@ object Commitments extends Logging {
     val fees = if (commitments1.localParams.isFunder) Transactions.commitTxFee(Satoshi(commitments1.remoteParams.dustLimitSatoshis), reduced).amount else 0
     val missing = reduced.toRemoteMsat / 1000 - commitments1.remoteParams.channelReserveSatoshis - fees
     if (missing < 0) {
-      return Left(TemporaryChannelFailure -> InsufficientFunds(amountMsat = cmd.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees))
+      return Left(InsufficientFunds(amountMsat = cmd.amountMsat, missingSatoshis = -1 * missing, reserveSatoshis = commitments1.remoteParams.channelReserveSatoshis, feesSatoshis = fees))
     }
 
     Right(commitments1, add)
@@ -140,7 +137,7 @@ object Commitments extends Logging {
         }
 
         val blockCount = Globals.blockCount.get()
-        // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
+        // we need a reasonable amount of time to pull the funds before the sender can get refunded
         val minExpiry = blockCount + 3
         if (add.expiry < minExpiry) {
           throw ExpiryTooSmall(minimum = minExpiry, actual = add.expiry, blockCount = blockCount)

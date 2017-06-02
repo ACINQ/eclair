@@ -157,7 +157,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
       nodeParams.announcementsDb.values.collect { case ann: NodeAnnouncement => router ! ann }
       nodeParams.announcementsDb.values.collect { case ann: ChannelUpdate => router ! ann }
       if (nodeParams.channelsDb.values.size > 0) {
-        val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
+        val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil)
         router ! nodeAnn
       }
     }
