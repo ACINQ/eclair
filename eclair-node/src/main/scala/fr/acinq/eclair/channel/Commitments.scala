@@ -79,7 +79,7 @@ object Commitments extends Logging {
   def sendAdd(commitments: Commitments, cmd: CMD_ADD_HTLC): Either[ChannelException, (Commitments, UpdateAddHtlc)] = {
 
     if (cmd.paymentHash.size != 32) {
-      return Left(TemporaryChannelFailure -> InvalidPaymentHash)
+      return Left(InvalidPaymentHash)
     }
 
     val blockCount = Globals.blockCount.get()

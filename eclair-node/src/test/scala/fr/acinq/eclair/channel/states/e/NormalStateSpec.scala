@@ -96,7 +96,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(500000000, "11" * 42, expiry = 400144)
       sender.send(alice, add)
       sender.expectMsg(Failure(InvalidPaymentHash))
-      relayer.expectMsg(AddHtlcFailed(add, TemporaryChannelFailure))
+      relayer.expectMsg(AddHtlcFailed(add, InvalidPaymentHash))
       alice2bob.expectNoMsg(200 millis)
     }
   }
