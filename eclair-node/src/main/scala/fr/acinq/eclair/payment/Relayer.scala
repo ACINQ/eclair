@@ -100,9 +100,8 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
                   sender ! CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true)
                 case Some(channelUpdate) if add.expiry != perHopPayload.outgoing_cltv_value + channelUpdate.cltvExpiryDelta =>
                   sender ! CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.expiry, channelUpdate)), commit = true)
-                /*case Some(_) if add.expiry < Globals.blockCount.get() + 3 =>
-                  // if we are the final payee, we need a reasonable amount of time to pull the funds before the sender can get refunded
-                  sender ! CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true)*/
+                case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 => // TODO: hardcoded value
+                  sender ! CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true)
                 case _ =>
                   log.info(s"forwarding htlc #${add.id} to downstream=$downstream")
                   downstream forward CMD_ADD_HTLC(perHopPayload.amt_to_forward, add.paymentHash, perHopPayload.outgoing_cltv_value, nextPacket.serialize, upstream_opt = Some(add), commit = true)
@@ -134,17 +133,13 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         shortId <- shortIds.map(_.swap).get(channelId)
         update <- channelUpdates.get(shortId)
       } yield update
+      // detail errors should have been catched earlier (when relayer picks the next channel), so here we just answer with generic error messages
       channelUpdate_opt match {
         case None =>
           // TODO: clarify what we're supposed to to in the specs
-          sender ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(TemporaryNodeFailure), commit = true)
+          upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(TemporaryNodeFailure), commit = true)
         case Some(channelUpdate) =>
-          val failure = error match {
-            case _: ExpiryCannotBeInThePast => ExpiryTooSoon(channelUpdate)
-            case _: HtlcValueTooSmall => PermanentChannelFailure
-            case _ => TemporaryChannelFailure(channelUpdate)
-          }
-          upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(failure), commit = true)
+          upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(TemporaryChannelFailure(channelUpdate)), commit = true)
       }
 
     case ForwardFulfill(fulfill) =>

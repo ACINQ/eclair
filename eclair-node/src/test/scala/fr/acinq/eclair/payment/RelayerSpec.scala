@@ -195,6 +195,28 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fail.id === add_ab.id)
   }
 
+  test("fail to relay an htlc-add when expiry is too soon") { case (relayer, paymentHandler) =>
+    val sender = TestProbe()
+    val channel_bc = TestProbe()
+
+    val (cmd, secrets) = buildCommand(finalAmountMsat, 0, paymentHash, hops)
+    val add_ab = {
+      // and then manually build an htlc
+      UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    }
+
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    assert(fail.reason == Right(ExpiryTooSoon(channelUpdate_bc)))
+    channel_bc.expectNoMsg(1 second)
+    paymentHandler.expectNoMsg(1 second)
+
+    assert(fail.id === add_ab.id)
+  }
+
   test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
