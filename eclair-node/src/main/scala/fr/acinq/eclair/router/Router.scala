@@ -284,6 +284,7 @@ object Router {
     updates
       .filterNot(u => ignoreNodes.map(_.toBin).contains(u._1.a) || ignoreNodes.map(_.toBin).contains(u._1.b))
       .filterNot(u => ignoreChannels.contains(u._1.id))
+      .filterNot(u => !Announcements.isEnabled(u._2.flags))
 
   def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
