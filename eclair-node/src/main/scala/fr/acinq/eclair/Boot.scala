@@ -133,6 +133,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
   val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
   val tcpBound = Promise[Unit]()
   val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
+  val receivedPayments = system.actorOf(SimpleSupervisor.props(Props(new ReceivedPayments), "payment-history", SupervisorStrategy.Resume))
 
   val _setup = this
   val api = new Service {
@@ -141,6 +142,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
     override val register: ActorRef = _setup.register
     override val paymentHandler: ActorRef = _setup.paymentHandler
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
+    override val receivedPayments: ActorRef = _setup.receivedPayments
     override val system: ActorSystem = _setup.system
   }
   val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
