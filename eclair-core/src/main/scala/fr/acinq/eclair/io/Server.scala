@@ -9,7 +9,7 @@ import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.wire.{LightningMessage, LightningMessageCodecs}
 
 import scala.concurrent.Promise
 
@@ -40,7 +40,7 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
           KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
           None,
           connection = connection,
-          serializer = LightningMessageSerializer)))
+          codec = LightningMessageCodecs.lightningMessageCodec)))
 
     case h: HandshakeCompleted =>
       log.info(s"handshake completed with ${h.remoteNodeId}")

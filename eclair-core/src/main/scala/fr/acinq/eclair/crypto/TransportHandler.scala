@@ -8,10 +8,11 @@ import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
+import scodec.bits.BitVector
+import scodec.{Attempt, Codec, DecodeResult}
 
 import scala.annotation.tailrec
 import scala.reflect.ClassTag
-import scala.util.{Failure, Success, Try}
 
 /**
   * see BOLT #8
@@ -22,11 +23,11 @@ import scala.util.{Failure, Success, Try}
   * Once the initial handshake has been completed successfully, the handler will create a listener actor with the
   * provided factory, and will forward it all decrypted messages
   *
-  * @param keyPair private/public key pair for this node
-  * @param rs      remote node static public key (which must be known before we initiate communication)
-  * @param connection    actor that represents the other node's
+  * @param keyPair    private/public key pair for this node
+  * @param rs         remote node static public key (which must be known before we initiate communication)
+  * @param connection actor that represents the other node's
   */
-class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, serializer: TransportHandler.Serializer[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
+class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]) extends Actor with FSM[TransportHandler.State, TransportHandler.Data] {
 
   import TransportHandler._
 
@@ -49,10 +50,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]) = {
     plaintextMessages.map(plaintext => {
-      Try(serializer.deserialize(plaintext)) match {
-        case Success(message) => listener ! message
-        case Failure(t) =>
-          log.error(t, s"cannot deserialize $plaintext")
+      codec.decode(BitVector(plaintext.data)) match {
+        case Attempt.Successful(DecodeResult(message, _)) => listener ! message
+        case Attempt.Failure(err) => log.error(s"cannot deserialize $plaintext: $err")
       }
     })
   }
@@ -118,7 +118,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       stay using nextStateData
 
     case Event(t: T, WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
-      val blob = serializer.serialize(t)
+      val blob = codec.encode(t).require.toByteArray
       val (enc1, ciphertext) = TransportHandler.encrypt(enc, blob)
       connection ! Write(ByteString.fromArray(ciphertext.toArray))
       stay using WaitingForCyphertextData(enc1, dec, length, buffer, listener)
@@ -210,6 +210,7 @@ object TransportHandler {
   // @formatter:on
 
   case class Listener(listener: ActorRef)
+
   case class HandshakeCompleted(transport: ActorRef, remoteNodeId: PublicKey)
 
   sealed trait Data
@@ -281,18 +282,6 @@ object TransportHandler {
           decrypt(state.copy(dec = dec1, ciphertextLength = None, buffer = remainder), acc :+ plaintext)
       }
     }
-  }
-
-  trait Serializer[T] {
-    def serialize(t: T): BinaryData
-
-    def deserialize(bin: BinaryData): T
-  }
-
-  object Noop extends Serializer[BinaryData] {
-    override def serialize(t: BinaryData): BinaryData = t
-
-    override def deserialize(bin: BinaryData): BinaryData = bin
   }
 
 }

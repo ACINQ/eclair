@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Script, Transaction, TxIn
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.transactions.Scripts
@@ -18,6 +19,8 @@ import scala.util.Random
   * Created by PM on 23/08/2016.
   */
 trait StateTestsHelperMethods extends TestKitBase {
+
+  def defaultOnion: BinaryData = "00" * Sphinx.PacketLength
 
   case class Setup(alice: TestFSMRef[State, Data, Channel],
                    bob: TestFSMRef[State, Data, Channel],

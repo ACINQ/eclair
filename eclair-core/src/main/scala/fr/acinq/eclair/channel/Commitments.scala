@@ -16,8 +16,8 @@ case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessag
 case class RemoteChanges(proposed: List[UpdateMessage], acked: List[UpdateMessage], signed: List[UpdateMessage])
 case class Changes(ourChanges: LocalChanges, theirChanges: RemoteChanges)
 case class HtlcTxAndSigs(txinfo: TransactionWithInputInfo, localSig: BinaryData, remoteSig: BinaryData)
-case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: Seq[HtlcTxAndSigs])
-case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs, commit: CommitSig)
+case class PublishableTxs(commitTx: CommitTx, htlcTxsAndSigs: List[HtlcTxAndSigs])
+case class LocalCommit(index: Long, spec: CommitmentSpec, publishableTxs: PublishableTxs/*, commit: CommitSig*/)
 case class RemoteCommit(index: Long, spec: CommitmentSpec, txid: BinaryData, remotePerCommitmentPoint: Point)
 case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig, reSignAsap: Boolean = false)
 // @formatter:on
@@ -35,7 +35,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
                        remoteNextCommitInfo: Either[WaitingForRevocation, Point],
-                       unackedMessages: Seq[LightningMessage],
+                       unackedMessages: List[LightningMessage],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
 
@@ -359,7 +359,9 @@ object Commitments extends Logging {
     }
   }
 
-  def isOldCommit(commitments: Commitments, commit: CommitSig): Boolean = commitments.localCommit.commit == commit
+  def isOldCommit(commitments: Commitments, commit: CommitSig): Boolean =
+   // TODO: FUGLY!!!!!
+    Transaction.write(commitments.localCommit.publishableTxs.commitTx.tx).toString().contains(commit.signature.toString())
 
   def receiveCommit(commitments: Commitments, commit: CommitSig): Either[Commitments, (Commitments, RevokeAndAck)] =
     isOldCommit(commitments, commit) match {
@@ -424,8 +426,7 @@ object Commitments extends Logging {
         val ourCommit1 = LocalCommit(
           index = localCommit.index + 1,
           spec,
-          publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs),
-          commit = commit)
+          publishableTxs = PublishableTxs(signedCommitTx, htlcTxsAndSigs))
         val ourChanges1 = localChanges.copy(acked = Nil)
         val theirChanges1 = remoteChanges.copy(proposed = Nil, acked = remoteChanges.acked ++ remoteChanges.proposed)
         // they have received our previous revocation (otherwise they wouldn't have sent a commit)
