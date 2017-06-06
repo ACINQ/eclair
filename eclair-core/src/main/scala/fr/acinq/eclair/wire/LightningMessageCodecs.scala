@@ -72,7 +72,7 @@ object LightningMessageCodecs {
 
   def rgb: Codec[(Byte, Byte, Byte)] = bytes(3).xmap(buf => (buf(0), buf(1), buf(2)), t => ByteVector(t._1, t._2, t._3))
 
-  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\0'), s => s)
+  def zeropaddedstring(size: Int): Codec[String] = fixedSizeBytes(32, utf8).xmap(s => s.takeWhile(_ != '\u0000'), s => s)
 
   def der2wire(signature: BinaryData): BinaryData = {
     require(Crypto.isDERSignature(signature), s"invalid DER signature $signature")

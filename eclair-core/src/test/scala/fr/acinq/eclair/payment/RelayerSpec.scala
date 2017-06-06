@@ -216,7 +216,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     assert(fail.id === add_ab.id)
   }
-
+  
   test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { case (relayer, paymentHandler) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
