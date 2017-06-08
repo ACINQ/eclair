@@ -28,11 +28,11 @@ import scala.util.Try
 /**
   * Created by PM on 25/01/2016.
   */
-class Setup(datadir: String, actorSystemName: String = "default") extends Logging {
+class Setup(datadir: File, actorSystemName: String = "default") extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
-  val config = NodeParams.loadConfiguration(new File(datadir))
+  val config = NodeParams.loadConfiguration(datadir)
 
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
@@ -64,7 +64,7 @@ class Setup(datadir: String, actorSystemName: String = "default") extends Loggin
     case "test" | "regtest" => ()
     case _ => throw new RuntimeException("only regtest and testnet are supported for now")
   }
-  val nodeParams = NodeParams.makeNodeParams(new File(datadir), config, chainHash)
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, chainHash)
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   assert(progress > 0.99, "bitcoind should be synchronized")
 

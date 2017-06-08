@@ -1,7 +1,7 @@
 package fr.acinq.eclair.db
 
 import java.io.File
-import java.nio.file.{Files, Paths}
+import java.nio.file.Files
 
 import fr.acinq.bitcoin.BinaryData
 import grizzled.slf4j.Logging
@@ -17,12 +17,12 @@ case class SimpleFileDb(root: File) extends SimpleDb with Logging {
 
   override def put(key: String, value: BinaryData): Unit = {
     logger.debug(s"put $key -> $value")
-    Files.write(Paths.get(root.getPath, key), value)
+    Files.write(new File(root, key).toPath, value)
   }
 
-  override def get(key: String): Option[BinaryData] = Try(Files.readAllBytes(Paths.get(root.getPath, key))).toOption.map(a => BinaryData(a))
+  override def get(key: String): Option[BinaryData] = Try(Files.readAllBytes(new File(root, key).toPath)).toOption.map(a => BinaryData(a))
 
-  override def delete(key: String): Boolean = Paths.get(root.getPath, key).toFile.delete()
+  override def delete(key: String): Boolean = new File(root, key).delete()
 
   override def keys: Seq[String] = root.list()
 

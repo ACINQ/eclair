@@ -1,7 +1,7 @@
 package fr.acinq.eclair.integration
 
 import java.io.{File, PrintWriter}
-import java.nio.file.{Files, Paths}
+import java.nio.file.Files
 import java.util.{Properties, UUID}
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
@@ -41,8 +41,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = Paths.get(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoind")
-  val PATH_BITCOIND_DATADIR = Paths.get(INTEGRATION_TMP_DIR, "datadir-bitcoin")
+  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoind")
+  val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
   var bitcoind: Process = null
   var bitcoinrpcclient: BitcoinJsonRPCClient = null
@@ -54,8 +54,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   case class BitcoinReq(method: String, params: Any*)
 
   override def beforeAll(): Unit = {
-    Files.createDirectories(PATH_BITCOIND_DATADIR)
-    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), Paths.get(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf"))
+    Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
+    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
     bitcoinrpcclient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
@@ -80,7 +80,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
         setup.system.terminate()
     }
     //    logger.warn(s"starting bitcoin-qt")
-    //    val PATH_BITCOINQT = Paths.get(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt")
+    //    val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt").toPath
     //    bitcoind = s"$PATH_BITCOINQT -datadir=$PATH_BITCOIND_DATADIR".run()
   }
 
@@ -103,7 +103,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       write(config.root().render());
       close
     }
-    val setup = new Setup(datadir.getPath, actorSystemName = s"system-$name")
+    val setup = new Setup(datadir, actorSystemName = s"system-$name")
     nodes = nodes + (name -> setup)
   }
 
