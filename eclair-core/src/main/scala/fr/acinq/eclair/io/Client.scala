@@ -10,7 +10,7 @@ import fr.acinq.eclair.{Globals, NodeParams}
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.wire.{LightningMessage, LightningMessageCodecs}
 
 /**
   * Created by PM on 27/10/2015.
@@ -35,7 +35,7 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
           KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
           Some(remoteNodeId),
           connection = connection,
-          serializer = LightningMessageSerializer)))
+          codec = LightningMessageCodecs.lightningMessageCodec)))
       context watch transport
       context become authenticating(transport)
   }

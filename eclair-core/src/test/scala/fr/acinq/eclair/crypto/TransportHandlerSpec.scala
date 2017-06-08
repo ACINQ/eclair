@@ -1,16 +1,19 @@
 package fr.acinq.eclair.crypto
 
-import java.util.concurrent.CountDownLatch
+import java.nio.charset.Charset
 
-import akka.actor.{Actor, ActorRef, ActorSystem, IllegalActorStateException, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp.{Received, Write}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
-import fr.acinq.bitcoin.{Base58Check, BinaryData}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.crypto.Noise.{Chacha20Poly1305CipherFunctions, CipherState}
 import fr.acinq.eclair.crypto.TransportHandler.{ExtendedCipherState, Listener}
+import fr.acinq.eclair.wire.LightningMessageCodecs
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import scodec.Codec
+import scodec.codecs._
 
 import scala.annotation.tailrec
 import scala.concurrent.duration._
@@ -32,8 +35,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val pipe = system.actorOf(Props[MyPipe])
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, TransportHandler.Noop))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, TransportHandler.Noop))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, LightningMessageCodecs.varsizebinarydata))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -60,22 +63,12 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
 
   test("succesfull handshake with custom serializer") {
     case class MyMessage(payload: String)
-
-    val mySerializer = new TransportHandler.Serializer[MyMessage] {
-      override def serialize(t: MyMessage): BinaryData = {
-        Base58Check.encode(0.toByte, t.payload.getBytes).getBytes
-      }
-
-      override def deserialize(bin: BinaryData): MyMessage = {
-        val (_, data) = Base58Check.decode(new String(bin.toArray))
-        MyMessage(new String(data))
-      }
-    }
+    val mycodec: Codec[MyMessage] = ("payload" | scodec.codecs.string32L(Charset.defaultCharset())).as[MyMessage]
     val pipe = system.actorOf(Props[MyPipe])
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, mySerializer))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, mySerializer))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, mycodec))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, mycodec))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -104,8 +97,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val pipe = system.actorOf(Props[MyPipeSplitter])
     val probe1 = TestProbe()
     val probe2 = TestProbe()
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, TransportHandler.Noop))
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, TransportHandler.Noop))
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Responder.s.pub), pipe, LightningMessageCodecs.varsizebinarydata))
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata))
     pipe ! (initiator, responder)
 
     awaitCond(initiator.stateName == TransportHandler.WaitingForListener)
@@ -135,8 +128,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     val probe1 = TestProbe()
     val probe2 = TestProbe()
     val supervisor = TestActorRef(Props(new MySupervisor()))
-    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, TransportHandler.Noop), supervisor, "ini")
-    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, TransportHandler.Noop), supervisor, "res")
+    val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "ini")
+    val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "res")
     probe1.watch(responder)
     pipe ! (initiator, responder)
 

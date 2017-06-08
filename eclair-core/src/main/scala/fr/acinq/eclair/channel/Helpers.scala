@@ -379,8 +379,8 @@ object Helpers {
       RemoteCommitPublished(
         commitTx = tx,
         claimMainOutputTx = mainTx.map(_.tx),
-        claimHtlcSuccessTxs = txes.collect { case c: ClaimHtlcSuccessTx => c.tx },
-        claimHtlcTimeoutTxs = txes.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+        claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
+        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
       )
 
     }

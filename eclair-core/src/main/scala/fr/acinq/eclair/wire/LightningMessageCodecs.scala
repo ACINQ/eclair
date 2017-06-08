@@ -3,10 +3,11 @@ package fr.acinq.eclair.wire
 import java.math.BigInteger
 import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
 import fr.acinq.eclair.wire
+import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
@@ -21,7 +22,7 @@ object LightningMessageCodecs {
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
 
-  def binarydata(size: Int): Codec[BinaryData] = bytes(size).xmap(d => BinaryData(d.toArray), d => ByteVector(d.data))
+  def binarydata(size: Int): Codec[BinaryData] = limitedSizeBytes(size, bytesStrict(size).xmap(d => BinaryData(d.toArray), d => ByteVector(d.data)))
 
   def varsizebinarydata: Codec[BinaryData] = variableSizeBytes(uint16, bytes.xmap(d => BinaryData(d.toArray), d => ByteVector(d.data)))
 
@@ -50,12 +51,17 @@ object LightningMessageCodecs {
   )
 
   def point: Codec[Point] = Codec[Point](
-    (point: Point) => bytes(33).encode(ByteVector(point.toBin(true).toArray)),
+    (point: Point) => bytes(33).encode(ByteVector(point.toBin(compressed = true).toArray)),
     (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => Point(b.toArray)))
   )
 
+  def privateKey: Codec[PrivateKey] = Codec[PrivateKey](
+    (priv: PrivateKey) => bytes(32).encode(ByteVector(priv.value.toBin.toArray)),
+    (wire: BitVector) => bytes(32).decode(wire).map(_.map(b => PrivateKey(b.toArray, compressed = true)))
+  )
+
   def publicKey: Codec[PublicKey] = Codec[PublicKey](
-    (pub: PublicKey) => bytes(33).encode(ByteVector(pub.value.toBin(true).toArray)),
+    (pub: PublicKey) => bytes(33).encode(ByteVector(pub.value.toBin(compressed = true).toArray)),
     (wire: BitVector) => bytes(33).decode(wire).map(_.map(b => PublicKey(b.toArray)))
   )
 

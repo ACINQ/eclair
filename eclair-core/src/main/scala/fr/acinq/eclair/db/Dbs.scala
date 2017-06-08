@@ -3,9 +3,8 @@ package fr.acinq.eclair.db
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.channel.Data
-import fr.acinq.eclair.crypto.TransportHandler.Serializer
-import fr.acinq.eclair.io.{LightningMessageSerializer, PeerRecord}
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.io.PeerRecord
+import fr.acinq.eclair.wire.{ChannelCodecs, LightningMessage, LightningMessageCodecs}
 
 /**
   * Created by PM on 28/02/2017.
@@ -20,11 +19,7 @@ object Dbs {
     new SimpleTypedDb[BinaryData, Data](
       channelid2String,
       string2channelid,
-      new Serializer[Data] {
-        override def serialize(t: Data): BinaryData = JavaSerializer.serialize(t)
-
-        override def deserialize(bin: BinaryData): Data = JavaSerializer.deserialize[Data](bin)
-      },
+      ChannelCodecs.stateDataCodec,
       db
     )
   }
@@ -34,7 +29,7 @@ object Dbs {
     new SimpleTypedDb[String, LightningMessage](
       s => s,
       s => if (s.startsWith("ann-")) Some(s) else None,
-      LightningMessageSerializer,
+      LightningMessageCodecs.lightningMessageCodec,
       db
     )
   }
@@ -47,11 +42,7 @@ object Dbs {
     new SimpleTypedDb[PublicKey, PeerRecord](
       peerid2String,
       string2peerid,
-      new Serializer[PeerRecord] {
-        override def serialize(t: PeerRecord): BinaryData = JavaSerializer.serialize(t)
-
-        override def deserialize(bin: BinaryData): PeerRecord = JavaSerializer.deserialize[PeerRecord](bin)
-      },
+      ChannelCodecs.peerRecordCodec,
       db
     )
   }
