@@ -1,6 +1,6 @@
 package fr.acinq.eclair.gui
 
-import java.net.ConnectException
+import java.io.File
 import javafx.application.Preloader.ErrorNotification
 import javafx.application.{Application, Platform}
 import javafx.event.EventHandler
@@ -10,13 +10,12 @@ import javafx.scene.{Parent, Scene}
 import javafx.stage.{Popup, Screen, Stage, WindowEvent}
 
 import akka.actor.{Props, SupervisorStrategy}
-import akka.stream.StreamTcpException
+import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.zmq.ZMQEvents
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
-import fr.acinq.eclair._
 import grizzled.slf4j.Logging
 
 
@@ -36,7 +35,7 @@ class FxApp extends Application with Logging {
     new Thread(new Runnable {
       override def run(): Unit = {
         try {
-          val datadir = getParameters.getUnnamed.get(0)
+          val datadir = new File(getParameters.getUnnamed.get(0))
 
           val setup = new Setup(datadir)
           val handlers = new Handlers(setup)

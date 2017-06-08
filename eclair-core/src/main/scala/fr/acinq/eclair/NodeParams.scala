@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.nio.file.{Files, Paths}
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -64,19 +64,21 @@ object NodeParams {
 
   def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData): NodeParams = {
 
-    val seedPath = Paths.get(datadir.getAbsolutePath, "seed.dat")
-    val seed: BinaryData = Files.exists(seedPath) match {
-      case true => Files.readAllBytes(seedPath)
+    datadir.mkdirs()
+
+    val seedPath = new File(datadir, "seed.dat")
+    val seed: BinaryData = seedPath.exists() match {
+      case true => Files.readAllBytes(seedPath.toPath)
       case false =>
         val seed = randomKey.toBin
-        Files.write(seedPath, seed)
+        Files.write(seedPath.toPath, seed)
         seed
     }
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
 
-    val dbPath = Paths.get(datadir.getAbsolutePath, "db")
-    val db = new SimpleFileDb(dbPath.toFile)
+    val dbDir = new File(datadir, "db")
+    val db = new SimpleFileDb(dbDir)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")

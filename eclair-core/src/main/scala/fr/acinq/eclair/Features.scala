@@ -1,10 +1,10 @@
 package fr.acinq.eclair
 
 
-import java.util.BitSet
-import java.util.function.IntPredicate
-
 import fr.acinq.bitcoin.BinaryData
+import scodec.bits.BitVector
+
+import scala.collection.immutable.BitSet
 
 
 /**
@@ -15,19 +15,21 @@ object Features {
   val CHANNELS_PUBLIC_BIT = 0
   val INITIAL_ROUTING_SYNC_BIT = 2
 
-  // NB: BitSet operates on little endian, hence the reverse
-
-  def isSet(features: BinaryData, bitIndex: Int): Boolean = BitSet.valueOf(features.reverse.toArray).get(bitIndex)
+  def isSet(features: BinaryData, bitIndex: Int): Boolean = {
+    val bitset = BitVector(features.data)
+    // NB: for some reason BitVector bits are reversed
+    bitIndex < bitset.size && bitset.get(bitset.size - 1 - bitIndex)
+  }
 
   /**
     * A feature set is supported if all even bits are supported.
     * We just ignore unknown odd bits.
     */
   def areSupported(features: BinaryData): Boolean = {
-    val bitset = BitSet.valueOf(features.reverse.toArray)
-    bitset.stream().noneMatch(new IntPredicate {
-      override def test(value: Int) = value % 2 == 0 && value > INITIAL_ROUTING_SYNC_BIT
-    })
+    val bitset = BitVector(features.data)
+    // we look for an unknown even bit set (NB: for some reason BitVector bits are reversed)
+    val unsupported = bitset.toIndexedSeq.reverse.zipWithIndex.exists { case (b, idx) => b && idx % 2 == 0 && idx > INITIAL_ROUTING_SYNC_BIT}
+    !unsupported
   }
 
 }
