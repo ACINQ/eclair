@@ -6,9 +6,9 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
 import fr.acinq.eclair.wire.{ChannelUpdate, FailureMessage, FailureMessageCodecs, LightningMessageCodecs}
-import org.bouncycastle.crypto.digests.SHA256Digest
-import org.bouncycastle.crypto.macs.HMac
-import org.bouncycastle.crypto.params.KeyParameter
+import org.spongycastle.crypto.digests.SHA256Digest
+import org.spongycastle.crypto.macs.HMac
+import org.spongycastle.crypto.params.KeyParameter
 import scodec.bits.BitVector
 
 import scala.annotation.tailrec

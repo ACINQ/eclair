@@ -7,7 +7,6 @@ import fr.acinq.eclair.channel.Helpers
 import fr.acinq.eclair.fromShortId
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.wire.ChannelAnnouncement
-import org.bouncycastle.util.encoders.Hex
 import org.json4s.JsonAST._
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -25,7 +24,7 @@ class ExtendedBitcoinClient(val client: BitcoinJsonRPCClient) {
   // TODO: this will probably not be needed once segwit is merged into core
   val protocolVersion = Protocol.PROTOCOL_VERSION
 
-  def tx2Hex(tx: Transaction): String = Hex.toHexString(Transaction.write(tx, protocolVersion))
+  def tx2Hex(tx: Transaction): String = toHexString(Transaction.write(tx, protocolVersion))
 
   def hex2tx(hex: String): Transaction = Transaction.read(hex, protocolVersion)
 
