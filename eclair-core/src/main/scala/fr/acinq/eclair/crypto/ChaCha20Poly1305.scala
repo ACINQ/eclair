@@ -4,8 +4,8 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import grizzled.slf4j.Logging
-import org.bouncycastle.crypto.engines.{ChaCha7539Engine, ChaChaEngine}
-import org.bouncycastle.crypto.params.{KeyParameter, ParametersWithIV}
+import org.spongycastle.crypto.engines.{ChaCha7539Engine, ChaChaEngine}
+import org.spongycastle.crypto.params.{KeyParameter, ParametersWithIV}
 
 /**
   * Poly1305 authenticator
@@ -20,7 +20,7 @@ object Poly1305 {
     */
   def mac(key: BinaryData, data: BinaryData): BinaryData = {
     val out = new Array[Byte](16)
-    val poly = new org.bouncycastle.crypto.macs.Poly1305()
+    val poly = new org.spongycastle.crypto.macs.Poly1305()
     poly.init(new KeyParameter(key))
     poly.update(data, 0, data.length)
     poly.doFinal(out, 0)
