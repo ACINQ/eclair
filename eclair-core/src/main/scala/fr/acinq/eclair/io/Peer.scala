@@ -240,6 +240,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       }
       stay using d.copy(channels = channels -- channelIds)
 
+    case Event(h: HandshakeCompleted, ConnectedData(oldTransport, _, channels)) =>
+      log.info(s"got new transport while already connected, switching to new transport")
+      context unwatch oldTransport
+      oldTransport ! PoisonPill
+      channels.values.foreach(_ ! INPUT_DISCONNECTED)
+      val c: Set[OfflineChannel] = channels.map(c => HotChannel(c._1, c._2)).toSet
+      self ! h
+      goto(DISCONNECTED) using DisconnectedData(c)
   }
 
   def createChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
