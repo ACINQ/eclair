@@ -65,7 +65,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(Reconnect, _) =>
       address_opt match {
         case Some(address) => context.parent forward NewConnection(remoteNodeId, address, None)
-        case None => {}
+        case None => {} // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
       }
       stay
 
@@ -92,7 +92,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stop(FSM.Normal)
 
     case Event(StateTimeout, _) =>
-      log.info(s"attempting a reconnect")
       self ! Reconnect
       stay
   }
