@@ -21,7 +21,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       Try {
         val r = randomBytes(32)
         val h = Crypto.sha256(r)
-        (r, h, new PaymentRequest(nodeParams.privateKey.publicKey, amount, h))
+        (r, h, PaymentRequest(nodeParams.privateKey.publicKey, amount, h, nodeParams.privateKey))
       } match {
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount")
@@ -38,16 +38,18 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
         // it must not be greater than two times the requested amount.
         // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
-        if (pr.amount.amount <= htlc.amountMsat && htlc.amountMsat <= (2 * pr.amount.amount)) {
-          sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
-          context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
-          context.become(run(h2r - htlc.paymentHash))
-        } else {
-          sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
-        }
-      } else {
+       pr.amountMsat match {
+         case Some(amount) if MilliSatoshi(htlc.amountMsat) < amount => sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
+         case Some(amount) if MilliSatoshi(htlc.amountMsat) > amount * 2 => sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
+         case _ =>
+           // amount is correct or was not specified in the payment request
+           sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
+           context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
+           context.become(run(h2r - htlc.paymentHash))
+       }
+     } else {
         sender ! CMD_FAIL_HTLC(htlc.id, Right(UnknownPaymentHash), commit = true)
-      }
+     }
   }
 }
 

@@ -48,41 +48,29 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
     })
     paymentRequest.textProperty.addListener(new ChangeListener[String] {
       def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = {
-        if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
-          Try(PaymentRequest.read(paymentRequest.getText)) match {
-            case Success(pr) =>
-              amountField.setText(pr.amount.amount.toString)
-              nodeIdField.setText(pr.nodeId.toString)
-              hashField.setText(pr.paymentHash.toString)
-            case Failure(f) =>
-              GUIValidators.validate(paymentRequestError, "Please use a valid payment request", false)
-              amountField.setText("0")
-              nodeIdField.setText("N/A")
-              hashField.setText("N/A")
-          }
-        } else {
-          amountField.setText("0")
-          nodeIdField.setText("N/A")
-          hashField.setText("N/A")
+        Try(PaymentRequest.read(paymentRequest.getText)) match {
+          case Success(pr) =>
+            pr.amountMsat.foreach(amount => amountField.setText(amount.amount.toString))
+            nodeIdField.setText(pr.nodeId.toString)
+            hashField.setText(pr.paymentHash.toString)
+          case Failure(f) =>
+            GUIValidators.validate(paymentRequestError, "Please use a valid payment request", false)
+            amountField.setText("0")
+            nodeIdField.setText("N/A")
+            hashField.setText("N/A")
         }
       }
     })
   }
 
   @FXML def handleSend(event: ActionEvent) = {
-    if (GUIValidators.validate(paymentRequest.getText, paymentRequestError, "Please use a valid payment request", GUIValidators.paymentRequestRegex)) {
-      val Array(nodeId, amount, hash) = paymentRequest.getText.split(":")
-      Try(amount.toLong) match {
-        case Success(amountLong) =>
-          if (GUIValidators.validate(paymentRequestError, "Amount must be greater than 0", amountLong > 0)
-            && GUIValidators.validate(paymentRequestError, f"Amount must be less than ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)", amountLong < PaymentRequest.maxAmountMsat)) {
-            Try (handlers.send(PublicKey(nodeId), BinaryData(hash), amountLong)) match {
-              case Success(s) => stage.close
-              case Failure(f) => GUIValidators.validate(paymentRequestError, s"Invalid Payment Request: ${f.getMessage}", false)
-            }
-          }
-        case Failure(f) => GUIValidators.validate(paymentRequestError, s"Amount must be numeric", false)
-      }
+    Try(PaymentRequest.read(paymentRequest.getText)) match {
+      case Success(pr) =>
+        Try(handlers.send(pr.nodeId, pr.paymentHash, pr.amountMsat.get.amount)) match {
+          case Success(s) => stage.close
+          case Failure(f) => GUIValidators.validate(paymentRequestError, s"Invalid Payment Request: ${f.getMessage}", false)
+        }
+      case Failure(f) => GUIValidators.validate(paymentRequestError, "cannot parse payment request", false)
     }
   }
 

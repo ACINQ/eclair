@@ -57,7 +57,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     // success with 1 mBTC
     sender.send(handler, ReceivePayment(MilliSatoshi(100000000L)))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount.amount == 100000000L
-      && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
+    assert(pr.amountMsat == Some(MilliSatoshi(100000000L)) && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
   }
 }
