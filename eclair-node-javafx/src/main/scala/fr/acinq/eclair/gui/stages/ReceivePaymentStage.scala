@@ -19,8 +19,8 @@ class ReceivePaymentStage(handlers: Handlers, setup: Setup) extends Stage() {
   setTitle("Receive a Payment")
   setMinWidth(550)
   setWidth(550)
-  setMinHeight(300)
-  setHeight(300)
+  setMinHeight(170)
+  setHeight(170)
 
   // get fxml/controller
   val receivePayment = new FXMLLoader(getClass.getResource("/gui/modals/receivePayment.fxml"))

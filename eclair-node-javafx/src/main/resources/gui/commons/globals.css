@@ -44,6 +44,7 @@
     -fx-fill: rgb(93,199,254);
 }
 
+.text-muted,
 .label.text-muted {
 	-fx-text-fill: rgb(146,149,151);
 }
@@ -94,6 +95,16 @@
     -fx-background-color: transparent;
     -fx-border-width: 0;
     -fx-border-color: transparent;
+    -fx-padding: 0;
+}
+.text-area.noteditable .scroll-pane {
+    -fx-background-color: transparent;
+}
+.text-area.noteditable .scroll-pane .viewport{
+    -fx-background-color: transparent;
+}
+.text-area.noteditable .scroll-pane .content{
+    -fx-background-color: transparent;
     -fx-padding: 0;
 }
 

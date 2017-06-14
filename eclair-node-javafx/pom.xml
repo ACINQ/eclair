@@ -13,6 +13,10 @@
 
     <name>${project.artifactId}</name>
 
+    <properties>
+        <zxing.version>3.3.0</zxing.version>
+    </properties>
+
     <build>
         <plugins>
             <plugin>
@@ -98,6 +102,11 @@
             <groupId>fr.acinq.eclair</groupId>
             <artifactId>eclair-node_${scala.version.short}</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.zxing</groupId>
+            <artifactId>core</artifactId>
+            <version>${zxing.version}</version>
         </dependency>
     </dependencies>
 </project>

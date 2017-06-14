@@ -183,3 +183,12 @@
     -fx-border-color: #888888;
     -fx-background-color: #f4f4f4;
 }
+
+
+/* -------------- Receive Modal ------------------ */
+
+.result-box{
+    -fx-background-color: #ffffff;
+    -fx-border-width: 1px 0 0 0;
+    -fx-border-color: rgb(210,210,210);
+}
