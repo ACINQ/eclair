@@ -29,6 +29,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
   @FXML var amount: TextField = _
   @FXML var amountError: Label = _
   @FXML var unit: ComboBox[String] = _
+  @FXML var description: TextArea = _
 
   @FXML var resultBox: GridPane = _
   // the content of this field is generated and readonly
@@ -62,9 +63,10 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
           case "milliSatoshi" => MilliSatoshi(amount.getText.toLong)
         }
         if (GUIValidators.validate(amountError, "Amount must be greater than 0", smartAmount.amount > 0)
-          && GUIValidators.validate(amountError, f"Amount must be less than ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)", smartAmount.amount < PaymentRequest.maxAmountMsat)) {
+          && GUIValidators.validate(amountError, f"Amount must be less than ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)", smartAmount.amount < PaymentRequest.maxAmountMsat)
+          && GUIValidators.validate(amountError, "Description is too long, max 256 chars.", description.getText().size < 256)) {
           import scala.concurrent.ExecutionContext.Implicits.global
-          handlers.receive(smartAmount) onComplete {
+          handlers.receive(smartAmount, if (description.getText().size > 0) Some(description.getText()) else None) onComplete {
             case Success(s) =>
               Try(createQRCode(s)) match {
                 case Success(wImage) => displayPaymentRequest(s, Some(wImage))
@@ -100,7 +102,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
     }
   })
 
-  private def createQRCode(data: String, width: Int = 300, height: Int = 300, margin: Int = 0): WritableImage = {
+  private def createQRCode(data: String, width: Int = 250, height: Int = 250, margin: Int = -1): WritableImage = {
     import scala.collection.JavaConversions._
     val hintMap = collection.mutable.Map[EncodeHintType, Object]()
     hintMap.put(EncodeHintType.CHARACTER_SET, "UTF-8")

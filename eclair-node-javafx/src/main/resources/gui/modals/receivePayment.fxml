@@ -6,20 +6,21 @@
 <?import javafx.collections.FXCollections?>
 <?import java.lang.String?>
 <?import javafx.scene.image.ImageView?>
-<VBox xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" prefWidth="550.0">
+<VBox xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" prefWidth="590.0">
     <children>
         <GridPane styleClass="grid">
             <columnConstraints>
-                <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="210.0" minWidth="10.0" prefWidth="210.0"/>
+                <ColumnConstraints halignment="RIGHT" hgrow="SOMETIMES" maxWidth="250.0" minWidth="10.0" prefWidth="250.0"/>
                 <ColumnConstraints hgrow="ALWAYS" minWidth="10.0" prefWidth="120.0"/>
                 <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="120.0"/>
             </columnConstraints>
             <rowConstraints>
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+                <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
             </rowConstraints>
             <children>
-                <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="0">
+                <VBox alignment="TOP_RIGHT" GridPane.rowIndex="0">
                     <children>
                         <Label styleClass="text-strong" text="Amount to receive" />
                         <Label styleClass="label-description" wrapText="true" textAlignment="RIGHT" text="Maximum of ~0.042 BTC" />
@@ -38,28 +39,36 @@
                 <Label fx:id="amountError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid Amount"
                        mouseTransparent="true" GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2"/>
 
+                <VBox alignment="TOP_RIGHT" GridPane.rowIndex="1" GridPane.columnIndex="0">
+                    <children>
+                        <Label styleClass="text-strong" text="Optional description" />
+                        <Label styleClass="label-description" wrapText="true" textAlignment="RIGHT" text="Can be left empty" />
+                    </children>
+                </VBox>
+                <TextArea fx:id="description" GridPane.columnIndex="1" GridPane.rowIndex="1" GridPane.columnSpan="2" wrapText="true" prefHeight="50.0" />
+
                 <Button defaultButton="true" mnemonicParsing="false" onAction="#handleGenerate" prefHeight="29.0"
-                        prefWidth="95.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+                        prefWidth="95.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
                 <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Close"
-                        GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="1" opacity="0" focusTraversable="false"/>
+                        GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="2" opacity="0" focusTraversable="false"/>
 
             </children>
         </GridPane>
         <GridPane fx:id="resultBox" styleClass="grid, result-box" maxHeight="0.0" minHeight="0.0" visible="false">
             <columnConstraints>
-                <ColumnConstraints hgrow="ALWAYS" maxWidth="210.0" minWidth="10.0" prefWidth="210.0"/>
+                <ColumnConstraints halignment="LEFT" hgrow="ALWAYS" maxWidth="250.0" minWidth="10.0" prefWidth="250.0"/>
                 <ColumnConstraints hgrow="ALWAYS" minWidth="10.0" prefWidth="240.0"/>
             </columnConstraints>
             <rowConstraints>
                 <RowConstraints minHeight="10.0" vgrow="ALWAYS"/>
             </rowConstraints>
             <children>
-                <ImageView fx:id="paymentRequestQRCode" fitWidth="200.0" pickOnBounds="true" preserveRatio="true"
+                <ImageView fx:id="paymentRequestQRCode" fitWidth="250.0" pickOnBounds="true" preserveRatio="true"
                            GridPane.rowIndex="0" GridPane.columnIndex="0"></ImageView>
                 <VBox spacing="10.0" GridPane.rowIndex="0" GridPane.columnIndex="1">
                     <children>
                         <Label text="Invoice:" styleClass="text-strong" />
-                        <TextArea fx:id="paymentRequestTextArea" editable="false" styleClass="noteditable, text-sm" wrapText="true" />
+                        <TextArea fx:id="paymentRequestTextArea" editable="false" styleClass="noteditable, text-sm, text-mono" wrapText="true" />
                     </children>
                 </VBox>
             </children>

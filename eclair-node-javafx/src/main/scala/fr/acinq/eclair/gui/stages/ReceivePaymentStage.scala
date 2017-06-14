@@ -17,10 +17,11 @@ class ReceivePaymentStage(handlers: Handlers, setup: Setup) extends Stage() {
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
   setTitle("Receive a Payment")
-  setMinWidth(550)
-  setWidth(550)
-  setMinHeight(170)
-  setHeight(170)
+  setMinWidth(590)
+  setWidth(590)
+  setMinHeight(200)
+  setHeight(200)
+  setResizable(false)
 
   // get fxml/controller
   val receivePayment = new FXMLLoader(getClass.getResource("/gui/modals/receivePayment.fxml"))
