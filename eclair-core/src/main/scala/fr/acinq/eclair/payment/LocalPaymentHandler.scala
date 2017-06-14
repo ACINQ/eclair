@@ -17,11 +17,11 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
   def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
-    case ReceivePayment(amount) =>
+    case ReceivePayment(amount, desc_opt) =>
       Try {
-        val r = randomBytes(32)
-        val h = Crypto.sha256(r)
-        (r, h, PaymentRequest(nodeParams.privateKey.publicKey, amount, h, nodeParams.privateKey))
+        val paymentPreimage = randomBytes(32)
+        val paymentHash = Crypto.sha256(paymentPreimage)
+        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.paymentRequestPrefix, Some(amount), paymentHash, nodeParams.privateKey, desc_opt))
       } match {
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount")
@@ -38,7 +38,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
         // The htlc amount must be equal or greater than the requested amount. A slight overpaying is permitted, however
         // it must not be greater than two times the requested amount.
         // see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#failure-messages
-       pr.amountMsat match {
+       pr.amount match {
          case Some(amount) if MilliSatoshi(htlc.amountMsat) < amount => sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
          case Some(amount) if MilliSatoshi(htlc.amountMsat) > amount * 2 => sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
          case _ =>

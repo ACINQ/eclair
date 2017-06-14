@@ -50,7 +50,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
       def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = {
         Try(PaymentRequest.read(paymentRequest.getText)) match {
           case Success(pr) =>
-            pr.amountMsat.foreach(amount => amountField.setText(amount.amount.toString))
+            pr.amount.foreach(amount => amountField.setText(amount.amount.toString))
             nodeIdField.setText(pr.nodeId.toString)
             hashField.setText(pr.paymentHash.toString)
           case Failure(f) =>
@@ -66,7 +66,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup:
   @FXML def handleSend(event: ActionEvent) = {
     Try(PaymentRequest.read(paymentRequest.getText)) match {
       case Success(pr) =>
-        Try(handlers.send(pr.nodeId, pr.paymentHash, pr.amountMsat.get.amount)) match {
+        Try(handlers.send(pr.nodeId, pr.paymentHash, pr.amount.get.amount)) match {
           case Success(s) => stage.close
           case Failure(f) => GUIValidators.validate(paymentRequestError, s"Invalid Payment Request: ${f.getMessage}", false)
         }

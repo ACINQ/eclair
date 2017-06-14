@@ -10,7 +10,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Bech32.Int5
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.eclair.payment.PaymentRequest.Timestamp
+import fr.acinq.eclair.payment.PaymentRequest.{Amount, Timestamp}
 
 import scala.annotation.tailrec
 
@@ -25,18 +25,9 @@ import scala.annotation.tailrec
   * @param tags payment tags; must include a single PaymentHash tag
   * @param signature request signature that will be checked against node id
   */
-case class PaymentRequest(prefix: String, amount: String, timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
-  // currency unit is Satoshi, but we compute amounts in Millisatoshis
-  val amountMsat: Option[MilliSatoshi] = if (amount.isEmpty) None else {
-    amount.last match {
-      case 'm' => Some(MilliSatoshi(amount.dropRight(1).toLong))
-      case 'u' => Some(MilliSatoshi(amount.dropRight(1).toLong / 1000L))
-      case 'n' => Some(MilliSatoshi(amount.dropRight(1).toLong / 1000000L))
-      case 'p' => Some(MilliSatoshi(amount.dropRight(1).toLong / 1000000000L))
-      case _ => Some(MilliSatoshi(amount.toLong * 1000L))
-    }
-  }
-  amountMsat.foreach(a => require(a.amount > 0 && a.amount < PaymentRequest.maxAmountMsat, "amount is not valid"))
+case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], unit: Char, timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
+
+  amount.map(a => require(a.amount > 0 && a.amount <= PaymentRequest.maxAmountMsat, s"amount is not valid"))
 
   /**
     *
@@ -57,7 +48,7 @@ case class PaymentRequest(prefix: String, amount: String, timestamp: Long, nodeI
     *
     * @return the hash of this payment request
     */
-  def hash: BinaryData = Crypto.sha256(s"${prefix}${amount}".getBytes("UTF-8") ++ data)
+  def hash: BinaryData = Crypto.sha256(s"${prefix}${Amount.encode(amount, unit)}".getBytes("UTF-8") ++ data)
 
   /**
     *
@@ -92,12 +83,19 @@ object PaymentRequest {
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
   val maxAmountMsat = 4294967296L
 
-  def apply(nodeId: PublicKey, amountMsat: MilliSatoshi, paymentHash: BinaryData, privateKey: PrivateKey, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
-    val amount = s"${amountMsat.amount}m"
-    val pr = PaymentRequest("lntb", amount, timestamp, nodeId, List(PaymentHashTag(paymentHash)), BinaryData.empty)
-    val pr1 = pr.sign(privateKey)
-    pr1
-  }
+  def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
+    PaymentRequest(
+      prefix = prefix,
+      unit = unit,
+      amount = amount,
+      timestamp = timestamp,
+      nodeId = privateKey.publicKey,
+      tags = List(
+        Some(PaymentHashTag(paymentHash)),
+        description.map(DescriptionTag(_)),
+        expirySeconds.map(ExpiryTag(_))).flatten,
+      signature = BinaryData.empty)
+      .sign(privateKey)
 
   sealed trait Tag {
     def toInt5s: Seq[Int5]
@@ -186,9 +184,9 @@ object PaymentRequest {
     * @param fee node fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class RoutingInfoTag(pubkey: BinaryData, channelId: BinaryData, fee: Long, cltvExpiryDelta: Int) extends Tag {
+  case class RoutingInfoTag(pubkey: PublicKey, channelId: BinaryData, fee: Long, cltvExpiryDelta: Int) extends Tag {
     override def toInt5s = {
-      val ints = Bech32.eight2five(pubkey ++ channelId ++ Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN))
+      val ints = Bech32.eight2five(pubkey.toBin ++ channelId ++ Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN))
       Seq(Bech32.map('r'), (ints.length / 32).toByte, (ints.length % 32).toByte) ++ ints
     }
   }
@@ -201,6 +199,26 @@ object PaymentRequest {
     override def toInt5s = {
       val ints = Seq((seconds / 32).toByte, (seconds % 32).toByte)
       Seq(Bech32.map('x'), 0.toByte, 2.toByte) ++ ints
+    }
+  }
+
+  object Amount {
+    def decode(input: String): (Option[MilliSatoshi], Char) =
+      input match {
+        case "" => (None, 'm')
+        case a if a.last == 'm' => (Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L)), a.last)
+        case a if a.last == 'u' => (Some(MilliSatoshi(a.dropRight(1).toLong * 100000L)), a.last)
+        case a if a.last == 'n' => (Some(MilliSatoshi(a.dropRight(1).toLong * 100L)), a.last)
+        case a if a.last == 'p' => (Some(MilliSatoshi(a.dropRight(1).toLong / 10L)), a.last)
+      }
+
+    def encode(amount: Option[MilliSatoshi], unit: Char): String =
+    amount match {
+      case None => ""
+      case Some(amt) if unit == 'm' => s"${amt.amount / 100000000L}$unit"
+      case Some(amt) if unit == 'u' => s"${amt.amount / 100000L}$unit"
+      case Some(amt) if unit == 'n' => s"${amt.amount / 100L}$unit"
+      case Some(amt) if unit == 'p' => s"${amt.amount * 10L}$unit"
     }
   }
 
@@ -229,7 +247,7 @@ object PaymentRequest {
           }
         case r if r == Bech32.map('r') =>
           val data = Bech32.five2eight(input.drop(3).take(len))
-          val pubkey = data.take(33)
+          val pubkey = PublicKey(data.take(33))
           val channelId = data.drop(33).take(8)
           val fee = Protocol.uint64(data.drop(33 + 8), ByteOrder.BIG_ENDIAN)
           val cltv = Protocol.uint16(data.drop(33 + 8 + 8), ByteOrder.BIG_ENDIAN)
@@ -300,8 +318,8 @@ object PaymentRequest {
     val (pub1, pub2) = Crypto.recoverPublicKey((r, s), Crypto.sha256(message))
     val pub = if (recid % 2 != 0) pub2 else pub1
     val prefix = hrp.take(4)
-    val amount: String = hrp.drop(4)
-    val pr = PaymentRequest(prefix, amount, timestamp, pub, tags.toList, signature)
+    val (amount_opt, unit) = Amount.decode(hrp.drop(4))
+    val pr = PaymentRequest(prefix, amount_opt, unit, timestamp, pub, tags.toList, signature)
     val validSig = Crypto.verifySignature(pr.hash, (r, s), pub)
     require(validSig, "invalid signature")
     pr
@@ -313,9 +331,10 @@ object PaymentRequest {
     * @return a bech32-encoded payment request
     */
   def write(pr: PaymentRequest): String = {
-    val hrp = s"${pr.prefix}${pr.amount}"
+    // currency unit is Satoshi, but we compute amounts in Millisatoshis
+    val hramount = Amount.encode(pr.amount, pr.unit)
+    val hrp = s"${pr.prefix}$hramount"
     val data1 = pr.data ++ Bech32.eight2five(pr.signature)
-
     val checksum = Bech32.checksum(hrp, data1)
     hrp + "1" + new String((data1 ++ checksum).map(i => Bech32.pam(i)).toArray)
   }
