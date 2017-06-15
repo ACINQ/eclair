@@ -15,7 +15,7 @@ import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.GUIValidators
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, GUIValidators}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
@@ -41,6 +41,8 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
     resultBox.managedProperty().bind(resultBox.visibleProperty())
     stage.sizeToScene()
   }
+
+  @FXML def handleCopyInvoice(event: ActionEvent) = ContextMenuUtils.copyToClipboard(paymentRequestTextArea.getText)
 
   @FXML def handleGenerate(event: ActionEvent) = {
     if ((("milliBTC".equals(unit.getValue) || "Satoshi".equals(unit.getValue))

@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.scene.control.*?>
-<?import javafx.scene.layout.*?>
-<?import java.net.URL?>
 <?import javafx.collections.FXCollections?>
-<?import java.lang.String?>
+<?import javafx.scene.control.*?>
 <?import javafx.scene.image.ImageView?>
+<?import javafx.scene.layout.*?>
+<?import java.lang.String?>
+<?import java.net.URL?>
 <VBox xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1" prefWidth="590.0">
     <children>
         <GridPane styleClass="grid">
@@ -54,10 +54,10 @@
 
             </children>
         </GridPane>
-        <GridPane fx:id="resultBox" styleClass="grid, result-box" maxHeight="0.0" minHeight="0.0" visible="false">
+        <GridPane fx:id="resultBox" styleClass="grid, result-box" visible="false">
             <columnConstraints>
                 <ColumnConstraints halignment="LEFT" hgrow="ALWAYS" maxWidth="250.0" minWidth="10.0" prefWidth="250.0"/>
-                <ColumnConstraints hgrow="ALWAYS" minWidth="10.0" prefWidth="240.0"/>
+                <ColumnConstraints hgrow="ALWAYS" minWidth="200.0" prefWidth="240.0"/>
             </columnConstraints>
             <rowConstraints>
                 <RowConstraints minHeight="10.0" vgrow="ALWAYS"/>
@@ -67,8 +67,14 @@
                            GridPane.rowIndex="0" GridPane.columnIndex="0"></ImageView>
                 <VBox spacing="10.0" GridPane.rowIndex="0" GridPane.columnIndex="1">
                     <children>
-                        <Label text="Invoice:" styleClass="text-strong" />
-                        <TextArea fx:id="paymentRequestTextArea" editable="false" styleClass="noteditable, text-sm, text-mono" wrapText="true" />
+                        <HBox spacing="10.0" alignment="CENTER_LEFT">
+                            <children>
+                                <Label text="Invoice:" styleClass="text-strong" />
+                                <Button mnemonicParsing="false" onAction="#handleCopyInvoice" styleClass="copy-clipboard"
+                                        text="Copy to Clipboard" GridPane.columnIndex="1" GridPane.rowIndex="2" />
+                            </children>
+                        </HBox>
+                        <TextArea fx:id="paymentRequestTextArea" prefHeight="200.0" editable="false" styleClass="noteditable, text-sm, text-mono" wrapText="true" />
                     </children>
                 </VBox>
             </children>
