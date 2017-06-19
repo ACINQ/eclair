@@ -140,7 +140,6 @@ object ChannelCodecs {
       ("localNextHtlcId" | uint64) ::
       ("remoteNextHtlcId" | uint64) ::
       ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
-      ("unackedMessages" | listOfN(uint16, lightningMessageCodec)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
       ("channelId" | binarydata(32))).as[Commitments]
@@ -177,7 +176,10 @@ object ChannelCodecs {
 
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
-      ("shortChannelId" | optional(bool, uint64))).as[DATA_NORMAL]
+      ("shortChannelId" | optional(bool, uint64)) ::
+      ("localAnnouncementSignatures" | optional(bool, announcementSignaturesCodec)) ::
+      ("localShutdown" | optional(bool, shutdownCodec)) ::
+      ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]
 
   val DATA_SHUTDOWN_Codec: Codec[DATA_SHUTDOWN] = (
     ("commitments" | commitmentsCodec) ::

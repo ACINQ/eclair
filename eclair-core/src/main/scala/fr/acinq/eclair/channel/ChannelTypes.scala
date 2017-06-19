@@ -7,7 +7,7 @@ import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
 
 /**
@@ -42,6 +42,7 @@ case object NEGOTIATING extends State
 case object CLOSING extends State
 case object CLOSED extends State
 case object OFFLINE extends State
+case object SYNCING extends State
 case object ERR_FUNDING_LOST extends State
 case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
@@ -138,7 +139,7 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, l
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
-final case class DATA_NORMAL(commitments: Commitments, shortChannelId: Option[Long]) extends Data with HasCommitments
+final case class DATA_NORMAL(commitments: Commitments, shortChannelId: Option[Long], localAnnouncementSignatures: Option[AnnouncementSignatures], localShutdown: Option[Shutdown], remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,

@@ -20,7 +20,9 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case destination: ActorRef => context become main(destination)
 
-    case error: Error => destination ! error
+    case msg: LightningMessage => destination ! msg
+
+    /*case error: Error => destination ! error
 
     case StoreAndForward(CLOSED, stateData: HasCommitments, _) =>
       log.debug(s"deleting database record for channelId=${stateData.channelId}")
@@ -32,6 +34,6 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
       outgoing.foreach(destination forward _)
 
     case StoreAndForward(_, _, outgoing) =>
-      outgoing.foreach(destination forward _)
+      outgoing.foreach(destination forward _)*/
   }
 }

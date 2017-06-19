@@ -53,7 +53,7 @@ object Helpers {
       case (_, OFFLINE, _, _) => Nil // we are not connected anymore (or not yet connected after a restore), we will re-send messages when we leave OFFLINE state
       case (OFFLINE, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toSeq // NB: if we re-send the message and the other party didn't receive it before, they will return an error because channel wasn't stored (see #120), and that's ok
       case (OFFLINE, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
-      case (OFFLINE, _, _: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages
+      //case (OFFLINE, _, _: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages
       case (OFFLINE, _, _, _) => Nil
       case (_, _, _, d: DATA_CLOSING) => Nil
       case (_, _, _, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
@@ -64,7 +64,7 @@ object Helpers {
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
       case (_, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
-      case (_, _, d1: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages diff d1.commitments.unackedMessages
+      //case (_, _, d1: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages diff d1.commitments.unackedMessages
       case _ => ??? // eg: goto(CLOSING)
     }
   }

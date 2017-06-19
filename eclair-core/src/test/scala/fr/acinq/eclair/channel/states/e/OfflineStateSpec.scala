@@ -74,7 +74,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   }
 
-  test("sig1-rev1-sig2 and counterparty replies with rev1") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  /*test("sig1-rev1-sig2 and counterparty replies with rev1") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     val sender = TestProbe()
     sender.send(alice, CMD_ADD_HTLC(1000000, BinaryData("42" * 32), 400144))
     val ab_add_0 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -130,9 +130,9 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // B ignores sig2
     assert(Commitments.isOldCommit(comm_b2_1, ab_sig_2) === true)
 
-  }
+  }*/
 
-  test("both parties rev-sig") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  /*test("both parties rev-sig") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     val sender = TestProbe()
 
     sender.send(alice, CMD_ADD_HTLC(1000000, BinaryData("42" * 32), 400144))
@@ -170,6 +170,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     assert(Commitments.isOldRevocation(comm_a, ba_rev_1) === true)
     Commitments.receiveCommit(comm_a, ba_sig_2)
 
-  }
+  }*/
 
 }

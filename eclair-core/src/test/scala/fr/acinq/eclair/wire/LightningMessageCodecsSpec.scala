@@ -5,13 +5,12 @@ import java.net.{InetAddress, InetSocketAddress}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.wire.LightningMessageCodecs.{lightningMessageCodec, rgb, socketaddress, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 import scodec.bits.{BitVector, HexStringSyntax}
-
-import scala.util.Random
 
 /**
   * Created by PM on 31/05/2016.
@@ -26,12 +25,6 @@ class LightningMessageCodecsSpec extends FunSuite {
   def point(fill: Byte) = Scalar(bin(32, fill)).toPoint
 
   def publicKey(fill: Byte) = PrivateKey(bin(32, fill), compressed = true).publicKey
-
-  def randomBytes(size: Int): BinaryData = {
-    val bin = new Array[Byte](size)
-    Random.nextBytes(bin)
-    bin
-  }
 
   def randomSignature: BinaryData = {
     val priv = randomBytes(32)
@@ -158,11 +151,12 @@ class LightningMessageCodecsSpec extends FunSuite {
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), 42, randomSignature, randomSignature)
     val ping = Ping(100, BinaryData("01" * 10))
     val pong = Pong(BinaryData("01" * 10))
+    val channel_reestablish = ChannelReestablish(randomBytes(32), 242842L, 42L)
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::
         update_add_htlc :: update_fulfill_htlc :: update_fail_htlc :: update_fail_malformed_htlc :: commit_sig :: revoke_and_ack ::
-        channel_announcement :: node_announcement :: channel_update :: announcement_signatures :: ping :: pong :: Nil
+        channel_announcement :: node_announcement :: channel_update :: announcement_signatures :: ping :: pong :: channel_reestablish :: Nil
 
     msgs.foreach {
       case msg => {

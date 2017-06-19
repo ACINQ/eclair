@@ -108,6 +108,11 @@ object LightningMessageCodecs {
   val pongCodec: Codec[Pong] =
     ("data" | varsizebinarydata).as[Pong]
 
+  val channelReestablishCodec: Codec[ChannelReestablish] = (
+    ("channelId" | binarydata(32)) ::
+      ("commitmentsReceived" | uint64) ::
+      ("revocationsReceived" | uint64)).as[ChannelReestablish]
+
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | binarydata(32)) ::
       ("temporaryChannelId" | binarydata(32)) ::
@@ -269,6 +274,7 @@ object LightningMessageCodecs {
     .typecase(133, revokeAndAckCodec)
     .typecase(134, updateFeeCodec)
     .typecase(135, updateFailMalformedHtlcCodec)
+    .typecase(136, channelReestablishCodec)
     .typecase(256, channelAnnouncementCodec)
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)

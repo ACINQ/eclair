@@ -84,8 +84,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill),
-          unackedMessages = initialState.commitments.unackedMessages :+ fulfill)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
     }
   }
 
@@ -153,8 +152,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
-          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
     }
   }
 
@@ -167,8 +165,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
-          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
     }
   }
 
@@ -311,7 +308,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice.stateName == SHUTDOWN)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 1)
-      assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.unackedShutdown() === None)
     }
   }
 
@@ -387,8 +383,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fee = alice2bob.expectMsgType[UpdateFee]
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee),
-          unackedMessages = initialState.commitments.unackedMessages :+ fee)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
     }
   }
 
