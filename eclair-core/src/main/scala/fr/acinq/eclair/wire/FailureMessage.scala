@@ -1,7 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.wire.LightningMessageCodecs.{binarydata, channelUpdateCodec}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{binarydata, uint64, channelUpdateCodec}
 import scodec.Codec
 import scodec.codecs._
 
@@ -61,8 +61,8 @@ object FailureMessageCodecs {
     .typecase(PERM | 8, provide(PermanentChannelFailure))
     .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
     .typecase(PERM | 10, provide(UnknownNextPeer))
-    .typecase(UPDATE | 11, (("amountMsat" | uint32) :: ("channelUpdate" | channelUpdateCodec)).as[AmountBelowMinimum])
-    .typecase(UPDATE | 12, (("amountMsat" | uint32) :: ("channelUpdate" | channelUpdateCodec)).as[FeeInsufficient])
+    .typecase(UPDATE | 11, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateCodec)).as[AmountBelowMinimum])
+    .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateCodec)).as[FeeInsufficient])
     .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateCodec)).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("flags" | binarydata(2)) :: ("channelUpdate" | channelUpdateCodec)).as[ChannelDisabled])

@@ -21,7 +21,7 @@ object ChannelCodecs {
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint32) ::
+      ("htlcMinimumMsat" | uint64) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPrivKey" | privateKey) ::
@@ -39,7 +39,7 @@ object ChannelCodecs {
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint32) ::
+      ("htlcMinimumMsat" | uint64) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubKey" | publicKey) ::
