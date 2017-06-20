@@ -8,7 +8,7 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
-import fr.acinq.eclair.api.Service
+import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
@@ -22,7 +22,7 @@ import org.json4s.JsonAST.JString
 
 import scala.compat.Platform
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Promise}
+import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 import scala.util.Try
 
 /**
@@ -108,7 +108,9 @@ class Setup(datadir: File, actorSystemName: String = "default") extends Logging 
     override val paymentHandler: ActorRef = _setup.paymentHandler
     override val paymentInitiator: ActorRef = _setup.paymentInitiator
     override val system: ActorSystem = _setup.system
+    override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(nodeId = nodeParams.privateKey.publicKey, alias = nodeParams.alias, port = config.getInt("server.port"), chainHash = chainHash, blockHeight = Globals.blockCount.intValue()))
   }
+
   val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
 
   Try(Await.result(zmqConnected.future, 5 seconds)).recover { case _ => throw BitcoinZMQConnectionTimeoutException }.get
