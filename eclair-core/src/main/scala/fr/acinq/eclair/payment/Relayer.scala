@@ -47,18 +47,18 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
 
     case ChannelStateChanged(channel, _, _, _, NORMAL, d: DATA_NORMAL) =>
       import d.commitments.channelId
-      log.info(s"adding channel $channelId to available channels")
+      //log.info(s"adding channel $channelId to available channels")
       context become main(channels + (channelId -> channel), shortIds, bindings, channelUpdates)
 
     case ChannelStateChanged(_, _, _, _, NEGOTIATING, d: DATA_NEGOTIATING) =>
       import d.commitments.channelId
-      log.info(s"removing channel $channelId from available channels")
+      //log.info(s"removing channel $channelId from available channels")
       // TODO: cleanup bindings
       context become main(channels - channelId, shortIds, bindings, channelUpdates)
 
     case ChannelStateChanged(_, _, _, _, CLOSING, d: DATA_CLOSING) =>
       import d.commitments.channelId
-      log.info(s"removing channel $channelId from available channels")
+      //log.info(s"removing channel $channelId from available channels")
       // TODO: cleanup bindings
       context become main(channels - channelId, shortIds, bindings, channelUpdates)
 

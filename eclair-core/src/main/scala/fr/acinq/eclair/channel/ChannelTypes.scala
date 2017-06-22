@@ -139,7 +139,11 @@ final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, l
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
-final case class DATA_NORMAL(commitments: Commitments, shortChannelId: Option[Long], localAnnouncementSignatures: Option[AnnouncementSignatures], localShutdown: Option[Shutdown], remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
+final case class DATA_NORMAL(commitments: Commitments,
+                             shortChannelId: Option[Long],
+                             localAnnouncementSignatures: Option[AnnouncementSignatures],
+                             localShutdown: Option[Shutdown],
+                             remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,

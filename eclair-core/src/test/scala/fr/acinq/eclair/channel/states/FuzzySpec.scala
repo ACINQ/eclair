@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states
 
 import java.util.concurrent.atomic.AtomicBoolean
 
-import akka.actor.{ActorRef, Cancellable, Props, Status}
+import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
@@ -13,6 +13,7 @@ import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
+import grizzled.slf4j.Logging
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -24,7 +25,7 @@ import scala.util.Random
   * Created by PM on 05/07/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
+class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Logging {
 
   type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], ActorRef, ActorRef, ActorRef, ActorRef, ActorRef]
 
@@ -115,12 +116,73 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("fuzzy testing with only one party sending HTLCs") {
+  class SenderActor(channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef) extends Actor with ActorLogging {
+
+    if (channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size >= 10 || channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size >= 10) {
+      context stop self
+    } else {
+      paymentHandler ! ReceivePayment(MilliSatoshi(requiredAmount))
+    }
+
+    override def receive: Receive = waitingForPaymentRequest
+
+    def waitingForPaymentRequest: Receive = {
+      case req: PaymentRequest =>
+        channel ! buildCmdAdd(req.paymentHash, req.nodeId)
+        import scala.concurrent.ExecutionContext.Implicits.global
+        context.system.scheduler.scheduleOnce(20 seconds, self, 'timeout)
+        context become waitingForFulfill
+    }
+
+    def waitingForFulfill: Receive = {
+      case u: UpdateFulfillHtlc =>
+        log.info(s"successfully sent htlc #${u.id}")
+        context stop self
+      case u: UpdateFailHtlc =>
+        log.warning(s"htlc failed: ${u.id}")
+        context stop self
+      case Status.Failure(t) =>
+        log.error(s"htlc error: ${t.getMessage}")
+        context stop self
+      case 'timeout =>
+        log.warning("htlc timed out")
+        context stop self
+    }
+
+  }
+
+
+  ignore("simple test with only one party sending HTLCs") {
+    case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+
+      import scala.concurrent.ExecutionContext.Implicits.global
+      system.scheduler.schedule(1 second, 150 milliseconds) {
+        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
+        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
+        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
+      }
+      randomDisconnect(pipe)
+      awaitCond(false, max = 1 day)
+    }
+
+  ignore("simple test with both parties sending HTLCs") {
+    case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+
+      import scala.concurrent.ExecutionContext.Implicits.global
+      system.scheduler.schedule(1 second, 50 milliseconds) {
+        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
+        system.actorOf(Props(new SenderActor(bob, paymentHandlerA)))
+      }
+      randomDisconnect(pipe)
+      awaitCond(false, max = 1 day)
+  }
+
+  ignore("fuzzy testing with only one party sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
       val success1 = new AtomicBoolean(false)
       val gatling1 = new Thread(new Runnable {
         override def run(): Unit = {
-          gatling(5, 100, alice, paymentHandlerB, Bob.id)
+          gatling(1, 100, alice, paymentHandlerB, Bob.id)
           success1.set(true)
         }
       })
@@ -131,7 +193,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       chaosMonkey.cancel()
   }
 
-  test("fuzzy testing with both parties sending HTLCs") {
+  ignore("fuzzy testing with both parties sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
       val success1 = new AtomicBoolean(false)
       val gatling1 = new Thread(new Runnable {

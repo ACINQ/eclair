@@ -20,7 +20,7 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case destination: ActorRef => context become main(destination)
 
-    case msg: LightningMessage => destination ! msg
+    case msg: LightningMessage => destination forward msg
 
     /*case error: Error => destination ! error
 

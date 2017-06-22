@@ -162,10 +162,8 @@ object Commitments extends Logging {
 
   def getHtlcCrossSigned(commitments: Commitments, directionRelativeToLocal: Direction, htlcId: Long): Option[UpdateAddHtlc] = {
     val remoteSigned = commitments.localCommit.spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal && htlc.add.id == htlcId)
-    val localSigned = commitments.remoteNextCommitInfo match {
-      case Left(waitingForRevocation) => waitingForRevocation.nextRemoteCommit.spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal.opposite && htlc.add.id == htlcId)
-      case Right(_) => commitments.remoteCommit.spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal.opposite && htlc.add.id == htlcId)
-    }
+    val localSigned = commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments.remoteCommit)
+      .spec.htlcs.find(htlc => htlc.direction == directionRelativeToLocal.opposite && htlc.add.id == htlcId)
     for {
       htlc_out <- remoteSigned
       htlc_in <- localSigned
@@ -174,6 +172,14 @@ object Commitments extends Logging {
 
   def sendFulfill(commitments: Commitments, cmd: CMD_FULFILL_HTLC): (Commitments, UpdateFulfillHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
+      case Some(htlc) if commitments.localChanges.proposed.exists {
+        case u: UpdateFulfillHtlc if htlc.id == u.id => true
+        case u: UpdateFailHtlc if htlc.id == u.id => true
+        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
+        case _ => false
+      } =>
+        // we have already sent a fail/fulfill for this htlc
+        throw UnknownHtlcId(cmd.id)
       case Some(htlc) if htlc.paymentHash == sha256(cmd.r) =>
         val fulfill = UpdateFulfillHtlc(commitments.channelId, cmd.id, cmd.r)
         val commitments1 = addLocalProposal(commitments, fulfill)
@@ -191,6 +197,14 @@ object Commitments extends Logging {
 
   def sendFail(commitments: Commitments, cmd: CMD_FAIL_HTLC, nodeSecret: PrivateKey): (Commitments, UpdateFailHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
+      case Some(htlc) if commitments.localChanges.proposed.exists {
+        case u: UpdateFulfillHtlc if htlc.id == u.id => true
+        case u: UpdateFailHtlc if htlc.id == u.id => true
+        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
+        case _ => false
+      } =>
+        // we have already sent a fail/fulfill for this htlc
+        throw UnknownHtlcId(cmd.id)
       case Some(htlc) =>
         // we need the shared secret to build the error packet
         val sharedSecret = Sphinx.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).sharedSecret
@@ -206,6 +220,14 @@ object Commitments extends Logging {
 
   def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): (Commitments, UpdateFailMalformedHtlc) =
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
+      case Some(htlc) if commitments.localChanges.proposed.exists {
+        case u: UpdateFulfillHtlc if htlc.id == u.id => true
+        case u: UpdateFailHtlc if htlc.id == u.id => true
+        case u: UpdateFailMalformedHtlc if htlc.id == u.id => true
+        case _ => false
+      } =>
+        // we have already sent a fail/fulfill for this htlc
+        throw UnknownHtlcId(cmd.id)
       case Some(htlc) =>
         val fail = UpdateFailMalformedHtlc(commitments.channelId, cmd.id, cmd.onionHash, cmd.failureCode)
         val commitments1 = addLocalProposal(commitments, fail)

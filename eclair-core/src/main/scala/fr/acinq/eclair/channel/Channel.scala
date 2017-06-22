@@ -671,9 +671,15 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         case None => {}
       }
       // and we clean up unacknowledged updates
+      log.info(s"discarding proposed OUT: ${d.commitments.localChanges.proposed.mkString(",")}")
+      log.info(s"discarding proposed IN: ${d.commitments.remoteChanges.proposed.mkString(",")}")
       val commitments1 = d.commitments.copy(
         localChanges = d.commitments.localChanges.copy(proposed = Nil),
-        remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil))
+        remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
+        localNextHtlcId = d.commitments.localNextHtlcId - d.commitments.localChanges.proposed.collect { case u: UpdateAddHtlc => u }.size,
+        remoteNextHtlcId = d.commitments.remoteNextHtlcId - d.commitments.remoteChanges.proposed.collect { case u: UpdateAddHtlc => u }.size)
+      log.info(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
+      log.info(s"remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
       goto(OFFLINE) using d.copy(commitments = commitments1)
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
@@ -982,14 +988,22 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           // we had sent a new sig and were waiting for their revocation
           // they had received the new sig but their revocation was lost during the disconnection
           // they will send us the revocation, nothing to do here
+          log.info(s"waiting for them to re-send their last revocation")
           d.commitments
         case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == commitmentsReceived + 1 =>
           // we had sent a new sig and were waiting for their revocation
           // they didn't receive the new sig because of the disconnection
           // for now we simply discard the changes we had just signed
-          log.info(s"discarding previously signed changes: ${d.commitments.localChanges.signed.mkString(",")}")
+          // we also "un-sign" their changes that we already acked
+          log.info(s"discarding previously local signed changes: ${d.commitments.localChanges.signed.mkString(",")}")
+          log.info(s"putting previously remote signed changed back in acked: ${d.commitments.remoteChanges.acked.mkString(",")}")
+          val localNextHtlcId1 = d.commitments.localNextHtlcId - d.commitments.localChanges.signed.collect { case u: UpdateAddHtlc => u }.size
+          log.info(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${localNextHtlcId1}")
           d.commitments.copy(
-            localChanges = d.commitments.localChanges.copy(signed = Nil)
+            localChanges = d.commitments.localChanges.copy(signed = Nil), // NB: acked == Nil
+            remoteChanges = d.commitments.remoteChanges.copy(acked = d.commitments.remoteChanges.signed ++ d.commitments.remoteChanges.acked, signed = Nil),
+            localNextHtlcId = localNextHtlcId1,
+            remoteNextCommitInfo = Right(waitingForRevocation.nextRemoteCommit.remotePerCommitmentPoint)
           )
         case Right(_) if d.commitments.remoteCommit.index == commitmentsReceived =>
           // there wasn't any sig in-flight when the disconnection occured
@@ -1011,6 +1025,12 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         )
         forwarder ! revocation
       } else throw RevocationSyncError
+
+      // let's now fail all htlc for which we are the final payee
+      commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
+        .getOrElse(commitments1.remoteCommit).spec.htlcs.collect {
+        case Htlc(OUT, add, _) => context.system.scheduler.scheduleOnce(3 seconds, self, CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure)))
+      }
 
       d match {
         case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
@@ -1042,7 +1062,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
               val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
               router ! channelUpdate
           }
-          goto(NORMAL)
+          goto(NORMAL) using d1.copy(commitments = commitments1)
         case _: DATA_SHUTDOWN =>
           goto(SHUTDOWN)
         case _: DATA_NEGOTIATING => goto(NEGOTIATING)
