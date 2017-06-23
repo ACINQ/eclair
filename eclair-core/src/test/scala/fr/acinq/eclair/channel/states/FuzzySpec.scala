@@ -150,8 +150,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     }
 
   }
-
-
+  
   ignore("simple test with only one party sending HTLCs") {
     case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
 

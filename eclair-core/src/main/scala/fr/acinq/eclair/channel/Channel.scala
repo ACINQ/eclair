@@ -6,11 +6,13 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
-import fr.acinq.eclair.crypto.{Generators, ShaChain}
+import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
+import scodec.{Attempt, DecodeResult}
+import scodec.bits.BitVector
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
@@ -671,8 +673,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         case None => {}
       }
       // and we clean up unacknowledged updates
-      log.info(s"discarding proposed OUT: ${d.commitments.localChanges.proposed.mkString(",")}")
-      log.info(s"discarding proposed IN: ${d.commitments.remoteChanges.proposed.mkString(",")}")
+      log.info(s"discarding proposed OUT: ${d.commitments.localChanges.proposed.map(Commitments.msg2String(_)).mkString(",")}")
+      log.info(s"discarding proposed IN: ${d.commitments.remoteChanges.proposed.map(Commitments.msg2String(_)).mkString(",")}")
       val commitments1 = d.commitments.copy(
         localChanges = d.commitments.localChanges.copy(proposed = Nil),
         remoteChanges = d.commitments.remoteChanges.copy(proposed = Nil),
@@ -959,16 +961,6 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       relayer ! AddHtlcFailed(c, ChannelUnavailable)
       handleCommandError(sender, ChannelUnavailable)
 
-    // TODO: what do we do with that?
-    //    case Event(c: CMD_FULFILL_HTLC, d: DATA_NORMAL) =>
-    //      log.info(s"we are disconnected so we just include the fulfill in our commitments")
-    //      Try(Commitments.sendFulfill(d.commitments, c)) match {
-    //        case Success((commitments1, _)) =>
-    //          sender ! "ok"
-    //          goto(stateName) using d.copy(commitments = commitments1)
-    //        case Failure(cause) => handleCommandError(sender, cause)
-    //      }
-
     case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while disconnected"), d)
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
@@ -983,33 +975,51 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   when(SYNCING) {
     case Event(ChannelReestablish(_, commitmentsReceived, revocationsReceived), d: HasCommitments) =>
-      val commitments1 = d.commitments.remoteNextCommitInfo match {
+      val (htlcsIn, commitments1) = d.commitments.remoteNextCommitInfo match {
         case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == commitmentsReceived =>
           // we had sent a new sig and were waiting for their revocation
           // they had received the new sig but their revocation was lost during the disconnection
           // they will send us the revocation, nothing to do here
           log.info(s"waiting for them to re-send their last revocation")
-          d.commitments
+          val htlcsIn = (d.commitments.remoteCommit.spec.htlcs intersect waitingForRevocation.nextRemoteCommit.spec.htlcs).collect {
+            case Htlc(OUT, add, _) => add
+          }
+          (htlcsIn, d.commitments)
         case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == commitmentsReceived + 1 =>
           // we had sent a new sig and were waiting for their revocation
           // they didn't receive the new sig because of the disconnection
           // for now we simply discard the changes we had just signed
           // we also "un-sign" their changes that we already acked
-          log.info(s"discarding previously local signed changes: ${d.commitments.localChanges.signed.mkString(",")}")
-          log.info(s"putting previously remote signed changed back in acked: ${d.commitments.remoteChanges.acked.mkString(",")}")
+          log.info(s"discarding previously local signed changes: ${d.commitments.localChanges.signed.map(Commitments.msg2String(_)).mkString(",")}")
+          log.info(s"putting previously remote signed changed back in acked: ${d.commitments.remoteChanges.acked.map(Commitments.msg2String(_)).mkString(",")}")
           val localNextHtlcId1 = d.commitments.localNextHtlcId - d.commitments.localChanges.signed.collect { case u: UpdateAddHtlc => u }.size
           log.info(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${localNextHtlcId1}")
-          d.commitments.copy(
+          val htlcsIn = d.commitments.remoteCommit.spec.htlcs.collect {
+            case Htlc(OUT, add, _) => add
+          }
+          (htlcsIn, d.commitments.copy(
             localChanges = d.commitments.localChanges.copy(signed = Nil), // NB: acked == Nil
             remoteChanges = d.commitments.remoteChanges.copy(acked = d.commitments.remoteChanges.signed ++ d.commitments.remoteChanges.acked, signed = Nil),
             localNextHtlcId = localNextHtlcId1,
-            remoteNextCommitInfo = Right(waitingForRevocation.nextRemoteCommit.remotePerCommitmentPoint)
-          )
+            remoteNextCommitInfo = Right(waitingForRevocation.nextRemoteCommit.remotePerCommitmentPoint)))
         case Right(_) if d.commitments.remoteCommit.index == commitmentsReceived =>
           // there wasn't any sig in-flight when the disconnection occured
-          d.commitments
+          val htlcsIn = d.commitments.remoteCommit.spec.htlcs.collect {
+            case Htlc(OUT, add, _) => add
+          }
+          (htlcsIn, d.commitments)
         case _ => throw CommitmentSyncError
       }
+
+      // let's now fail all pending htlc for which we are the final payee
+      val htlcsToFail = htlcsIn.filter {
+        case add =>
+          Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
+            .map(_.nextPacket.isLastPacket)
+            .getOrElse(true) // we also fail htlcs which onion we can't decode (message won't be precise)
+      }
+      log.info(s"failing htlcs=${htlcsToFail.map(Commitments.msg2String(_)).mkString(",")}")
+      htlcsToFail.foreach(add => self ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true))
 
       if (commitments1.localCommit.index == revocationsReceived) {
         // nothing to do
@@ -1025,12 +1035,6 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         )
         forwarder ! revocation
       } else throw RevocationSyncError
-
-      // let's now fail all htlc for which we are the final payee
-      commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit)
-        .getOrElse(commitments1.remoteCommit).spec.htlcs.collect {
-        case Htlc(OUT, add, _) => context.system.scheduler.scheduleOnce(3 seconds, self, CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure)))
-      }
 
       d match {
         case _: DATA_WAIT_FOR_FUNDING_CONFIRMED =>
