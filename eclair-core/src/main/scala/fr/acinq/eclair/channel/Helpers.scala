@@ -48,11 +48,6 @@ object Helpers {
     validateParamsFunder(nodeParams, channelReserveSatoshis, fundingSatoshis)
   }
 
-  def nothingHappenedSinceReachedNormal(commitments: Commitments): Boolean =
-    commitments.remoteChanges.acked.isEmpty &&
-      commitments.remoteChanges.signed.isEmpty &&
-      commitments.localCommit.index == 0
-
   /**
     *
     * @param remoteFeeratePerKw remote fee rate per kiloweight
