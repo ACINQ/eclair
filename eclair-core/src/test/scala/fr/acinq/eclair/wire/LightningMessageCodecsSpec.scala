@@ -168,7 +168,7 @@ class LightningMessageCodecsSpec extends FunSuite {
   }
 
   test("encode/decode per-hop payload") {
-    val payload = PerHopPayload(channel_id = 42, amt_to_forward = 142000, outgoing_cltv_value = 500000)
+    val payload = PerHopPayload(channel_id = 42, amtToForward = 142000, outgoingCltvValue = 500000)
     val bin = LightningMessageCodecs.perHopPayloadCodec.encode(payload).require
     assert(bin.toByteVector.size === 33)
     val payload1 = LightningMessageCodecs.perHopPayloadCodec.decode(bin).require.value

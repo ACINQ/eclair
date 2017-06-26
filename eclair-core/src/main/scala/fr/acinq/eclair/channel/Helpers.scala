@@ -3,17 +3,17 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.crypto.{Generators, Sphinx}
+import fr.acinq.eclair.Features.CHANNELS_PUBLIC_BIT
+import fr.acinq.eclair.blockchain.MakeFundingTxResponse
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.Features.CHANNELS_PUBLIC_BIT
-import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Features, Globals, NodeParams}
 import grizzled.slf4j.Logging
 
-import scala.util.{Failure, Left, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by PM on 20/05/2016.
@@ -49,11 +49,9 @@ object Helpers {
   }
 
   def nothingHappenedSinceReachedNormal(commitments: Commitments): Boolean =
-    commitments.localChanges == LocalChanges(Nil, Nil, Nil) &&
-    commitments.remoteChanges == RemoteChanges(Nil, Nil, Nil) &&
-    commitments.localCommit.index == 0 &&
-    commitments.remoteCommit.index == 0 &&
-    commitments.remoteNextCommitInfo.isRight
+    commitments.remoteChanges.acked.isEmpty &&
+      commitments.remoteChanges.signed.isEmpty &&
+      commitments.localCommit.index == 0
 
   /**
     *

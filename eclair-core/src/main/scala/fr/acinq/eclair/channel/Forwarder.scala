@@ -8,8 +8,6 @@ import fr.acinq.eclair.wire.{Error, LightningMessage}
   * Created by fabrice on 27/02/17.
   */
 
-case class StoreAndForward(state: State, stateData: Data, outgoing: Seq[LightningMessage])
-
 class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   // caller is responsible for sending the destination before anything else

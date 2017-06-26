@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel.states
 
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CountDownLatch
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
@@ -81,28 +81,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     PaymentLifecycle.buildCommand(amount, expiry, paymentHash, Hop(null, dest.toBin, null) :: Nil)._1
   }
 
-  def gatling(parallel: Int, total: Int, channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, destination: PublicKey): Unit = {
-    for (i <- 0 until total / parallel) {
-      // we don't want to be above maxHtlcValueInFlightMsat or maxAcceptedHtlcs
-      awaitCond(channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size < 10 && channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size < 10)
-      val senders = for (i <- 0 until parallel) yield TestProbe()
-      senders.foreach(_.send(paymentHandler, ReceivePayment(MilliSatoshi(requiredAmount), "One coffee")))
-      val paymentHashes = senders.map(_.expectMsgType[PaymentRequest]).map(pr => pr.paymentHash)
-      val cmds = paymentHashes.map(h => buildCmdAdd(h, destination))
-      senders.zip(cmds).foreach {
-        case (s, cmd) => s.send(channel, cmd)
-      }
-      senders.map {
-        case sender =>
-          sender.expectMsgAnyClassOf(classOf[String], classOf[Status.Failure]) match {
-            case _: String => sender.expectMsgType[UpdateFulfillHtlc](10 seconds)
-            case Status.Failure(ChannelUnavailable) => // expected, since we keep disconnecting the channel
-            case Status.Failure(t) => throw t
-          }
-      }
-    }
-  }
-
   def randomDisconnect(initialPipe: ActorRef): Cancellable = {
     import scala.concurrent.ExecutionContext.Implicits.global
     var currentPipe = initialPipe
@@ -121,7 +99,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     if (channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size >= 10 || channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size >= 10) {
       context stop self
     } else {
-      paymentHandler ! ReceivePayment(MilliSatoshi(requiredAmount))
+      paymentHandler ! ReceivePayment(MilliSatoshi(requiredAmount), "One coffee")
     }
 
     override def receive: Receive = waitingForPaymentRequest
@@ -151,71 +129,40 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
 
   }
   
-  ignore("simple test with only one party sending HTLCs") {
-    case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+  test("fuzzy test with only one party sending HTLCs") {
+    case (alice, bob, pipe, _, _, _, paymentHandlerB) =>
 
       import scala.concurrent.ExecutionContext.Implicits.global
-      system.scheduler.schedule(1 second, 150 milliseconds) {
+      val latch = new CountDownLatch(100)
+      val task = system.scheduler.schedule(1 second, 150 milliseconds) {
         system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
         system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
+        latch.countDown()
       }
-      randomDisconnect(pipe)
-      awaitCond(false, max = 1 day)
+      val chaosMonkey = randomDisconnect(pipe)
+      awaitCond(latch.getCount == 0, max = 2 minutes)
+      task.cancel()
+      chaosMonkey.cancel()
+      assert(alice.stateName == NORMAL)
+      assert(bob.stateName == NORMAL)
     }
 
-  ignore("simple test with both parties sending HTLCs") {
-    case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
+  test("fuzzy test with both parties sending HTLCs") {
+    case (alice, bob, pipe, _, _, paymentHandlerA, paymentHandlerB) =>
 
       import scala.concurrent.ExecutionContext.Implicits.global
-      system.scheduler.schedule(1 second, 50 milliseconds) {
+      val latch = new CountDownLatch(200)
+      val task = system.scheduler.schedule(1 second, 50 milliseconds) {
         system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
         system.actorOf(Props(new SenderActor(bob, paymentHandlerA)))
+        latch.countDown()
       }
-      randomDisconnect(pipe)
-      awaitCond(false, max = 1 day)
-  }
-
-  ignore("fuzzy testing with only one party sending HTLCs") {
-    case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
-      val success1 = new AtomicBoolean(false)
-      val gatling1 = new Thread(new Runnable {
-        override def run(): Unit = {
-          gatling(1, 100, alice, paymentHandlerB, Bob.id)
-          success1.set(true)
-        }
-      })
-      gatling1.start()
       val chaosMonkey = randomDisconnect(pipe)
-      gatling1.join()
-      assert(success1.get())
+      awaitCond(latch.getCount == 0, max = 2 minutes)
+      task.cancel()
       chaosMonkey.cancel()
-  }
-
-  ignore("fuzzy testing with both parties sending HTLCs") {
-    case (alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB) =>
-      val success1 = new AtomicBoolean(false)
-      val gatling1 = new Thread(new Runnable {
-        override def run(): Unit = {
-          gatling(4, 100, alice, paymentHandlerB, Bob.id)
-          success1.set(true)
-        }
-      })
-      gatling1.start()
-      val success2 = new AtomicBoolean(false)
-      val gatling2 = new Thread(new Runnable {
-        override def run(): Unit = {
-          gatling(4, 100, bob, paymentHandlerA, Alice.id)
-          success2.set(true)
-        }
-      })
-      gatling2.start()
-      val chaosMonkey = randomDisconnect(pipe)
-      gatling1.join()
-      assert(success1.get())
-      gatling2.join()
-      assert(success2.get())
-      chaosMonkey.cancel()
+      assert(alice.stateName == NORMAL)
+      assert(bob.stateName == NORMAL)
   }
 
 }

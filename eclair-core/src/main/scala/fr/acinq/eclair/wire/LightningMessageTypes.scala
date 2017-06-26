@@ -32,8 +32,8 @@ case class Pong(data: BinaryData) extends SetupMessage
 
 case class ChannelReestablish(
                              channelId: BinaryData,
-                             commitmentsReceived: Long,
-                             revocationsReceived: Long) extends ChannelMessage with HasChannelId
+                             nextLocalCommitmentNumber: Long,
+                             nextRemoteRevocationNumber: Long) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: BinaryData,
                        temporaryChannelId: BinaryData,
@@ -150,5 +150,5 @@ case class ChannelUpdate(signature: BinaryData,
                          feeProportionalMillionths: Long) extends RoutingMessage
 
 case class PerHopPayload(channel_id: Long,
-                         amt_to_forward: Long,
-                         outgoing_cltv_value: Int)
+                         amtToForward: Long,
+                         outgoingCltvValue: Int)
