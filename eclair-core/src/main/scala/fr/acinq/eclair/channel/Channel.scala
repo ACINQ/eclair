@@ -889,6 +889,32 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   })
 
   when(CLOSING) {
+    case Event(c: CMD_FULFILL_HTLC, d: DATA_CLOSING) =>
+      Try(Commitments.sendFulfill(d.commitments, c)) match {
+        case Success((commitments1, _)) =>
+          log.info(s"got valid payment preimage, recalculating transactions to redeem the corresponding htlc on-chain")
+          val localCommitPublished1 = d.localCommitPublished.map {
+            case localCommitPublished =>
+              val localCommitPublished1 = Helpers.Closing.claimCurrentLocalCommitTxOutputs(commitments1, localCommitPublished.commitTx)
+              doPublish(localCommitPublished1)
+              localCommitPublished1
+          }
+          val remoteCommitPublished1 = d.remoteCommitPublished.map {
+            case remoteCommitPublished =>
+              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx)
+              doPublish(remoteCommitPublished1, BITCOIN_REMOTECOMMIT_DONE)
+              remoteCommitPublished1
+          }
+          val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map {
+            case remoteCommitPublished =>
+              val remoteCommitPublished1 = Helpers.Closing.claimRemoteCommitTxOutputs(commitments1, commitments1.remoteCommit, remoteCommitPublished.commitTx)
+              doPublish(remoteCommitPublished1, BITCOIN_NEXTREMOTECOMMIT_DONE)
+              remoteCommitPublished1
+          }
+          stay using d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1)
+        case Failure(cause) => handleCommandError(sender, cause)
+      }
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.mutualClosePublished.map(_.txid) =>
       // we just published a mutual close tx, we are notified but it's alright
       stay
@@ -901,13 +927,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       // this is because WatchSpent watches never expire and we are notified multiple times
       stay
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.remoteCommit.txid =>
-      // counterparty may attempt to spend its last commit tx at any time
-      handleRemoteSpentCurrent(tx, d)
-
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.nextRemoteCommitPublished.map(_.commitTx.txid) =>
       // this is because WatchSpent watches never expire and we are notified multiple times
       stay
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if tx.txid == d.commitments.remoteCommit.txid =>
+      // counterparty may attempt to spend its last commit tx at any time
+      handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_CLOSING) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) =>
       // counterparty may attempt to spend its last commit tx at any time

@@ -278,7 +278,7 @@ object Helpers {
             Transactions.addSigs(txinfo, localSig, remoteSig, preimage)
           })
 
-        // NB: regarding htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
+        // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) =>
@@ -350,7 +350,9 @@ object Helpers {
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         })
-        // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
+
+        // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
+
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) => generateTx("claim-htlc-timeout")(Try {
           val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKw)

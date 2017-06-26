@@ -382,11 +382,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
       sender.expectMsgType[State] == OFFLINE
     }, max = 20 seconds, interval = 1 second)
-    // we then fulfill the htlc (it won't be sent to C)
-    sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
-    sender.expectMsg("ok")
-    // and then we have C unilateral close the channel (which will make F redeem the htlc onchain)
+    // we then have C unilateral close the channel (which will make F redeem the htlc onchain)
     sender.send(nodes("C").register, Forward(htlc.channelId, INPUT_PUBLISH_LOCALCOMMIT))
+    // we then wait for F to detect the unilateral close and go to CLOSING state
+    awaitCond({
+      sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_GETSTATE))
+      sender.expectMsgType[State] == CLOSING
+    }, max = 20 seconds, interval = 1 second)
+    // we then fulfill the htlc, which will make F redeem it on-chain
+    sender.send(nodes("F1").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we then generate one block so that the htlc success tx gets written to the blockchain
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)
@@ -442,11 +446,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_GETSTATE))
       sender.expectMsgType[State] == OFFLINE
     }, max = 20 seconds, interval = 1 second)
-    // we then fulfill the htlc (it won't be sent to C)
-    sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
-    sender.expectMsg("ok")
-    // and then we have F unilateral close the channel (which will make it redeem the htlc onchain)
+    // then we have F unilateral close the channel
     sender.send(nodes("F2").register, Forward(htlc.channelId, INPUT_PUBLISH_LOCALCOMMIT))
+    // we then fulfill the htlc (it won't be sent to C, and will be used to pull funds on-chain)
+    sender.send(nodes("F2").register, Forward(htlc.channelId, CMD_FULFILL_HTLC(htlc.id, preimage)))
     // we then generate one block so that the htlc success tx gets written to the blockchain
     sender.send(bitcoincli, BitcoinReq("generate", 1))
     sender.expectMsgType[JValue](10 seconds)

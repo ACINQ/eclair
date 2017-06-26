@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel.states.h
 
+import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestkitBaseClass
@@ -80,6 +81,19 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(alice.stateName == CLOSING)
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
+  }
+
+  test("recv CMD_FULFILL_HTLC (unexisting htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
+    within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+
+      // actual test starts here
+      val sender = TestProbe()
+      sender.send(alice, CMD_FULFILL_HTLC(42, "42" * 32))
+      sender.expectMsg(Failure(UnknownHtlcId(42)))
+
+      // NB: nominal case is tested in IntegrationSpec
+    }
   }
 
   test("recv BITCOIN_CLOSE_DONE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
