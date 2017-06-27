@@ -90,7 +90,7 @@ object ChannelStateSpec {
     localNextHtlcId = 0L,
     remoteNextCommitInfo = Right(randomKey.publicKey), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
     remoteNextHtlcId = 0L,
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, unackedMessages = Nil)
+    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, channelFlags = 0x01.toByte, unackedMessages = Nil)
 
   val normal = DATA_NORMAL(commitments, Some(42))
 }

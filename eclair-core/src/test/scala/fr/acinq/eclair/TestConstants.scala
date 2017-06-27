@@ -28,7 +28,7 @@ object TestConstants {
       color = (1: Byte, 2: Byte, 3: Byte),
       address = new InetSocketAddress("localhost", 9731),
       globalFeatures = "",
-      localFeatures = "00", // no announcement
+      localFeatures = "00",
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = 150000000,
       maxAcceptedHtlcs = 100,

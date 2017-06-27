@@ -94,7 +94,7 @@ object Switchboard {
   def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Switchboard(nodeParams, watcher, router, relayer, defaultFinalScriptPubKey))
 
   // @formatter:off
-  case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi)
+  case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Byte = 0x01.toByte)
   case class NewConnection(remoteNodeId: PublicKey, address: InetSocketAddress, newChannel_opt: Option[NewChannel])
   // @formatter:on
 

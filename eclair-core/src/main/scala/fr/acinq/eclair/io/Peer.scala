@@ -99,7 +99,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       // we store the ip upon successful connection
       address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
       import fr.acinq.eclair.Features._
-      log.info(s"$remoteNodeId has features: channelPublic=${Features.announceChannels(remoteInit.localFeatures)} initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
+      log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
         if (Features.initialRoutingSync(remoteInit.localFeatures)) {
           router ! SendRoutingState(transport)
@@ -190,7 +190,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val (channel, localParams) = createChannel(nodeParams, transport, funder = true, c.fundingSatoshis.toLong)
       val temporaryChannelId = randomBytes(32)
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, Globals.feeratePerKw.get, localParams, transport, remoteInit)
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, Globals.feeratePerKw.get, localParams, transport, remoteInit, c.channelFlags)
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) if !channels.contains(TemporaryChannelId(msg.temporaryChannelId)) =>

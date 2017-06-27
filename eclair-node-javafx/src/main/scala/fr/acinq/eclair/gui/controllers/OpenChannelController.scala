@@ -9,6 +9,7 @@ import javafx.stage.Stage
 
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Setup
+import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.NewChannel
@@ -35,6 +36,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
   @FXML var fundingSatoshisError: Label = _
   @FXML var pushMsat: TextField = _
   @FXML var pushMsatError: Label = _
+  @FXML var publicChannel: CheckBox = _
   @FXML var unit: ComboBox[String] = _
   @FXML var button: Button = _
 
@@ -69,7 +71,8 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
               // pushMsat is optional, so we validate field only if it isn't empty
               if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push msat must be numeric", GUIValidators.amountRegex)
                 && GUIValidators.validate(pushMsatError, "Push msat must be 16 777 216 000 msat (~0.167 BTC) or less", pushMsat.getText.toLong <= maxPushMsat)) {
-                handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong))))
+                val channelFlags = if(publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+                handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong), channelFlags)))
                 stage.close
               }
             } else {

@@ -124,7 +124,8 @@ object LightningMessageCodecs {
       ("revocationBasepoint" | point) ::
       ("paymentBasepoint" | point) ::
       ("delayedPaymentBasepoint" | point) ::
-      ("firstPerCommitmentPoint" | point)).as[OpenChannel]
+      ("firstPerCommitmentPoint" | point) ::
+      ("channelFlags" | byte)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | binarydata(32)) ::

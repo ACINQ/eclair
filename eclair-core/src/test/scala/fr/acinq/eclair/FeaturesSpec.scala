@@ -18,14 +18,10 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("'initial_routing_sync' feature") {
-    assert(initialRoutingSync("08"))
+    assert(initialRoutingSync("02"))
   }
 
   test("features compatibility") {
-    val foo = Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_OPTIONAL | 1L << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)
-    assert(areSupported(Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
-    assert(areSupported(Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_MANDATORY, ByteOrder.BIG_ENDIAN)))
-    assert(!areSupported(Protocol.writeUInt64(1L << CHANNELS_PUBLIC_BIT_MANDATORY | 1L << CHANNELS_PUBLIC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
     assert(!areSupported(Protocol.writeUInt64(1L << INITIAL_ROUTING_SYNC_BIT_MANDATORY, ByteOrder.BIG_ENDIAN)))
     assert(areSupported(Protocol.writeUInt64(1l << INITIAL_ROUTING_SYNC_BIT_OPTIONAL, ByteOrder.BIG_ENDIAN)))
     assert(areSupported("14") == false)

@@ -143,7 +143,8 @@ object ChannelCodecs {
       ("unackedMessages" | listOfN(uint16, lightningMessageCodec)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
-      ("channelId" | binarydata(32))).as[Commitments]
+      ("channelId" | binarydata(32)) ::
+      ("channelFlags" | byte)).as[Commitments]
 
   val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
     ("commitTx" | txCodec) ::

@@ -11,10 +11,8 @@ import fr.acinq.bitcoin.BinaryData
   * Created by PM on 13/02/2017.
   */
 object Features {
-  val CHANNELS_PUBLIC_BIT_MANDATORY = 0
-  val CHANNELS_PUBLIC_BIT_OPTIONAL = 1
-  val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
-  val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
+  val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 0
+  val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 1
 
 
   /**
@@ -27,23 +25,8 @@ object Features {
     val local = BitSet.valueOf(localFeatures.reverse.toArray)
     val remote = BitSet.valueOf(remoteFeatures.reverse.toArray)
     // both bits cannot be set
-    if (!areSupported(remote)) true
-    else (local.get(CHANNELS_PUBLIC_BIT_MANDATORY) && !announceChannels(remoteFeatures))
+    !areSupported(remote)
   }
-
-  /**
-    *
-    * @param features feature bits
-    * @return true if one of the "channels public" bits is set
-    */
-  def announceChannels(features: BitSet) : Boolean = features.get(CHANNELS_PUBLIC_BIT_MANDATORY) || features.get(CHANNELS_PUBLIC_BIT_OPTIONAL)
-
-  /**
-    *
-    * @param features feature bits
-    * @return true if one of the "channels public" bits is set
-    */
-  def announceChannels(features: BinaryData) : Boolean = announceChannels(BitSet.valueOf(features.reverse.toArray))
 
   /**
     *
@@ -60,12 +43,11 @@ object Features {
   def initialRoutingSync(features: BinaryData) : Boolean = initialRoutingSync(BitSet.valueOf(features.reverse.toArray))
 
   /**
-    * Check that the features htat we understand are correctly specified, and that there are no mandatory features that
+    * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits)
     */
   def areSupported(bitset: BitSet): Boolean = {
-    if (bitset.get(CHANNELS_PUBLIC_BIT_MANDATORY) && bitset.get(CHANNELS_PUBLIC_BIT_OPTIONAL)) false
-    else if (bitset.get(INITIAL_ROUTING_SYNC_BIT_MANDATORY)) false
+    if (bitset.get(INITIAL_ROUTING_SYNC_BIT_MANDATORY)) false
     else bitset.stream().noneMatch(new IntPredicate {
       override def test(value: Int) = value % 2 == 0 && value > INITIAL_ROUTING_SYNC_BIT_OPTIONAL
     })
