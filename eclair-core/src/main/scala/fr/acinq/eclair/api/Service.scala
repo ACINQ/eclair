@@ -85,7 +85,7 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "getinfo", _) => getInfoResponse
                 case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(nodeId) :: Nil) =>
                   (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
-                case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>
+                case JsonRPCBody(_, _, "open", JString(nodeId) :: JString(host) :: JInt(port) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>
                   (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong))))).mapTo[String]
                 case JsonRPCBody(_, _, "peers", _) =>
                   (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin))
@@ -106,7 +106,7 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "connect (host, port, nodeId): connect to another lightning node through a secure connection",
-                    "open (host, port, nodeId, fundingSatoshi, pushMsat): open a channel with another lightning node",
+                    "open (nodeId, host, port, fundingSatoshi, pushMsat): open a channel with another lightning node",
                     "peers: list existing local peers",
                     "channels: list existing local channels",
                     "channel (channelId): retrieve detailed information about a given channel",

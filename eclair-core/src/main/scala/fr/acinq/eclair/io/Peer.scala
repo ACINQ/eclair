@@ -29,7 +29,7 @@ case class TemporaryChannelId(id: BinaryData) extends ChannelId
 case class FinalChannelId(id: BinaryData) extends ChannelId
 
 sealed trait Data
-case class DisconnectedData(offlineChannels: Set[OfflineChannel]) extends Data
+case class DisconnectedData(offlineChannels: Set[OfflineChannel], attempts: Int = 0) extends Data
 case class InitializingData(transport: ActorRef, offlineChannels: Set[OfflineChannel]) extends Data
 case class ConnectedData(transport: ActorRef, remoteInit: Init, channels: Map[ChannelId, ActorRef]) extends Data
 
@@ -49,52 +49,41 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
   import Peer._
 
+  val RECONNECT_TIMER = "reconnect"
+
   startWith(DISCONNECTED, DisconnectedData(Set.empty))
 
-  when(DISCONNECTED, stateTimeout = if (nodeParams.autoReconnect) 60 seconds else null) {
-    case Event(state: HasCommitments, d@DisconnectedData(offlineChannels)) =>
+  when(DISCONNECTED) {
+    case Event(state: HasCommitments, d@DisconnectedData(offlineChannels, _)) =>
       val channel = spawnChannel(nodeParams, context.system.deadLetters)
       channel ! INPUT_RESTORED(state)
-      self ! Reconnect
       stay using d.copy(offlineChannels = offlineChannels + HotChannel(FinalChannelId(state.channelId), channel))
 
-    case Event(c: NewChannel, d@DisconnectedData(offlineChannels)) =>
-      self ! Reconnect
+    case Event(c: NewChannel, d@DisconnectedData(offlineChannels, _)) =>
       stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
 
-    case Event(Reconnect, _) =>
+    case Event(Reconnect, d@DisconnectedData(_, attempts)) =>
       address_opt match {
         case Some(address) => context.parent forward NewConnection(remoteNodeId, address, None)
-        case None => {}
+        case None => {} // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
       }
-      stay
+      // exponential backoff retry with a finite max
+      setTimer(RECONNECT_TIMER, Reconnect, Math.min(Math.pow(2, attempts), 60) seconds, repeat = false)
+      stay using d.copy(attempts = attempts + 1)
 
-    case Event(HandshakeCompleted(transport, _), DisconnectedData(offlineChannels)) =>
+    case Event(HandshakeCompleted(transport, _), DisconnectedData(offlineChannels, _)) =>
       log.info(s"registering as a listener to $transport")
       transport ! Listener(self)
       context watch transport
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
       goto(INITIALIZING) using InitializingData(transport, offlineChannels)
 
-    case Event(Terminated(actor), d@DisconnectedData(offlineChannels)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size >= 0 =>
+    case Event(Terminated(actor), d@DisconnectedData(offlineChannels, _)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size >= 0 =>
       val h = offlineChannels.collect { case h: HotChannel if h.a == actor => h }
       log.info(s"channel closed: channelId=${h.map(_.channelId).mkString("/")}")
       stay using d.copy(offlineChannels = offlineChannels -- h)
 
-    case Event(_: Rebroadcast, _) => stay // ignored
-
-    case Event("connected", _) => stay // ignored
-
-    case Event(StateTimeout, d: DisconnectedData) if d.offlineChannels.size == 0 =>
-      log.info(s"reconnect timeout triggered, but peer doesn't have any channels: closing the peer")
-      // NB: there is a possibility of a race with concurrent NewChannel requests because peer do not explicitly acknowledge them
-      // in that case the NewChannel request would simply go to DeadLetters (meaning: ignored)
-      stop(FSM.Normal)
-
-    case Event(StateTimeout, _) =>
-      log.info(s"attempting a reconnect")
-      self ! Reconnect
-      stay
+    case Event(_: Rebroadcast | "connected", _) => stay // ignored
   }
 
   when(INITIALIZING) {
@@ -241,6 +230,19 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       }
       stay using d.copy(channels = channels -- channelIds)
 
+    case Event(h: HandshakeCompleted, ConnectedData(oldTransport, _, channels)) =>
+      log.info(s"got new transport while already connected, switching to new transport")
+      context unwatch oldTransport
+      oldTransport ! PoisonPill
+      channels.values.foreach(_ ! INPUT_DISCONNECTED)
+      val c: Set[OfflineChannel] = channels.map(c => HotChannel(c._1, c._2)).toSet
+      self ! h
+      goto(DISCONNECTED) using DisconnectedData(c)
+  }
+
+  onTransition {
+    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
   }
 
   def createChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
