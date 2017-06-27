@@ -1,6 +1,5 @@
 package fr.acinq.eclair.wire
 
-import akka.actor.ActorRef
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
