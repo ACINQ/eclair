@@ -36,6 +36,7 @@ case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "scala-client", met
 case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
+case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: String, blockHeight: Int)
 // @formatter:on
 
 trait Service extends Logging {
@@ -61,6 +62,8 @@ trait Service extends Logging {
 
   def system: ActorSystem
 
+  def getInfoResponse: Future[GetInfoResponse]
+
   val customHeaders = `Access-Control-Allow-Origin`(*) ::
     `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
     `Access-Control-Allow-Methods`(PUT, GET, POST, DELETE, OPTIONS) ::
@@ -79,6 +82,7 @@ trait Service extends Logging {
           entity(as[JsonRPCBody]) {
             req =>
               val f_res: Future[AnyRef] = req match {
+                case JsonRPCBody(_, _, "getinfo", _) => getInfoResponse
                 case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(nodeId) :: Nil) =>
                   (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
                 case JsonRPCBody(_, _, "open", JString(host) :: JInt(port) :: JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil) =>

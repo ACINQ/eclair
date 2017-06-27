@@ -92,6 +92,7 @@ option                       | description               | default value
 
  method       |  params                                       | description
  -------------|-----------------------------------------------|-----------------------------------------------------------
+  getinfo     |                                               | return basic node information (id, chain hash, current block height) 
   connect     | host, port, nodeId                            | connect to another lightning node through a secure connection
   open        | host, port, nodeId, fundingSatoshis, pushMsat | opens a channel with another lightning node
   peers       |                                               | list existing local peers
