@@ -116,7 +116,7 @@ object LightningMessageCodecs {
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
-      ("htlcMinimumMsat" | uint32) ::
+      ("htlcMinimumMsat" | uint64) ::
       ("feeratePerKw" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
@@ -131,8 +131,8 @@ object LightningMessageCodecs {
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64) ::
       ("channelReserveSatoshis" | uint64) ::
+      ("htlcMinimumMsat" | uint64) ::
       ("minimumDepth" | uint32) ::
-      ("htlcMinimumMsat" | uint32) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPubkey" | publicKey) ::
@@ -167,7 +167,7 @@ object LightningMessageCodecs {
   val updateAddHtlcCodec: Codec[UpdateAddHtlc] = (
     ("channelId" | binarydata(32)) ::
       ("id" | uint64) ::
-      ("amountMsat" | uint32) ::
+      ("amountMsat" | uint64) ::
       ("expiry" | uint32) ::
       ("paymentHash" | binarydata(32)) ::
       ("onionRoutingPacket" | binarydata(Sphinx.PacketLength))).as[UpdateAddHtlc]
@@ -241,7 +241,7 @@ object LightningMessageCodecs {
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::
       ("cltvExpiryDelta" | uint16) ::
-      ("htlcMinimumMsat" | uint32) ::
+      ("htlcMinimumMsat" | uint64) ::
       ("feeBaseMsat" | uint32) ::
       ("feeProportionalMillionths" | uint32))
 
@@ -277,8 +277,8 @@ object LightningMessageCodecs {
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("channel_id" | uint64) ::
-      ("amt_to_forward" | uint32) ::
+      ("amt_to_forward" | uint64) ::
       ("outgoing_cltv_value" | int32) :: // we use a signed int32, it is enough to store cltv for 40 000 years
-      ("unused_with_v0_version_on_header" | ignore(8 * 16))).as[PerHopPayload]
+      ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 
 }
