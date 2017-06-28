@@ -83,7 +83,7 @@ object PaymentRequest {
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
   val maxAmount = MilliSatoshi(4294967296L)
 
-  def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
+  def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
     PaymentRequest(
       prefix = prefix,
       amount = amount,
@@ -91,7 +91,7 @@ object PaymentRequest {
       nodeId = privateKey.publicKey,
       tags = List(
         Some(PaymentHashTag(paymentHash)),
-        description.map(DescriptionTag(_)),
+        Some(DescriptionTag(description)),
         expirySeconds.map(ExpiryTag(_))).flatten,
       signature = BinaryData.empty)
       .sign(privateKey)

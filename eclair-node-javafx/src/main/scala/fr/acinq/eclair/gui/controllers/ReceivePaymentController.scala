@@ -65,10 +65,10 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage, val set
           case "milliSatoshi" => MilliSatoshi(amount.getText.toLong)
         }
         if (GUIValidators.validate(amountError, "Amount must be greater than 0", smartAmount.amount > 0)
-          && GUIValidators.validate(amountError, f"Amount must be less than ${PaymentRequest.maxAmountMsat}%,d msat (~${PaymentRequest.maxAmountMsat / 1e11}%.3f BTC)", smartAmount.amount < PaymentRequest.maxAmountMsat)
+          && GUIValidators.validate(amountError, f"Amount must be less than ${PaymentRequest.maxAmount.amount}%,d msat (~${PaymentRequest.maxAmount.amount / 1e11}%.3f BTC)", smartAmount < PaymentRequest.maxAmount)
           && GUIValidators.validate(amountError, "Description is too long, max 256 chars.", description.getText().size < 256)) {
           import scala.concurrent.ExecutionContext.Implicits.global
-          handlers.receive(smartAmount, if (description.getText().size > 0) Some(description.getText()) else None) onComplete {
+          handlers.receive(smartAmount, description.getText) onComplete {
             case Success(s) =>
               Try(createQRCode(s)) match {
                 case Success(wImage) => displayPaymentRequest(s, Some(wImage))

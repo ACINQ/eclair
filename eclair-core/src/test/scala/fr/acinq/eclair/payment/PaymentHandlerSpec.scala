@@ -24,7 +24,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     val amountMsat = MilliSatoshi(42000)
-    sender.send(handler, ReceivePayment(amountMsat))
+    sender.send(handler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, 0, pr.paymentHash, "")
@@ -40,22 +40,22 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     // negative amount should fail
-    sender.send(handler, ReceivePayment(MilliSatoshi(-50)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(-50), "1 coffee"))
     val negativeError = sender.expectMsgType[Failure]
     assert(negativeError.cause.getMessage.contains("amount is not valid"))
 
     // amount = 0 should fail
-    sender.send(handler, ReceivePayment(MilliSatoshi(0)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(0), "1 coffee"))
     val zeroError = sender.expectMsgType[Failure]
     assert(zeroError.cause.getMessage.contains("amount is not valid"))
 
     // large amount should fail (> 42.95 mBTC)
-    sender.send(handler, ReceivePayment(Satoshi(1) + PaymentRequest.maxAmount))
+    sender.send(handler, ReceivePayment(Satoshi(1) + PaymentRequest.maxAmount, "1 coffee"))
     val largeAmountError = sender.expectMsgType[Failure]
     assert(largeAmountError.cause.getMessage.contains("amount is not valid"))
 
     // success with 1 mBTC
-    sender.send(handler, ReceivePayment(MilliSatoshi(100000000L)))
+    sender.send(handler, ReceivePayment(MilliSatoshi(100000000L), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     assert(pr.amount == Some(MilliSatoshi(100000000L)) && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
   }

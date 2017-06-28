@@ -253,7 +253,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     val amountMsat = MilliSatoshi(4200000)
     // first we retrieve a payment hash from D
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator,
@@ -271,7 +271,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("C").relayer, channelUpdateCD)
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
@@ -290,7 +290,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(300000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the payment (C-D has a smaller capacity than A-B and B-C)
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
@@ -312,7 +312,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of only 1 mBTC
@@ -327,7 +327,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of 6 mBTC
@@ -342,7 +342,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of 3 mBTC, more than asked but it should still be accepted
