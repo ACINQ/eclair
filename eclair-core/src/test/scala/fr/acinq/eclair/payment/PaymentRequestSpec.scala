@@ -1,7 +1,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -18,6 +18,26 @@ class PaymentRequestSpec extends FunSuite {
   val pub = priv.publicKey
   val nodeId = pub
   assert(nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
+
+  test("check minimal unit is used") {
+    assert('p' === Amount.unit(MilliSatoshi(1)))
+    assert('p' === Amount.unit(MilliSatoshi(99)))
+    assert('n' === Amount.unit(MilliSatoshi(100)))
+    assert('p' === Amount.unit(MilliSatoshi(101)))
+    assert('n' === Amount.unit(Satoshi(1)))
+    assert('u' === Amount.unit(Satoshi(100)))
+    assert('n' === Amount.unit(Satoshi(101)))
+    assert('u' === Amount.unit(Satoshi(1155400)))
+    assert('m' === Amount.unit(MilliBtc(1)))
+    assert('m' === Amount.unit(MilliBtc(10)))
+    assert('m' === Amount.unit(Btc(1)))
+  }
+
+  test("check that we can still decode non-minimal amount encoding") {
+    assert(Some(MilliSatoshi(100000000)) == Amount.decode("1000u"))
+    assert(Some(MilliSatoshi(100000000)) == Amount.decode("1000000n"))
+    assert(Some(MilliSatoshi(100000000)) == Amount.decode("1000000000p"))
+  }
 
   test("Please make a donation of any amount using payment_hash 0001020304050607080900010203040506070809000102030405060708090102 to me @03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad") {
     val ref = "lnbc1pvjluezpp5qqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqqqsyqcyq5rqwzqfqypqq7fshvguvjs864g4yj47aedw4y402hdl9g2tqqhyed3nuhr7c908g6uhq9llj7w3s58k3sej3tcg4weqxrxmp3cwxuvy9kfr0uzy8jgpy6uzal"
@@ -36,7 +56,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(250000000L)))
-    assert(pr.unit == 'u')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
@@ -49,7 +68,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.unit == 'm')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
@@ -64,7 +82,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lntb")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.unit == 'm')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
@@ -80,7 +97,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.unit == 'm')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
@@ -98,7 +114,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.unit == 'm')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
@@ -113,7 +128,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.unit == 'm')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))
@@ -129,7 +143,6 @@ class PaymentRequestSpec extends FunSuite {
     val pr = PaymentRequest.read(ref)
     assert(pr.prefix == "lnbc")
     assert(pr.amount == Some(MilliSatoshi(2000000000L)))
-    assert(pr.unit == 'm')
     assert(pr.paymentHash == BinaryData("0001020304050607080900010203040506070809000102030405060708090102"))
     assert(pr.timestamp == 1496314658L)
     assert(pr.nodeId == PublicKey(BinaryData("03e7156ae33b0a208d0744199163177e909e80176e55d97a2f221ede0f934dd9ad")))

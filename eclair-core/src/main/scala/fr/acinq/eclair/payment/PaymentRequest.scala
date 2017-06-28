@@ -25,9 +25,9 @@ import scala.annotation.tailrec
   * @param tags payment tags; must include a single PaymentHash tag
   * @param signature request signature that will be checked against node id
   */
-case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], unit: Char, timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
+case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
 
-  amount.map(a => require(a.amount > 0 && a.amount <= PaymentRequest.maxAmountMsat, s"amount is not valid"))
+  amount.map(a => require(a > MilliSatoshi(0) && a <= PaymentRequest.maxAmount, s"amount is not valid"))
 
   /**
     *
@@ -48,7 +48,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], unit: Ch
     *
     * @return the hash of this payment request
     */
-  def hash: BinaryData = Crypto.sha256(s"${prefix}${Amount.encode(amount, unit)}".getBytes("UTF-8") ++ data)
+  def hash: BinaryData = Crypto.sha256(s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8") ++ data)
 
   /**
     *
@@ -81,12 +81,11 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], unit: Ch
 object PaymentRequest {
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
-  val maxAmountMsat = 4294967296L
+  val maxAmount = MilliSatoshi(4294967296L)
 
   def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
     PaymentRequest(
       prefix = prefix,
-      unit = unit,
       amount = amount,
       timestamp = timestamp,
       nodeId = privateKey.publicKey,
@@ -203,22 +202,35 @@ object PaymentRequest {
   }
 
   object Amount {
-    def decode(input: String): (Option[MilliSatoshi], Char) =
+
+    /**
+      * @param amount
+      * @return the unit allowing for the shortest representation possible
+      */
+    def unit(amount: MilliSatoshi): Char = amount.amount * 10 match { // 1 milli-satoshis == 10 pico-bitcoin
+      case pico if pico % 1000 > 0 => 'p'
+      case pico if pico % 1000000 > 0 => 'n'
+      case pico if pico % 1000000000 > 0 => 'u'
+      case _ => 'm'
+    }
+
+    def decode(input: String): Option[MilliSatoshi] =
       input match {
-        case "" => (None, 'm')
-        case a if a.last == 'm' => (Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L)), a.last)
-        case a if a.last == 'u' => (Some(MilliSatoshi(a.dropRight(1).toLong * 100000L)), a.last)
-        case a if a.last == 'n' => (Some(MilliSatoshi(a.dropRight(1).toLong * 100L)), a.last)
-        case a if a.last == 'p' => (Some(MilliSatoshi(a.dropRight(1).toLong / 10L)), a.last)
+        case "" => None
+        case a if a.last == 'p' => Some(MilliSatoshi(a.dropRight(1).toLong / 10L)) // 1 pico-bitcoin == 10 milli-satoshis
+        case a if a.last == 'n' => Some(MilliSatoshi(a.dropRight(1).toLong * 100L))
+        case a if a.last == 'u' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000L))
+        case a if a.last == 'm' => Some(MilliSatoshi(a.dropRight(1).toLong * 100000000L))
       }
 
-    def encode(amount: Option[MilliSatoshi], unit: Char): String =
-    amount match {
-      case None => ""
-      case Some(amt) if unit == 'm' => s"${amt.amount / 100000000L}$unit"
-      case Some(amt) if unit == 'u' => s"${amt.amount / 100000L}$unit"
-      case Some(amt) if unit == 'n' => s"${amt.amount / 100L}$unit"
-      case Some(amt) if unit == 'p' => s"${amt.amount * 10L}$unit"
+    def encode(amount: Option[MilliSatoshi]): String = {
+      amount match {
+        case None => ""
+        case Some(amt) if unit(amt) == 'p' => s"${amt.amount * 10L}p" // 1 pico-bitcoin == 10 milli-satoshis
+        case Some(amt) if unit(amt) == 'n' => s"${amt.amount / 100L}n"
+        case Some(amt) if unit(amt) == 'u' => s"${amt.amount / 100000L}u"
+        case Some(amt) if unit(amt) == 'm' => s"${amt.amount / 100000000L}m"
+      }
     }
   }
 
@@ -318,8 +330,8 @@ object PaymentRequest {
     val (pub1, pub2) = Crypto.recoverPublicKey((r, s), Crypto.sha256(message))
     val pub = if (recid % 2 != 0) pub2 else pub1
     val prefix = hrp.take(4)
-    val (amount_opt, unit) = Amount.decode(hrp.drop(4))
-    val pr = PaymentRequest(prefix, amount_opt, unit, timestamp, pub, tags.toList, signature)
+    val amount_opt = Amount.decode(hrp.drop(4))
+    val pr = PaymentRequest(prefix, amount_opt, timestamp, pub, tags.toList, signature)
     val validSig = Crypto.verifySignature(pr.hash, (r, s), pub)
     require(validSig, "invalid signature")
     pr
@@ -332,7 +344,7 @@ object PaymentRequest {
     */
   def write(pr: PaymentRequest): String = {
     // currency unit is Satoshi, but we compute amounts in Millisatoshis
-    val hramount = Amount.encode(pr.amount, pr.unit)
+    val hramount = Amount.encode(pr.amount)
     val hrp = s"${pr.prefix}$hramount"
     val data1 = pr.data ++ Bech32.eight2five(pr.signature)
     val checksum = Bech32.checksum(hrp, data1)

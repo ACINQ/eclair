@@ -3,7 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorSystem
 import akka.actor.Status.Failure
 import akka.testkit.{TestKit, TestProbe}
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
 import fr.acinq.eclair.wire.UpdateAddHtlc
@@ -50,7 +50,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     assert(zeroError.cause.getMessage.contains("amount is not valid"))
 
     // large amount should fail (> 42.95 mBTC)
-    sender.send(handler, ReceivePayment(MilliSatoshi(PaymentRequest.maxAmountMsat + 10)))
+    sender.send(handler, ReceivePayment(Satoshi(1) + PaymentRequest.maxAmount))
     val largeAmountError = sender.expectMsgType[Failure]
     assert(largeAmountError.cause.getMessage.contains("amount is not valid"))
 
