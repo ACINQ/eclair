@@ -29,6 +29,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
+  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
+  val ANNOUNCEMENTS_MINCONF = 6
+
   /*
           8888888 888b    888 8888888 88888888888
             888   8888b   888   888       888
@@ -303,7 +306,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
-            remoteNextCommitInfo = Right(randomKey.publicKey), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
+            remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
             commitInput, ShaChain.init, channelId = channelId)
           context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
@@ -335,7 +338,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
-            remoteNextCommitInfo = Right(randomKey.publicKey), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
+            remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array
             commitInput, ShaChain.init, channelId = channelId)
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           // we do this to make sure that the channel state has been written to disk when we publish the funding tx
@@ -385,8 +388,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
       context.system.eventStream.subscribe(self, classOf[CurrentFeerate])
       if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures)) {
-        // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
-        blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
+        // used for announcement of channel (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
+        blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
       }
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), None, None, None, None))
 
@@ -620,7 +623,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         case _ => stay
       }
 
-    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) =>
+    case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) if Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) && d.shortChannelId.isEmpty =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex, sending announcements")
       // TODO: empty features
@@ -652,7 +655,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           goto(NORMAL) using d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None)
         case None =>
           log.info(s"received remote announcement signatures, delaying")
-          // our watcher didn't notify yet that the tx has reached 6 confirmations, let's delay remote's message
+          // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
           context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
           stay
       }
@@ -1018,10 +1021,10 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       }
 
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) && d.shortChannelId.isEmpty) {
-        // used for announcement of channel (if minDepth >= 6 this event will fire instantly)
-        blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, 6, BITCOIN_FUNDING_DEEPLYBURIED)
+      if (Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures)) {
+        blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
       }
+
       d.shortChannelId.map {
         case shortChannelId =>
           // we re-enable the channel
