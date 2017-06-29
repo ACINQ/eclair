@@ -1,43 +1,51 @@
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
-import grizzled.slf4j.Logging
-
-import scala.util.{Failure, Success, Try}
 import java.math.BigInteger
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Bech32.Int5
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, _}
 import fr.acinq.eclair.payment.PaymentRequest.{Amount, Timestamp}
 
 import scala.annotation.tailrec
+import scala.util.Try
 
 /**
   * Lightning Payment Request
   * see https://github.com/lightningnetwork/lightning-rfc/pull/183
   *
-  * @param prefix currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
-  * @param amount amount to pay (empty string means no amount is specified)
+  * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
+  * @param amount    amount to pay (empty string means no amount is specified)
   * @param timestamp request timestamp (UNIX format)
-  * @param nodeId id of the node emitting the payment request
-  * @param tags payment tags; must include a single PaymentHash tag
+  * @param nodeId    id of the node emitting the payment request
+  * @param tags      payment tags; must include a single PaymentHash tag
   * @param signature request signature that will be checked against node id
   */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
 
   amount.map(a => require(a > MilliSatoshi(0) && a <= PaymentRequest.maxAmount, s"amount is not valid"))
+  require(tags.collect { case _: PaymentRequest.PaymentHashTag => {} }.size == 1, "there must be exactly one payment hash tag")
 
   /**
     *
-    * @return the payment hash tag
+    * @return the payment hash
     */
-  def paymentHashTag: PaymentRequest.PaymentHashTag = tags.collectFirst {
-    case p:PaymentRequest.PaymentHashTag => p
-  }.get
+  def paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHashTag => p }.get.hash
 
-  def paymentHash = paymentHashTag.hash
+  /**
+    *
+    * @return the fallback address if any. It could be a script address, pubkey address, ..
+    */
+  def fallbackAddress(): Option[String] = tags.collectFirst {
+    case PaymentRequest.FallbackAddressTag(17, hash) if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.PubkeyAddress, hash)
+    case PaymentRequest.FallbackAddressTag(18, hash) if prefix == "lnbc" => Base58Check.encode(Base58.Prefix.ScriptAddress, hash)
+    case PaymentRequest.FallbackAddressTag(17, hash) if prefix == "lntb" => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, hash)
+    case PaymentRequest.FallbackAddressTag(18, hash) if prefix == "lntb" => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, hash)
+    case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, hash)
+    case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
+  }
+
   /**
     *
     * @return a representation of this payment request as a sequence of 32 bits integers
@@ -62,20 +70,6 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     val signature = PaymentRequest.Signature.encode(r, s, recid)
     this.copy(signature = signature)
   }
-
-  /**
-    *
-    * @param tag fallback address tag
-    * @return the address that matches this fallback address. It could be a script address, pubkey address, ..
-    */
-  def address(tag: PaymentRequest.FallbackAddressTag) : String = (prefix, tag.version) match {
-    case ("lnbc", 17) => Base58Check.encode(Base58.Prefix.PubkeyAddress, tag.hash)
-    case ("lnbc", 18) => Base58Check.encode(Base58.Prefix.ScriptAddress, tag.hash)
-    case ("lntb", 17) => Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, tag.hash)
-    case ("lntb", 18) => Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, tag.hash)
-    case ("lnbc", 0) => Bech32.encodeWitnessAddress("bc", tag.version, tag.hash)
-    case ("lntb", 0) => Bech32.encodeWitnessAddress("tb", tag.version, tag.hash)
-  }
 }
 
 object PaymentRequest {
@@ -83,7 +77,7 @@ object PaymentRequest {
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
   val maxAmount = MilliSatoshi(4294967296L)
 
-  def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
+  def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
     PaymentRequest(
       prefix = prefix,
       amount = amount,
@@ -102,6 +96,7 @@ object PaymentRequest {
 
   /**
     * Payment Hash Tag
+    *
     * @param hash payment hash
     */
   case class PaymentHashTag(hash: BinaryData) extends Tag {
@@ -113,6 +108,7 @@ object PaymentRequest {
 
   /**
     * Description Tag
+    *
     * @param description a free-format string that will be included in the payment request
     */
   case class DescriptionTag(description: String) extends Tag {
@@ -124,6 +120,7 @@ object PaymentRequest {
 
   /**
     * Hash Tag
+    *
     * @param hash hash that will be included in the payment request, and can be checked against the hash of a
     *             long description, an invoice, ...
     */
@@ -137,11 +134,12 @@ object PaymentRequest {
 
   /**
     * Fallback Payment Tag that specifies a fallback payment address to be used if LN payment cannot be processed
+    *
     * @param version address version; valid values are
     *                - 17 (pubkey hash)
     *                - 18 (script hash)
     *                - 0 (segwit hash: p2wpkh (20 bytes) or p2wsh (32 bytes))
-    * @param hash address hash
+    * @param hash    address hash
     */
   case class FallbackAddressTag(version: Byte, hash: BinaryData) extends Tag {
     override def toInt5s = {
@@ -156,7 +154,7 @@ object PaymentRequest {
       * @param address valid base58 or bech32 address
       * @return a FallbackAddressTag instance
       */
-    def apply(address: String) : FallbackAddressTag = {
+    def apply(address: String): FallbackAddressTag = {
       Try(fromBase58Address(address)).orElse(Try(fromBech32Address(address))).get
     }
 
@@ -178,9 +176,10 @@ object PaymentRequest {
 
   /**
     * Routing Info Tag
-    * @param pubkey node id
-    * @param channelId channel id
-    * @param fee node fee
+    *
+    * @param pubkey          node id
+    * @param channelId       channel id
+    * @param fee             node fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
   case class RoutingInfoTag(pubkey: PublicKey, channelId: BinaryData, fee: Long, cltvExpiryDelta: Int) extends Tag {
@@ -192,6 +191,7 @@ object PaymentRequest {
 
   /**
     * Expiry Date
+    *
     * @param seconds expriry data for this payment request
     */
   case class ExpiryTag(seconds: Long) extends Tag {
@@ -266,15 +266,16 @@ object PaymentRequest {
           RoutingInfoTag(pubkey, channelId, fee, cltv)
         case x if x == Bech32.map('x') =>
           require(len == 2, s"invalid length for expiry tag, should be 2 instead of $len")
-          val expiry = 32  * input(3) + input(4)
+          val expiry = 32 * input(3) + input(4)
           ExpiryTag(expiry)
       }
     }
   }
 
   object Timestamp {
-    def decode(data: Seq[Int5]) : Long = data.take(7).foldLeft(0L)((a, b) => a*32 + b)
-    def encode(timestamp: Long, acc: Seq[Int5] = Nil) : Seq[Int5] = if (acc.length == 7) acc else {
+    def decode(data: Seq[Int5]): Long = data.take(7).foldLeft(0L)((a, b) => a * 32 + b)
+
+    def encode(timestamp: Long, acc: Seq[Int5] = Nil): Seq[Int5] = if (acc.length == 7) acc else {
       encode(timestamp / 32, (timestamp % 32).toByte +: acc)
     }
   }
@@ -285,7 +286,7 @@ object PaymentRequest {
       * @param signature 65-bytes signatyre: r (32 bytes) | s (32 bytes) | recid (1 bytes)
       * @return a (r, s, recoveryId)
       */
-    def decode(signature: BinaryData) : (BigInteger, BigInteger, Byte) = {
+    def decode(signature: BinaryData): (BigInteger, BigInteger, Byte) = {
       require(signature.length == 65)
       val r = new BigInteger(1, signature.take(32).toArray)
       val s = new BigInteger(1, signature.drop(32).take(32).toArray)
@@ -297,7 +298,7 @@ object PaymentRequest {
       *
       * @return a 65 bytes representation of (r, s, recid)
       */
-    def encode(r: BigInteger, s: BigInteger, recid: Byte) : BinaryData = {
+    def encode(r: BigInteger, s: BigInteger, recid: Byte): BinaryData = {
       Crypto.fixSize(r.toByteArray.dropWhile(_ == 0.toByte)) ++ Crypto.fixSize(s.toByteArray.dropWhile(_ == 0.toByte)) :+ recid
     }
   }
