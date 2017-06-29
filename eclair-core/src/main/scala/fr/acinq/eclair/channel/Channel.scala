@@ -436,7 +436,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveAdd(d.commitments, add)) match {
-        case Success(commitments1) => goto(stateName) using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -453,8 +453,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFulfill(fulfill)
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(_)) => goto(stateName)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -480,8 +480,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(_)) => goto(stateName)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -489,8 +489,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFailMalformed(fail)
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(_)) => goto(stateName)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -505,7 +505,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(fee: UpdateFee, d: DATA_NORMAL) =>
       Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch)) match {
-        case Success(commitments1) => goto(NORMAL) using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -513,7 +513,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.info("ignoring CMD_SIGN (nothing to sign)")
-          goto(stateName)
+          stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
@@ -524,7 +524,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          goto(stateName) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(commit: CommitSig, d: DATA_NORMAL) =>
@@ -537,7 +537,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             self ! CMD_SIGN
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          goto(stateName) using d.copy(commitments = commitments1)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -557,7 +557,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
-          goto(stateName) using d.copy(commitments = commitments1)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -631,7 +631,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey, features)
       val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
       forwarder ! annSignatures
-      goto(NORMAL) using d.copy(localAnnouncementSignatures = Some(annSignatures))
+      stay using d.copy(localAnnouncementSignatures = Some(annSignatures))
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d@DATA_NORMAL(commitments, None, _, _, _)) if Funding.announceChannel(d.commitments.localParams.localFeatures, d.commitments.remoteParams.localFeatures) =>
       d.localAnnouncementSignatures match {
@@ -652,7 +652,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
-          goto(NORMAL) using d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None)
+          stay using d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None)
         case None =>
           log.info(s"received remote announcement signatures, delaying")
           // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
@@ -706,8 +706,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFulfill(fulfill)
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(_)) => goto(stateName)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -733,8 +733,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       Try(Commitments.receiveFail(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFail(fail)
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(_)) => goto(stateName)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -742,8 +742,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
         case Success(Right(commitments1)) =>
           relayer ! ForwardFailMalformed(fail)
-          goto(stateName) using d.copy(commitments = commitments1)
-        case Success(Left(_)) => goto(stateName)
+          stay using d.copy(commitments = commitments1)
+        case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -758,7 +758,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFee(d.commitments, fee, nodeParams.maxFeerateMismatch)) match {
-        case Success(commitments1) => goto(NORMAL) using d.copy(commitments = commitments1)
+        case Success(commitments1) => stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -766,7 +766,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.info("ignoring CMD_SIGN (nothing to sign)")
-          goto(stateName)
+          stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
@@ -777,7 +777,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
-          goto(stateName) using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
+          stay using d.copy(commitments = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true))))
       }
 
     case Event(msg: CommitSig, d@DATA_SHUTDOWN(_, localShutdown, remoteShutdown)) =>
@@ -798,7 +798,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
-          goto(stateName) using d.copy(commitments = commitments1)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -816,7 +816,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             self ! CMD_SIGN
           }
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
-          goto(stateName) using d.copy(commitments = commitments1)
+          stay using d.copy(commitments = commitments1)
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -855,7 +855,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
             handleMutualClose(signedClosingTx, store(d))
           } else {
-            goto(NEGOTIATING) using store(d.copy(localClosingSigned = closingSigned))
+            stay using store(d.copy(localClosingSigned = closingSigned))
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
@@ -864,7 +864,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(d.localClosingSigned.feeSatoshis))._1.tx.txid =>
       // happens when we agreed on a closeSig, but we don't know it yet: we receive the watcher notification before their ClosingSigned (which will match ours)
-      goto(stateName)
+      stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -941,11 +941,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(WatchEventConfirmed(BITCOIN_PENALTY_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
-    case Event(e: Error, d: DATA_CLOSING) => goto(stateName) // nothing to do, there is already a spending tx published
+    case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
 
     case Event(INPUT_DISCONNECTED, _) =>
       log.info(s"we are disconnected, but it does not matter anymore")
-      goto(CLOSING)
+      stay
   }
 
   when(CLOSED, stateTimeout = 10 seconds) {
@@ -1098,7 +1098,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     if (sender != self) {
       sender ! "ok"
     }
-    goto(stateName) using newData
+    stay using newData
   }
 
   def handleCommandError(sender: ActorRef, cause: Throwable) = {
@@ -1107,7 +1107,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       case _ => log.error(cause, "")
     }
     sender ! Status.Failure(cause)
-    goto(stateName)
+    stay
   }
 
   def handleLocalError(cause: Throwable, d: HasCommitments) = {
