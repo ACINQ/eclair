@@ -652,7 +652,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
-          stay using d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None)
+          stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None))
         case None =>
           log.info(s"received remote announcement signatures, delaying")
           // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
