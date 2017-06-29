@@ -16,7 +16,6 @@ import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
-import scodec.bits.BitVector
 
 import scala.collection.JavaConversions._
 import scala.concurrent.{ExecutionContext, Future}
@@ -24,20 +23,21 @@ import scala.util.{Success, Try}
 
 // @formatter:off
 
-case class ChannelDesc(id: Long, a: BinaryData, b: BinaryData)
-case class Hop(nodeId: BinaryData, nextNodeId: BinaryData, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: BinaryData, target: BinaryData, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
+case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
+case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
+case class RouteRequest(source: PublicKey, target: PublicKey, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class SendRoutingState(to: ActorRef)
 case class Rebroadcast(ann: Seq[RoutingMessage], origins: Map[RoutingMessage, ActorRef])
 
-case class Data(nodes: Map[BinaryData, NodeAnnouncement],
+case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   rebroadcast: Seq[RoutingMessage],
                   stash: Seq[RoutingMessage],
                   awaiting: Seq[ChannelAnnouncement],
-                  origins: Map[RoutingMessage, ActorRef])
+                  origins: Map[RoutingMessage, ActorRef],
+                  localChannels: Map[BinaryData, PublicKey])
 
 sealed trait State
 case object NORMAL extends State
@@ -55,10 +55,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   import ExecutionContext.Implicits.global
 
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+
   setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty))
+  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty))
 
   when(NORMAL) {
 
@@ -123,7 +125,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   whenUnhandled {
 
-    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _)) =>
+    case Event(ChannelStateChanged(_, _, _, _, channel.NORMAL, d: DATA_NORMAL), d1) =>
+      stay using d1.copy(localChannels = d1.localChannels + (d.commitments.channelId -> d.commitments.remoteParams.nodeId))
+
+    case Event(ChannelStateChanged(_, _, _, channel.NORMAL, _, d: DATA_NEGOTIATING), d1) =>
+      stay using d1.copy(localChannels = d1.localChannels - d.commitments.channelId)
+
+    case Event(c: ChannelStateChanged, _) => stay
+
+    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _)) =>
       log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
       channels.values.foreach(remote ! _)
       nodes.values.foreach(remote ! _)
@@ -203,7 +213,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug(s"removed channel channelId=$shortChannelId")
       context.system.eventStream.publish(ChannelLost(shortChannelId))
 
-      def isNodeLost(nodeId: BinaryData): Option[BinaryData] = {
+      def isNodeLost(nodeId: PublicKey): Option[PublicKey] = {
         // has nodeId still open channels?
         if ((d.channels - shortChannelId).values.filter(c => c.nodeId1 == nodeId || c.nodeId2 == nodeId).isEmpty) {
           context.system.eventStream.publish(NodeLost(nodeId))
@@ -246,8 +256,21 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay
 
     case Event(RouteRequest(start, end, ignoreNodes, ignoreChannels), d) =>
+      val localNodeId = nodeParams.privateKey.publicKey
+      // TODO: HACK!!!!! the following is a workaround to make our routing work with private/not-yet-announced channels, that do not have a channelUpdate
+      val fakeUpdates = d.localChannels.map { case (channelId, remoteNodeId) =>
+        // note that this id is deterministic, so that filterUpdates method still works
+        val fakeShortId = BigInt(channelId.take(7).toArray).toLong
+        val channelDesc = ChannelDesc(fakeShortId, localNodeId, remoteNodeId)
+        // note that we store the channelId in the sig, other values are not used because this will be the first channel in the route
+        val channelUpdate = ChannelUpdate(signature = channelId, fakeShortId, 0, "0000", 0, 0, 0, 0)
+        (channelDesc -> channelUpdate)
+      }
+      // we replace local channelUpdates (we have them for regular public alread-announced channels) by the ones we just generated
+      val updates1 = d.updates.filterKeys(_.a != localNodeId) ++ fakeUpdates
+      val updates2 = filterUpdates(updates1, ignoreNodes, ignoreChannels)
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.mkString(",")}")
-      findRoute(start, end, filterUpdates(d.updates, ignoreNodes, ignoreChannels)).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
+      findRoute(start, end, updates2).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
   }
 
@@ -286,10 +309,10 @@ object Router {
       .filterNot(u => ignoreChannels.contains(u._1.id))
       .filterNot(u => !Announcements.isEnabled(u._2.flags))
 
-  def findRouteDijkstra(localNodeId: BinaryData, targetNodeId: BinaryData, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
+  def findRouteDijkstra(localNodeId: PublicKey, targetNodeId: PublicKey, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
-    val g = new DefaultDirectedGraph[BinaryData, DescEdge](classOf[DescEdge])
+    val g = new DefaultDirectedGraph[PublicKey, DescEdge](classOf[DescEdge])
     channels.foreach(d => {
       g.addVertex(d.a)
       g.addVertex(d.b)
@@ -301,35 +324,35 @@ object Router {
     }
   }
 
-  def findRoute(localNodeId: BinaryData, targetNodeId: BinaryData, updates: Map[ChannelDesc, ChannelUpdate])(implicit ec: ExecutionContext): Future[Seq[Hop]] = Future {
+  def findRoute(localNodeId: PublicKey, targetNodeId: PublicKey, updates: Map[ChannelDesc, ChannelUpdate])(implicit ec: ExecutionContext): Future[Seq[Hop]] = Future {
     findRouteDijkstra(localNodeId, targetNodeId, updates.keys)
       .map(desc => Hop(desc.a, desc.b, updates(desc)))
   }
 
-  def graph2dot(nodes: Map[BinaryData, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = Future {
+  def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = Future {
     case class DescEdge(channelId: Long) extends DefaultEdge
-    val g = new SimpleGraph[BinaryData, DescEdge](classOf[DescEdge])
+    val g = new SimpleGraph[PublicKey, DescEdge](classOf[DescEdge])
     channels.foreach(d => {
       g.addVertex(d._2.nodeId1)
       g.addVertex(d._2.nodeId2)
       g.addEdge(d._2.nodeId1, d._2.nodeId2, new DescEdge(d._1))
     })
-    val vertexIDProvider = new ComponentNameProvider[BinaryData]() {
-      override def getName(nodeId: BinaryData): String = "\"" + nodeId.toString() + "\""
+    val vertexIDProvider = new ComponentNameProvider[PublicKey]() {
+      override def getName(nodeId: PublicKey): String = "\"" + nodeId.toString() + "\""
     }
     val edgeLabelProvider = new ComponentNameProvider[DescEdge]() {
       override def getName(e: DescEdge): String = e.channelId.toString
     }
-    val vertexAttributeProvider = new ComponentAttributeProvider[BinaryData]() {
+    val vertexAttributeProvider = new ComponentAttributeProvider[PublicKey]() {
 
-      override def getComponentAttributes(nodeId: BinaryData): java.util.Map[String, String] =
+      override def getComponentAttributes(nodeId: PublicKey): java.util.Map[String, String] =
 
         nodes.get(nodeId) match {
           case Some(ann) => Map("label" -> ann.alias, "color" -> f"#${ann.rgbColor._1}%02x${ann.rgbColor._2}%02x${ann.rgbColor._3}%02x")
           case None => Map.empty[String, String]
         }
     }
-    val exporter = new DOTExporter[BinaryData, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
+    val exporter = new DOTExporter[PublicKey, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
     val writer = new StringWriter()
     try {
       exporter.exportGraph(g, writer)

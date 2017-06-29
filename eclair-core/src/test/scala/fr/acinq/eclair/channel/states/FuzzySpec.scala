@@ -78,7 +78,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     // allow overpaying (no more than 2 times the required amount)
     val amount = requiredAmount + Random.nextInt(requiredAmount)
     val expiry = Globals.blockCount.get().toInt + PaymentLifecycle.defaultHtlcExpiry
-    PaymentLifecycle.buildCommand(amount, expiry, paymentHash, Hop(null, dest.toBin, null) :: Nil)._1
+    PaymentLifecycle.buildCommand(amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
   }
 
   def randomDisconnect(initialPipe: ActorRef): Cancellable = {
