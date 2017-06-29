@@ -992,20 +992,22 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   when(SYNCING) {
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if channelReestablish.nextLocalCommitmentNumber == 1 && channelReestablish.nextRemoteRevocationNumber == 0 =>
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
       blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
-    case Event(channelReestablish: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) if channelReestablish.nextLocalCommitmentNumber == 1 && channelReestablish.nextRemoteRevocationNumber == 0 =>
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
+      log.info(s"re-sending fundingLocked")
+      val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
+      val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
+      forwarder ! fundingLocked
       goto(WAIT_FOR_FUNDING_LOCKED)
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
 
-      val commitments1 = if (
-        d.commitments.remoteChanges.acked.isEmpty &&
-          d.commitments.remoteChanges.signed.isEmpty &&
-          d.commitments.localCommit.index == 0) {
+      val commitments1 = if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
+        // no new commitment was exchanged after NORMAL state was reached
         log.info(s"re-sending fundingLocked")
         val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
         val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)

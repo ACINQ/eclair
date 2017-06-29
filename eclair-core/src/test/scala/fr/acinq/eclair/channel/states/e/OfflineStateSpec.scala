@@ -111,9 +111,6 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // reestablish ->a
     bob2alice.forward(alice, ba_reestablish)
 
-    // a will re-send the fundinglocked message because all updates have been cancelled
-    alice2bob.expectMsgType[FundingLocked]
-
     // b will re-send the lost revocation
     val ba_rev_0_re = bob2alice.expectMsg(ba_rev_0)
     // rev ->a
