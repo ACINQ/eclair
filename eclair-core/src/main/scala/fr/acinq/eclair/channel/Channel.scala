@@ -1261,8 +1261,14 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   }
 
   def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
-    // shouldn't we watch the claim tx instead?
-    blockchain ! WatchConfirmed(self, revokedCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, BITCOIN_PENALTY_DONE)
+
+    // if there is a main-penalty or a claim-main-output tx, we watch them, otherwise we watch the commit tx
+    // NB: we do not watch for htlcs txes, but we don't steal them currently anyway
+    (revokedCommitPublished.mainPenaltyTx, revokedCommitPublished.claimMainOutputTx) match {
+      case (Some(tx), _) => blockchain ! WatchConfirmed(self, tx.txid, nodeParams.minDepthBlocks, BITCOIN_PENALTY_DONE)
+      case (None, Some(tx)) => blockchain ! WatchConfirmed(self, tx.txid, nodeParams.minDepthBlocks, BITCOIN_PENALTY_DONE)
+      case _ => blockchain ! WatchConfirmed(self, revokedCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, BITCOIN_PENALTY_DONE)
+    }
 
     revokedCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     revokedCommitPublished.mainPenaltyTx.foreach(tx => blockchain ! PublishAsap(tx))

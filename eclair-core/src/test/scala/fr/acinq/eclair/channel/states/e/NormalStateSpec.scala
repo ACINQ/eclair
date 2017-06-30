@@ -1379,7 +1379,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === revokedTx.txid)
       assert(watch.event === BITCOIN_PENALTY_DONE)
 
       val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
