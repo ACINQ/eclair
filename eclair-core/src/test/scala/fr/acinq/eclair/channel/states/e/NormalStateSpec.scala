@@ -1176,7 +1176,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === aliceCommitTx.txid)
       assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
     }
   }
@@ -1431,7 +1430,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === aliceCommitTx.txid)
       assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
 
       // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc

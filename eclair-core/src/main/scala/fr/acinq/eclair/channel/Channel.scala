@@ -1159,8 +1159,14 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   def doPublish(localCommitPublished: LocalCommitPublished) = {
     blockchain ! PublishAsap(localCommitPublished.commitTx)
-    // shouldn't we watch the claim tx instead?
-    blockchain ! WatchConfirmed(self, localCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, BITCOIN_LOCALCOMMIT_DONE)
+
+    // if there is a claim-main-delayed-output tx, we watch it, otherwise we watch the commit tx
+    // NB: we do not watch for htlcs txes!!
+    // this may lead to some htlcs not been claimed because the channel will be considered close and deleted before the claiming txes are published
+    localCommitPublished.claimMainDelayedOutputTx match {
+      case Some(tx) => blockchain ! WatchConfirmed(self, tx.txid, nodeParams.minDepthBlocks, BITCOIN_LOCALCOMMIT_DONE)
+      case None => blockchain ! WatchConfirmed(self, localCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, BITCOIN_LOCALCOMMIT_DONE)
+    }
 
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     localCommitPublished.htlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))

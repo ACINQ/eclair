@@ -465,7 +465,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === aliceCommitTx.txid)
       assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
     }
   }
@@ -643,7 +642,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === aliceCommitTx.txid)
       assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
 
       // alice can claim both htlc after a timeout
