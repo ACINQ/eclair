@@ -156,6 +156,8 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
                       case txs =>
                         log.warning(s"found ${txs.size} txs since blockhash=$blockhash")
                         txs.foreach(tx => self ! NewTransaction(tx))
+                    } onFailure {
+                      case t: Throwable => log.error(t, "")
                     }
                 }
                 client.getMempool().map {
@@ -190,6 +192,7 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
     }
   }
+
 }
 
 object PeerWatcher {
