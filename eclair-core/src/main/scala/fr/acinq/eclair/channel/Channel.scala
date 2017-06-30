@@ -1135,7 +1135,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     val mutualClosePublished = Some(closingTx)
     doPublish(closingTx)
     val nextData = DATA_CLOSING(d.commitments, mutualClosePublished)
-    goto(CLOSING) using nextData
+    goto(CLOSING) using store(nextData)
   }
 
   def doPublish(closingTx: Transaction) = {
