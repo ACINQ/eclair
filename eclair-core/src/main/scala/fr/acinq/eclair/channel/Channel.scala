@@ -1045,6 +1045,22 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING) =>
       forwarder ! d.localClosingSigned
       goto(NEGOTIATING)
+
+    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
+      log.info(s"rejecting htlc (syncing)")
+      relayer ! AddHtlcFailed(c, ChannelUnavailable)
+      handleCommandError(sender, ChannelUnavailable)
+
+    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while syncing"), d)
+
+    case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
+      handleLocalError(HtlcTimedout, d)
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) => handleRemoteSpentOther(tx, d)
   }
 
   when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds) {
