@@ -538,7 +538,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             self ! CMD_SIGN
           }
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          stay using d.copy(commitments = commitments1)
+          stay using store(d.copy(commitments = commitments1))
         case Failure(cause) => handleLocalError(cause, d)
       }
 
