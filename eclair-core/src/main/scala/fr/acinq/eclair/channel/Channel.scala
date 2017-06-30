@@ -1217,8 +1217,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
   def doPublish(remoteCommitPublished: RemoteCommitPublished, event: BitcoinEvent) = {
     require(event == BITCOIN_REMOTECOMMIT_DONE || event == BITCOIN_NEXTREMOTECOMMIT_DONE)
 
-    // shouldn't we watch the claim tx instead?
-    blockchain ! WatchConfirmed(self, remoteCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, event)
+    // if there is a claim-main-output tx, we watch it, otherwise we watch the commit tx
+    // NB: we do not watch for htlcs txes!!
+    // this may lead to some htlcs not been claimed because the channel will be considered close and deleted before the claiming txes are published
+    remoteCommitPublished.claimMainOutputTx match {
+      case Some(tx) => blockchain ! WatchConfirmed(self, tx.txid, nodeParams.minDepthBlocks, event)
+      case None => blockchain ! WatchConfirmed(self, remoteCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, event)
+    }
 
     remoteCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     remoteCommitPublished.claimHtlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))

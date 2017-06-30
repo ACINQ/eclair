@@ -1260,7 +1260,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === bobCommitTx.txid)
       assert(watch.event === BITCOIN_REMOTECOMMIT_DONE)
 
       // in addition to its main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
@@ -1323,7 +1322,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === bobCommitTx.txid)
       assert(watch.event === BITCOIN_NEXTREMOTECOMMIT_DONE)
 
       // in addition to its main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage

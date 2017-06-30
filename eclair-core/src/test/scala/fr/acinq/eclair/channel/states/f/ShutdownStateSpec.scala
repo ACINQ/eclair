@@ -527,7 +527,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === bobCommitTx.txid)
       assert(watch.event === BITCOIN_REMOTECOMMIT_DONE)
 
       val amountClaimed = (for (i <- 0 until 3) yield {
@@ -575,7 +574,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === bobCommitTx.txid)
       assert(watch.event === BITCOIN_NEXTREMOTECOMMIT_DONE)
 
       val amountClaimed = (for (i <- 0 until 2) yield {
