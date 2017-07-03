@@ -319,7 +319,7 @@ object Helpers {
       val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
       val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
       val localRevocationPubKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-      val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.toPoint, remoteCommit.remotePerCommitmentPoint)
+      val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationBasepoint, remoteCommit.remotePerCommitmentPoint)
 
       // for now we use the same fee rate they used, it should be up-to-date
       val feeratePerKw = remoteCommit.spec.feeratePerKw
@@ -380,7 +380,7 @@ object Helpers {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localParams.paymentBasepoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       logger.warn(s"counterparty has published revoked commit txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain

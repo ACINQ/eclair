@@ -172,7 +172,12 @@ final case class LocalParams(nodeId: PublicKey,
                              shaSeed: BinaryData,
                              isFunder: Boolean,
                              globalFeatures: BinaryData,
-                             localFeatures: BinaryData)
+                             localFeatures: BinaryData) {
+  // precomputed for performance reasons
+  val paymentBasepoint = paymentKey.toPoint
+  val delayedPaymentBasepoint = delayedPaymentKey.toPoint
+  val revocationBasepoint = revocationSecret.toPoint
+}
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,

@@ -86,9 +86,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
         toSelfDelay = localParams.toSelfDelay,
         maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
         fundingPubkey = localParams.fundingPrivKey.publicKey,
-        revocationBasepoint = localParams.revocationSecret.toPoint,
-        paymentBasepoint = localParams.paymentKey.toPoint,
-        delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
+        revocationBasepoint = localParams.revocationBasepoint,
+        paymentBasepoint = localParams.paymentBasepoint,
+        delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint)
       forwarder ! open
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open)
@@ -147,9 +147,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
             toSelfDelay = localParams.toSelfDelay,
             maxAcceptedHtlcs = localParams.maxAcceptedHtlcs,
             fundingPubkey = localParams.fundingPrivKey.publicKey,
-            revocationBasepoint = localParams.revocationSecret.toPoint,
-            paymentBasepoint = localParams.paymentKey.toPoint,
-            delayedPaymentBasepoint = localParams.delayedPaymentKey.toPoint,
+            revocationBasepoint = localParams.revocationBasepoint,
+            paymentBasepoint = localParams.paymentBasepoint,
+            delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
             firstPerCommitmentPoint = firstPerCommitmentPoint)
           forwarder ! accept
           val remoteParams = RemoteParams(
