@@ -81,9 +81,11 @@
                 <artifactId>scala-maven-plugin</artifactId>
                 <version>3.2.2</version>
                 <configuration>
-                    <addScalacArgs>-deprecation</addScalacArgs>
-                    <addScalacArgs>-feature</addScalacArgs>
-                    <addScalacArgs>-language:postfixOps</addScalacArgs>
+                    <args>
+                        <arg>-deprecation</arg>
+                        <arg>-feature</arg>
+                        <arg>-language:postfixOps</arg>
+                    </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
                 <executions>
