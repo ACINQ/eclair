@@ -26,12 +26,22 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   amount.map(a => require(a > MilliSatoshi(0) && a <= PaymentRequest.maxAmount, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHashTag => {} }.size == 1, "there must be exactly one payment hash tag")
+  require(tags.collect { case PaymentRequest.DescriptionTag(_) | PaymentRequest.DescriptionHashTag(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
 
   /**
     *
     * @return the payment hash
     */
   def paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHashTag => p }.get.hash
+
+  /**
+    *
+    * @return the description of the payment, or its hash
+    */
+  def description: Either[String, BinaryData] = tags.collectFirst {
+    case PaymentRequest.DescriptionTag(d) => Left(d)
+    case PaymentRequest.DescriptionHashTag(h) => Right(h)
+  }.get
 
   /**
     *
@@ -124,7 +134,7 @@ object PaymentRequest {
     * @param hash hash that will be included in the payment request, and can be checked against the hash of a
     *             long description, an invoice, ...
     */
-  case class HashTag(hash: BinaryData) extends Tag {
+  case class DescriptionHashTag(hash: BinaryData) extends Tag {
     override def toInt5s = {
       val ints = Bech32.eight2five(hash)
       Seq(Bech32.map('h'), (ints.length / 32).toByte, (ints.length % 32).toByte) ++ ints
@@ -247,7 +257,7 @@ object PaymentRequest {
           DescriptionTag(description)
         case h if h == Bech32.map('h') =>
           val hash: BinaryData = Bech32.five2eight(input.drop(3).take(len))
-          HashTag(hash)
+          DescriptionHashTag(hash)
         case f if f == Bech32.map('f') =>
           val version = input(3)
           val prog = Bech32.five2eight(input.drop(4).take(len - 1))
