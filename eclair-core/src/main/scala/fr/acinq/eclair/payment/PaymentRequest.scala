@@ -6,7 +6,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Bech32.Int5
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, _}
-import fr.acinq.eclair.payment.PaymentRequest.{Amount, Timestamp}
+import fr.acinq.eclair.payment.PaymentRequest.{Amount, RoutingInfoTag, Timestamp}
 
 import scala.annotation.tailrec
 import scala.util.Try
@@ -55,6 +55,8 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lnbc" => Bech32.encodeWitnessAddress("bc", version, hash)
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
   }
+
+  def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t}
 
   /**
     *
