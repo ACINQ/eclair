@@ -13,10 +13,6 @@
 
     <name>${project.artifactId}</name>
 
-    <properties>
-        <zxing.version>3.3.0</zxing.version>
-    </properties>
-
     <build>
         <plugins>
             <plugin>
@@ -106,7 +102,7 @@
         <dependency>
             <groupId>com.google.zxing</groupId>
             <artifactId>core</artifactId>
-            <version>${zxing.version}</version>
+            <version>3.3.0</version>
         </dependency>
     </dependencies>
 </project>
