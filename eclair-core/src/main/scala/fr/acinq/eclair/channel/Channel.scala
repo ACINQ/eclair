@@ -955,7 +955,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       relayer ! AddHtlcFailed(c, ChannelUnavailable)
       handleCommandError(ChannelUnavailable)
 
-    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while disconnected"), d)
+    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while disconnected"), d) replying "ok"
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       handleLocalError(HtlcTimedout, d)
