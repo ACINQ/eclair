@@ -47,7 +47,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
-                      chainHash: BinaryData)
+                      chainHash: BinaryData,
+                      channelFlags: Byte)
 
 object NodeParams {
 
@@ -112,6 +113,7 @@ object NodeParams {
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
-      chainHash = chainHash)
+      chainHash = chainHash,
+      channelFlags = config.getInt("channel-flags").toByte)
   }
 }

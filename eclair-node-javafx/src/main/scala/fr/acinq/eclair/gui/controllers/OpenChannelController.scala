@@ -72,11 +72,11 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup:
               if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push msat must be numeric", GUIValidators.amountRegex)
                 && GUIValidators.validate(pushMsatError, "Push msat must be 16 777 216 000 msat (~0.167 BTC) or less", pushMsat.getText.toLong <= maxPushMsat)) {
                 val channelFlags = if(publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-                handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong), channelFlags)))
+                handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong), Some(channelFlags))))
                 stage.close
               }
             } else {
-              handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(0))))
+              handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(0), None)))
               stage.close
             }
           }

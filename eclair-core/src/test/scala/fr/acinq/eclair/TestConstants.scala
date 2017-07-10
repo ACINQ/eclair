@@ -50,7 +50,8 @@ object TestConstants {
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId)
+      chainHash = Block.RegtestGenesisBlock.blockId,
+      channelFlags = 1)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -95,7 +96,8 @@ object TestConstants {
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId)
+      chainHash = Block.RegtestGenesisBlock.blockId,
+      channelFlags = 1)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
