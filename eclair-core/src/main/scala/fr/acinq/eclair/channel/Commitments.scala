@@ -31,13 +31,14 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
   * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
   */
 case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
+                       channelFlags: Byte,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
                        remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                        unackedMessages: List[LightningMessage],
                        commitInput: InputInfo,
-                       remotePerCommitmentSecrets: ShaChain, channelId: BinaryData, channelFlags: Byte) {
+                       remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 

@@ -86,11 +86,11 @@ object ChannelStateSpec {
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000, 700000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000, 700000), BinaryData("0303030303030303030303030303030303030303030303030303030303030303"), Scalar(BinaryData("04" * 32)).toPoint)
-  val commitments = Commitments(localParams, remoteParams, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
+  val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 0L,
     remoteNextCommitInfo = Right(randomKey.publicKey), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
     remoteNextHtlcId = 0L,
-    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, channelFlags = 0x01.toByte, unackedMessages = Nil)
+    commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32, unackedMessages = Nil)
 
   val normal = DATA_NORMAL(commitments, Some(42))
 }

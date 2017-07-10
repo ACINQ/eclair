@@ -301,13 +301,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
 
 
-          val commitments = Commitments(localParams, remoteParams,
+          val commitments = Commitments(localParams, remoteParams, channelFlags,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint),
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(randomKey.publicKey), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array,
             unackedMessages = Nil,
-            commitInput, ShaChain.init, channelId = channelId, channelFlags = channelFlags)
+            commitInput, ShaChain.init, channelId = channelId)
           context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
@@ -338,13 +338,13 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           blockchain ! PublishAsap(fundingTx)
 
-          val commitments = Commitments(localParams, remoteParams,
+          val commitments = Commitments(localParams, remoteParams, channelFlags,
             LocalCommit(0, localSpec, PublishableTxs(signedLocalCommitTx, Nil)), remoteCommit,
             LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
             localNextHtlcId = 0L, remoteNextHtlcId = 0L,
             remoteNextCommitInfo = Right(randomKey.publicKey), // TODO: we will receive their next per-commitment point in the next message, so we temporarily put an empty byte array
             unackedMessages = Nil,
-            commitInput, ShaChain.init, channelId = channelId, channelFlags = channelFlags)
+            commitInput, ShaChain.init, channelId = channelId)
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, Left(fundingCreated))
       }
