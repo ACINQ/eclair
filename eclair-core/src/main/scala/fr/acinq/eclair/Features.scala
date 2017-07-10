@@ -12,7 +12,7 @@ import fr.acinq.bitcoin.BinaryData
   */
 object Features {
   val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 0
-  val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 1
+  val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
 
 
   /**

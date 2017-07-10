@@ -18,7 +18,7 @@ class FeaturesSpec extends FunSuite {
   }
 
   test("'initial_routing_sync' feature") {
-    assert(initialRoutingSync("02"))
+    assert(initialRoutingSync("08"))
   }
 
   test("features compatibility") {
