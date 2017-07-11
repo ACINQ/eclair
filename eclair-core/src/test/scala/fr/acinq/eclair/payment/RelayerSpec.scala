@@ -44,11 +44,14 @@ class RelayerSpec extends TestkitBaseClass {
   val nodeId_c = PublicKey(c)
   val channelId_ab: BinaryData = "65514354" * 8
   val channelId_bc: BinaryData = "64864544" * 8
+  val channel_flags = 0x00.toByte
+  
+  def makeCommitments(channelId: BinaryData) = Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, null, null, null, null, channelId)
 
   test("add a channel") { case (relayer, _) =>
     val sender = TestProbe()
     val channel_bc = TestProbe()
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, 'channels)
     val upstreams = sender.expectMsgType[Map[BinaryData, ActorRef]]
     assert(upstreams === Map(channelId_bc -> channel_bc.ref))
@@ -58,12 +61,12 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
     val channel_bc = TestProbe()
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, 'channels)
     val upstreams1 = sender.expectMsgType[Map[BinaryData, ActorRef]]
     assert(upstreams1 === Map(channelId_bc -> channel_bc.ref))
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, SHUTDOWN, NEGOTIATING, DATA_NEGOTIATING(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), null, null, null)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, SHUTDOWN, NEGOTIATING, DATA_NEGOTIATING(makeCommitments(channelId_bc), null, null, null)))
     sender.send(relayer, 'channels)
     val upstreams2 = sender.expectMsgType[Map[BinaryData, ActorRef]]
     assert(upstreams2 === Map.empty)
@@ -73,12 +76,12 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
     val channel_bc = TestProbe()
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, 'channels)
     val upstreams1 = sender.expectMsgType[Map[BinaryData, ActorRef]]
     assert(upstreams1 === Map(channelId_bc -> channel_bc.ref))
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, NORMAL, CLOSING, DATA_CLOSING(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), Some(null), None, None, None, Nil)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, NORMAL, CLOSING, DATA_CLOSING(makeCommitments(channelId_bc), Some(null), None, None, None, Nil)))
     sender.send(relayer, 'channels)
 
     val upstreams2 = sender.expectMsgType[Map[BinaryData, ActorRef]]
@@ -95,7 +98,7 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
@@ -160,7 +163,7 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
@@ -183,7 +186,7 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
@@ -205,7 +208,7 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
 
@@ -275,8 +278,8 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_ab), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
@@ -304,8 +307,8 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_ab), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
@@ -331,8 +334,8 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_ab), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]
@@ -359,8 +362,8 @@ class RelayerSpec extends TestkitBaseClass {
       UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
     }
 
-    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_ab), None)))
-    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(Commitments(null, null, null, null, null, null, 0, 0, null, null, null, null, channelId_bc), None)))
+    sender.send(relayer, ChannelStateChanged(channel_ab.ref, null, nodeId_a, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_ab), None)))
+    sender.send(relayer, ChannelStateChanged(channel_bc.ref, null, nodeId_c, WAIT_FOR_FUNDING_LOCKED, NORMAL, DATA_NORMAL(makeCommitments(channelId_bc), None)))
     sender.send(relayer, ShortChannelIdAssigned(channel_bc.ref, channelId_bc, channelUpdate_bc.shortChannelId))
     sender.send(relayer, ForwardAdd(add_ab))
     val cmd_bc = channel_bc.expectMsgType[CMD_ADD_HTLC]

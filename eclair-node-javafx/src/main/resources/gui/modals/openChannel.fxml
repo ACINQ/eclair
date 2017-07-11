@@ -75,11 +75,13 @@
         <TextField fx:id="pushMsat" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4" />
         <Label fx:id="pushMsatError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid Push"
                GridPane.columnIndex="1" GridPane.rowIndex="4" />
+        <CheckBox fx:id="publicChannel" mnemonicParsing="true" selected="true" styleClass="text-sm" text="Public Channel"
+                  GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="5" />
 
         <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect"
-              GridPane.columnIndex="1" GridPane.rowIndex="5" GridPane.valignment="BOTTOM" />
+              GridPane.columnIndex="1" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
         <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
-              GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="5" GridPane.valignment="BOTTOM" />
+              GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="6" GridPane.valignment="BOTTOM" />
     </children>
     <stylesheets>
         <URL value="@../commons/globals.css" />

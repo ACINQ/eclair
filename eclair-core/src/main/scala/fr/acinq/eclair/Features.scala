@@ -1,35 +1,48 @@
 package fr.acinq.eclair
 
 
-import fr.acinq.bitcoin.BinaryData
-import scodec.bits.BitVector
+import java.util.BitSet
+import java.util.function.IntPredicate
 
-import scala.collection.immutable.BitSet
+import fr.acinq.bitcoin.BinaryData
 
 
 /**
   * Created by PM on 13/02/2017.
   */
 object Features {
+  // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
+  val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
+  val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
 
-  val CHANNELS_PUBLIC_BIT = 0
-  val INITIAL_ROUTING_SYNC_BIT = 2
+  /**
+    *
+    * @param features feature bits
+    * @return true if an initial dump of the routing table is requested
+    */
+  def initialRoutingSync(features: BitSet) : Boolean = features.get(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
 
-  def isSet(features: BinaryData, bitIndex: Int): Boolean = {
-    val bitset = BitVector(features.data)
-    // NB: for some reason BitVector bits are reversed
-    bitIndex < bitset.size && bitset.get(bitset.size - 1 - bitIndex)
+  /**
+    *
+    * @param features feature bits
+    * @return true if an initial dump of the routing table is requested
+    */
+  def initialRoutingSync(features: BinaryData) : Boolean = initialRoutingSync(BitSet.valueOf(features.reverse.toArray))
+
+  /**
+    * Check that the features that we understand are correctly specified, and that there are no mandatory features that
+    * we don't understand (even bits)
+    */
+  def areSupported(bitset: BitSet): Boolean = {
+    // for now there is no mandatory feature bit, so we don't support features with any even bit set
+    bitset.stream().noneMatch(new IntPredicate {
+      override def test(value: Int) = value % 2 == 0
+    })
   }
 
   /**
     * A feature set is supported if all even bits are supported.
     * We just ignore unknown odd bits.
     */
-  def areSupported(features: BinaryData): Boolean = {
-    val bitset = BitVector(features.data)
-    // we look for an unknown even bit set (NB: for some reason BitVector bits are reversed)
-    val unsupported = bitset.toIndexedSeq.reverse.zipWithIndex.exists { case (b, idx) => b && idx % 2 == 0 && idx > INITIAL_ROUTING_SYNC_BIT}
-    !unsupported
-  }
-
+  def areSupported(features: BinaryData): Boolean = areSupported(BitSet.valueOf(features.reverse.toArray))
 }

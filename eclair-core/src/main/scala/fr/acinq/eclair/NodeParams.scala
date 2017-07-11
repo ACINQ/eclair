@@ -47,7 +47,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
-                      chainHash: BinaryData)
+                      chainHash: BinaryData,
+                      channelFlags: Byte)
 
 object NodeParams {
 
@@ -89,8 +90,8 @@ object NodeParams {
       alias = config.getString("node-alias").take(32),
       color = (color.data(0), color.data(1), color.data(2)),
       address = new InetSocketAddress(config.getString("server.public-ip"), config.getInt("server.port")),
-      globalFeatures = BinaryData(""),
-      localFeatures = BinaryData("05"), // channels_public and initial_routing_sync
+      globalFeatures = BinaryData(config.getString("global-features")),
+      localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = Long.MaxValue,
       maxAcceptedHtlcs = 100,
@@ -112,6 +113,7 @@ object NodeParams {
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
-      chainHash = chainHash)
+      chainHash = chainHash,
+      channelFlags = config.getInt("channel-flags").toByte)
   }
 }

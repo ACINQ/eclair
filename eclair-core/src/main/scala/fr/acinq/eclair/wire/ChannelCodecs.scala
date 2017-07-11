@@ -133,6 +133,7 @@ object ChannelCodecs {
   val commitmentsCodec: Codec[Commitments] = (
     ("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
+      ("channelFlags" | byte) ::
       ("localCommit" | localCommitCodec) ::
       ("remoteCommit" | remoteCommitCodec) ::
       ("localChanges" | localChangesCodec) ::

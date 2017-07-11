@@ -31,6 +31,7 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
   * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
   */
 case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
+                       channelFlags: Byte,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
@@ -52,6 +53,8 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def addToUnackedMessages(message: LightningMessage): Commitments = this.copy(unackedMessages = unackedMessages :+ message)
 
   def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst { case d: Shutdown => d }
+
+  def announceChannel: Boolean = (channelFlags & 0x01) != 0
 }
 
 object Commitments extends Logging {
