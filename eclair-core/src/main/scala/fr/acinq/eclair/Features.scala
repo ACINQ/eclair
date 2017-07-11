@@ -11,22 +11,9 @@ import fr.acinq.bitcoin.BinaryData
   * Created by PM on 13/02/2017.
   */
 object Features {
-  val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 0
+  // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
+  val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
   val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
-
-
-  /**
-    * Check that we understand their feature bits and that they are consistent with our own
-    * @param localFeatures local feature bits
-    * @param remoteFeatures remote feature bits
-    * @return true if we must disconnect
-    */
-  def mustDisconnect(localFeatures: BinaryData, remoteFeatures: BinaryData) : Boolean = {
-    val local = BitSet.valueOf(localFeatures.reverse.toArray)
-    val remote = BitSet.valueOf(remoteFeatures.reverse.toArray)
-    // both bits cannot be set
-    !areSupported(remote)
-  }
 
   /**
     *
@@ -47,9 +34,9 @@ object Features {
     * we don't understand (even bits)
     */
   def areSupported(bitset: BitSet): Boolean = {
-    if (bitset.get(INITIAL_ROUTING_SYNC_BIT_MANDATORY)) false
-    else bitset.stream().noneMatch(new IntPredicate {
-      override def test(value: Int) = value % 2 == 0 && value > INITIAL_ROUTING_SYNC_BIT_OPTIONAL
+    // for now there is no mandatory feature bit, so we don't support features with any even bit set
+    bitset.stream().noneMatch(new IntPredicate {
+      override def test(value: Int) = value % 2 == 0
     })
   }
 

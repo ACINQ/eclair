@@ -13,9 +13,6 @@ import org.scalatest.junit.JUnitRunner
   */
 @RunWith(classOf[JUnitRunner])
 class FeaturesSpec extends FunSuite {
-  test("'channel_public' feature") {
-    assert(mustDisconnect("00", "03"))
-  }
 
   test("'initial_routing_sync' feature") {
     assert(initialRoutingSync("08"))
