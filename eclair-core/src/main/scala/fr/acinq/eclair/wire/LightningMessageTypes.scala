@@ -83,8 +83,8 @@ case class ClosingSigned(channelId: BinaryData,
 case class UpdateAddHtlc(channelId: BinaryData,
                          id: Long,
                          amountMsat: Long,
-                         expiry: Long,
                          paymentHash: BinaryData,
+                         expiry: Long,
                          onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: BinaryData,

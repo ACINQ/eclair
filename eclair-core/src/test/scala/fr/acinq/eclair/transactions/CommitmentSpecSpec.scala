@@ -13,11 +13,11 @@ class CommitmentSpecSpec extends FunSuite {
     val R = Crypto.sha256(BinaryData("42" * 32))
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc("00" * 32, 1, 2000 * 1000, 400, H, "")
+    val add1 = UpdateAddHtlc("00" * 32, 1, 2000 * 1000, H, 400, "")
     val spec1 = CommitmentSpec.reduce(spec, add1 :: Nil, Nil)
     assert(spec1 === spec.copy(htlcs = Set(Htlc(OUT, add1, None)), toLocalMsat = 3000 * 1000))
 
-    val add2 = UpdateAddHtlc("00" * 32, 2, 1000 * 1000, 400, H, "")
+    val add2 = UpdateAddHtlc("00" * 32, 2, 1000 * 1000, H, 400, "")
     val spec2 = CommitmentSpec.reduce(spec1, add2 :: Nil, Nil)
     assert(spec2 === spec1.copy(htlcs = Set(Htlc(OUT, add1, None), Htlc(OUT, add2, None)), toLocalMsat = 2000 * 1000))
 
@@ -35,11 +35,11 @@ class CommitmentSpecSpec extends FunSuite {
     val R = Crypto.sha256(BinaryData("42" * 32))
     val H = Crypto.sha256(R)
 
-    val add1 = UpdateAddHtlc("00" * 32, 1, 2000 * 1000, 400, H, "")
+    val add1 = UpdateAddHtlc("00" * 32, 1, 2000 * 1000, H, 400, "")
     val spec1 = CommitmentSpec.reduce(spec, Nil, add1 :: Nil)
     assert(spec1 === spec.copy(htlcs = Set(Htlc(IN, add1, None)), toRemoteMsat = 3000 * 1000))
 
-    val add2 = UpdateAddHtlc("00" * 32, 2, 1000 * 1000, 400, H, "")
+    val add2 = UpdateAddHtlc("00" * 32, 2, 1000 * 1000, H, 400, "")
     val spec2 = CommitmentSpec.reduce(spec1, Nil, add2 :: Nil)
     assert(spec2 === spec1.copy(htlcs = Set(Htlc(IN, add1, None), Htlc(IN, add2, None)), toRemoteMsat = 2000 * 1000))
 

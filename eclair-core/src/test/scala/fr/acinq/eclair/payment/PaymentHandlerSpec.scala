@@ -27,7 +27,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, ReceivePayment(amountMsat))
     val pr = sender.expectMsgType[PaymentRequest]
 
-    val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, 0, pr.paymentHash, "")
+    val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, 0, "")
     sender.send(handler, add)
     sender.expectMsgType[CMD_FULFILL_HTLC]
     eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
