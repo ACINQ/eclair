@@ -87,7 +87,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods {
       // we don't want to be above maxHtlcValueInFlightMsat or maxAcceptedHtlcs
       awaitCond(channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size < 10 && channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size < 10)
       val senders = for (i <- 0 until parallel) yield TestProbe()
-      senders.foreach(_.send(paymentHandler, ReceivePayment(MilliSatoshi(requiredAmount))))
+      senders.foreach(_.send(paymentHandler, ReceivePayment(MilliSatoshi(requiredAmount), "One coffee")))
       val paymentHashes = senders.map(_.expectMsgType[PaymentRequest]).map(pr => pr.paymentHash)
       val cmds = paymentHashes.map(h => buildCmdAdd(h, destination))
       senders.zip(cmds).foreach {

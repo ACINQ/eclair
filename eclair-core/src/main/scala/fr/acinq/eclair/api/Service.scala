@@ -99,8 +99,8 @@ trait Service extends Logging {
                   getChannel(channelId).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "network", _) =>
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
-                case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: Nil) =>
-                  (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong))).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+                case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: JString(description) :: Nil) =>
+                  (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong), description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>

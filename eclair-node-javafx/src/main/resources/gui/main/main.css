@@ -132,7 +132,6 @@
     -fx-background-color: #353535;
 }
 
-
 /* ------------- Activity tab -------------- */
 
 .activities-tab.tab-pane > *.tab-header-area {
@@ -182,4 +181,30 @@
     -fx-border-width: 1px;
     -fx-border-color: #888888;
     -fx-background-color: #f4f4f4;
+}
+
+
+/* -------------- Receive Modal ------------------ */
+
+.result-box {
+    -fx-background-color: #ffffff;
+    -fx-border-width: 1px 0 0 0;
+    -fx-border-color: rgb(210,210,210);
+}
+
+.button.copy-clipboard {
+    -fx-background-color: rgb(240,240,240);
+	-fx-background-image: url("../commons/images/copy_icon.png");
+	-fx-background-repeat: no-repeat;
+	-fx-background-size: 12px;
+    -fx-background-position: 4px center;
+    -fx-border-color: transparent;
+	-fx-padding: 2px 4px 2px 20px;
+	-fx-font-size: 12px;
+}
+.button.copy-clipboard:hover {
+    -fx-background-color: rgb(230,232,235);
+}
+.button.copy-clipboard:pressed {
+    -fx-background-color: rgb(220,222,225);
 }

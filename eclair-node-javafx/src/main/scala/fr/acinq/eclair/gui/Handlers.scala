@@ -69,8 +69,8 @@ class Handlers(setup: Setup) extends Logging {
     }
   }
 
-  def receive(amountMsat: MilliSatoshi): Future[String] =
-    (paymentHandler ? ReceivePayment(amountMsat)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+  def receive(amountMsat: MilliSatoshi, description: String): Future[String] =
+    (paymentHandler ? ReceivePayment(amountMsat, description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
 
   def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
     dot => printToFile(file)(writer => writer.write(dot)))
