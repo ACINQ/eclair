@@ -1,7 +1,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.DescriptionTag
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite

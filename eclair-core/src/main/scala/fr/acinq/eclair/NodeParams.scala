@@ -47,8 +47,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       maxFeerateMismatch: Double,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
-                      chainHash: BinaryData,
-                      paymentRequestPrefix: String = "lntb")
+                      chainHash: BinaryData)
 
 object NodeParams {
 
