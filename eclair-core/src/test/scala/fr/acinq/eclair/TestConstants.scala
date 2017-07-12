@@ -28,7 +28,7 @@ object TestConstants {
       color = (1: Byte, 2: Byte, 3: Byte),
       address = new InetSocketAddress("localhost", 9731),
       globalFeatures = "",
-      localFeatures = "00", // no announcement
+      localFeatures = "00",
       dustLimitSatoshis = 542,
       maxHtlcValueInFlightMsat = 150000000,
       maxAcceptedHtlcs = 100,
@@ -50,7 +50,8 @@ object TestConstants {
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId)
+      chainHash = Block.RegtestGenesisBlock.blockId,
+      channelFlags = 1)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -95,7 +96,8 @@ object TestConstants {
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId)
+      chainHash = Block.RegtestGenesisBlock.blockId,
+      channelFlags = 1)
     val id = nodeParams.privateKey.publicKey
     val channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

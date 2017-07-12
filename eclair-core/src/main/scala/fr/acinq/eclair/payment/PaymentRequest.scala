@@ -6,6 +6,8 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Bech32.Int5
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, _}
+import fr.acinq.eclair.crypto.BitStream
+import fr.acinq.eclair.crypto.BitStream.Bit
 import fr.acinq.eclair.payment.PaymentRequest.{Amount, RoutingInfoTag, Timestamp}
 
 import scala.annotation.tailrec
@@ -60,15 +62,20 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   /**
     *
-    * @return a representation of this payment request as a sequence of 32 bits integers
+    * @return a representation of this payment request, without its signature, as a bit stream. This is what will be signed.
     */
-  def data: Seq[Bech32.Int5] = Timestamp.encode(timestamp) ++ (tags.map(_.toInt5s).flatten)
+  def stream: BitStream = {
+    val stream = BitStream.empty
+    val int5s = Timestamp.encode(timestamp) ++ (tags.map(_.toInt5s).flatten)
+    val stream1 = int5s.foldLeft(stream)(PaymentRequest.write5)
+    stream1
+  }
 
   /**
     *
     * @return the hash of this payment request
     */
-  def hash: BinaryData = Crypto.sha256(s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8") ++ data)
+  def hash: BinaryData = Crypto.sha256(s"${prefix}${Amount.encode(amount)}".getBytes("UTF-8") ++ stream.bytes)
 
   /**
     *
@@ -89,7 +96,12 @@ object PaymentRequest {
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
   val maxAmount = MilliSatoshi(4294967296L)
 
-  def apply(prefix: String, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L, unit: Char = 'm'): PaymentRequest =
+  def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
+    val prefix = chainHash match {
+    case Block.RegtestGenesisBlock.blockId => "lntb"
+    case Block.TestnetGenesisBlock.blockId => "lntb"
+    case Block.LivenetGenesisBlock.blockId => "lnbc"
+    }
     PaymentRequest(
       prefix = prefix,
       amount = amount,
@@ -101,6 +113,7 @@ object PaymentRequest {
         expirySeconds.map(ExpiryTag(_))).flatten,
       signature = BinaryData.empty)
       .sign(privateKey)
+  }
 
   sealed trait Tag {
     def toInt5s: Seq[Int5]
@@ -315,6 +328,39 @@ object PaymentRequest {
     }
   }
 
+  def toBits(value: Int5) : Seq[Bit] = Seq((value & 16) != 0, (value & 8) != 0, (value & 4) != 0, (value & 2) != 0, (value & 1) != 0)
+
+  /**
+    * write a 5bits integer to a stream
+    * @param stream stream to write to
+    * @param value a 5bits value
+    * @return an upated stream
+    */
+  def write5(stream: BitStream, value: Int5) : BitStream = stream.writeBits(toBits(value))
+
+  /**
+    * read a 5bits value from a stream
+    * @param stream stream to read from
+    * @return a (stream, value) pair
+    */
+  def read5(stream: BitStream) : (BitStream, Int5) = {
+    val (stream1, bits) = stream.readBits(5)
+    val value = (if (bits(0)) 1 << 4 else 0) + (if (bits(1)) 1 << 3 else 0) + (if (bits(2)) 1 << 2 else 0) + (if (bits(3)) 1 << 1 else 0) + (if (bits(4)) 1 << 0 else 0)
+    (stream1, (value & 0xff).toByte)
+  }
+
+  /**
+    * splits a bit stream into 5bits values
+    * @param stream
+    * @param acc
+    * @return a sequence of 5bits values
+    */
+  @tailrec
+  def toInt5s(stream: BitStream, acc :Seq[Int5] = Nil) : Seq[Int5] = if (stream.bitCount == 0) acc else {
+    val (stream1, value) = read5(stream)
+    toInt5s(stream1, acc :+ value)
+  }
+
   /**
     *
     * @param input bech32-encoded payment request
@@ -322,30 +368,34 @@ object PaymentRequest {
     */
   def read(input: String): PaymentRequest = {
     val (hrp, data) = Bech32.decode(input)
-    val timestamp = Timestamp.decode(data)
-    val data1 = data.drop(7)
+    val stream = data.foldLeft(BitStream.empty)(write5)
+    require(stream.bitCount >= 65 * 8, "data is too short to contain a 65 bytes signature")
+    val (stream1, sig) = stream.popBytes(65)
+
+    val data0 = toInt5s(stream1)
+    val timestamp = Timestamp.decode(data0)
+    val data1 = data0.drop(7)
 
     @tailrec
-    def loop(data: Seq[Int5], tags: Seq[Seq[Int5]] = Nil): (BinaryData, Seq[Seq[Int5]]) = {
+    def loop(data: Seq[Int5], tags: Seq[Seq[Int5]] = Nil): Seq[Seq[Int5]] = if(data.isEmpty) tags else {
       // 104 is the size of a signature
-      if (data.length > 104) {
         val len = 1 + 2 + 32 * data(1) + data(2)
         loop(data.drop(len), tags :+ data.take(len))
-      } else (Bech32.five2eight(data), tags)
     }
 
-    val (signature, rawtags) = loop(data1)
+    val rawtags = loop(data1)
     val tags = rawtags.map(Tag.parse)
+    val signature = sig.reverse
     val r = new BigInteger(1, signature.take(32).toArray)
     val s = new BigInteger(1, signature.drop(32).take(32).toArray)
     val recid = signature.last
-    val message: BinaryData = hrp.getBytes ++ data.dropRight(104)
+    val message: BinaryData = hrp.getBytes ++ stream1.bytes
     val (pub1, pub2) = Crypto.recoverPublicKey((r, s), Crypto.sha256(message))
     val pub = if (recid % 2 != 0) pub2 else pub1
     val prefix = hrp.take(4)
     val amount_opt = Amount.decode(hrp.drop(4))
     val pr = PaymentRequest(prefix, amount_opt, timestamp, pub, tags.toList, signature)
-    val validSig = Crypto.verifySignature(pr.hash, (r, s), pub)
+    val validSig = Crypto.verifySignature(Crypto.sha256(message), (r, s), pub)
     require(validSig, "invalid signature")
     pr
   }
@@ -359,9 +409,9 @@ object PaymentRequest {
     // currency unit is Satoshi, but we compute amounts in Millisatoshis
     val hramount = Amount.encode(pr.amount)
     val hrp = s"${pr.prefix}$hramount"
-    val data1 = pr.data ++ Bech32.eight2five(pr.signature)
-    val checksum = Bech32.checksum(hrp, data1)
-    hrp + "1" + new String((data1 ++ checksum).map(i => Bech32.pam(i)).toArray)
+    val stream = pr.stream.writeBytes(pr.signature)
+    val checksum = Bech32.checksum(hrp, toInt5s(stream))
+    hrp + "1" + new String((toInt5s(stream) ++ checksum).map(i => Bech32.pam(i)).toArray)
   }
 }
 

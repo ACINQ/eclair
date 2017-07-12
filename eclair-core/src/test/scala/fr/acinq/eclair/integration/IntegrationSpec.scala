@@ -137,7 +137,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(node1.switchboard, NewConnection(
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
       address = node2.nodeParams.address,
-      newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat)))))
+      newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat), None))))
     sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
     // funder transitions
     assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_ACCEPT_CHANNEL)

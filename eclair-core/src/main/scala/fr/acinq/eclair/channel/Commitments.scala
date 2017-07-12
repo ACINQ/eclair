@@ -31,6 +31,7 @@ case class WaitingForRevocation(nextRemoteCommit: RemoteCommit, sent: CommitSig,
   * theirNextCommitInfo is their next commit tx. The rest of the time, it is their next per-commitment point
   */
 case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
+                       channelFlags: Byte,
                        localCommit: LocalCommit, remoteCommit: RemoteCommit,
                        localChanges: LocalChanges, remoteChanges: RemoteChanges,
                        localNextHtlcId: Long, remoteNextHtlcId: Long,
@@ -48,9 +49,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def addRemoteProposal(proposal: UpdateMessage): Commitments = Commitments.addRemoteProposal(this, proposal)
 
-  //def addToUnackedMessages(message: LightningMessage): Commitments = this.copy(unackedMessages = unackedMessages :+ message)
-
-  //def unackedShutdown(): Option[Shutdown] = this.unackedMessages.collectFirst { case d: Shutdown => d }
+  def announceChannel: Boolean = (channelFlags & 0x01) != 0
 }
 
 object Commitments extends Logging {
@@ -89,7 +88,7 @@ object Commitments extends Logging {
     }
 
     // let's compute the current commitment *as seen by them* with this change taken into account
-    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.expiry, cmd.paymentHash, cmd.onion)
+    val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 

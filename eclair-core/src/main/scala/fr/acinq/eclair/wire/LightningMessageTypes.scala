@@ -50,14 +50,15 @@ case class OpenChannel(chainHash: BinaryData,
                        revocationBasepoint: Point,
                        paymentBasepoint: Point,
                        delayedPaymentBasepoint: Point,
-                       firstPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
+                       firstPerCommitmentPoint: Point,
+                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId
 
 case class AcceptChannel(temporaryChannelId: BinaryData,
                          dustLimitSatoshis: Long,
                          maxHtlcValueInFlightMsat: Long,
                          channelReserveSatoshis: Long,
-                         minimumDepth: Long,
                          htlcMinimumMsat: Long,
+                         minimumDepth: Long,
                          toSelfDelay: Int,
                          maxAcceptedHtlcs: Int,
                          fundingPubkey: PublicKey,
@@ -87,8 +88,8 @@ case class ClosingSigned(channelId: BinaryData,
 case class UpdateAddHtlc(channelId: BinaryData,
                          id: Long,
                          amountMsat: Long,
-                         expiry: Long,
                          paymentHash: BinaryData,
+                         expiry: Long,
                          onionRoutingPacket: BinaryData) extends HtlcMessage with UpdateMessage with HasChannelId
 
 case class UpdateFulfillHtlc(channelId: BinaryData,

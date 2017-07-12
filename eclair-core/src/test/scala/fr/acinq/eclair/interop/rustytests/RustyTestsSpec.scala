@@ -42,7 +42,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
     Globals.feeratePerKw.set(10000)
-    alice ! INPUT_INIT_FUNDER("00" * 32, 2000000, 1000000000, Globals.feeratePerKw.get, Alice.channelParams, pipe, bobInit)
+    alice ! INPUT_INIT_FUNDER("00" * 32, 2000000, 1000000000, Globals.feeratePerKw.get, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)
     bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {

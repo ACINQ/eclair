@@ -168,8 +168,10 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
         s"rgb(${new Integer(pn.getValue.rgbColor._1 & 0xFF)}, ${new Integer(pn.getValue.rgbColor._2 & 0xFF)}, ${new Integer(pn.getValue.rgbColor._3 & 0xFF)})")
     })
     networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[NodeAnnouncement, String]) =
-        new SimpleStringProperty(s"${pn.getValue.addresses.head.getHostString}:${pn.getValue.addresses.head.getPort}")
+      def call(pn: CellDataFeatures[NodeAnnouncement, String]) = {
+        val address = pn.getValue.addresses.headOption.map(a => s"${a.getHostString}:${a.getPort}").getOrElse("unknown")
+        new SimpleStringProperty(address)
+      }
     })
     networkNodesRGBColumn.setCellFactory(new Callback[TableColumn[NodeAnnouncement, String], TableCell[NodeAnnouncement, String]]() {
       def call(pn: TableColumn[NodeAnnouncement, String]) = {

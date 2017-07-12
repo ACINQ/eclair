@@ -228,7 +228,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc") { case (_, bob, _, _, _, _, _) =>
     within(30 seconds) {
       val initialData = bob.stateData.asInstanceOf[DATA_NORMAL]
-      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, 400144, BinaryData("42" * 32), defaultOnion)
+      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), 400144, defaultOnion)
       bob ! htlc
       awaitCond(bob.stateData == initialData.copy(commitments = initialData.commitments.copy(remoteChanges = initialData.commitments.remoteChanges.copy(proposed = initialData.commitments.remoteChanges.proposed :+ htlc), remoteNextHtlcId = 1)))
     }
@@ -237,7 +237,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (unexpected id)") { case (_, bob, _, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      val htlc = UpdateAddHtlc("00" * 32, 42, 150000, 400144, BinaryData("42" * 32), defaultOnion)
+      val htlc = UpdateAddHtlc("00" * 32, 42, 150000, BinaryData("42" * 32), 400144, defaultOnion)
       bob ! htlc.copy(id = 0)
       bob ! htlc.copy(id = 1)
       bob ! htlc.copy(id = 2)
@@ -254,7 +254,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (invalid payment hash)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, 400144, "11" * 42, defaultOnion)
+      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, "11" * 42, 400144, defaultOnion)
       alice2bob.forward(bob, htlc)
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === InvalidPaymentHash.getMessage)
@@ -267,7 +267,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (expiry too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, expiry = 1, BinaryData("42" * 32), defaultOnion)
+      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), expiry = 1, defaultOnion)
       alice2bob.forward(bob, htlc)
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === ExpiryTooSmall(minimum = 400003, actual = 1, blockCount = 400000).getMessage)
@@ -280,7 +280,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (value too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      val htlc = UpdateAddHtlc("00" * 32, 0, 150, expiry = 400144, BinaryData("42" * 32), defaultOnion)
+      val htlc = UpdateAddHtlc("00" * 32, 0, 150, BinaryData("42" * 32), expiry = 400144, defaultOnion)
       alice2bob.forward(bob, htlc)
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === HtlcValueTooSmall(minimum = 1000, actual = 150).getMessage)
@@ -293,7 +293,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      val htlc = UpdateAddHtlc("00" * 32, 0, Long.MaxValue, 400144, BinaryData("42" * 32), defaultOnion)
+      val htlc = UpdateAddHtlc("00" * 32, 0, Long.MaxValue, BinaryData("42" * 32), 400144, defaultOnion)
       alice2bob.forward(bob, htlc)
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === InsufficientFunds(amountMsat = Long.MaxValue, missingSatoshis = 9223372036083735L, reserveSatoshis = 20000, feesSatoshis = 8960).getMessage)
@@ -306,10 +306,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 1/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 400000000, 400144, "11" * 32, defaultOnion))
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 200000000, 400144, "22" * 32, defaultOnion))
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 167600000, 400144, "33" * 32, defaultOnion))
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 3, 10000000, 400144, "44" * 32, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 400000000, "11" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 200000000, "22" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 167600000, "33" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 3, 10000000,  "44" * 32, 400144, defaultOnion))
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === InsufficientFunds(amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
       awaitCond(bob.stateName == CLOSING)
@@ -321,9 +321,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (insufficient funds w/ pending htlcs 2/2)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 300000000, 400144, "11" * 32, defaultOnion))
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 300000000, 400144, "22" * 32, defaultOnion))
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 500000000, 400144, "33" * 32, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 300000000, "11" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 300000000, "22" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 500000000, "33" * 32, 400144, defaultOnion))
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === InsufficientFunds(amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400).getMessage)
       awaitCond(bob.stateName == CLOSING)
@@ -335,7 +335,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv UpdateAddHtlc (over max inflight htlc value)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      alice2bob.forward(alice, UpdateAddHtlc("00" * 32, 0, 151000000, 400144, "11" * 32, defaultOnion))
+      alice2bob.forward(alice, UpdateAddHtlc("00" * 32, 0, 151000000, "11" * 32, 400144, defaultOnion))
       val error = alice2bob.expectMsgType[Error]
       assert(new String(error.data) === HtlcValueTooHighInFlight(maximum = 150000000, actual = 151000000).getMessage)
       awaitCond(alice.stateName == CLOSING)
@@ -349,9 +349,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
       // Bob accepts a maximum of 30 htlcs
       for (i <- 0 until 30) {
-        alice2bob.forward(bob, UpdateAddHtlc("00" * 32, i, 1000000, 400144, "11" * 32, defaultOnion))
+        alice2bob.forward(bob, UpdateAddHtlc("00" * 32, i, 1000000, "11" * 32, 400144, defaultOnion))
       }
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 30, 1000000, 400144, "11" * 32, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 30, 1000000, "11" * 32, 400144, defaultOnion))
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === TooManyAcceptedHtlcs(maximum = 30).getMessage)
       awaitCond(bob.stateName == CLOSING)

@@ -131,7 +131,7 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   test("encode/decode all channel messages") {
 
-    val open = OpenChannel(randomBytes(32), randomBytes(32), 3, 4, 5, 6, 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5))
+    val open = OpenChannel(randomBytes(32), randomBytes(32), 3, 4, 5, 6, 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), 0.toByte)
     val accept = AcceptChannel(randomBytes(32), 3, 4, 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5))
     val funding_created = FundingCreated(randomBytes(32), bin(32, 0), 3, randomSignature)
     val funding_signed = FundingSigned(randomBytes(32), randomSignature)
@@ -139,7 +139,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val update_fee = UpdateFee(randomBytes(32), 2)
     val shutdown = Shutdown(randomBytes(32), bin(47, 0))
     val closing_signed = ClosingSigned(randomBytes(32), 2, randomSignature)
-    val update_add_htlc = UpdateAddHtlc(randomBytes(32), 2, 3, 4, bin(32, 0), bin(Sphinx.PacketLength, 0))
+    val update_add_htlc = UpdateAddHtlc(randomBytes(32), 2, 3, bin(32, 0), 4, bin(Sphinx.PacketLength, 0))
     val update_fulfill_htlc = UpdateFulfillHtlc(randomBytes(32), 2, bin(32, 0))
     val update_fail_htlc = UpdateFailHtlc(randomBytes(32), 2, bin(154, 0))
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes(32), 2, randomBytes(32), 1111)

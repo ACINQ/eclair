@@ -45,7 +45,8 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
       relayerA ! alice
       relayerB ! bob
-      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit)
+      // no announcements
+      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
       bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
       val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]

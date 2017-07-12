@@ -129,7 +129,8 @@ object LightningMessageCodecs {
       ("revocationBasepoint" | point) ::
       ("paymentBasepoint" | point) ::
       ("delayedPaymentBasepoint" | point) ::
-      ("firstPerCommitmentPoint" | point)).as[OpenChannel]
+      ("firstPerCommitmentPoint" | point) ::
+      ("channelFlags" | byte)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | binarydata(32)) ::
@@ -173,8 +174,8 @@ object LightningMessageCodecs {
     ("channelId" | binarydata(32)) ::
       ("id" | uint64) ::
       ("amountMsat" | uint64) ::
-      ("expiry" | uint32) ::
       ("paymentHash" | binarydata(32)) ::
+      ("expiry" | uint32) ::
       ("onionRoutingPacket" | binarydata(Sphinx.PacketLength))).as[UpdateAddHtlc]
 
   val updateFulfillHtlcCodec: Codec[UpdateFulfillHtlc] = (

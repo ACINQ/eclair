@@ -3,14 +3,13 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.Features.CHANNELS_PUBLIC_BIT
 import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Features, Globals, NodeParams}
+import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{Globals, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -120,9 +119,6 @@ object Helpers {
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
     }
-
-    def announceChannel(localLocalFeatures: BinaryData, remoteLocalFeature: BinaryData): Boolean =
-      Features.isSet(localLocalFeatures, CHANNELS_PUBLIC_BIT) && Features.isSet(remoteLocalFeature, CHANNELS_PUBLIC_BIT)
 
     /**
       *
