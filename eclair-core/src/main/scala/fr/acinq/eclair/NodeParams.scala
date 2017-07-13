@@ -56,11 +56,13 @@ object NodeParams {
     * Order of precedence for the configuration parameters:
     * 1) Java environment variables (-D...)
     * 2) Configuration file eclair.conf
-    * 3) default values in reference.conf
+    * 3) Optionally provided config
+    * 4) Default values in reference.conf
     */
-  def loadConfiguration(datadir: File) =
+  def loadConfiguration(datadir: File, overrideDefaults: Config = ConfigFactory.empty()) =
     ConfigFactory.parseProperties(System.getProperties)
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
+      .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
   def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData): NodeParams = {

@@ -8,6 +8,8 @@ import akka.http.scaladsl.Http
 import akka.stream.ActorMaterializer
 import akka.util.Timeout
 import fr.acinq.bitcoin.{Base58Check, Block, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import com.typesafe.config.{Config, ConfigFactory}
+import fr.acinq.bitcoin.{Base58Check, BinaryData, Block, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.zmq.ZMQActor
@@ -28,11 +30,11 @@ import scala.util.Try
 /**
   * Created by PM on 25/01/2016.
   */
-class Setup(datadir: File, actorSystemName: String = "default") extends Logging {
+class Setup(datadir: File, actorSystemName: String = "default", overrideDefaults: Config = ConfigFactory.empty()) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
-  val config = NodeParams.loadConfiguration(datadir)
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
 
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
