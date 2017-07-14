@@ -49,6 +49,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   var bitcoinrpcclient: BitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
   var nodes: Map[String, Kit] = Map()
+  var finalAddresses: Map[String, String] = Map()
 
   implicit val formats = DefaultFormats
 
@@ -106,10 +107,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }
     val setup = new Setup(datadir, actorSystem = ActorSystem(s"system-$name"))
     val kit = Await.result(setup.bootstrap, 10 seconds)
+    finalAddresses = finalAddresses + (name -> setup.finalAddress)
     nodes = nodes + (name -> kit)
   }
-
-  def p2pkhAddress(script: BinaryData) = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, script)
 
   def javaProps(props: Seq[(String, String)]) = {
     val properties = new Properties()
@@ -363,7 +363,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -403,7 +403,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.filter(_ \ "address" == JString(p2pkhAddress(nodes("F1").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
+      res.filter(_ \ "address" == JString(finalAddresses("F1"))).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we then generate enough blocks so that C gets its main delayed output
     sender.send(bitcoincli, BitcoinReq("generate", 145))
@@ -412,7 +412,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 8, 16)
@@ -427,7 +427,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -466,13 +466,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.filter(_ \ "address" == JString(p2pkhAddress(nodes("F2").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
+      res.filter(_ \ "address" == JString(finalAddresses("F2"))).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
     // and C will have its main output
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 7, 14)
@@ -487,7 +487,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -512,7 +512,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 6, 12)
@@ -527,7 +527,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -554,7 +554,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(finalAddresses("C"))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 5, 10)
