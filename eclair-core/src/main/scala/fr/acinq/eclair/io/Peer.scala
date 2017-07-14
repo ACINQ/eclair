@@ -45,20 +45,19 @@ case class PeerRecord(id: PublicKey, address: InetSocketAddress)
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends LoggingFSM[State, Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, storedChannels: Set[HasCommitments]) extends LoggingFSM[State, Data] {
 
   import Peer._
 
   val RECONNECT_TIMER = "reconnect"
 
-  startWith(DISCONNECTED, DisconnectedData(Set.empty))
+  startWith(DISCONNECTED, DisconnectedData(offlineChannels = storedChannels.map { state =>
+    val channel = spawnChannel(nodeParams, context.system.deadLetters)
+    channel ! INPUT_RESTORED(state)
+    HotChannel(FinalChannelId(state.channelId), channel)
+  }, attempts = 0))
 
   when(DISCONNECTED) {
-    case Event(state: HasCommitments, d@DisconnectedData(offlineChannels, _)) =>
-      val channel = spawnChannel(nodeParams, context.system.deadLetters)
-      channel ! INPUT_RESTORED(state)
-      stay using d.copy(offlineChannels = offlineChannels + HotChannel(FinalChannelId(state.channelId), channel))
-
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels, _)) =>
       stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
 
@@ -87,11 +86,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   when(INITIALIZING) {
-    case Event(state: HasCommitments, d@InitializingData(_, offlineChannels)) =>
-      val channel = spawnChannel(nodeParams, context.system.deadLetters)
-      channel ! INPUT_RESTORED(state)
-      stay using d.copy(offlineChannels = offlineChannels + HotChannel(FinalChannelId(state.channelId), channel))
-
     case Event(c: NewChannel, d@InitializingData(_, offlineChannels)) =>
       stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
 
@@ -149,12 +143,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       // TODO: compute latency for remote peer ?
       log.debug(s"received pong with ${data.length} bytes")
       stay
-
-    case Event(state: HasCommitments, d@ConnectedData(transport, _, channels)) =>
-      val channel = spawnChannel(nodeParams, context.system.deadLetters)
-      channel ! INPUT_RESTORED(state)
-      channel ! INPUT_RECONNECTED(transport)
-      stay using d.copy(channels = channels + (FinalChannelId(state.channelId) -> channel))
 
     case Event(err@Error(channelId, reason), ConnectedData(transport, _, channels)) if channelId == CHANNELID_ZERO =>
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
@@ -246,7 +234,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   def createChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
-    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
+    val localParams = makeChannelParams(nodeParams, funder, fundingSatoshis)
     val channel = spawnChannel(nodeParams, transport)
     (channel, localParams)
   }
@@ -268,11 +256,11 @@ object Peer {
 
   val CHANNELID_ZERO = BinaryData("00" * 32)
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, storedChannels: Set[HasCommitments]) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, storedChannels))
 
   def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
     // all secrets are generated from the main seed
     // TODO: check this
     val keyIndex = secureRandom.nextInt(1000).toLong
@@ -288,7 +276,7 @@ object Peer {
       revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
       paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
       delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
-      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
+      defaultFinalScriptPubKey = nodeParams.defaultFinalScriptPubKey,
       shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,

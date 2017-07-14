@@ -22,7 +22,7 @@ import scala.util.{Failure, Success, Try}
 /**
   * Created by DPA on 23/09/2016.
   */
-class SendPaymentController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends Logging {
+class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Logging {
 
   @FXML var paymentRequest: TextArea = _
   @FXML var paymentRequestError: Label = _

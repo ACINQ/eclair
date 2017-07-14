@@ -18,6 +18,7 @@ import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
+import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Success, Try}
 
@@ -54,6 +55,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   import Router._
 
   import ExecutionContext.Implicits.global
+
+  nodeParams.announcementsDb.values.collect { case ann: ChannelAnnouncement => self ! ann }
+  nodeParams.announcementsDb.values.collect { case ann: NodeAnnouncement => self ! ann }
+  nodeParams.announcementsDb.values.collect { case ann: ChannelUpdate => self ! ann }
+  if (nodeParams.channelsDb.values.size > 0) {
+    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
+    self ! nodeAnn
+  }
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 

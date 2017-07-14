@@ -8,8 +8,8 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, MilliSatoshi, Satoshi, Script}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
@@ -20,7 +20,7 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, Setup}
+import fr.acinq.eclair.{Globals, Kit, Setup}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
@@ -28,6 +28,7 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
+import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
 import scala.sys.process._
@@ -47,7 +48,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   var bitcoind: Process = null
   var bitcoinrpcclient: BitcoinJsonRPCClient = null
   var bitcoincli: ActorRef = null
-  var nodes: Map[String, Setup] = Map()
+  var nodes: Map[String, Kit] = Map()
 
   implicit val formats = DefaultFormats
 
@@ -103,9 +104,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       write(config.root().render());
       close
     }
-    val setup = new Setup(datadir, actorSystemName = s"system-$name")
-    nodes = nodes + (name -> setup)
+    val setup = new Setup(datadir, actorSystem = ActorSystem(s"system-$name"))
+    val kit = Await.result(setup.bootstrap, 10 seconds)
+    nodes = nodes + (name -> kit)
   }
+
+  def p2pkhAddress(script: BinaryData) = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, script)
 
   def javaProps(props: Seq[(String, String)]) = {
     val properties = new Properties()
@@ -125,10 +129,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     instantiateEclairNode("F2", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F2", "eclair.server.port" -> 29736, "eclair.api.port" -> 28086, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
     instantiateEclairNode("F3", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F3", "eclair.server.port" -> 29737, "eclair.api.port" -> 28087, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
     instantiateEclairNode("F4", ConfigFactory.parseMap(Map("eclair.node-alias" -> "F4", "eclair.server.port" -> 29738, "eclair.api.port" -> 28088, "eclair.payment-handler" -> "noop")).withFallback(commonConfig))
-    nodes.values.foreach(_.boostrap)
   }
 
-  def connect(node1: Setup, node2: Setup, fundingSatoshis: Long, pushMsat: Long) = {
+  def connect(node1: Kit, node2: Kit, fundingSatoshis: Long, pushMsat: Long) = {
     val eventListener1 = TestProbe()
     val eventListener2 = TestProbe()
     node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
@@ -222,7 +225,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }
   }
 
-  def awaitAnnouncements(subset: Map[String, Setup], nodes: Int, channels: Int, updates: Int) = {
+  def awaitAnnouncements(subset: Map[String, Kit], nodes: Int, channels: Int, updates: Int) = {
     val sender = TestProbe()
     subset.foreach {
       case (_, setup) =>
@@ -360,7 +363,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -400,7 +403,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.filter(_ \ "address" == JString(nodes("F1").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
+      res.filter(_ \ "address" == JString(p2pkhAddress(nodes("F1").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
     // we then generate enough blocks so that C gets its main delayed output
     sender.send(bitcoincli, BitcoinReq("generate", 145))
@@ -409,7 +412,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 8, 16)
@@ -424,7 +427,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -463,13 +466,13 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      res.filter(_ \ "address" == JString(nodes("F2").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
+      res.filter(_ \ "address" == JString(p2pkhAddress(nodes("F2").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString]).size == 1
     }, max = 30 seconds, interval = 1 second)
     // and C will have its main output
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 7, 14)
@@ -484,7 +487,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -509,7 +512,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 6, 12)
@@ -524,7 +527,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we also retrieve transactions already received so that we don't take them into account when evaluating the outcome of this test
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
-    val previouslyReceivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+    val previouslyReceivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
     // NB: F has a no-op payment handler, allowing us to manually fulfill htlcs
     val htlcReceiver = TestProbe()
     // we register this probe as the final payment handler
@@ -551,7 +554,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
-      val receivedByC = res.filter(_ \ "address" == JString(nodes("C").finalAddress)).flatMap(_ \ "txids" \\ classOf[JString])
+      val receivedByC = res.filter(_ \ "address" == JString(p2pkhAddress(nodes("C").nodeParams.defaultFinalScriptPubKey))).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 5, 10)

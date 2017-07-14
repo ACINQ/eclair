@@ -9,7 +9,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import fr.acinq.eclair.channel.Data
+import fr.acinq.eclair.channel.{Data, HasCommitments}
 import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.io.PeerRecord
 import fr.acinq.eclair.wire.LightningMessage
@@ -38,7 +38,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      channelsDb: SimpleTypedDb[BinaryData, Data],
+                      defaultFinalScriptPubKey: BinaryData,
+                      channelsDb: SimpleTypedDb[BinaryData, HasCommitments],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
                       announcementsDb: SimpleTypedDb[String, LightningMessage],
                       routerBroadcastInterval: FiniteDuration,
@@ -65,7 +66,7 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData, defaultFinalScriptPubKey: BinaryData): NodeParams = {
 
     datadir.mkdirs()
 
@@ -106,6 +107,7 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
       reserveToFundingRatio = 0.01, // recommended by BOLT #2
       maxReserveToFundingRatio = 0.05, // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
+      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),

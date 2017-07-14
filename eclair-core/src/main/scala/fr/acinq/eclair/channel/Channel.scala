@@ -858,7 +858,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
   })
 
-  when(CLOSING) {
+  when(CLOSING)(handleExceptions {
     case Event(c: CMD_FULFILL_HTLC, d: DATA_CLOSING) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, _)) =>
@@ -928,9 +928,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(INPUT_DISCONNECTED, _) =>
       log.info(s"we are disconnected, but it does not matter anymore")
       stay
-  }
+  })
 
-  when(CLOSED, stateTimeout = 10 seconds) {
+  when(CLOSED, stateTimeout = 10 seconds)(handleExceptions {
     case Event(StateTimeout, _) =>
       stateData match {
         case d: HasCommitments =>
@@ -942,9 +942,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
       stop(FSM.Normal)
 
     case Event(INPUT_DISCONNECTED, _) => stay
-  }
+  })
 
-  when(OFFLINE) {
+  when(OFFLINE)(handleExceptions {
     case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
       forwarder ! r
       val channelReestablish = ChannelReestablish(
@@ -969,9 +969,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) => handleRemoteSpentOther(tx, d)
-  }
+  })
 
-  when(SYNCING) {
+  when(SYNCING)(handleExceptions {
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
       blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
@@ -1040,7 +1040,7 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) => handleRemoteSpentOther(tx, d)
-  }
+  })
 
   when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds) {
     case Event(StateTimeout, _) =>

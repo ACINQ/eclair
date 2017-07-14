@@ -6,6 +6,7 @@ import java.text.NumberFormat
 import java.util.Locale
 
 import akka.pattern.ask
+import akka.util.Timeout
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair._
@@ -15,15 +16,16 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.duration._
 import scala.util.{Failure, Success}
 
 /**
   * Created by PM on 16/08/2016.
   */
-class Handlers(setup: Setup) extends Logging {
+class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Logging {
 
-  import setup._
+  implicit val timeout = Timeout(30 seconds)
 
   private var notifsController: Option[NotificationsController] = None
 
@@ -45,7 +47,8 @@ class Handlers(setup: Setup) extends Logging {
         (for {
           address <- Future(new InetSocketAddress(host, port.toInt))
           pubkey = PublicKey(remoteNodeId)
-          conn <- setup.switchboard ? NewConnection(pubkey, address, channel)
+          kit <- fKit
+          conn <- kit.switchboard ? NewConnection(pubkey, address, channel)
         } yield conn) onFailure {
           case t =>
             notification("Connection failed", s"$host:$port", NOTIFICATION_ERROR)
@@ -56,7 +59,11 @@ class Handlers(setup: Setup) extends Logging {
 
   def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long) = {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
-    (paymentInitiator ? SendPayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult].onComplete {
+    (for {
+      kit <- fKit
+      res <- (kit.paymentInitiator ? SendPayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult]
+    } yield res)
+    .onComplete {
       case Success(PaymentSucceeded(_)) =>
         val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat/1000)} satoshis"
         notification("Payment Sent", message, NOTIFICATION_SUCCESS)
@@ -69,11 +76,17 @@ class Handlers(setup: Setup) extends Logging {
     }
   }
 
-  def receive(amountMsat: MilliSatoshi, description: String): Future[String] =
-    (paymentHandler ? ReceivePayment(amountMsat, description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+  def receive(amountMsat: MilliSatoshi, description: String): Future[String] = for {
+    kit <- fKit
+    res <- (kit.paymentHandler ? ReceivePayment(amountMsat, description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+  } yield res
 
-  def exportToDot(file: File) = (router ? 'dot).mapTo[String].map(
-    dot => printToFile(file)(writer => writer.write(dot)))
+
+  def exportToDot(file: File) = for {
+    kit <- fKit
+    dot <- (kit.router ? 'dot).mapTo[String]
+    _ = printToFile(file)(writer => writer.write(dot))
+  } yield {}
 
   private def printToFile(f: java.io.File)(op: java.io.FileWriter => Unit) {
     val p = new FileWriter(f)

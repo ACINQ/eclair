@@ -201,7 +201,7 @@ object ChannelCodecs {
       ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
-  val stateDataCodec: Codec[Data] = ("version" | constant(0x00)) ~> discriminated[Data].by(uint16)
+  val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x03, DATA_NORMAL_Codec)
