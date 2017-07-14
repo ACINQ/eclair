@@ -20,8 +20,8 @@ object TestConstants {
     val seed = BinaryData("01" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val db = new DummyDb()
-    val nodeParams = NodeParams(
+    def db = new DummyDb()
+    def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = "alice",
@@ -53,8 +53,8 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.blockId,
       channelFlags = 1)
-    val id = nodeParams.privateKey.publicKey
-    val channelParams = Peer.makeChannelParams(
+    def id = nodeParams.privateKey.publicKey
+    def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       isFunder = true,
       fundingSatoshis).copy(
@@ -66,8 +66,8 @@ object TestConstants {
     val seed = BinaryData("02" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val db = new DummyDb()
-    val nodeParams = NodeParams(
+    def db = new DummyDb()
+    def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = "bob",
@@ -99,8 +99,8 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.blockId,
       channelFlags = 1)
-    val id = nodeParams.privateKey.publicKey
-    val channelParams = Peer.makeChannelParams(
+    def id = nodeParams.privateKey.publicKey
+    def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       isFunder = false,
       fundingSatoshis).copy(
