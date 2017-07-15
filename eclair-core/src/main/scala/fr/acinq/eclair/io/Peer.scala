@@ -75,6 +75,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       transport ! Listener(self)
       context watch transport
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+      // we store the ip upon successful connection
+      address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
       goto(INITIALIZING) using InitializingData(transport, offlineChannels)
 
     case Event(Terminated(actor), d@DisconnectedData(offlineChannels, _)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size >= 0 =>
@@ -90,8 +92,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
 
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
-      // we store the ip upon successful connection
-      address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
       import fr.acinq.eclair.Features._
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {

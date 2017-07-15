@@ -130,9 +130,11 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     bitcoinChain.getStyleClass.add(setup.chain)
 
     // init context
-    contextMenu = ContextMenuUtils.buildCopyContext(List(
-      new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}"),
-      new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${setup.nodeParams.address.getHostString}:${setup.nodeParams.address.getPort}")))
+    contextMenu = ContextMenuUtils.buildCopyContext(
+      List(
+        Some(new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}")),
+        setup.nodeParams.publicAddresses.headOption.map(address => new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}"))
+      ).flatten)
 
     // init channels tab
     if (channelBox.getChildren.size() > 0) {
@@ -169,7 +171,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     })
     networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = {
-        val address = pn.getValue.addresses.headOption.map(a => s"${a.getHostString}:${a.getPort}").getOrElse("unknown")
+        val address = pn.getValue.addresses.map(a => s"${a.getHostString}:${a.getPort}").mkString(",")
         new SimpleStringProperty(address)
       }
     })

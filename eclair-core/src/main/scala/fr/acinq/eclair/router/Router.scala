@@ -60,7 +60,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   nodeParams.announcementsDb.values.collect { case ann: NodeAnnouncement => self ! ann }
   nodeParams.announcementsDb.values.collect { case ann: ChannelUpdate => self ! ann }
   if (nodeParams.channelsDb.values.size > 0) {
-    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.address :: Nil, Platform.currentTime / 1000)
+    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
     self ! nodeAnn
   }
 

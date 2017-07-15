@@ -9,11 +9,12 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import fr.acinq.eclair.channel.{Data, HasCommitments}
+import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
 import fr.acinq.eclair.io.PeerRecord
 import fr.acinq.eclair.wire.LightningMessage
 
+import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
 
 /**
@@ -23,7 +24,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       privateKey: PrivateKey,
                       alias: String,
                       color: (Byte, Byte, Byte),
-                      address: InetSocketAddress,
+                      publicAddresses: List[InetSocketAddress],
                       globalFeatures: BinaryData,
                       localFeatures: BinaryData,
                       dustLimitSatoshis: Long,
@@ -92,7 +93,7 @@ object NodeParams {
       privateKey = extendedPrivateKey.privateKey,
       alias = config.getString("node-alias").take(32),
       color = (color.data(0), color.data(1), color.data(2)),
-      address = new InetSocketAddress(config.getString("server.public-ip"), config.getInt("server.port")),
+      publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
       dustLimitSatoshis = 542,
