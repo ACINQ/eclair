@@ -52,9 +52,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
       // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
       assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig.feeSatoshis)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(
-        commitments = initialState.commitments.copy(unackedMessages = aliceCloseSig2 :: Nil),
-        localClosingSigned = aliceCloseSig2))
+      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(localClosingSigned = aliceCloseSig2))
     }
   }
 

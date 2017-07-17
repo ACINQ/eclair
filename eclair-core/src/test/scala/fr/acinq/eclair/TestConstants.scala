@@ -20,8 +20,8 @@ object TestConstants {
     val seed = BinaryData("01" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val db = new DummyDb()
-    val nodeParams = NodeParams(
+    def db = new DummyDb()
+    def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = "alice",
@@ -41,6 +41,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
@@ -52,10 +53,9 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.blockId,
       channelFlags = 1)
-    val id = nodeParams.privateKey.publicKey
-    val channelParams = Peer.makeChannelParams(
+    def id = nodeParams.privateKey.publicKey
+    def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       isFunder = true,
       fundingSatoshis).copy(
       channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
@@ -66,8 +66,8 @@ object TestConstants {
     val seed = BinaryData("02" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    val db = new DummyDb()
-    val nodeParams = NodeParams(
+    def db = new DummyDb()
+    def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = "bob",
@@ -87,6 +87,7 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
@@ -98,10 +99,9 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.blockId,
       channelFlags = 1)
-    val id = nodeParams.privateKey.publicKey
-    val channelParams = Peer.makeChannelParams(
+    def id = nodeParams.privateKey.publicKey
+    def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(15), compressed = true).publicKey)),
       isFunder = false,
       fundingSatoshis).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment

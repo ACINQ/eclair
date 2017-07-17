@@ -9,7 +9,7 @@ import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Popup, Screen, Stage, WindowEvent}
 
-import akka.actor.{Props, SupervisorStrategy}
+import akka.actor.{ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.zmq.ZMQEvents
 import fr.acinq.eclair.channel.ChannelEvent
@@ -17,6 +17,8 @@ import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
+
+import scala.concurrent.Promise
 
 
 /**
@@ -36,9 +38,10 @@ class FxApp extends Application with Logging {
       override def run(): Unit = {
         try {
           val datadir = new File(getParameters.getUnnamed.get(0))
-
+          implicit val system = ActorSystem("system")
           val setup = new Setup(datadir)
-          val handlers = new Handlers(setup)
+          val pKit = Promise[Kit]()
+          val handlers = new Handlers(pKit.future)
           val controller = new MainController(handlers, setup, getHostServices)
           val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
@@ -67,7 +70,7 @@ class FxApp extends Application with Logging {
               primaryStage.setScene(scene)
               primaryStage.show
               initNotificationStage(primaryStage, handlers)
-              setup.boostrap
+              pKit.completeWith(setup.bootstrap)
             }
           })
 

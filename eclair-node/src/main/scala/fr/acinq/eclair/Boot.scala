@@ -21,7 +21,7 @@ object Boot extends App with Logging {
     parser.parse(args, CmdLineConfig()) match {
       case Some(config) =>
         LogSetup.logTo(config.datadir)
-        new Setup(config.datadir).boostrap
+        new Setup(config.datadir).bootstrap
       case None => System.exit(0)
     }
   } catch {

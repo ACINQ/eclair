@@ -12,7 +12,7 @@ import fr.acinq.eclair.gui.controllers.OpenChannelController
 /**
   * Created by PM on 16/08/2016.
   */
-class OpenChannelStage(handlers: Handlers, setup: Setup) extends Stage() {
+class OpenChannelStage(handlers: Handlers) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
@@ -24,7 +24,7 @@ class OpenChannelStage(handlers: Handlers, setup: Setup) extends Stage() {
 
   // get fxml/controller
   val openFXML = new FXMLLoader(getClass.getResource("/gui/modals/openChannel.fxml"))
-  openFXML.setController(new OpenChannelController(handlers, this, setup))
+  openFXML.setController(new OpenChannelController(handlers, this))
   val root = openFXML.load[Parent]
 
   // create scene

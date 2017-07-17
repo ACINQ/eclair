@@ -18,7 +18,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by DPA on 23/09/2016.
   */
-class OpenChannelController(val handlers: Handlers, val stage: Stage, val setup: Setup) extends Logging {
+class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Logging {
 
   /**
     * Funding must be less than {@code 2^24} satoshi.

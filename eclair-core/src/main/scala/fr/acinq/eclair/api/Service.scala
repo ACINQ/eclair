@@ -15,6 +15,7 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.Kit
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
@@ -50,17 +51,7 @@ trait Service extends Logging {
 
   import Json4sSupport.{marshaller, unmarshaller}
 
-  def switchboard: ActorRef
-
-  def router: ActorRef
-
-  def register: ActorRef
-
-  def paymentInitiator: ActorRef
-
-  def paymentHandler: ActorRef
-
-  def system: ActorSystem
+  def appKit: Kit
 
   def getInfoResponse: Future[GetInfoResponse]
 
@@ -72,7 +63,7 @@ trait Service extends Logging {
 
   def getChannel(channelId: String): Future[ActorRef] =
     for {
-      channels <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]]
+      channels <- (appKit.register ? 'channels).mapTo[Map[BinaryData, ActorRef]]
     } yield channels.get(BinaryData(channelId)).getOrElse(throw new RuntimeException("unknown channel"))
 
   val route =
@@ -81,14 +72,16 @@ trait Service extends Logging {
         post {
           entity(as[JsonRPCBody]) {
             req =>
+              val kit = appKit
+              import kit._
               val f_res: Future[AnyRef] = req match {
                 case JsonRPCBody(_, _, "getinfo", _) => getInfoResponse
                 case JsonRPCBody(_, _, "connect", JString(host) :: JInt(port) :: JString(nodeId) :: Nil) =>
                   (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
                 case JsonRPCBody(_, _, "open", JString(nodeId) :: JString(host) :: JInt(port) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: options) =>
                   val channelFlags = options match {
-                    case Nil => None
                     case JInt(value) :: Nil => Some(value.toByte)
+                    case _ => None // TODO: too lax?
                   }
                   (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags)))).mapTo[String]
                 case JsonRPCBody(_, _, "peers", _) =>

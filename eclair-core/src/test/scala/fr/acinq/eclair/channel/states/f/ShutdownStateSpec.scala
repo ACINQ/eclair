@@ -35,7 +35,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h1: BinaryData = Crypto.sha256(r1)
       val amount1 = 300000000
       val expiry1 = 400144
-      val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey.toBin, null) :: Nil)._1.copy(commit = false)
+      val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd1)
       sender.expectMsg("ok")
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -46,7 +46,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val h2: BinaryData = Crypto.sha256(r2)
       val amount2 = 200000000
       val expiry2 = 400144
-      val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey.toBin, null) :: Nil)._1.copy(commit = false)
+      val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd2)
       sender.expectMsg("ok")
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
@@ -84,8 +84,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fulfill = bob2alice.expectMsgType[UpdateFulfillHtlc]
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill),
-          unackedMessages = initialState.commitments.unackedMessages :+ fulfill)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fulfill))))
     }
   }
 
@@ -153,8 +152,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fail = bob2alice.expectMsgType[UpdateFailHtlc]
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
-          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
     }
   }
 
@@ -167,8 +165,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
       awaitCond(bob.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail),
-          unackedMessages = initialState.commitments.unackedMessages :+ fail)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fail))))
     }
   }
 
@@ -311,7 +308,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(alice.stateName == SHUTDOWN)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.spec.htlcs.size == 1)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.remoteCommit.spec.htlcs.size == 1)
-      assert(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.unackedShutdown() === None)
     }
   }
 
@@ -387,8 +383,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val fee = alice2bob.expectMsgType[UpdateFee]
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
-          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee),
-          unackedMessages = initialState.commitments.unackedMessages :+ fee)))
+          localChanges = initialState.commitments.localChanges.copy(initialState.commitments.localChanges.proposed :+ fee))))
     }
   }
 
@@ -470,7 +465,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === aliceCommitTx.txid)
       assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
     }
   }
@@ -533,7 +527,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === bobCommitTx.txid)
       assert(watch.event === BITCOIN_REMOTECOMMIT_DONE)
 
       val amountClaimed = (for (i <- 0 until 3) yield {
@@ -581,7 +574,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === bobCommitTx.txid)
       assert(watch.event === BITCOIN_NEXTREMOTECOMMIT_DONE)
 
       val amountClaimed = (for (i <- 0 until 2) yield {
@@ -621,7 +613,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === revokedTx.txid)
       assert(watch.event === BITCOIN_PENALTY_DONE)
 
       val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
@@ -648,7 +639,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(aliceCommitTx.txOut.size == 4) // two main outputs and two htlcs
 
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.txId === aliceCommitTx.txid)
       assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
 
       // alice can claim both htlc after a timeout

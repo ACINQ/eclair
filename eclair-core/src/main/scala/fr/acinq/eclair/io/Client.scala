@@ -6,7 +6,7 @@ import akka.actor.{Props, _}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.{Globals, NodeParams}
+import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted

@@ -2,6 +2,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.ChannelUpdate
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -16,7 +17,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class RouteCalculationSpec extends FunSuite {
 
-  val (a, b, c, d, e) = (BinaryData("aa" * 33), BinaryData("bb" * 33), BinaryData("cc" * 33), BinaryData("dd" * 33), BinaryData("ee" * 33))
+  val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
   test("calculate simple route") {
 

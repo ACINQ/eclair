@@ -402,21 +402,21 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   }
 
   @FXML def handleOpenChannel = {
-    val openChannelStage = new OpenChannelStage(handlers, setup)
+    val openChannelStage = new OpenChannelStage(handlers)
     openChannelStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(openChannelStage)
     openChannelStage.show
   }
 
   @FXML def handleSendPayment = {
-    val sendPaymentStage = new SendPaymentStage(handlers, setup)
+    val sendPaymentStage = new SendPaymentStage(handlers)
     sendPaymentStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(sendPaymentStage)
     sendPaymentStage.show
   }
 
   @FXML def handleReceivePayment = {
-    val receiveStage = new ReceivePaymentStage(handlers, setup)
+    val receiveStage = new ReceivePaymentStage(handlers)
     receiveStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(receiveStage)
     receiveStage.show

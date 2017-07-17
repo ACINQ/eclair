@@ -1,8 +1,8 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.payment.PaymentRequest.DescriptionTag
+import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Satoshi}
+import fr.acinq.eclair.payment.PaymentRequest.{Amount, RoutingInfoTag}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -12,8 +12,6 @@ import org.scalatest.junit.JUnitRunner
   */
 @RunWith(classOf[JUnitRunner])
 class PaymentRequestSpec extends FunSuite {
-
-  import PaymentRequest._
 
   val priv = PrivateKey(BinaryData("e126f68f7eafcc8b74f54d269fe206be715000f94dac067d1c04a8ca3b2db734"), compressed = true)
   val pub = priv.publicKey

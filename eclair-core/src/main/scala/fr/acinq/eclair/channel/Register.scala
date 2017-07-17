@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.Status.Failure
-import akka.actor.{Actor, ActorContext, ActorLogging, ActorPath, ActorRef, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
 

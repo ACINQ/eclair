@@ -3,13 +3,13 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
+import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.blockchain.MakeFundingTxResponse
-import fr.acinq.eclair.wire.{ClosingSigned, LightningMessage, UpdateAddHtlc, UpdateFulfillHtlc}
-import fr.acinq.eclair.{Features, Globals, NodeParams}
+import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.{Globals, NodeParams}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -45,27 +45,6 @@ object Helpers {
   def validateParamsFundee(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData): Unit = {
     require(nodeParams.chainHash == chainHash, s"invalid chain hash $chainHash (we are on ${nodeParams.chainHash})")
     validateParamsFunder(nodeParams, channelReserveSatoshis, fundingSatoshis)
-  }
-
-  def extractOutgoingMessages(currentState: State, nextState: State, currentData: Data, nextData: Data): Seq[LightningMessage] = {
-    (currentState, nextState, currentData, nextData) match {
-      case (_, OFFLINE, _, _) => Nil // we are not connected anymore (or not yet connected after a restore), we will re-send messages when we leave OFFLINE state
-      case (OFFLINE, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toSeq // NB: if we re-send the message and the other party didn't receive it before, they will return an error because channel wasn't stored (see #120), and that's ok
-      case (OFFLINE, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
-      case (OFFLINE, _, _: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages
-      case (OFFLINE, _, _, _) => Nil
-      case (_, _, _, d: DATA_CLOSING) => Nil
-      case (_, _, _, d: DATA_WAIT_FOR_OPEN_CHANNEL) => Nil
-      case (_, _, _, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => d.lastSent :: Nil
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => Nil
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_PARENT) => Nil
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CREATED) => d.lastSent :: Nil
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_SIGNED) => d.lastSent :: Nil
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => d.lastSent.right.toOption.map(_ :: Nil).getOrElse(Nil)
-      case (_, _, _, d: DATA_WAIT_FOR_FUNDING_LOCKED) => d.lastSent :: Nil
-      case (_, _, d1: HasCommitments, d2: HasCommitments) => d2.commitments.unackedMessages diff d1.commitments.unackedMessages
-      case _ => ??? // eg: goto(CLOSING)
-    }
   }
 
   /**
@@ -288,7 +267,7 @@ object Helpers {
             Transactions.addSigs(txinfo, localSig, remoteSig, preimage)
           })
 
-        // NB: regarding htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
+        // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
 
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case HtlcTxAndSigs(txinfo: HtlcTimeoutTx, localSig, remoteSig) =>
@@ -336,7 +315,7 @@ object Helpers {
       val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
       val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
       val localRevocationPubKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-      val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationSecret.toPoint, remoteCommit.remotePerCommitmentPoint)
+      val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationBasepoint, remoteCommit.remotePerCommitmentPoint)
 
       // for now we use the same fee rate they used, it should be up-to-date
       val feeratePerKw = remoteCommit.spec.feeratePerKw
@@ -360,7 +339,9 @@ object Helpers {
           val sig = Transactions.sign(tx, localPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         })
-        // NB: incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back
+
+        // (incoming htlc for which we don't have the preimage: nothing to do, it will timeout eventually and they will get their funds back)
+
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case Htlc(IN, add: UpdateAddHtlc, _) => generateTx("claim-htlc-timeout")(Try {
           val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKw)
@@ -395,7 +376,7 @@ object Helpers {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localParams.paymentKey.toPoint)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localParams.paymentBasepoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       logger.warn(s"counterparty has published revoked commit txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain

@@ -126,7 +126,6 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
   test("failed handshake") {
     val pipe = system.actorOf(Props[MyPipe])
     val probe1 = TestProbe()
-    val probe2 = TestProbe()
     val supervisor = TestActorRef(Props(new MySupervisor()))
     val initiator = TestFSMRef(new TransportHandler(Initiator.s, Some(Initiator.s.pub), pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "ini")
     val responder = TestFSMRef(new TransportHandler(Responder.s, None, pipe, LightningMessageCodecs.varsizebinarydata), supervisor, "res")

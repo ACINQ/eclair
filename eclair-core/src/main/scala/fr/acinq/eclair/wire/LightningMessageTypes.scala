@@ -30,6 +30,11 @@ case class Ping(pongLength: Int, data: BinaryData) extends SetupMessage
 
 case class Pong(data: BinaryData) extends SetupMessage
 
+case class ChannelReestablish(
+                             channelId: BinaryData,
+                             nextLocalCommitmentNumber: Long,
+                             nextRemoteRevocationNumber: Long) extends ChannelMessage with HasChannelId
+
 case class OpenChannel(chainHash: BinaryData,
                        temporaryChannelId: BinaryData,
                        fundingSatoshis: Long,
@@ -121,15 +126,15 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                bitcoinSignature1: BinaryData,
                                bitcoinSignature2: BinaryData,
                                shortChannelId: Long,
-                               nodeId1: BinaryData,
-                               nodeId2: BinaryData,
-                               bitcoinKey1: BinaryData,
-                               bitcoinKey2: BinaryData,
+                               nodeId1: PublicKey,
+                               nodeId2: PublicKey,
+                               bitcoinKey1: PublicKey,
+                               bitcoinKey2: PublicKey,
                                features: BinaryData) extends RoutingMessage
 
 case class NodeAnnouncement(signature: BinaryData,
                             timestamp: Long,
-                            nodeId: BinaryData,
+                            nodeId: PublicKey,
                             rgbColor: (Byte, Byte, Byte),
                             alias: String,
                             features: BinaryData,
@@ -146,5 +151,5 @@ case class ChannelUpdate(signature: BinaryData,
                          feeProportionalMillionths: Long) extends RoutingMessage
 
 case class PerHopPayload(channel_id: Long,
-                         amt_to_forward: Long,
-                         outgoing_cltv_value: Int)
+                         amtToForward: Long,
+                         outgoingCltvValue: Int)

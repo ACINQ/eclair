@@ -13,7 +13,7 @@ import grizzled.slf4j.Logging
 /**
   * Created by PM on 16/08/2016.
   */
-class SendPaymentStage(handlers: Handlers, setup: Setup) extends Stage() with Logging {
+class SendPaymentStage(handlers: Handlers) extends Stage() with Logging {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
   getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
@@ -25,7 +25,7 @@ class SendPaymentStage(handlers: Handlers, setup: Setup) extends Stage() with Lo
 
   // get fxml/controller
   val receivePayment = new FXMLLoader(getClass.getResource("/gui/modals/sendPayment.fxml"))
-  receivePayment.setController(new SendPaymentController(handlers, this, setup))
+  receivePayment.setController(new SendPaymentController(handlers, this))
   val root = receivePayment.load[Parent]
 
   // create scene

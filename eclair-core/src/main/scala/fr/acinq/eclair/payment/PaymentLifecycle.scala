@@ -53,7 +53,12 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val firstHop = hops.head
       val finalExpiry = Globals.blockCount.get().toInt + defaultHtlcExpiry
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
-      register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+      // TODO: HACK!!!! see Router.scala
+      if (firstHop.lastUpdate.signature.size == 32) {
+        register ! Register.Forward(firstHop.lastUpdate.signature, cmd)
+      } else {
+        register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+      }
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, attempts + 1, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(f@Failure(t), WaitingForRoute(s, c, _)) =>
@@ -134,17 +139,16 @@ object PaymentLifecycle {
     */
   def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
 
-  def buildOnion(nodes: Seq[BinaryData], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
+  def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
-    val pubkeys = nodes.map(PublicKey(_))
     val payloadsbin: Seq[BinaryData] = payloads
       .map(LightningMessageCodecs.perHopPayloadCodec.encode(_))
       .map {
         case Attempt.Successful(bitVector) => BinaryData(bitVector.toByteArray)
         case Attempt.Failure(cause) => throw new RuntimeException(s"serialization error: $cause")
       }
-    Sphinx.makePacket(sessionKey, pubkeys, payloadsbin, associatedData)
+    Sphinx.makePacket(sessionKey, nodes, payloadsbin, associatedData)
   }
 
   /**

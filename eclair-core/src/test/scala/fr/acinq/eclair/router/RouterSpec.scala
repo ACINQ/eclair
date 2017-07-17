@@ -127,16 +127,16 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.hops.map(_.nodeId).toList === a.toBin :: b.toBin :: c.toBin :: Nil)
-    assert(res.hops.last.nextNodeId === d.toBin)
+    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
+    assert(res.hops.last.nextNodeId === d)
   }
 
   test("route not found (channel disabled)") { case (router, _) =>
     val sender = TestProbe()
     sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
-    assert(res.hops.map(_.nodeId).toList === a.toBin :: b.toBin :: c.toBin :: Nil)
-    assert(res.hops.last.nextNodeId === d.toBin)
+    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
+    assert(res.hops.last.nextNodeId === d)
 
     val channelUpdate_cd1 = makeChannelUpdate(priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, enable = false)
     sender.send(router, channelUpdate_cd1)

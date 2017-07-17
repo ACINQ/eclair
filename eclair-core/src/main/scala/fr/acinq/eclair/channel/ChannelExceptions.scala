@@ -33,3 +33,5 @@ case object CannotSignWithoutChanges extends ChannelException("cannot sign when 
 case object CannotSignBeforeRevocation extends ChannelException("cannot sign until next revocation hash is received")
 case object UnexpectedRevocation extends ChannelException("received unexpected RevokeAndAck message")
 case object InvalidRevocation extends ChannelException("invalid revocation")
+case object CommitmentSyncError extends ChannelException("commitment sync error")
+case object RevocationSyncError extends ChannelException("revocation sync error")

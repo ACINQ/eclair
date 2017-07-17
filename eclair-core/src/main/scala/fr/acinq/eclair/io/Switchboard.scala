@@ -14,23 +14,24 @@ import fr.acinq.eclair.router.Rebroadcast
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef) extends Actor with ActorLogging {
 
   import Switchboard._
 
-  def receive: Receive = main(Map(), Map())
+  // we load peers and channels from database
+  val initialPeers = nodeParams.channelsDb.values
+    .groupBy(_.commitments.remoteParams.nodeId)
+      .map {
+        case (remoteNodeId, states) =>
+          // we might not have an adress if we didn't initiate the connection in the first place
+          val address_opt = nodeParams.peersDb.get(remoteNodeId).map(_.address)
+          val peer = createOrGetPeer(Map(), remoteNodeId, address_opt, states.toSet)
+          (remoteNodeId -> peer)
+      }
+
+  def receive: Receive = main(initialPeers, Map())
 
   def main(peers: Map[PublicKey, ActorRef], connections: Map[PublicKey, ActorRef]): Receive = {
-
-    case PeerRecord(remoteNodeId, address) =>
-      val peer = createOrGetPeer(peers, remoteNodeId, Some(address))
-      context become main(peers + (remoteNodeId -> peer), connections)
-
-    case channelState: HasCommitments =>
-      val remoteNodeId = channelState.commitments.remoteParams.nodeId
-      val peer = createOrGetPeer(peers, remoteNodeId, None)
-      peer forward channelState
-      context become main(peers + (remoteNodeId -> peer), connections)
 
     case NewConnection(publicKey, _, _) if publicKey == nodeParams.privateKey.publicKey =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
@@ -47,7 +48,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
           context watch (connection)
           connection
       }
-      val peer = createOrGetPeer(peers, remoteNodeId, Some(address))
+      val peer = createOrGetPeer(peers, remoteNodeId, Some(address), Set.empty)
       newChannel_opt.foreach(peer forward _)
       context become main(peers + (remoteNodeId -> peer), connections + (remoteNodeId -> connection))
 
@@ -63,7 +64,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       context become main(peers - remoteNodeId, connections - remoteNodeId)
 
     case h@HandshakeCompleted(_, remoteNodeId) =>
-      val peer = createOrGetPeer(peers, remoteNodeId, None)
+      val peer = createOrGetPeer(peers, remoteNodeId, None, Set.empty)
       peer forward h
       context become main(peers + (remoteNodeId -> peer), connections)
 
@@ -75,11 +76,11 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
   }
 
-  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress]) = {
+  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
     peers.get(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, defaultFinalScriptPubKey), name = s"peer-$remoteNodeId")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, offlineChannels), name = s"peer-$remoteNodeId")
         context watch (peer)
         peer
     }
@@ -91,7 +92,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, defaultFinalScriptPubKey: BinaryData) = Props(new Switchboard(nodeParams, watcher, router, relayer, defaultFinalScriptPubKey))
+  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Switchboard(nodeParams, watcher, router, relayer))
 
   // @formatter:off
   case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte])

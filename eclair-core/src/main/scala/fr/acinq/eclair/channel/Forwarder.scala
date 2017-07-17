@@ -8,8 +8,6 @@ import fr.acinq.eclair.wire.{Error, LightningMessage}
   * Created by fabrice on 27/02/17.
   */
 
-case class StoreAndForward(state: State, stateData: Data, outgoing: Seq[LightningMessage])
-
 class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   // caller is responsible for sending the destination before anything else
@@ -20,18 +18,7 @@ class Forwarder(nodeParams: NodeParams) extends Actor with ActorLogging {
 
     case destination: ActorRef => context become main(destination)
 
-    case error: Error => destination ! error
+    case msg: LightningMessage => destination forward msg
 
-    case StoreAndForward(CLOSED, stateData: HasCommitments, _) =>
-      log.debug(s"deleting database record for channelId=${stateData.channelId}")
-      nodeParams.channelsDb.delete(stateData.channelId)
-
-    case StoreAndForward(_, stateData: HasCommitments, outgoing) =>
-      log.debug(s"updating database record for channelId=${stateData.channelId}")
-      nodeParams.channelsDb.put(stateData.channelId, stateData)
-      outgoing.foreach(destination forward _)
-
-    case StoreAndForward(_, _, outgoing) =>
-      outgoing.foreach(destination forward _)
   }
 }
