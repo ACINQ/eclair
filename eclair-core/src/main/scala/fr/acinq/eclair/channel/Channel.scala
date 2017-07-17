@@ -1071,6 +1071,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentBlockCount(_), _) => stay
+
+    case Event("ok", _) => stay // noop handler
   }
 
   onTransition {
