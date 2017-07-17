@@ -7,6 +7,7 @@ import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
 import org.junit.runner.RunWith
+import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
@@ -26,6 +27,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice initiates a closing
+      if (test.tags.contains("fee2")) Globals.feeratePerKw.set(4319) else Globals.feeratePerKw.set(10000)
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
       alice2bob.forward(bob)
@@ -33,7 +35,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // NB: at this point, bob has already computed and sent the first ClosingSigned message
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
-      Globals.feeratePerKw.set(Globals.feeratePerKw.get() * 2)
+      if (test.tags.contains("fee2")) Globals.feeratePerKw.set(4316) else Globals.feeratePerKw.set(20000)
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
       awaitCond(bob.stateName == NEGOTIATING)
@@ -41,7 +43,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-  test("recv ClosingSigned (theirCloseFee != ourCloseFee") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val aliceCloseSig1 = alice2bob.expectMsgType[ClosingSigned]
       val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
@@ -56,7 +58,12 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-  test("recv ClosingSigned (theirCloseFee == ourCloseFee") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  def testFeeConverge(alice: TestFSMRef[State, Data, Channel],
+                      bob: TestFSMRef[State, Data, Channel],
+                      alice2bob: TestProbe,
+                      bob2alice: TestProbe,
+                      alice2blockchain: TestProbe,
+                      bob2blockchain: TestProbe) = {
     within(30 seconds) {
       var aliceCloseFee, bobCloseFee = 0L
       do {
@@ -65,13 +72,22 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
         bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
         bob2alice.forward(alice)
       } while (aliceCloseFee != bobCloseFee)
-      alice2blockchain.expectMsgType[PublishAsap]
+      val closingTxA = alice2blockchain.expectMsgType[PublishAsap].tx
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
-      bob2blockchain.expectMsgType[PublishAsap]
+      val closingTxB = bob2blockchain.expectMsgType[PublishAsap].tx
       assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_CLOSE_DONE)
+      assert(closingTxA === closingTxB)
       awaitCond(alice.stateName == CLOSING)
       awaitCond(bob.stateName == CLOSING)
     }
+  }
+
+  test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 1)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    testFeeConverge(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+  }
+
+  test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 2)", Tag("fee2")) { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    testFeeConverge(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
   }
 
   test("recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
