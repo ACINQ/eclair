@@ -25,9 +25,6 @@ case class ExpiryTooSmall(minimum: Long, actual: Long, blockCount: Long) extends
 case class ExpiryCannotBeInThePast(expiry: Long, blockCount: Long) extends ChannelException(s"expiry can't be in the past: expiry=$expiry blockCount=$blockCount")
 case class HtlcValueTooSmall(minimum: Long, actual: Long) extends ChannelException(s"htlc value too small: mininmum=$minimum actual=$actual")
 case class HtlcValueTooHighInFlight(maximum: UInt64, actual: UInt64) extends ChannelException(s"in-flight htlcs hold too much value: maximum=$maximum actual=$actual")
-object HtlcValueTooHighInFlight {
-  def apply(maximum: Long, actual: Long) = new HtlcValueTooHighInFlight(UInt64(maximum), UInt64(actual))
-}
 case class TooManyAcceptedHtlcs(maximum: Long) extends ChannelException(s"too many accepted htlcs: maximum=$maximum")
 case class InsufficientFunds(amountMsat: Long, missingSatoshis: Long, reserveSatoshis: Long, feesSatoshis: Long) extends ChannelException(s"insufficient funds: missingSatoshis=$missingSatoshis reserveSatoshis=$reserveSatoshis fees=$feesSatoshis")
 case class InvalidHtlcPreimage(id: Long) extends ChannelException(s"invalid htlc preimage for htlc id=$id")

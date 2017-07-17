@@ -4,21 +4,23 @@ import java.math.BigInteger
 
 import fr.acinq.bitcoin.BinaryData
 
-case class UInt64(value: BigInteger) extends Ordered[UInt64] {
-  override def compare(o: UInt64): Int = value.compareTo(o.value)
+case class UInt64(underlying: BigInt) extends Ordered[UInt64] {
 
-  def toBin: BinaryData = {
-    val bin = value.toByteArray.dropWhile(_ == 0.toByte)
-    bin.size match {
-      case 8 => bin
-      case n if n > 8 => throw new IllegalArgumentException("value does not fit on 8 bytes")
-      case n => Array.fill(8 - n)(0.toByte) ++ bin
-    }
-  }
+  require(underlying >= 0, s"uint64 must be positive (actual=$underlying)")
+  require(underlying <= UInt64.MaxValueBigInt, s"uint64 must be < 2^64 -1 (actual=$underlying)")
+
+  override def compare(o: UInt64): Int = underlying.compare(o.underlying)
+
+  override def toString: String = underlying.toString
 }
 
 
 object UInt64 {
+
+  private val MaxValueBigInt = BigInt(new BigInteger("ffffffffffffffff", 16))
+
+  val MaxValue = UInt64(MaxValueBigInt)
+
   def apply(bin: BinaryData) = {
     require(bin.length <= 8)
     new UInt64(new BigInteger(1, bin))
@@ -27,5 +29,12 @@ object UInt64 {
   def apply(value: Long) = {
     require(value >= 0)
     new UInt64(BigInteger.valueOf(value))
+  }
+
+  object Conversions {
+
+    implicit def intToUint64(l: Int) = UInt64(l)
+
+    implicit def longToUint64(l: Long) = UInt64(l)
   }
 }

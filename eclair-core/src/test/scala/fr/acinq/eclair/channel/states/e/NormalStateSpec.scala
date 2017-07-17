@@ -12,6 +12,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.UInt64.Conversions._
 import org.junit.runner.RunWith
 import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
