@@ -5,8 +5,8 @@ import java.net.{InetAddress, InetSocketAddress}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.{randomBytes, randomKey}
-import fr.acinq.eclair.wire.LightningMessageCodecs.{lightningMessageCodec, rgb, socketaddress, zeropaddedstring}
+import fr.acinq.eclair.{UInt64, randomBytes, randomKey}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{lightningMessageCodec, rgb, socketaddress, uint64ex, zeropaddedstring}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -33,11 +33,37 @@ class LightningMessageCodecsSpec extends FunSuite {
     Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte
   }
 
+  test("encode/decode with uint64 codec") {
+    val expected = Map(
+      UInt64(0) -> hex"00 00 00 00 00 00 00 00".toBitVector,
+      UInt64(42) -> hex"00 00 00 00 00 00 00 2a".toBitVector,
+      UInt64("0xffffffffffffffff") -> hex"ff ff ff ff ff ff ff ff".toBitVector
+    )
+    for ((uint, ref) <- expected) {
+      val bin = uint64ex.encode(uint).require
+      assert(bin === ref)
+      val uint2 = uint64ex.decode(bin).require.value
+      assert(uint === uint2)
+    }
+  }
+
+  test("encode/decode values greater than 2^63-1 with uint64 codec") {
+    /*val a = UInt64("0xffffffffffffffff")
+    val b = UInt64("0xfffffffffffffffe")
+    assert(a > b)
+    assert(b < a)
+    assert(a == a)
+    assert(a.toBin === BinaryData("0xffffffffffffffff"))
+    assert(a.toString === "UInt64(18446744073709551615)")
+    assert(b.toBin === BinaryData("0xfffffffffffffffe"))
+    assert(b.toString === "UInt64(18446744073709551614)")*/
+  }
+
   test("encode/decode with rgb codec") {
     val color = (47.toByte, 255.toByte, 142.toByte)
-    val bin = rgb.encode(color).toOption.get
+    val bin = rgb.encode(color).require
     assert(bin === hex"2f ff 8e".toBitVector)
-    val color2 = rgb.decode(bin).toOption.get.value
+    val color2 = rgb.decode(bin).require.value
     assert(color === color2)
   }
 
@@ -45,62 +71,62 @@ class LightningMessageCodecsSpec extends FunSuite {
     {
       val ipv4addr = InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte))
       val isa = new InetSocketAddress(ipv4addr, 4231)
-      val bin = socketaddress.encode(isa).toOption.get
+      val bin = socketaddress.encode(isa).require
       assert(bin === hex"01 C0 A8 01 2A 10 87".toBitVector)
-      val isa2 = socketaddress.decode(bin).toOption.get.value
+      val isa2 = socketaddress.decode(bin).require.value
       assert(isa === isa2)
     }
     {
       val ipv6addr = InetAddress.getByAddress(hex"2001 0db8 0000 85a3 0000 0000 ac1f 8001".toArray)
       val isa = new InetSocketAddress(ipv6addr, 4231)
-      val bin = socketaddress.encode(isa).toOption.get
+      val bin = socketaddress.encode(isa).require
       assert(bin === hex"02 2001 0db8 0000 85a3 0000 0000 ac1f 8001 1087".toBitVector)
-      val isa2 = socketaddress.decode(bin).toOption.get.value
+      val isa2 = socketaddress.decode(bin).require.value
       assert(isa === isa2)
     }
   }
 
   test("encode/decode with signature codec") {
     val sig = randomSignature
-    val wire = LightningMessageCodecs.signature.encode(sig).toOption.get
-    val sig1 = LightningMessageCodecs.signature.decode(wire).toOption.get.value
+    val wire = LightningMessageCodecs.signature.encode(sig).require
+    val sig1 = LightningMessageCodecs.signature.decode(wire).require.value
     assert(sig1 == sig)
   }
 
   test("encode/decode with optional signature codec") {
     {
       val sig = randomSignature
-      val wire = LightningMessageCodecs.optionalSignature.encode(Some(sig)).toOption.get
-      val Some(sig1) = LightningMessageCodecs.optionalSignature.decode(wire).toOption.get.value
+      val wire = LightningMessageCodecs.optionalSignature.encode(Some(sig)).require
+      val Some(sig1) = LightningMessageCodecs.optionalSignature.decode(wire).require.value
       assert(sig1 == sig)
     }
     {
-      val wire = LightningMessageCodecs.optionalSignature.encode(None).toOption.get
-      assert(LightningMessageCodecs.optionalSignature.decode(wire).toOption.get.value == None)
+      val wire = LightningMessageCodecs.optionalSignature.encode(None).require
+      assert(LightningMessageCodecs.optionalSignature.decode(wire).require.value == None)
     }
   }
 
   test("encode/decode with scalar codec") {
     val value = Scalar(randomBytes(32))
-    val wire = LightningMessageCodecs.scalar.encode(value).toOption.get
+    val wire = LightningMessageCodecs.scalar.encode(value).require
     assert(wire.length == 256)
-    val value1 = LightningMessageCodecs.scalar.decode(wire).toOption.get.value
+    val value1 = LightningMessageCodecs.scalar.decode(wire).require.value
     assert(value1 == value)
   }
 
   test("encode/decode with point codec") {
     val value = Scalar(randomBytes(32)).toPoint
-    val wire = LightningMessageCodecs.point.encode(value).toOption.get
+    val wire = LightningMessageCodecs.point.encode(value).require
     assert(wire.length == 33 * 8)
-    val value1 = LightningMessageCodecs.point.decode(wire).toOption.get.value
+    val value1 = LightningMessageCodecs.point.decode(wire).require.value
     assert(value1 == value)
   }
 
   test("encode/decode with public key codec") {
     val value = PrivateKey(randomBytes(32), true).publicKey
-    val wire = LightningMessageCodecs.publicKey.encode(value).toOption.get
+    val wire = LightningMessageCodecs.publicKey.encode(value).require
     assert(wire.length == 33 * 8)
-    val value1 = LightningMessageCodecs.publicKey.decode(wire).toOption.get.value
+    val value1 = LightningMessageCodecs.publicKey.decode(wire).require.value
     assert(value1 == value)
   }
 
@@ -109,17 +135,17 @@ class LightningMessageCodecsSpec extends FunSuite {
 
     {
       val alias = "IRATEMONK"
-      val bin = c.encode(alias).toOption.get
+      val bin = c.encode(alias).require
       assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.size)(0)))
-      val alias2 = c.decode(bin).toOption.get.value
+      val alias2 = c.decode(bin).require.value
       assert(alias === alias2)
     }
 
     {
       val alias = "this-alias-is-exactly-32-B-long."
-      val bin = c.encode(alias).toOption.get
+      val bin = c.encode(alias).require
       assert(bin === BitVector(alias.getBytes("UTF-8") ++ Array.fill[Byte](32 - alias.size)(0)))
-      val alias2 = c.decode(bin).toOption.get.value
+      val alias2 = c.decode(bin).require.value
       assert(alias === alias2)
     }
 
@@ -129,10 +155,22 @@ class LightningMessageCodecsSpec extends FunSuite {
     }
   }
 
+  test("encode/decode UInt64") {
+    val codec = uint64ex
+    Seq(
+      UInt64("0xffffffffffffffff"),
+      UInt64("0xfffffffffffffffe"),
+      UInt64("0xefffffffffffffff"),
+      UInt64("0xeffffffffffffffe")
+    ).map(value => {
+      assert(codec.decode(codec.encode(value).require).require.value === value)
+    })
+  }
+
   test("encode/decode all channel messages") {
 
-    val open = OpenChannel(randomBytes(32), randomBytes(32), 3, 4, 5, 6, 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), 0.toByte)
-    val accept = AcceptChannel(randomBytes(32), 3, 4, 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5))
+    val open = OpenChannel(randomBytes(32), randomBytes(32), 3, 4, 5, UInt64(6), 7, 8, 9, 10, 11, publicKey(1), point(2), point(3), point(4), point(5), 0.toByte)
+    val accept = AcceptChannel(randomBytes(32), 3, UInt64(4), 5, 6, 7, 8, 9, publicKey(1), point(2), point(3), point(4), point(5))
     val funding_created = FundingCreated(randomBytes(32), bin(32, 0), 3, randomSignature)
     val funding_signed = FundingSigned(randomBytes(32), randomSignature)
     val funding_locked = FundingLocked(randomBytes(32), point(2))

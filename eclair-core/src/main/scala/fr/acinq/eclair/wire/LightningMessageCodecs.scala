@@ -6,7 +6,7 @@ import java.net.{Inet4Address, Inet6Address, InetAddress, InetSocketAddress}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
-import fr.acinq.eclair.wire
+import fr.acinq.eclair.{UInt64, wire}
 import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
@@ -21,6 +21,8 @@ object LightningMessageCodecs {
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
+
+  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.toArray), a => ByteVector(a.underlying.toByteArray).takeRight(8).padLeft(8))
 
   def binarydata(size: Int): Codec[BinaryData] = limitedSizeBytes(size, bytesStrict(size).xmap(d => BinaryData(d.toArray), d => ByteVector(d.data)))
 
@@ -119,7 +121,7 @@ object LightningMessageCodecs {
       ("fundingSatoshis" | uint64) ::
       ("pushMsat" | uint64) ::
       ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
       ("htlcMinimumMsat" | uint64) ::
       ("feeratePerKw" | uint32) ::
@@ -135,7 +137,7 @@ object LightningMessageCodecs {
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | binarydata(32)) ::
       ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
       ("htlcMinimumMsat" | uint64) ::
       ("minimumDepth" | uint32) ::

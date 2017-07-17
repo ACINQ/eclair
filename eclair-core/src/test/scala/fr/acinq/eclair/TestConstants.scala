@@ -30,7 +30,7 @@ object TestConstants {
       globalFeatures = "",
       localFeatures = "00",
       dustLimitSatoshis = 500,
-      maxHtlcValueInFlightMsat = 150000000,
+      maxHtlcValueInFlightMsat = UInt64(150000000),
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
       htlcMinimumMsat = 0,
@@ -76,7 +76,7 @@ object TestConstants {
       globalFeatures = "",
       localFeatures = "00", // no announcement
       dustLimitSatoshis = 1000,
-      maxHtlcValueInFlightMsat = Long.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
+      maxHtlcValueInFlightMsat = UInt64.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
       htlcMinimumMsat = 1000,

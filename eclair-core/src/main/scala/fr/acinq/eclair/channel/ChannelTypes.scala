@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
+import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -159,7 +160,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class LocalParams(nodeId: PublicKey,
                              dustLimitSatoshis: Long,
-                             maxHtlcValueInFlightMsat: Long,
+                             maxHtlcValueInFlightMsat: UInt64,
                              channelReserveSatoshis: Long,
                              htlcMinimumMsat: Long,
                              toSelfDelay: Int,
@@ -181,7 +182,7 @@ final case class LocalParams(nodeId: PublicKey,
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,
-                              maxHtlcValueInFlightMsat: Long,
+                              maxHtlcValueInFlightMsat: UInt64,
                               channelReserveSatoshis: Long,
                               htlcMinimumMsat: Long,
                               toSelfDelay: Int,
