@@ -96,9 +96,9 @@ object NodeParams {
       publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
-      dustLimitSatoshis = 542,
-      maxHtlcValueInFlightMsat = UInt64("0xffffffffffffffff"),
-      maxAcceptedHtlcs = 100,
+      dustLimitSatoshis = config.getLong("dust-limit-satoshis"),
+      maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
+      maxAcceptedHtlcs = config.getInt("max-accepted-htlcs"),
       expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
       delayBlocks = config.getInt("delay-blocks"),
@@ -106,8 +106,8 @@ object NodeParams {
       smartfeeNBlocks = 3,
       feeBaseMsat = config.getInt("fee-base-msat"),
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
-      reserveToFundingRatio = 0.01, // recommended by BOLT #2
-      maxReserveToFundingRatio = 0.05, // channel reserve can't be more than 5% of the funding amount (recommended: 1%)
+      reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
+      maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
