@@ -212,12 +212,7 @@ object Helpers {
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
     }
 
-    def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = {
-      ((localClosingFee + remoteClosingFee) / 4) * 2 match {
-        case value if value == localClosingFee => value + Satoshi(2) // TODO: why +2 sat?
-        case value => value
-      }
-    }
+    def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo]): Option[TransactionWithInputInfo] = {
       attempt match {
