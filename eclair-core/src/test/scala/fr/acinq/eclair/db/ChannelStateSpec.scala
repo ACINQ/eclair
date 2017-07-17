@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{UInt64, randomKey}
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelCodecs, CommitSig, UpdateAddHtlc}
@@ -34,7 +34,7 @@ object ChannelStateSpec {
   val localParams = LocalParams(
     nodeId = randomKey.publicKey,
     dustLimitSatoshis = Satoshi(546).toLong,
-    maxHtlcValueInFlightMsat = 50,
+    maxHtlcValueInFlightMsat = UInt64(50),
     channelReserveSatoshis = 10000,
     htlcMinimumMsat = 50000,
     toSelfDelay = 144,
@@ -52,7 +52,7 @@ object ChannelStateSpec {
   val remoteParams = RemoteParams(
     nodeId = randomKey.publicKey,
     dustLimitSatoshis = Satoshi(546).toLong,
-    maxHtlcValueInFlightMsat = 50,
+    maxHtlcValueInFlightMsat = UInt64(50),
     channelReserveSatoshis = 10000,
     htlcMinimumMsat = 50000,
     toSelfDelay = 144,

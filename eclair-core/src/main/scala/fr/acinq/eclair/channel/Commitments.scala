@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
-import fr.acinq.eclair.Globals
+import fr.acinq.eclair.{Globals, UInt64}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -92,7 +92,7 @@ object Commitments extends Logging {
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
-    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
+    val htlcValueInFlight = UInt64(reduced.htlcs.map(_.add.amountMsat).sum)
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {
       // TODO: this should be a specific UPDATE error
       return Left(HtlcValueTooHighInFlight(maximum = commitments1.remoteParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight))
@@ -139,7 +139,7 @@ object Commitments extends Logging {
     val commitments1 = addRemoteProposal(commitments, add).copy(remoteNextHtlcId = commitments.remoteNextHtlcId + 1)
     val reduced = CommitmentSpec.reduce(commitments1.localCommit.spec, commitments1.localChanges.acked, commitments1.remoteChanges.proposed)
 
-    val htlcValueInFlight = reduced.htlcs.map(_.add.amountMsat).sum
+    val htlcValueInFlight = UInt64(reduced.htlcs.map(_.add.amountMsat).sum)
     if (htlcValueInFlight > commitments1.localParams.maxHtlcValueInFlightMsat) {
       throw HtlcValueTooHighInFlight(maximum = commitments1.localParams.maxHtlcValueInFlightMsat, actual = htlcValueInFlight)
     }

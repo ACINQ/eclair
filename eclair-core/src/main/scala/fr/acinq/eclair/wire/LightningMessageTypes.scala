@@ -4,6 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
+import fr.acinq.eclair.UInt64
 
 /**
   * Created by PM on 15/11/2016.
@@ -40,7 +41,7 @@ case class OpenChannel(chainHash: BinaryData,
                        fundingSatoshis: Long,
                        pushMsat: Long,
                        dustLimitSatoshis: Long,
-                       maxHtlcValueInFlightMsat: Long,
+                       maxHtlcValueInFlightMsat: UInt64,
                        channelReserveSatoshis: Long,
                        htlcMinimumMsat: Long,
                        feeratePerKw: Long,
@@ -55,7 +56,7 @@ case class OpenChannel(chainHash: BinaryData,
 
 case class AcceptChannel(temporaryChannelId: BinaryData,
                          dustLimitSatoshis: Long,
-                         maxHtlcValueInFlightMsat: Long,
+                         maxHtlcValueInFlightMsat: UInt64,
                          channelReserveSatoshis: Long,
                          htlcMinimumMsat: Long,
                          minimumDepth: Long,

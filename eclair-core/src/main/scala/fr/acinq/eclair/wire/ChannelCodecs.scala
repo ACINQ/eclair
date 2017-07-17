@@ -19,7 +19,7 @@ object ChannelCodecs {
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
       ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
       ("htlcMinimumMsat" | uint64) ::
       ("toSelfDelay" | uint16) ::
@@ -37,7 +37,7 @@ object ChannelCodecs {
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::
       ("dustLimitSatoshis" | uint64) ::
-      ("maxHtlcValueInFlightMsat" | uint64) ::
+      ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
       ("htlcMinimumMsat" | uint64) ::
       ("toSelfDelay" | uint16) ::
