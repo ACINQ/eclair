@@ -21,15 +21,9 @@ object UInt64 {
 
   val MaxValue = UInt64(MaxValueBigInt)
 
-  def apply(bin: BinaryData) = {
-    require(bin.length <= 8)
-    new UInt64(new BigInteger(1, bin))
-  }
+  def apply(bin: BinaryData) = new UInt64(new BigInteger(1, bin))
 
-  def apply(value: Long) = {
-    require(value >= 0)
-    new UInt64(BigInteger.valueOf(value))
-  }
+  def apply(value: Long) = new UInt64(BigInt(value))
 
   object Conversions {
 
