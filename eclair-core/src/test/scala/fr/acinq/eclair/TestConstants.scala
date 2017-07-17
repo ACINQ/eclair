@@ -26,7 +26,7 @@ object TestConstants {
       privateKey = extendedPrivateKey.privateKey,
       alias = "alice",
       color = (1: Byte, 2: Byte, 3: Byte),
-      address = new InetSocketAddress("localhost", 9731),
+      publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
       globalFeatures = "",
       localFeatures = "00",
       dustLimitSatoshis = 542,
@@ -72,7 +72,7 @@ object TestConstants {
       privateKey = extendedPrivateKey.privateKey,
       alias = "bob",
       color = (4: Byte, 5: Byte, 6: Byte),
-      address = new InetSocketAddress("localhost", 9732),
+      publicAddresses = new InetSocketAddress("localhost", 9732) :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement
       dustLimitSatoshis = 542,
