@@ -29,7 +29,7 @@ object TestConstants {
       address = new InetSocketAddress("localhost", 9731),
       globalFeatures = "",
       localFeatures = "00",
-      dustLimitSatoshis = 542,
+      dustLimitSatoshis = 500,
       maxHtlcValueInFlightMsat = 150000000,
       maxAcceptedHtlcs = 100,
       expiryDeltaBlocks = 144,
@@ -75,7 +75,7 @@ object TestConstants {
       address = new InetSocketAddress("localhost", 9732),
       globalFeatures = "",
       localFeatures = "00", // no announcement
-      dustLimitSatoshis = 542,
+      dustLimitSatoshis = 1000,
       maxHtlcValueInFlightMsat = Long.MaxValue, // Bob has no limit on the combined max value of in-flight htlcs
       maxAcceptedHtlcs = 30,
       expiryDeltaBlocks = 144,
