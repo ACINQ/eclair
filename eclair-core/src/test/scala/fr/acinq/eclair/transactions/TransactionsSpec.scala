@@ -62,7 +62,7 @@ class TransactionsSpec extends FunSuite {
     val localPaymentPriv = PrivateKey(BinaryData("dd" * 32), compressed = true)
     val remotePaymentPriv = PrivateKey(BinaryData("ee" * 32), compressed = true)
     val localFinalPriv = PrivateKey(BinaryData("ff" * 32), compressed = true)
-    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("ff" * 32), compressed = true).publicKey))
+    val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("fe" * 32), compressed = true).publicKey))
     val toLocalDelay = 144
     val feeratePerKw = 1000
 

@@ -28,7 +28,7 @@ class LightningMessageCodecsSpec extends FunSuite {
 
   def randomSignature: BinaryData = {
     val priv = randomBytes(32)
-    val data = randomBytes(50)
+    val data = randomBytes(32)
     val (r, s) = Crypto.sign(data, PrivateKey(priv, true))
     Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte
   }
