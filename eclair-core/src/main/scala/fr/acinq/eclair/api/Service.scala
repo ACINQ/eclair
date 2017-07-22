@@ -108,7 +108,7 @@ trait Service extends Logging {
                     "channels: list existing local channels",
                     "channel (channelId): retrieve detailed information about a given channel",
                     "network: list all the nodes announced in network",
-                    "receive (amountMsat): generate a payment request for a given amount",
+                    "receive (amountMsat, description): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
