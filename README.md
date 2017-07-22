@@ -99,7 +99,7 @@ option                       | description               | default value
   channels    |                                               | list existing local channels
   channel     | channelId                                     | retrieve detailed information about a given channel
   network     |                                               | list all nodes that have been announced
-  receive     | amountMsat                                    | generate a payment request for a given amount
+  receive     | amountMsat, description                       | generate a payment request for a given amount
   send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
   close       | channelId                                     | close a channel
   close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
