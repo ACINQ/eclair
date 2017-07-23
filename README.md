@@ -27,7 +27,7 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ## Installation
 
-:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha3](https://github.com/ACINQ/eclair/blob/v0.2-alpha3/README.md#installation)**.
+:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha4](https://github.com/ACINQ/eclair/blob/v0.2-alpha4/README.md#installation)**.
 
 ### Configuring Bitcoin Core
 
@@ -86,7 +86,7 @@ option                       | description               | default value
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
  eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
 
-&rarr; see [`application.conf`](eclair-node/src/main/resources/application.conf) for full reference.
+&rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference.
 
 ## JSON-RPC API
 
