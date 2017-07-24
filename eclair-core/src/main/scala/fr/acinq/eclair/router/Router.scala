@@ -20,7 +20,7 @@ import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 import scala.collection.JavaConversions._
 import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Success, Try}
+import scala.util.{Random, Success, Try}
 
 // @formatter:off
 
@@ -322,7 +322,7 @@ object Router {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
     val g = new DefaultDirectedGraph[PublicKey, DescEdge](classOf[DescEdge])
-    channels.foreach(d => {
+    Random.shuffle(channels).foreach(d => {
       g.addVertex(d.a)
       g.addVertex(d.b)
       g.addEdge(d.a, d.b, new DescEdge(d))

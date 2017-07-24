@@ -118,20 +118,20 @@ object Announcements {
 
   def checkSigs(ann: ChannelAnnouncement): Boolean = {
     val witness = channelAnnouncementWitnessEncode(ann.shortChannelId, ann.nodeId1, ann.nodeId2, ann.bitcoinKey1, ann.bitcoinKey2, ann.features)
-    verifySignature(witness, ann.nodeSignature1, PublicKey(ann.nodeId1)) &&
-      verifySignature(witness, ann.nodeSignature2, PublicKey(ann.nodeId2)) &&
-      verifySignature(witness, ann.bitcoinSignature1, PublicKey(ann.bitcoinKey1)) &&
-      verifySignature(witness, ann.bitcoinSignature2, PublicKey(ann.bitcoinKey2))
+    verifySignature(witness, ann.nodeSignature1, ann.nodeId1) &&
+      verifySignature(witness, ann.nodeSignature2, ann.nodeId2) &&
+      verifySignature(witness, ann.bitcoinSignature1, ann.bitcoinKey1) &&
+      verifySignature(witness, ann.bitcoinSignature2, ann.bitcoinKey2)
   }
 
   def checkSig(ann: NodeAnnouncement): Boolean = {
     val witness = nodeAnnouncementWitnessEncode(ann.timestamp, ann.nodeId, ann.rgbColor, ann.alias, ann.features, ann.addresses)
-    verifySignature(witness, ann.signature, PublicKey(ann.nodeId))
+    verifySignature(witness, ann.signature, ann.nodeId)
   }
 
-  def checkSig(ann: ChannelUpdate, nodeId: BinaryData): Boolean = {
+  def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean = {
     val witness = channelUpdateWitnessEncode(ann.shortChannelId, ann.timestamp, ann.flags, ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths)
-    verifySignature(witness, ann.signature, PublicKey(nodeId))
+    verifySignature(witness, ann.signature, nodeId)
   }
 
 }
