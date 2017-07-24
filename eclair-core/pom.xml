@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-SNAPSHOT</version>
+        <version>0.2-spv-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-core_2.11</artifactId>
@@ -140,6 +140,11 @@
             <artifactId>jeromq</artifactId>
             <version>0.4.0</version>
         </dependency>
+        <dependency>
+            <groupId>org.bitcoinj</groupId>
+            <artifactId>bitcoinj-core</artifactId>
+            <version>0.15-A5-a5</version>
+        </dependency>
         <!-- SERIALIZATION -->
         <dependency>
             <groupId>org.scodec</groupId>
@@ -180,12 +185,6 @@
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-testkit_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <version>18.0</version>
             <scope>test</scope>
         </dependency>
         <dependency>

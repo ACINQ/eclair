@@ -39,7 +39,6 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      defaultFinalScriptPubKey: BinaryData,
                       channelsDb: SimpleTypedDb[BinaryData, HasCommitments],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
                       announcementsDb: SimpleTypedDb[String, LightningMessage],
@@ -50,7 +49,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
                       chainHash: BinaryData,
-                      channelFlags: Byte)
+                      channelFlags: Byte,
+                      spv: Boolean)
 
 object NodeParams {
 
@@ -67,7 +67,7 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData, defaultFinalScriptPubKey: BinaryData): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData): NodeParams = {
 
     datadir.mkdirs()
 
@@ -108,7 +108,6 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
-      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
@@ -119,6 +118,7 @@ object NodeParams {
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       chainHash = chainHash,
-      channelFlags = config.getInt("channel-flags").toByte)
+      channelFlags = config.getInt("channel-flags").toByte,
+      spv = config.getBoolean("spv"))
   }
 }

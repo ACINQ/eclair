@@ -36,7 +36,7 @@ case class ChannelInfo(val announcement: ChannelAnnouncement, var isNode1Enabled
 /**
   * Created by DPA on 22/09/2016.
   */
-class MainController(val handlers: Handlers, val setup: Setup, val hostServices: HostServices) extends Logging {
+class MainController(val handlers: Handlers, val hostServices: HostServices) extends Logging {
 
   @FXML var root: AnchorPane = _
   var contextMenu: ContextMenu = _
@@ -119,23 +119,6 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     */
   @FXML def initialize = {
 
-    // init status bar
-    labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
-    labelAlias.setText(s"${setup.nodeParams.alias}")
-    rectRGB.setFill(Color.rgb(setup.nodeParams.color._1 & 0xFF, setup.nodeParams.color._2 & 0xFF, setup.nodeParams.color._3 & 0xFF))
-    labelApi.setText(s"${setup.config.getInt("api.port")}")
-    labelServer.setText(s"${setup.config.getInt("server.port")}")
-    bitcoinVersion.setText(s"v${setup.bitcoinVersion}")
-    bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
-    bitcoinChain.getStyleClass.add(setup.chain)
-
-    // init context
-    contextMenu = ContextMenuUtils.buildCopyContext(
-      List(
-        Some(new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}")),
-        setup.nodeParams.publicAddresses.headOption.map(address => new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}"))
-      ).flatten)
-
     // init channels tab
     if (channelBox.getChildren.size() > 0) {
       channelInfo.setScaleY(0)
@@ -212,6 +195,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
           val directionImage = new ImageView
           directionImage.setFitWidth(20)
           directionImage.setFitHeight(20)
+
           override def updateItem(item: String, empty: Boolean): Unit = {
             super.updateItem(item, empty)
             if (this.getIndex >= 0 && this.getIndex < networkChannelsList.size) {
@@ -292,6 +276,25 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     paymentRelayedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
     paymentRelayedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
     paymentRelayedTable.setRowFactory(paymentRowFactory)
+  }
+
+  def initInfoFields(setup: Setup) = {
+    // init status bar
+    labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
+    labelAlias.setText(s"${setup.nodeParams.alias}")
+    rectRGB.setFill(Color.rgb(setup.nodeParams.color._1 & 0xFF, setup.nodeParams.color._2 & 0xFF, setup.nodeParams.color._3 & 0xFF))
+    labelApi.setText(s"${setup.config.getInt("api.port")}")
+    labelServer.setText(s"${setup.config.getInt("server.port")}")
+    bitcoinVersion.setText(s"v0.0.0")
+    //bitcoinVersion.setText(s"v${setup.bitcoinVersion}")
+    bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
+    bitcoinChain.getStyleClass.add(setup.chain)
+
+    contextMenu = ContextMenuUtils.buildCopyContext(
+      List(
+        Some(new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}")),
+        setup.nodeParams.publicAddresses.headOption.map(address => new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}"))
+      ).flatten)
   }
 
   private def updateTabHeader(tab: Tab, prefix: String, items: ObservableList[_]) = {
@@ -440,6 +443,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     t.setDelay(Duration.millis(200))
     t.play
   }
+
   def hideBlockerModal = {
     val ftCover = new FadeTransition(Duration.millis(400))
     ftCover.setFromValue(1)

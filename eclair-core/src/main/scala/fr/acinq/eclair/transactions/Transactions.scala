@@ -278,24 +278,6 @@ object Transactions {
 
   def makeHtlcPenaltyTx(commitTx: Transaction): HtlcPenaltyTx = ???
 
-  /**
-    * This generates a partial transaction that will be completed by bitcoind using a 'fundrawtransaction' rpc call.
-    * Since bitcoind may add a change output, we return the pubkeyScript so that we can do a lookup afterwards.
-    *
-    * @param amount
-    * @param localFundingPubkey
-    * @param remoteFundingPubkey
-    * @return (partialTx, pubkeyScript)
-    */
-  def makePartialFundingTx(amount: Satoshi, localFundingPubkey: PublicKey, remoteFundingPubkey: PublicKey): (Transaction, BinaryData) = {
-    val pubkeyScript = write(pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteFundingPubkey)))
-    (Transaction(
-      version = 2,
-      txIn = Seq.empty[TxIn],
-      txOut = TxOut(amount, pubkeyScript) :: Nil,
-      lockTime = 0), pubkeyScript)
-  }
-
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.size == 0, "there shouldn't be any pending htlcs")
 
@@ -380,6 +362,9 @@ object Transactions {
     val witness = Scripts.witness2of2(localSig, remoteSig, localFundingPubkey, remoteFundingPubkey)
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
   }
+
+  def checkSpendable(parent: Transaction, child: Transaction): Try[Unit] =
+    Try(Transaction.correctlySpends(child, parent :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn(0).outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))

@@ -1,16 +1,12 @@
 package fr.acinq.eclair
 
 import akka.actor.ActorSystem
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.ExtendedBitcoinClient.SignTransactionResponse
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.bitcoin.{Block, Transaction}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
 
 /**
   * Created by PM on 26/04/2016.
@@ -25,9 +21,6 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
     override def run(): Unit = system.eventStream.publish(NewBlock(DUMMY_BLOCK)) // blocks are not actually interpreted
   })
 
-  override def makeFundingTx(ourCommitPub: PublicKey, theirCommitPub: PublicKey, amount: Satoshi, feeRatePerKw: Long)(implicit ec: ExecutionContext): Future[MakeFundingTxResponse] =
-    Future.successful(TestBitcoinClient.makeDummyFundingTx(MakeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw)))
-
   override def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] = {
     system.eventStream.publish(NewTransaction(tx))
     Future.successful(tx.txid.toString())
@@ -37,38 +30,6 @@ class TestBitcoinClient()(implicit system: ActorSystem) extends ExtendedBitcoinC
 
   override def getTransaction(txId: String)(implicit ec: ExecutionContext): Future[Transaction] = ???
 
-  override def fundTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[ExtendedBitcoinClient.FundTransactionResponse] = ???
-
-  override def signTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[SignTransactionResponse] = ???
-
   override def getTransactionShortId(txId: String)(implicit ec: ExecutionContext): Future[(Int, Int)] = Future.successful((400000, 42))
 
-}
-
-object TestBitcoinClient {
-
-  def makeDummyFundingTx(makeFundingTx: MakeFundingTx): MakeFundingTxResponse = {
-    val priv = PrivateKey(BinaryData("01" * 32), compressed = true)
-    val parentTx = Transaction(version = 2,
-      txIn = TxIn(OutPoint("42" * 32, 42), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-      txOut = TxOut(makeFundingTx.amount, Script.pay2sh(Script.pay2wpkh(priv.publicKey))) :: Nil,
-      lockTime = 0)
-    val anchorTx = Transaction(version = 2,
-      txIn = TxIn(OutPoint(parentTx, 0), signatureScript = Nil, sequence = TxIn.SEQUENCE_FINAL) :: Nil,
-      txOut = TxOut(makeFundingTx.amount, Script.pay2wsh(Scripts.multiSig2of2(makeFundingTx.localCommitPub, makeFundingTx.remoteCommitPub))) :: Nil,
-      lockTime = 0)
-    MakeFundingTxResponse(parentTx, anchorTx, 0, priv)
-  }
-
-  def malleateTx(tx: Transaction): Transaction = {
-    val inputs1 = tx.txIn.map(input => Script.parse(input.signatureScript) match {
-      case OP_PUSHDATA(sig, _) :: OP_PUSHDATA(pub, _) :: Nil if pub.length == 33 && Try(Crypto.decodeSignature(sig)).isSuccess =>
-        val (r, s) = Crypto.decodeSignature(sig)
-        val s1 = Crypto.curve.getN.subtract(s)
-        val sig1 = Crypto.encodeSignature(r, s1)
-        input.copy(signatureScript = Script.write(OP_PUSHDATA(sig1) :: OP_PUSHDATA(pub) :: Nil))
-    })
-    val tx1 = tx.copy(txIn = inputs1)
-    tx1
-  }
 }

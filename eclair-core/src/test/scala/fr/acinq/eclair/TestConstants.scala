@@ -41,7 +41,6 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
@@ -52,10 +51,12 @@ object TestConstants {
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.blockId,
-      channelFlags = 1)
+      channelFlags = 1,
+      spv = false)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(4), compressed = true).publicKey)),
       isFunder = true,
       fundingSatoshis).copy(
       channelReserveSatoshis = 10000 // Bob will need to keep that much satoshis as direct payment
@@ -87,7 +88,6 @@ object TestConstants {
       feeProportionalMillionth = 10,
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
-      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
@@ -98,10 +98,12 @@ object TestConstants {
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.blockId,
-      channelFlags = 1)
+      channelFlags = 1,
+      spv = false)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
+      defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
       isFunder = false,
       fundingSatoshis).copy(
       channelReserveSatoshis = 20000 // Alice will need to keep that much satoshis as direct payment

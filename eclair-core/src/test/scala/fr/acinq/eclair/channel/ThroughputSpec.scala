@@ -22,7 +22,7 @@ class ThroughputSpec extends FunSuite {
   ignore("throughput") {
     implicit val system = ActorSystem()
     val pipe = system.actorOf(Props[Pipe], "pipe")
-    val blockchain = system.actorOf(PeerWatcher.props(TestConstants.Alice.nodeParams, new TestBitcoinClient()), "blockchain")
+    val blockchain = system.actorOf(ZmqWatcher.props(TestConstants.Alice.nodeParams, new TestBitcoinClient()), "blockchain")
     val paymentHandler = system.actorOf(Props(new Actor() {
       val random = new Random()
 
@@ -54,8 +54,9 @@ class ThroughputSpec extends FunSuite {
     }), "payment-handler")
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandler))
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandler))
-    val alice = system.actorOf(Channel.props(Alice.nodeParams, Bob.id, blockchain, ???, relayerA), "a")
-    val bob = system.actorOf(Channel.props(Bob.nodeParams, Alice.id, blockchain, ???, relayerB), "b")
+    val wallet = new TestWallet
+    val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.id, blockchain, ???, relayerA), "a")
+    val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.id, blockchain, ???, relayerB), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)

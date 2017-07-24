@@ -19,6 +19,7 @@ import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
+import scala.util.{Success, Failure}
 
 
 /**
@@ -31,59 +32,57 @@ class FxApp extends Application with Logging {
   }
 
   override def start(primaryStage: Stage): Unit = {
-    val icon = new Image(getClass.getResource("/gui/commons/images/eclair-square.png").toExternalForm, false)
-    primaryStage.getIcons.add(icon)
-
     new Thread(new Runnable {
       override def run(): Unit = {
-        try {
-          val datadir = new File(getParameters.getUnnamed.get(0))
-          implicit val system = ActorSystem("system")
-          val setup = new Setup(datadir)
-          val pKit = Promise[Kit]()
-          val handlers = new Handlers(pKit.future)
-          val controller = new MainController(handlers, setup, getHostServices)
-          val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
-          setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvents])
-
-          Platform.runLater(new Runnable {
-            override def run(): Unit = {
-              val mainFXML = new FXMLLoader(getClass.getResource("/gui/main/main.fxml"))
-              mainFXML.setController(controller)
-              val mainRoot = mainFXML.load[Parent]
-              val scene = new Scene(mainRoot)
-
-              primaryStage.setTitle("Eclair")
-              primaryStage.setMinWidth(600)
-              primaryStage.setWidth(960)
-              primaryStage.setMinHeight(400)
-              primaryStage.setHeight(640)
-              primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
-                override def handle(event: WindowEvent) {
-                  System.exit(0)
-                }
-              })
-              notifyPreloader(new AppNotification(SuccessAppNotification, "Init successful"))
-              primaryStage.setScene(scene)
-              primaryStage.show
-              initNotificationStage(primaryStage, handlers)
-              pKit.completeWith(setup.bootstrap)
-            }
-          })
-
-        } catch {
-          case TCPBindException(port) =>
+        val icon = new Image(getClass.getResource("/gui/commons/images/eclair-square.png").toExternalForm, false)
+        primaryStage.getIcons.add(icon)
+        val mainFXML = new FXMLLoader(getClass.getResource("/gui/main/main.fxml"))
+        val pKit = Promise[Kit]()
+        val handlers = new Handlers(pKit.future)
+        val controller = new MainController(handlers, getHostServices)
+        mainFXML.setController(controller)
+        val mainRoot = mainFXML.load[Parent]
+        val datadir = new File(getParameters.getUnnamed.get(0))
+        implicit val system = ActorSystem("system")
+        val setup = new Setup(datadir)
+        val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
+        setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
+        setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
+        setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
+        setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvents])
+        pKit.completeWith(setup.bootstrap)
+        import scala.concurrent.ExecutionContext.Implicits.global
+        pKit.future.onComplete {
+          case Success(_) =>
+            Platform.runLater(new Runnable {
+              override def run(): Unit = {
+                val scene = new Scene(mainRoot)
+                primaryStage.setTitle("Eclair")
+                primaryStage.setMinWidth(600)
+                primaryStage.setWidth(960)
+                primaryStage.setMinHeight(400)
+                primaryStage.setHeight(640)
+                primaryStage.setOnCloseRequest(new EventHandler[WindowEvent] {
+                  override def handle(event: WindowEvent) {
+                    System.exit(0)
+                  }
+                })
+                controller.initInfoFields(setup)
+                primaryStage.setScene(scene)
+                primaryStage.show
+                notifyPreloader(new AppNotification(SuccessAppNotification, "Init successful"))
+                initNotificationStage(primaryStage, handlers)
+              }
+            })
+          case Failure(TCPBindException(port)) =>
             notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
-          case BitcoinRPCConnectionException =>
+          case Failure(BitcoinRPCConnectionException) =>
             notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", null))
             notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
-          case BitcoinZMQConnectionTimeoutException =>
+          case Failure(BitcoinZMQConnectionTimeoutException) =>
             notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
             notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
-          case t: Throwable =>
+          case Failure(t) =>
             notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
         }
       }

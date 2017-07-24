@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.blockchain.MakeFundingTxResponse
+import fr.acinq.eclair.blockchain.wallet.EclairWallet
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
@@ -12,6 +12,7 @@ import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, NodeParams}
 import grizzled.slf4j.Logging
 
+import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -31,7 +32,6 @@ object Helpers {
     case d: DATA_WAIT_FOR_OPEN_CHANNEL => d.initFundee.temporaryChannelId
     case d: DATA_WAIT_FOR_ACCEPT_CHANNEL => d.initFunder.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_INTERNAL => d.temporaryChannelId
-    case d: DATA_WAIT_FOR_FUNDING_PARENT => d.data.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_CREATED => d.temporaryChannelId
     case d: DATA_WAIT_FOR_FUNDING_SIGNED => d.channelId
     case d: HasCommitments => d.channelId
@@ -71,6 +71,16 @@ object Helpers {
   def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = {
     // negative feerate can happen in regtest mode
     remoteFeeratePerKw > 0 && feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
+  }
+
+  def getFinalScriptPubKey(wallet: EclairWallet): BinaryData = {
+    import scala.concurrent.duration._
+    val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
+    val finalScriptPubKey = Base58Check.decode(finalAddress) match {
+      case (Base58.Prefix.PubkeyAddressTestnet, hash) => Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+      case (Base58.Prefix.ScriptAddressTestnet, hash) => Script.write(OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUAL :: Nil)
+    }
+    finalScriptPubKey
   }
 
   object Funding {
@@ -118,48 +128,6 @@ object Helpers {
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
       (localSpec, localCommitTx, remoteSpec, remoteCommitTx)
-    }
-
-    /**
-      *
-      * @param fundingTxResponse funding transaction response, which includes a funding tx, its parent, and the private key
-      *                          that we need to re-sign the funding
-      * @param newParentTx       new parent tx
-      * @return an updated funding transaction response where the funding tx now spends from newParentTx
-      */
-    def replaceParent(fundingTxResponse: MakeFundingTxResponse, newParentTx: Transaction): MakeFundingTxResponse = {
-      // find the output that we are spending from
-      val utxo = newParentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
-
-      // check that it matches what we expect, which is a P2WPKH output to our public key
-      require(utxo.publicKeyScript == Script.write(Script.pay2sh(Script.pay2wpkh(fundingTxResponse.priv.publicKey))))
-
-      // update our tx input we the hash of the new parent
-      val input = fundingTxResponse.fundingTx.txIn(0)
-      val input1 = input.copy(outPoint = input.outPoint.copy(hash = newParentTx.hash))
-      val unsignedFundingTx = fundingTxResponse.fundingTx.copy(txIn = Seq(input1))
-
-      // and re-sign it
-      Helpers.Funding.sign(MakeFundingTxResponse(newParentTx, unsignedFundingTx, fundingTxResponse.fundingTxOutputIndex, fundingTxResponse.priv))
-    }
-
-    /**
-      *
-      * @param fundingTxResponse a funding tx response
-      * @return an updated funding tx response that is properly sign
-      */
-    def sign(fundingTxResponse: MakeFundingTxResponse): MakeFundingTxResponse = {
-      // find the output that we are spending from
-      val utxo = fundingTxResponse.parentTx.txOut(fundingTxResponse.fundingTx.txIn(0).outPoint.index.toInt)
-
-      val pub = fundingTxResponse.priv.publicKey
-      val pubKeyScript = Script.pay2pkh(pub)
-      val sig = Transaction.signInput(fundingTxResponse.fundingTx, 0, pubKeyScript, SIGHASH_ALL, utxo.amount, SigVersion.SIGVERSION_WITNESS_V0, fundingTxResponse.priv)
-      val witness = ScriptWitness(Seq(sig, pub.toBin))
-      val fundingTx1 = fundingTxResponse.fundingTx.updateSigScript(0, OP_PUSHDATA(Script.write(Script.pay2wpkh(pub))) :: Nil).updateWitness(0, witness)
-
-      Transaction.correctlySpends(fundingTx1, fundingTxResponse.parentTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      fundingTxResponse.copy(fundingTx = fundingTx1)
     }
 
   }

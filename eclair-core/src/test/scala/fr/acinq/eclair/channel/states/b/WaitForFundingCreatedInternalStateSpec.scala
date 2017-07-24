@@ -1,13 +1,11 @@
 package fr.acinq.eclair.channel.states.b
 
-import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestBitcoinClient, TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -33,21 +31,19 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
       alice2bob.forward(bob)
       bob2alice.expectMsgType[AcceptChannel]
       bob2alice.forward(alice)
-      awaitCond(bob.stateName == WAIT_FOR_FUNDING_CREATED)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_INTERNAL)
     }
     test((alice, alice2bob, bob2alice, alice2blockchain))
   }
 
-  test("recv funding transaction") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
+  /*test("recv MakeFundingTxResponse") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
     within(30 seconds) {
       val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
-      val dummyFundingTx = TestBitcoinClient.makeDummyFundingTx(makeFundingTx)
+      val dummyFundingTx = TestWallet.makeDummyFundingTx(makeFundingTx)
       alice ! dummyFundingTx
-      val w = alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[PublishAsap]
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_PARENT)
+      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
     }
-  }
+  }*/
 
   test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
