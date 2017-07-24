@@ -64,11 +64,15 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
       res <- (kit.paymentInitiator ? SendPayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult]
     } yield res)
     .onComplete {
-      case Success(PaymentSucceeded(_)) =>
+      case Success(_: PaymentSucceeded) =>
         val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat/1000)} satoshis"
         notification("Payment Sent", message, NOTIFICATION_SUCCESS)
-      case Success(PaymentFailed(_, error)) =>
-        val message = error.map(_.failureMessage).getOrElse("Unknown Error").toString
+      case Success(PaymentFailed(_, failures)) =>
+        val message = s"${failures.lastOption match {
+          case Some(LocalFailure(t)) => t.getMessage
+          case Some(RemoteFailure(_, e)) => e.failureMessage
+          case _ => "Unknown error"
+        }} (${failures.size} attempts)"
         notification("Payment Failed", message, NOTIFICATION_ERROR)
       case Failure(t) =>
         val message = t.getMessage

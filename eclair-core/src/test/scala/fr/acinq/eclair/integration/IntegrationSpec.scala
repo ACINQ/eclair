@@ -304,11 +304,14 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("send an HTLC A->D with an unknown payment hash") {
     val sender = TestProbe()
-    val paymentHash = "42" * 32
-    val paymentReq = SendPayment(100000000L, paymentHash, nodes("D").nodeParams.privateKey.publicKey)
-    sender.send(nodes("A").paymentInitiator, paymentReq)
+    val pr = SendPayment(100000000L, "42" * 32, nodes("D").nodeParams.privateKey.publicKey)
+    sender.send(nodes("A").paymentInitiator, pr)
+
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
-    sender.expectMsg(PaymentFailed(paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, UnknownPaymentHash))))
+    val failed = sender.expectMsgType[PaymentFailed]
+    assert(failed.paymentHash === pr.paymentHash)
+    assert(failed.failures.size === 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, UnknownPaymentHash))
   }
 
   test("send an HTLC A->D with a lower amount than requested") {
@@ -323,7 +326,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("A").paymentInitiator, sendReq)
 
     // A will first receive an IncorrectPaymentAmount error from D
-    sender.expectMsg(PaymentFailed(pr.paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, IncorrectPaymentAmount))))
+    val failed = sender.expectMsgType[PaymentFailed]
+    assert(failed.paymentHash === pr.paymentHash)
+    assert(failed.failures.size === 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, IncorrectPaymentAmount))
   }
 
   test("send an HTLC A->D with too much overpayment") {
@@ -338,7 +344,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("A").paymentInitiator, sendReq)
 
     // A will first receive an IncorrectPaymentAmount error from D
-    sender.expectMsg(PaymentFailed(pr.paymentHash, Some(ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, IncorrectPaymentAmount))))
+    val failed = sender.expectMsgType[PaymentFailed]
+    assert(failed.paymentHash === pr.paymentHash)
+    assert(failed.failures.size === 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("D").nodeParams.privateKey.publicKey, IncorrectPaymentAmount))
   }
 
   test("send an HTLC A->D with a reasonable overpayment") {
@@ -504,7 +513,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 11))
     sender.expectMsgType[JValue](10 seconds)
     // this will fail the htlc
-    paymentSender.expectMsg(30 seconds, PaymentFailed(paymentHash, Some(ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))))
+    val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
+    assert(failed.paymentHash === paymentHash)
+    assert(failed.failures.size === 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     sender.send(bitcoincli, BitcoinReq("generate", 150))
     sender.expectMsgType[JValue](10 seconds)
@@ -546,7 +558,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("generate", 11))
     sender.expectMsgType[JValue](10 seconds)
     // this will fail the htlc
-    paymentSender.expectMsg(30 seconds, PaymentFailed(paymentHash, Some(ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))))
+    val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
+    assert(failed.paymentHash === paymentHash)
+    assert(failed.failures.size === 1)
+    assert(failed.failures.head.asInstanceOf[RemoteFailure].e === ErrorPacket(nodes("C").nodeParams.privateKey.publicKey, PermanentChannelFailure))
     // we then generate enough blocks to confirm all delayed transactions
     sender.send(bitcoincli, BitcoinReq("generate", 145))
     sender.expectMsgType[JValue](10 seconds)

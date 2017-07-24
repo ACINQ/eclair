@@ -33,6 +33,24 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
+  test("randomize routes") {
+
+    val channels = List(
+      ChannelDesc(1L, a, b),
+      ChannelDesc(2L, a, b),
+      ChannelDesc(3L, b, c),
+      ChannelDesc(4L, b, c),
+      ChannelDesc(5L, c, d),
+      ChannelDesc(6L, c, d),
+      ChannelDesc(4L, d, e),
+      ChannelDesc(5L, d, e)
+    )
+
+    val routes = for(i <- 0 until 10) yield Router.findRouteDijkstra(a, e, channels)
+    assert(routes.exists(_ != routes.head))
+
+  }
+
   test("no local channels") {
 
     val channels = List(
