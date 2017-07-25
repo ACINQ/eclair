@@ -207,8 +207,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
           val localFundingPubkey = localParams.fundingPrivKey.publicKey
-          // we assume that our funding parent tx is about 250 bytes, that the feereate-per-kb is 2*feerate-per-kw and we double the fee estimate
-          // to give the parent a hefty fee
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
           wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), Globals.feeratePerKw.get()).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)

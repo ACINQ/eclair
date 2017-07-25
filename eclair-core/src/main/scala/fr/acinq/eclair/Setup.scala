@@ -83,17 +83,18 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val zmqConnected = Promise[Boolean]()
     val tcpBound = Promise[Unit]()
 
-    val defaultFeeratePerKB = config.getLong("default-feerate-perkB")
+    val defaultFeeratePerKb = config.getLong("default-feerate-per-kb")
+    Globals.feeratePerKw.set(feerateKb2Kw(defaultFeeratePerKb))
+    logger.info(s"initial feeratePerKw=${Globals.feeratePerKw.get()}")
     val feeProvider = chain match {
-      case "regtest" => new ConstantFeeProvider(defaultFeeratePerKB)
+      case "regtest" => new ConstantFeeProvider(defaultFeeratePerKb)
       case _ => new BitpayInsightFeeProvider()
     }
-    feeProvider.getFeeratePerKB.map {
+    system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeeratePerKB.map {
       case feeratePerKB =>
-      val feeratePerKw = feerateKB2Kw(feeratePerKB)
-      logger.info(s"initial feeratePerKw=$feeratePerKw")
-      Globals.feeratePerKw.set(feeratePerKw)
-    }
+        Globals.feeratePerKw.set(feerateKb2Kw(feeratePerKB))
+        logger.info(s"current feeratePerKw=${Globals.feeratePerKw.get()}")
+    })
 
     val watcher = bitcoin match {
       case Left(bitcoinj) =>
