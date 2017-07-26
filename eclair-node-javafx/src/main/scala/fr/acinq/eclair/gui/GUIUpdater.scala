@@ -1,5 +1,6 @@
 package fr.acinq.eclair.gui
 
+import java.time.LocalDateTime
 import java.util.function.Predicate
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
@@ -11,7 +12,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.zmq.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.gui.controllers.{ChannelInfo, ChannelPaneController, MainController}
+import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.NodeAnnouncement
@@ -166,15 +167,15 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case p: PaymentSent =>
       log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.amount}, fees=${p.feesPaid}")
-      mainController.paymentSentList.prepend(p)
+      mainController.paymentSentList.prepend(new PaymentSentRecord(p, LocalDateTime.now()))
 
     case p: PaymentReceived =>
       log.debug(s"payment received with h=${p.paymentHash}, amount=${p.amount}")
-      mainController.paymentReceivedList.prepend(p)
+      mainController.paymentReceivedList.prepend(new PaymentReceivedRecord(p, LocalDateTime.now()))
 
     case p: PaymentRelayed =>
       log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amount}, feesEarned=${p.feesEarned}")
-      mainController.paymentRelayedList.prepend(p)
+      mainController.paymentRelayedList.prepend(new PaymentRelayedRecord(p, LocalDateTime.now()))
 
     case ZMQConnected =>
       log.debug("ZMQ connection online")
