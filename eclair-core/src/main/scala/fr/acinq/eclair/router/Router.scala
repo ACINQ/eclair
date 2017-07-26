@@ -116,6 +116,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         case IndividualResult(c, Some(tx), false) =>
           // TODO: vulnerability if they flood us with spent funding tx?
           log.warning(s"ignoring shortChannelId=${c.shortChannelId} tx=${tx.txid} (funding tx not found in utxo)")
+          // there may be a record if we have just restarted
+          nodeParams.announcementsDb.delete(channelKey(c.shortChannelId))
           None
         case IndividualResult(c, None, _) =>
           // TODO: blacklist?
@@ -186,6 +188,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(stash = d.stash :+ n, origins = d.origins + (n -> sender))
       } else {
         log.warning(s"ignoring $n (no related channel found)")
+        // there may be a record if we have just restarted
+        nodeParams.announcementsDb.delete(nodeKey(n.nodeId))
         stay
       }
 
@@ -212,6 +216,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(stash = d.stash :+ u, origins = d.origins + (u -> sender))
       } else {
         log.warning(s"ignoring announcement $u (unknown channel)")
+        // there may be a record if we have just restarted
+        nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags))
         stay
       }
 
