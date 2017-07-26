@@ -4,7 +4,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-spv-SNAPSHOT</version>
+    <version>0.2-spv-b</version>
     <packaging>pom</packaging>
 
     <modules>
