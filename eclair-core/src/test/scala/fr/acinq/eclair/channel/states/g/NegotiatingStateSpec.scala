@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel.states.g
 
+import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
@@ -110,6 +111,14 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg(1 second)
       assert(alice.stateName == NEGOTIATING)
+    }
+  }
+
+  test("recv CMD_CLOSE") { case (alice, _, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg(Failure(ClosingAlreadyInProgress))
     }
   }
 

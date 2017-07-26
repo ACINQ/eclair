@@ -226,4 +226,13 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_CLOSE") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _) =>
+    within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg(Failure(ClosingAlreadyInProgress))
+    }
+  }
+
 }

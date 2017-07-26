@@ -96,6 +96,11 @@ trait Service extends Logging {
                   (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong), description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
+                case JsonRPCBody(_, _, "send", JString(paymentRequest) :: Nil) =>
+                  for {
+                    req <- Future(PaymentRequest.read(paymentRequest))
+                    res <- (paymentInitiator ? SendPayment(req.amount.getOrElse(throw new RuntimeException("request without amounts are not supported")).amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
+                  } yield res
                 case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
                   getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
                 case JsonRPCBody(_, _, "close", JString(channelId) :: Nil) =>
@@ -110,6 +115,7 @@ trait Service extends Logging {
                     "network: list all the nodes announced in network",
                     "receive (amountMsat, description): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
+                    "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
