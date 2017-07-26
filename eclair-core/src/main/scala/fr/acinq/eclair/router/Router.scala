@@ -20,7 +20,7 @@ import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 import scala.collection.JavaConversions._
 import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Success, Try}
+import scala.util.{Random, Success, Try}
 
 // @formatter:off
 
@@ -116,6 +116,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         case IndividualResult(c, Some(tx), false) =>
           // TODO: vulnerability if they flood us with spent funding tx?
           log.warning(s"ignoring shortChannelId=${c.shortChannelId} tx=${tx.txid} (funding tx not found in utxo)")
+          // there may be a record if we have just restarted
+          nodeParams.announcementsDb.delete(channelKey(c.shortChannelId))
           None
         case IndividualResult(c, None, _) =>
           // TODO: blacklist?
@@ -186,6 +188,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(stash = d.stash :+ n, origins = d.origins + (n -> sender))
       } else {
         log.warning(s"ignoring $n (no related channel found)")
+        // there may be a record if we have just restarted
+        nodeParams.announcementsDb.delete(nodeKey(n.nodeId))
         stay
       }
 
@@ -212,6 +216,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(stash = d.stash :+ u, origins = d.origins + (u -> sender))
       } else {
         log.warning(s"ignoring announcement $u (unknown channel)")
+        // there may be a record if we have just restarted
+        nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags))
         stay
       }
 
@@ -322,7 +328,7 @@ object Router {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
     val g = new DefaultDirectedGraph[PublicKey, DescEdge](classOf[DescEdge])
-    channels.foreach(d => {
+    Random.shuffle(channels).foreach(d => {
       g.addVertex(d.a)
       g.addVertex(d.b)
       g.addEdge(d.a, d.b, new DescEdge(d))

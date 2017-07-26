@@ -2,25 +2,41 @@
 
 [ -z "$1" ] && (
 echo "usage: "
-echo "eclair-cli list"
-echo "eclair-cli sign channel-id"
-echo "eclair-cli fulfill channel-id htlc-id htlc-preimage"
+echo "  eclair-cli help"
 ) && exit 1
 
-case $1 in 
-"list")	
+URL="http://localhost:8080"
+CURL_OPTS="-sS -X POST -H \"Content-Type: application/json\""
 
-	curl -X POST -d '{ "method": "list", "params" : [] }' "http://localhost:8080"
-	;;
-"sign")
-	curl -X POST -d '{ "method": "sign", "params" : ["'${2?"missing channel id"}'"] }' "http://localhost:8080"
-	;;	
-"add")
-	curl -X POST -d '{ "method": "addhtlc", "params" : ['${2?"missing amount"}', "'${3?"missing payment hash"}'", '${4?"missing expiry"}', "'${5?"missing node id"}'"] }' "http://localhost:8080"
-	;;	
-"fulfill")
-	curl -X POST -d '{ "method": "fulfillhtlc", "params" : ["'${2?"missing channel id"}'", '${3?"missing htlc id"}', "'${4?"missing htlc preimage"}'"] }' "http://localhost:8080"
-	;;	
+case $1 in
+"help")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"help\", \"params\" : [] }' $URL" | jq -r ".result[]"
+        ;;
+"getinfo")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"getinfo\", \"params\" : [] }' $URL" | jq ".result"
+        ;;
+"channels")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"channels\", \"params\" : [] }' $URL" | jq ".result[]"
+        ;;
+"channel")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"channel\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL" | jq ".result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount }"
+        ;;
+"open")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"open\", \"params\" : [\"${2?"missing node id"}\", \"${3?"missing ip"}\", ${4?"missing port"}, ${5?"missing amount (sat)"}, ${6?"missing push amount (msat)"}] }' $URL" | jq -r "if .error == null then .result else .error.message end"
+        ;;
+"close")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"close\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL"
+        ;;
+"receive")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"receive\", \"params\" : [${2?"missing amount"}, \"something\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
+        ;;
+"send")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"send\", \"params\" : [\"${2?"missing request"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
+        ;;
+"network")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"network\", \"params\" : [] }' $URL" | jq ".result"
+        ;;
+"peers")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"peers\", \"params\" : [] }' $URL" | jq ".result"
+        ;;
 esac
-echo
-
