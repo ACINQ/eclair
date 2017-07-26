@@ -56,7 +56,12 @@ You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com
 
  :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in `--headless` mode.
 
-Then download the latest fat jar and run:
+Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
+* with GUI:
+```shell
+java -jar eclair-node-javafx_xxxxxx-fat.jar
+```
+* without GUI:
 ```shell
 java -jar eclair-node_xxxxxx-fat.jar
 ```
@@ -68,7 +73,6 @@ java -jar eclair-node_xxxxxx-fat.jar
 option         | description                     | default value
 ---------------|---------------------------------|--------------
 --datadir      | Path to the data directory      | ~/.eclair
---headless     | Run Eclair without the GUI      |
 --help, -h     | Display usage text              |
 
 
