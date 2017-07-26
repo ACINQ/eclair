@@ -101,6 +101,7 @@ option                       | description               | default value
   network     |                                               | list all nodes that have been announced
   receive     | amountMsat, description                       | generate a payment request for a given amount
   send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
+  send        | paymentRequest                                | send a payment to a lightning node using a BOLT11 payment request
   close       | channelId                                     | close a channel
   close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
   help        |                                               | display available methods
