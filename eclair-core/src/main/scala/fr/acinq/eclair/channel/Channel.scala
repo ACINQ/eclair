@@ -669,6 +669,8 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     case Event(e: Error, d: DATA_NORMAL) => handleRemoteError(e, d)
 
+    case Event(_: FundingLocked, _: DATA_NORMAL) => stay // will happen after a reconnection if no updates were ever committed to the channel
+
   })
 
   /*
@@ -1077,6 +1079,9 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentBlockCount(_), _) => stay
+
+    // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
+    case Event(CurrentFeerate(_), _) => stay
 
     case Event("ok", _) => stay // noop handler
   }
