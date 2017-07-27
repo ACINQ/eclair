@@ -31,7 +31,8 @@ import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, P
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
-case class ChannelInfo(val announcement: ChannelAnnouncement, var isNode1Enabled: Boolean = true, var isNode2Enabled: Boolean = true)
+case class ChannelState(var isNode1Enabled: Boolean = true, var isNode2Enabled: Boolean = true)
+case class ChannelInfo(val announcement: ChannelAnnouncement, val state: ChannelState = ChannelState(true, true))
 
 sealed trait Record {
   val event: PaymentEvent
@@ -86,7 +87,7 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
   @FXML var networkChannelsTable: TableView[ChannelInfo] = _
   @FXML var networkChannelsIdColumn: TableColumn[ChannelInfo, String] = _
   @FXML var networkChannelsNode1Column: TableColumn[ChannelInfo, String] = _
-  @FXML var networkChannelsDirectionsColumn: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsDirectionsColumn: TableColumn[ChannelInfo, ChannelState] = _
   @FXML var networkChannelsNode2Column: TableColumn[ChannelInfo, String] = _
 
   // payment sent table
@@ -223,20 +224,22 @@ class MainController(val handlers: Handlers, val setup: Setup, val hostServices:
     networkChannelsTable.setRowFactory(new Callback[TableView[ChannelInfo], TableRow[ChannelInfo]]() {
       override def call(table: TableView[ChannelInfo]): TableRow[ChannelInfo] = setupPeerChannelContextMenu
     })
-    networkChannelsDirectionsColumn.setCellFactory(new Callback[TableColumn[ChannelInfo, String], TableCell[ChannelInfo, String]]() {
-      def call(pn: TableColumn[ChannelInfo, String]) = {
-        new TableCell[ChannelInfo, String]() {
+    networkChannelsDirectionsColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, ChannelState], ObservableValue[ChannelState]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, ChannelState]) = new SimpleObjectProperty[ChannelState](pc.getValue.state)
+    })
+    networkChannelsDirectionsColumn.setCellFactory(new Callback[TableColumn[ChannelInfo, ChannelState], TableCell[ChannelInfo, ChannelState]]() {
+      def call(pn: TableColumn[ChannelInfo, ChannelState]) = {
+        new TableCell[ChannelInfo, ChannelState]() {
           val directionImage = new ImageView
           directionImage.setFitWidth(20)
           directionImage.setFitHeight(20)
-
-          override def updateItem(item: String, empty: Boolean): Unit = {
+          override def updateItem(item: ChannelState, empty: Boolean): Unit = {
             super.updateItem(item, empty)
-            if (empty || item == null || this.getIndex < 0 || this.getIndex >= networkChannelsList.size) {
+            if (empty || item == null) {
               setText(null)
               setGraphic(null)
             } else {
-              (networkChannelsList.get(this.getIndex).isNode1Enabled, networkChannelsList.get(this.getIndex).isNode2Enabled) match {
+              (item.isNode1Enabled, item.isNode2Enabled) match {
                 case (true, true) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-11.png", false))
                   setTooltip(new Tooltip("Both Node 1 and Node 2 are enabled"))

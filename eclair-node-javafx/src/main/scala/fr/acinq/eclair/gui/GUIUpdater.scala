@@ -158,9 +158,9 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       if (idx >= 0) {
         val c = mainController.networkChannelsList.get(idx)
         if (Announcements.isNode1(channelUpdate.flags)) {
-          c.isNode1Enabled = Announcements.isEnabled(channelUpdate.flags)
+          c.state.isNode1Enabled = Announcements.isEnabled(channelUpdate.flags)
         } else {
-          c.isNode2Enabled = Announcements.isEnabled(channelUpdate.flags)
+          c.state.isNode2Enabled = Announcements.isEnabled(channelUpdate.flags)
         }
         mainController.networkChannelsList.update(idx, c)
       }
