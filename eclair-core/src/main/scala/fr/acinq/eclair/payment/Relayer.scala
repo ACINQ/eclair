@@ -22,6 +22,7 @@ case class Relayed(upstream: ActorRef, htlcIn: UpdateAddHtlc) extends Origin
 
 case class AddHtlcSucceeded(add: UpdateAddHtlc, origin: Origin)
 case class AddHtlcFailed(add: CMD_ADD_HTLC, error: ChannelException)
+case class AddHtlcDiscarded(add: UpdateAddHtlc) // dropped because of disconnection
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc)
 case class ForwardFail(fail: UpdateFailHtlc)
@@ -91,7 +92,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
               val channelUpdate_opt = channelUpdates.get(perHopPayload.channel_id)
               channelUpdate_opt match {
                 case None =>
-                  // TODO: clarify what we're supposed to to in the specs
+                  // TODO: clarify what we're supposed to do in the specs
                   sender ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true)
                 case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
                   sender ! CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true)
@@ -135,10 +136,23 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
       // detail errors should have been catched earlier (when relayer picks the next channel), so here we just answer with generic error messages
       channelUpdate_opt match {
         case None =>
-          // TODO: clarify what we're supposed to to in the specs
+          // TODO: clarify what we're supposed to do in the specs
           upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(TemporaryNodeFailure), commit = true)
         case Some(channelUpdate) =>
           upstream ! CMD_FAIL_HTLC(updateAddHtlc.id, Right(TemporaryChannelFailure(channelUpdate)), commit = true)
+      }
+
+    case AddHtlcDiscarded(add) =>
+      bindings.find(b => b._1.channelId == add.channelId && b._1.id == add.id) match {
+        case Some((htlcOut, Relayed(upstream, htlcIn))) =>
+          // TODO: fail htlc upstream
+          context become main(channels, shortIds, bindings - htlcOut, channelUpdates)
+        case Some((htlcOut, Local(origin))) =>
+          log.info(s"we were the origin payer for htlc #${add.id}")
+          origin ! 'cancelled
+          context become main(channels, shortIds, bindings - htlcOut, channelUpdates)
+        case None =>
+          log.warning(s"no origin found for htlc ${add.channelId}/${add.id}")
       }
 
     case ForwardFulfill(fulfill) =>

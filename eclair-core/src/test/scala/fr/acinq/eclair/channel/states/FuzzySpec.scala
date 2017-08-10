@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states
 
 import java.util.concurrent.CountDownLatch
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Cancellable, Props, Status}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
@@ -30,7 +30,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
   type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], ActorRef, ActorRef, ActorRef, ActorRef, ActorRef]
 
   override def withFixture(test: OneArgTest) = {
-    val pipe = system.actorOf(Props(new Pipe()))
+    val pipe = system.actorOf(Props(new FuzzyPipe()))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler(Alice.nodeParams)), name = "payment-handler-a")
@@ -72,98 +72,78 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     test((alice, bob, pipe, relayerA, relayerB, paymentHandlerA, paymentHandlerB))
   }
 
-  // we don't want to be below htlcMinimumMsat
-  val requiredAmount = 1000000
+  class SenderActor(channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef, latch: CountDownLatch) extends Actor with ActorLogging {
 
-  def buildCmdAdd(paymentHash: BinaryData, dest: PublicKey) = {
-    // allow overpaying (no more than 2 times the required amount)
-    val amount = requiredAmount + Random.nextInt(requiredAmount)
-    val expiry = Globals.blockCount.get().toInt + PaymentLifecycle.defaultHtlcExpiry
-    PaymentLifecycle.buildCommand(amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
-  }
-
-  def randomDisconnect(initialPipe: ActorRef): Cancellable = {
-    import scala.concurrent.ExecutionContext.Implicits.global
-    var currentPipe = initialPipe
-    system.scheduler.schedule(3 seconds, 3 seconds) {
-      currentPipe ! INPUT_DISCONNECTED
-      val newPipe = system.actorOf(Props(new Pipe()))
-      system.scheduler.scheduleOnce(500 millis) {
-        currentPipe ! INPUT_RECONNECTED(newPipe)
-        currentPipe = newPipe
-      }
-    }
-  }
-
-  class SenderActor(channel: TestFSMRef[State, Data, Channel], paymentHandler: ActorRef) extends Actor with ActorLogging {
-
-    if (channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size >= 10 || channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size >= 10) {
+    /*if (channel.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.spec.htlcs.size >= 10 || channel.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteCommit.spec.htlcs.size >= 10) {
       context stop self
     } else {
-      paymentHandler ! ReceivePayment(MilliSatoshi(requiredAmount), "One coffee")
+
+    }*/
+
+    // we don't want to be below htlcMinimumMsat
+    val requiredAmount = 1000000
+
+    def buildCmdAdd(paymentHash: BinaryData, dest: PublicKey) = {
+      // allow overpaying (no more than 2 times the required amount)
+      val amount = requiredAmount + Random.nextInt(requiredAmount)
+      val expiry = Globals.blockCount.get().toInt + PaymentLifecycle.defaultHtlcExpiry
+      PaymentLifecycle.buildCommand(amount, expiry, paymentHash, Hop(null, dest, null) :: Nil)._1
     }
 
-    override def receive: Receive = waitingForPaymentRequest
+    def initiatePayment = {
+      paymentHandler ! ReceivePayment(MilliSatoshi(requiredAmount), "One coffee")
+      context become waitingForPaymentRequest
+    }
+
+    initiatePayment
+
+    override def receive: Receive = ???
 
     def waitingForPaymentRequest: Receive = {
       case req: PaymentRequest =>
         channel ! buildCmdAdd(req.paymentHash, req.nodeId)
-        import scala.concurrent.ExecutionContext.Implicits.global
-        context.system.scheduler.scheduleOnce(20 seconds, self, 'timeout)
         context become waitingForFulfill
     }
 
     def waitingForFulfill: Receive = {
       case u: UpdateFulfillHtlc =>
         log.info(s"successfully sent htlc #${u.id}")
-        context stop self
+        latch.countDown()
+        initiatePayment
       case u: UpdateFailHtlc =>
         log.warning(s"htlc failed: ${u.id}")
-        context stop self
+        initiatePayment
       case Status.Failure(t) =>
         log.error(s"htlc error: ${t.getMessage}")
-        context stop self
-      case 'timeout =>
-        log.warning("htlc timed out")
-        context stop self
+        initiatePayment
+      case 'cancelled =>
+        log.warning(s"our htlc was cancelled!")
+        // htlc was dropped because of a disconnection
+        initiatePayment
     }
 
   }
   
   test("fuzzy test with only one party sending HTLCs") {
-    case (alice, bob, pipe, _, _, _, paymentHandlerB) =>
-
-      import scala.concurrent.ExecutionContext.Implicits.global
+    case (alice, bob, _, _, _, _, paymentHandlerB) =>
       val latch = new CountDownLatch(100)
-      val task = system.scheduler.schedule(1 second, 150 milliseconds) {
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
-        latch.countDown()
-      }
-      val chaosMonkey = randomDisconnect(pipe)
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
       awaitCond(latch.getCount == 0, max = 2 minutes)
-      task.cancel()
-      chaosMonkey.cancel()
-      assert(alice.stateName == NORMAL)
-      assert(bob.stateName == NORMAL)
+      assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
+      assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
     }
 
   test("fuzzy test with both parties sending HTLCs") {
-    case (alice, bob, pipe, _, _, paymentHandlerA, paymentHandlerB) =>
-
-      import scala.concurrent.ExecutionContext.Implicits.global
-      val latch = new CountDownLatch(200)
-      val task = system.scheduler.schedule(1 second, 50 milliseconds) {
-        system.actorOf(Props(new SenderActor(alice, paymentHandlerB)))
-        system.actorOf(Props(new SenderActor(bob, paymentHandlerA)))
-        latch.countDown()
-      }
-      val chaosMonkey = randomDisconnect(pipe)
+    case (alice, bob, _, _, _, paymentHandlerA, paymentHandlerB) =>
+      val latch = new CountDownLatch(100)
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+      system.actorOf(Props(new SenderActor(alice, paymentHandlerB, latch)))
+      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
+      system.actorOf(Props(new SenderActor(bob, paymentHandlerA, latch)))
       awaitCond(latch.getCount == 0, max = 2 minutes)
-      task.cancel()
-      chaosMonkey.cancel()
-      assert(alice.stateName == NORMAL)
-      assert(bob.stateName == NORMAL)
+      assert(alice.stateName == NORMAL || alice.stateName == OFFLINE)
+      assert(bob.stateName == NORMAL || alice.stateName == OFFLINE)
   }
 
 }

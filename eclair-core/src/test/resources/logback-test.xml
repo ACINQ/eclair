@@ -26,9 +26,6 @@
         </encoder>
     </appender-->
 
-    <logger name="fr.acinq.eclair.Pipe" level="DEBUG" />
-    <logger name="fr.acinq.eclair.crypto.TransportHandler" level="DEBUG" />
-
     <root level="INFO">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->

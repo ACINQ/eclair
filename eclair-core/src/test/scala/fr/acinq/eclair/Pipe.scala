@@ -18,7 +18,7 @@ class Pipe extends Actor with Stash with ActorLogging {
       unstashAll()
       context become connected(a, b)
 
-    case msg => stash()
+    case _ => stash()
   }
 
   def connected(a: ActorRef, b: ActorRef): Receive = {
@@ -28,27 +28,5 @@ class Pipe extends Actor with Stash with ActorLogging {
     case msg: LightningMessage if sender() == b =>
       log.debug(f"A <--${msg2String(msg)}%-6s--- B")
       a forward msg
-    case msg@INPUT_DISCONNECTED =>
-      log.debug("DISCONNECTED")
-      // used for fuzzy testing (eg: send Disconnected messages)
-      a forward msg
-      b forward msg
-      context become disconnected(a, b)
-  }
-
-  def disconnected(a: ActorRef, b: ActorRef): Receive = {
-    case msg: LightningMessage if sender() == a =>
-      // dropped
-      log.info(f"A ---${msg2String(msg)}%-6s-X")
-    case msg: LightningMessage if sender() == b =>
-      // dropped
-      log.debug(f"  X-${msg2String(msg)}%-6s--- B")
-    case msg@INPUT_RECONNECTED(r) =>
-      log.debug(s"RECONNECTED with $r")
-      // used for fuzzy testing (eg: send Disconnected messages)
-      a forward msg
-      b forward msg
-      r ! (a, b)
-
   }
 }

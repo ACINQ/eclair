@@ -128,6 +128,7 @@ object ChannelCodecs {
   val waitingForRevocationCodec: Codec[WaitingForRevocation] = (
     ("nextRemoteCommit" | remoteCommitCodec) ::
       ("sent" | commitSigCodec) ::
+      ("sentAfterLocalCommitIndex" | uint64) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation]
 
   val commitmentsCodec: Codec[Commitments] = (
