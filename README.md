@@ -46,6 +46,8 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 
 ### Installing Eclair
 
+The released binaries can be downloaded [here](https://github.com/ACINQ/eclair/releases).
+
 #### Windows
 
 Just use the windows installer, it should create a shortcut on your desktop.
@@ -80,7 +82,7 @@ option         | description                     | default value
 
 #### Configuration file
 
-To change your node configuration, edit the file `eclair.conf` in `datadir`.
+To change your node's configuration, create a file named `eclair.conf` in `datadir`. To change an option, for example the HTTP port, write `eclair.api.port=8081` in the created file. 
 
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
@@ -90,7 +92,7 @@ option                       | description               | default value
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
  eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
 
-&rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference.
+&rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
 
 ## JSON-RPC API
 
