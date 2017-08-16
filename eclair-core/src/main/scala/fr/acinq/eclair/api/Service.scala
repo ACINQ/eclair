@@ -19,7 +19,7 @@ import fr.acinq.eclair.Kit
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
-import fr.acinq.eclair.wire.NodeAnnouncement
+import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -38,6 +38,7 @@ case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: String, blockHeight: Int)
+case class ChannelInfo(shortChannelId: Long, nodeId1: PublicKey , nodeId2: PublicKey)
 // @formatter:on
 
 trait Service extends Logging {
@@ -92,6 +93,8 @@ trait Service extends Logging {
                   getChannel(channelId).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "network", _) =>
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
+                case JsonRPCBody(_, _, "allchannels", _) =>
+                  (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelInfo(c.shortChannelId, c.nodeId1, c.nodeId2)))
                 case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: JString(description) :: Nil) =>
                   (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong), description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
