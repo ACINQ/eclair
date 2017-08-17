@@ -143,7 +143,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelDiscovered(channelAnnouncement, _) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
       if(!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
-        mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement))
+        mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, None, None))
       }
 
     case ChannelLost(shortChannelId) =>
@@ -158,9 +158,9 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       if (idx >= 0) {
         val c = mainController.networkChannelsList.get(idx)
         if (Announcements.isNode1(channelUpdate.flags)) {
-          c.isNode1Enabled = Announcements.isEnabled(channelUpdate.flags)
+          c.isNode1Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
         } else {
-          c.isNode2Enabled = Announcements.isEnabled(channelUpdate.flags)
+          c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
         }
         mainController.networkChannelsList.update(idx, c)
       }
