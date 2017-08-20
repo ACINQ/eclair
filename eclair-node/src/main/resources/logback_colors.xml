@@ -40,7 +40,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %blue(%msg) %ex{12}%n
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} channelId=%X{channelId} - %blue(%msg) %ex{12}%n
             </pattern>
         </encoder>
     </appender>
