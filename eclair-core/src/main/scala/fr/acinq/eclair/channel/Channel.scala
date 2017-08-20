@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.actor.{ActorRef, DiagnosticActorLogging, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.event.Logging.MDC
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
@@ -25,7 +26,7 @@ object Channel {
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, remoteNodeId, blockchain, router, relayer))
 }
 
-class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] {
+class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
@@ -1424,6 +1425,11 @@ class Channel(val nodeParams: NodeParams, remoteNodeId: PublicKey, blockchain: A
     //      }
     //      state
     //    }
+  }
+
+  override def mdc(currentMessage: Any): MDC = {
+    val id = Helpers.getChannelId(stateData)
+    Map("channelId" -> id)
   }
 
   // we let the peer decide what to do
