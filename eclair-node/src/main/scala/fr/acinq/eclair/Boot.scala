@@ -21,14 +21,20 @@ object Boot extends App with Logging {
     parser.parse(args, CmdLineConfig()) match {
       case Some(config) =>
         LogSetup.logTo(config.datadir)
-        new Setup(config.datadir).bootstrap
+        import scala.concurrent.ExecutionContext.Implicits.global
+        new Setup(config.datadir).bootstrap onFailure {
+          case t: Throwable => onError(t)
+        }
       case None => System.exit(0)
     }
   } catch {
-    case t: Throwable =>
-      System.err.println(s"fatal error: ${t.getMessage}")
-      logger.error(s"fatal error: ${t.getMessage}")
-      System.exit(1)
+    case t: Throwable => onError(t)
+  }
+
+  def onError(t: Throwable): Unit = {
+    System.err.println(s"fatal error: ${t.getMessage}")
+    logger.error(s"fatal error: ${t.getMessage}")
+    System.exit(1)
   }
 }
 

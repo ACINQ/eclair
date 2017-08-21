@@ -38,6 +38,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val spv = config.getBoolean("spv")
 
+  // early check
+  PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
+
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
   secureRandom.nextInt()
@@ -169,8 +172,6 @@ case class Kit(nodeParams: NodeParams,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
                server: ActorRef)
-
-case class TCPBindException(port: Int) extends RuntimeException
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 
