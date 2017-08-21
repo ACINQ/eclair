@@ -19,6 +19,7 @@ import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
+import scala.util.{Failure, Success}
 
 
 /**
@@ -33,6 +34,19 @@ class FxApp extends Application with Logging {
   override def start(primaryStage: Stage): Unit = {
     val icon = new Image(getClass.getResource("/gui/commons/images/eclair-square.png").toExternalForm, false)
     primaryStage.getIcons.add(icon)
+
+    def onError(t: Throwable): Unit = t match {
+      case TCPBindException(port) =>
+        notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
+      case BitcoinRPCConnectionException =>
+        notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", null))
+        notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
+      case BitcoinZMQConnectionTimeoutException =>
+        notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
+        notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
+      case t: Throwable =>
+        notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
+    }
 
     new Thread(new Runnable {
       override def run(): Unit = {
@@ -66,25 +80,27 @@ class FxApp extends Application with Logging {
                   System.exit(0)
                 }
               })
-              notifyPreloader(new AppNotification(SuccessAppNotification, "Init successful"))
-              primaryStage.setScene(scene)
-              primaryStage.show
-              initNotificationStage(primaryStage, handlers)
-              pKit.completeWith(setup.bootstrap)
+              import scala.concurrent.ExecutionContext.Implicits.global
+              setup.bootstrap onComplete {
+                case Success(kit) =>
+                  Platform.runLater(new Runnable {
+                    override def run(): Unit = {
+                      notifyPreloader(new AppNotification(SuccessAppNotification, "Init successful"))
+                      primaryStage.setScene(scene)
+                      primaryStage.show
+                      initNotificationStage(primaryStage, handlers)
+                    }
+                  })
+                  pKit.success(kit)
+                case Failure(t) => onError(t)
+
+              }
+
             }
           })
 
         } catch {
-          case TCPBindException(port) =>
-            notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
-          case BitcoinRPCConnectionException =>
-            notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", null))
-            notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
-          case BitcoinZMQConnectionTimeoutException =>
-            notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
-            notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
-          case t: Throwable =>
-            notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
+          case t: Throwable => onError(t)
         }
       }
     }).start
