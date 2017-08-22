@@ -90,7 +90,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     logger.info(s"waiting for bitcoind to initialize...")
     awaitCond({
-      sender.send(bitcoincli, BitcoinReq("getinfo"))
+      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
       sender.receiveOne(5 second).isInstanceOf[JValue]
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
