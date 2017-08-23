@@ -104,7 +104,8 @@ option                       | description               | default value
   peers       |                                               | list existing local peers
   channels    |                                               | list existing local channels
   channel     | channelId                                     | retrieve detailed information about a given channel
-  network     |                                               | list all nodes that have been announced
+  allchannels |                                               | list all channels that have been announced
+  allnodes    |                                               | list all nodes that have been announced
   receive     | amountMsat, description                       | generate a payment request for a given amount
   send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
   send        | paymentRequest                                | send a payment to a lightning node using a BOLT11 payment request
