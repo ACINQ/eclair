@@ -40,7 +40,10 @@ object LightningMessageCodecs {
       .typecase(2, ipv6address) ~ uint16)
       .xmap(x => new InetSocketAddress(x._1, x._2), x => (x.getAddress, x.getPort))
 
-  def listofsocketaddresses: Codec[List[InetSocketAddress]] = listOfN(uint16, socketaddress)
+  // this one is a bit different from most other codecs: the first 'len' element is * not * the number of items
+  // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
+  // number of bytes we can just skip to the next field
+  def listofsocketaddresses: Codec[List[InetSocketAddress]] = variableSizeBytes(uint16, list(socketaddress))
 
   def signature: Codec[BinaryData] = Codec[BinaryData](
     (der: BinaryData) => bytes(64).encode(ByteVector(der2wire(der).toArray)),
