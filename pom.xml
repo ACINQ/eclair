@@ -64,9 +64,9 @@
                     <version>2.2.2</version>
                 </plugin>
                 <plugin>
-                    <groupId>sg.enixsoft</groupId>
+                    <groupId>com.github.chrisdchristo</groupId>
                     <artifactId>capsule-maven-plugin</artifactId>
-                    <version>1.3.0</version>
+                    <version>1.5.1</version>
                 </plugin>
             </plugins>
         </pluginManagement>
