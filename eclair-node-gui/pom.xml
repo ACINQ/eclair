@@ -82,8 +82,10 @@
                 <configuration>
                     <vendor>ACINQ</vendor>
                     <needShortcut>true</needShortcut>
-                    <appName>Eclair (Alpha 3)</appName>
-                    <nativeReleaseVersion>0.2.0</nativeReleaseVersion>
+                    <appName>Eclair</appName>
+                    <nativeReleaseVersion>${project.version}</nativeReleaseVersion>
+                    <skipNativeVersionNumberSanitizing>true</skipNativeVersionNumberSanitizing>
+                    <nativeOutputDir>${project.build.directory}/jfx/installer</nativeOutputDir>
                     <mainClass>fr.acinq.eclair.JavafxBoot</mainClass>
                     <verbose>false</verbose>
                     <bundler>EXE</bundler>
