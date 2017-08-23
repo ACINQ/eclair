@@ -126,19 +126,19 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                nodeSignature2: BinaryData,
                                bitcoinSignature1: BinaryData,
                                bitcoinSignature2: BinaryData,
+                               features: BinaryData,
                                shortChannelId: Long,
                                nodeId1: PublicKey,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
-                               bitcoinKey2: PublicKey,
-                               features: BinaryData) extends RoutingMessage
+                               bitcoinKey2: PublicKey) extends RoutingMessage
 
 case class NodeAnnouncement(signature: BinaryData,
+                            features: BinaryData,
                             timestamp: Long,
                             nodeId: PublicKey,
                             rgbColor: (Byte, Byte, Byte),
                             alias: String,
-                            features: BinaryData,
                             // TODO: check address order + support padding data (type 0)
                             addresses: List[InetSocketAddress]) extends RoutingMessage
 

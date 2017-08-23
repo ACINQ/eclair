@@ -218,12 +218,12 @@ object LightningMessageCodecs {
       ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec = (
-    ("shortChannelId" | int64) ::
+    ("features" | varsizebinarydata) ::
+      ("shortChannelId" | int64) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
-      ("bitcoinKey2" | publicKey) ::
-      ("features" | varsizebinarydata))
+      ("bitcoinKey2" | publicKey))
 
   val channelAnnouncementCodec: Codec[ChannelAnnouncement] = (
     ("nodeSignature1" | signature) ::
@@ -233,11 +233,11 @@ object LightningMessageCodecs {
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
   val nodeAnnouncementWitnessCodec = (
-    ("timestamp" | uint32) ::
+    ("features" | varsizebinarydata) ::
+      ("timestamp" | uint32) ::
       ("nodeId" | publicKey) ::
       ("rgbColor" | rgb) ::
       ("alias" | zeropaddedstring(32)) ::
-      ("features" | varsizebinarydata) ::
       ("addresses" | listofsocketaddresses))
 
   val nodeAnnouncementCodec: Codec[NodeAnnouncement] = (
