@@ -3,6 +3,7 @@ package fr.acinq.eclair
 import java.io.File
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
@@ -10,9 +11,10 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
 import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.db.{Dbs, SimpleFileDb, SimpleTypedDb}
+import fr.acinq.eclair.db._
 import fr.acinq.eclair.io.PeerRecord
 import fr.acinq.eclair.wire.LightningMessage
+import org.sqlite.SQLiteConfig
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -42,7 +44,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       defaultFinalScriptPubKey: BinaryData,
                       channelsDb: SimpleTypedDb[BinaryData, HasCommitments],
                       peersDb: SimpleTypedDb[PublicKey, PeerRecord],
-                      announcementsDb: SimpleTypedDb[String, LightningMessage],
+                      networkDb: NetworkDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
@@ -84,6 +86,9 @@ object NodeParams {
 
     val dbDir = new File(datadir, "db")
     val db = new SimpleFileDb(dbDir)
+    val sqliteConfig = new SQLiteConfig()
+    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "sqlite.db")}")
+    val networkDb = new SqliteNetworkDb(sqlite)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -111,7 +116,7 @@ object NodeParams {
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
-      announcementsDb = Dbs.makeAnnouncementDb(db),
+      networkDb = networkDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
