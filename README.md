@@ -113,16 +113,6 @@ option                       | description               | default value
   close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
   help        |                                               | display available methods
 
-## Build the Windows installer
-
-To generate the windows installer, run the following command
-
-```shell
-mvn clean package -DskipTests -Pinstaller
-```
-
-The generated installer is located in `eclair-node-gui/target/jfx/installer`
-
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell

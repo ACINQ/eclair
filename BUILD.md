@@ -14,3 +14,11 @@ or
 ```shell
 $ mvn package -DskipTests
 ```
+
+To generate the windows installer, run the following command:
+
+```shell
+mvn package -DskipTests -Pinstaller
+```
+
+The generated installer will be located in `eclair-node-gui/target/jfx/installer`
