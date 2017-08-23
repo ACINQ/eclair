@@ -10,15 +10,12 @@ To build the project, simply run:
 ```shell
 $ mvn package
 ```
-or
+To skip the tests, run:
 ```shell
 $ mvn package -DskipTests
 ```
-
-To generate the windows installer, run the following command:
-
+To generate the windows installer along with the build, run the following command:
 ```shell
-mvn package -DskipTests -Pinstaller
+$ mvn package -DskipTests -Pinstaller
 ```
-
 The generated installer will be located in `eclair-node-gui/target/jfx/installer`
