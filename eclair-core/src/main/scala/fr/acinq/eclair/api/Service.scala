@@ -2,7 +2,7 @@ package fr.acinq.eclair.api
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, ActorSystem}
+import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
@@ -38,7 +38,7 @@ case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: String, blockHeight: Int)
-case class ChannelInfo(shortChannelId: Long, nodeId1: PublicKey , nodeId2: PublicKey)
+case class ChannelInfo(shortChannelId: String, nodeId1: PublicKey , nodeId2: PublicKey)
 // @formatter:on
 
 trait Service extends Logging {
@@ -91,12 +91,12 @@ trait Service extends Logging {
                   (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys)
                 case JsonRPCBody(_, _, "channel", JString(channelId) :: Nil) =>
                   getChannel(channelId).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
-                case JsonRPCBody(_, _, "network", _) =>
+                case JsonRPCBody(_, _, "allnodes", _) =>
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
                 case JsonRPCBody(_, _, "allchannels", _) =>
-                  (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelInfo(c.shortChannelId, c.nodeId1, c.nodeId2)))
+                  (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelInfo(c.shortChannelId.toHexString, c.nodeId1, c.nodeId2)))
                 case JsonRPCBody(_,_, "receive", JInt(amountMsat) :: JString(description) :: Nil) =>
-                  (paymentHandler ? ReceivePayment(new MilliSatoshi(amountMsat.toLong), description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+                  (paymentHandler ? ReceivePayment(MilliSatoshi(amountMsat.toLong), description)).mapTo[PaymentRequest].map(PaymentRequest.write)
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "send", JString(paymentRequest) :: Nil) =>
