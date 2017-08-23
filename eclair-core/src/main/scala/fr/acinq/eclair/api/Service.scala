@@ -102,7 +102,12 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "send", JString(paymentRequest) :: Nil) =>
                   for {
                     req <- Future(PaymentRequest.read(paymentRequest))
-                    res <- (paymentInitiator ? SendPayment(req.amount.getOrElse(throw new RuntimeException("request without amounts are not supported")).amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
+                    res <- (paymentInitiator ? SendPayment(req.amount.getOrElse(throw new RuntimeException("for requests without amount use send (amountMsat, paymentRequet)")).amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
+                  } yield res
+                case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentRequest) :: Nil) =>
+                  for {
+                    req <- Future(PaymentRequest.read(paymentRequest))
+                    res <- (paymentInitiator ? SendPayment(amountMsat.toLong, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
                   } yield res
                 case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
                   getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
@@ -120,6 +125,7 @@ trait Service extends Logging {
                     "receive (amountMsat, description): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
                     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
+                    "send (amountMsat, paymentRequest): send a payment to a lightning node using a BOLT11 payment request with a custom amount",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
