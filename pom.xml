@@ -10,7 +10,7 @@
     <modules>
         <module>eclair-core</module>
         <module>eclair-node</module>
-        <module>eclair-node-javafx</module>
+        <module>eclair-node-gui</module>
     </modules>
 
     <description>A scala implementation of the Lightning Network</description>
@@ -64,9 +64,9 @@
                     <version>2.2.2</version>
                 </plugin>
                 <plugin>
-                    <groupId>sg.enixsoft</groupId>
+                    <groupId>com.github.chrisdchristo</groupId>
                     <artifactId>capsule-maven-plugin</artifactId>
-                    <version>1.3.0</version>
+                    <version>1.5.1</version>
                 </plugin>
             </plugins>
         </pluginManagement>

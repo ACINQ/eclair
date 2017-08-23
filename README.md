@@ -61,11 +61,11 @@ You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com
 Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
 * with GUI:
 ```shell
-java -jar eclair-node-javafx_xxxxxx-fat.jar
+java -jar eclair-node-gui-<version>-<commit_id>.jar
 ```
 * without GUI:
 ```shell
-java -jar eclair-node_xxxxxx-fat.jar
+java -jar eclair-node-<version>-<commit_id>.jar
 ```
 
 ### Configuring Eclair
