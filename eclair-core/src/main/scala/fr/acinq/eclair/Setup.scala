@@ -5,7 +5,8 @@ import java.net.InetSocketAddress
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
-import akka.stream.ActorMaterializer
+import akka.pattern.after
+import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
@@ -32,6 +33,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+
+  // early check
+  PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
@@ -122,17 +126,20 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
       override def appKit = kit
     }
-    val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
+    val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+      case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
+    }
+
+    val zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
+    val tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
+    val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
 
     for {
-      _ <- zmqConnected.future
-      _ <- tcpBound.future
-      _ <- httpBound
+      _ <- Future.firstCompletedOf(zmqConnected.future :: zmqTimeout :: Nil)
+      _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
+      _ <- Future.firstCompletedOf(httpBound :: httpTimeout :: Nil)
     } yield kit
 
-    //Try(Await.result(zmqConnected.future, 5 seconds)).recover { case _ => throw BitcoinZMQConnectionTimeoutException }.get
-    //Try(Await.result(tcpBound.future, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("server.port")) }.get
-    //Try(Await.result(httpBound, 5 seconds)).recover { case _ => throw new TCPBindException(config.getInt("api.port")) }.get
   }
 
 }
@@ -148,8 +155,6 @@ case class Kit(nodeParams: NodeParams,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
                server: ActorRef)
-
-case class TCPBindException(port: Int) extends RuntimeException
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 
