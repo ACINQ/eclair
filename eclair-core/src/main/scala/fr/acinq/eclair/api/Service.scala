@@ -99,15 +99,16 @@ trait Service extends Logging {
                   (paymentHandler ? ReceivePayment(MilliSatoshi(amountMsat.toLong), description)).mapTo[PaymentRequest].map(PaymentRequest.write)
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
                   (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
-                case JsonRPCBody(_, _, "send", JString(paymentRequest) :: Nil) =>
+                case JsonRPCBody(_, _, "send", JString(paymentRequest) :: rest) =>
                   for {
                     req <- Future(PaymentRequest.read(paymentRequest))
-                    res <- (paymentInitiator ? SendPayment(req.amount.getOrElse(throw new RuntimeException("for requests without amount use send (amountMsat, paymentRequet)")).amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
-                  } yield res
-                case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentRequest) :: Nil) =>
-                  for {
-                    req <- Future(PaymentRequest.read(paymentRequest))
-                    res <- (paymentInitiator ? SendPayment(amountMsat.toLong, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
+                    amount = (req.amount, rest) match {
+                      case (Some(amt), Nil) => amt.amount
+                      case (Some(_), JInt(amt) :: Nil) => amt.toLong // overriding payment request amount with the one provided
+                      case (None, JInt(amt) :: Nil) => amt.toLong
+                      case (None, Nil) => throw new RuntimeException("you need to manually specify an amount for this payment request")
+                    }
+                    res <- (paymentInitiator ? SendPayment(amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
                   } yield res
                 case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
                   getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
@@ -125,7 +126,6 @@ trait Service extends Logging {
                     "receive (amountMsat, description): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
                     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
-                    "send (amountMsat, paymentRequest): send a payment to a lightning node using a BOLT11 payment request with a custom amount",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
