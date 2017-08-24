@@ -18,10 +18,10 @@ import scala.compat.Platform
 object Announcements {
 
   def channelAnnouncementWitnessEncode(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData): BinaryData =
-    sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: features :: HNil))))
+    sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(features :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: HNil))))
 
   def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: (Byte, Byte, Byte), alias: String, features: BinaryData, addresses: List[InetSocketAddress]): BinaryData =
-    sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(timestamp :: nodeId :: rgbColor :: alias :: features :: addresses :: HNil))))
+    sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: rgbColor :: alias :: addresses :: HNil))))
 
   def channelUpdateWitnessEncode(shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long): BinaryData =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil))))

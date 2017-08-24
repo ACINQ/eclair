@@ -2,12 +2,9 @@ package fr.acinq.eclair.channel
 
 
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
+import akka.event.Logging.MDC
 import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.PublicKey
-
-import akka.actor.{ActorRef, DiagnosticActorLogging, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
-import akka.event.Logging.MDC
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
@@ -659,6 +656,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) => handleRemoteSpentOther(tx, d)
 
     case Event(INPUT_DISCONNECTED, d: DATA_NORMAL) =>
+      d.commitments.localChanges.proposed.collect {
+        case add: UpdateAddHtlc => relayer ! AddHtlcDiscarded(add)
+      }
       d.shortChannelId match {
         case Some(shortChannelId) =>
           // if channel has be announced, we disable it
@@ -1331,62 +1331,56 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     log.debug(s"localNextHtlcId=${d.commitments.localNextHtlcId}->${commitments1.localNextHtlcId}")
     log.debug(s"remoteNextHtlcId=${d.commitments.remoteNextHtlcId}->${commitments1.remoteNextHtlcId}")
 
-    // let's see the state of remote sigs
-    if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber) {
-      // nothing to do
-    } else if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber + 1) {
-      // our last revocation got lost, let's resend it
-      log.debug(s"re-sending last revocation")
-      val localPerCommitmentSecret = Generators.perCommitSecret(commitments1.localParams.shaSeed, d.commitments.localCommit.index - 1)
-      val localNextPerCommitmentPoint = Generators.perCommitPoint(commitments1.localParams.shaSeed, d.commitments.localCommit.index + 1)
-      val revocation = RevokeAndAck(
-        channelId = commitments1.channelId,
-        perCommitmentSecret = localPerCommitmentSecret,
-        nextPerCommitmentPoint = localNextPerCommitmentPoint
-      )
-      forwarder ! revocation
-      self ! CMD_SIGN
-    } else throw RevocationSyncError
+    def resendRevocation = {
+      // let's see the state of remote sigs
+      if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber) {
+        // nothing to do
+      } else if (commitments1.localCommit.index == channelReestablish.nextRemoteRevocationNumber + 1) {
+        // our last revocation got lost, let's resend it
+        log.debug(s"re-sending last revocation")
+        val localPerCommitmentSecret = Generators.perCommitSecret(commitments1.localParams.shaSeed, d.commitments.localCommit.index - 1)
+        val localNextPerCommitmentPoint = Generators.perCommitPoint(commitments1.localParams.shaSeed, d.commitments.localCommit.index + 1)
+        val revocation = RevokeAndAck(
+          channelId = commitments1.channelId,
+          perCommitmentSecret = localPerCommitmentSecret,
+          nextPerCommitmentPoint = localNextPerCommitmentPoint
+        )
+        forwarder ! revocation
+      } else throw RevocationSyncError
+    }
 
-    // let's see the state of local sigs
-    val (htlcsIn, commitments2) = commitments1.remoteNextCommitInfo match {
+    // re-sending sig/rev (in the right order)
+    val htlcsIn = commitments1.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // we had sent a new sig and were waiting for their revocation
         // they had received the new sig but their revocation was lost during the disconnection
         // they will send us the revocation, nothing to do here
         log.debug(s"waiting for them to re-send their last revocation")
-        val htlcsIn = (commitments1.remoteCommit.spec.htlcs intersect waitingForRevocation.nextRemoteCommit.spec.htlcs).collect {
-          case Htlc(OUT, add, _) => add
-        }
-        (htlcsIn, commitments1)
+        resendRevocation
       case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index == channelReestablish.nextLocalCommitmentNumber =>
         // we had sent a new sig and were waiting for their revocation
         // they didn't receive the new sig because of the disconnection
-        // for now we simply discard the changes we had just signed
-        // we also "un-sign" their changes that we already acked
-        log.debug(s"discarding previously local signed changes: ${commitments1.localChanges.signed.map(Commitments.msg2String(_)).mkString(",")}")
-        log.debug(s"putting previously remote signed changed back in acked: ${commitments1.remoteChanges.acked.map(Commitments.msg2String(_)).mkString(",")}")
-        val localNextHtlcId1 = commitments1.localNextHtlcId - commitments1.localChanges.signed.collect { case u: UpdateAddHtlc => u }.size
-        log.debug(s"localNextHtlcId=${commitments1.localNextHtlcId}->${localNextHtlcId1}")
-        val htlcsIn = commitments1.remoteCommit.spec.htlcs.collect {
-          case Htlc(OUT, add, _) => add
-        }
-        (htlcsIn, commitments1.copy(
-          localChanges = commitments1.localChanges.copy(signed = Nil), // NB: acked == Nil
-          remoteChanges = commitments1.remoteChanges.copy(acked = commitments1.remoteChanges.signed ++ commitments1.remoteChanges.acked, signed = Nil),
-          localNextHtlcId = localNextHtlcId1,
-          remoteNextCommitInfo = Right(waitingForRevocation.nextRemoteCommit.remotePerCommitmentPoint)))
+        // we just resend the same updates and the same sig
+
+        val revWasSentLast = commitments1.localCommit.index > waitingForRevocation.sentAfterLocalCommitIndex
+        if (!revWasSentLast) resendRevocation
+
+        log.debug(s"re-sending previously local signed changes: ${commitments1.localChanges.signed.map(Commitments.msg2String(_)).mkString(",")}")
+        commitments1.localChanges.signed.foreach(forwarder ! _)
+        log.debug(s"re-sending the exact same previous sig")
+        forwarder ! waitingForRevocation.sent
+
+        if (revWasSentLast) resendRevocation
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // there wasn't any sig in-flight when the disconnection occured
-        val htlcsIn = commitments1.remoteCommit.spec.htlcs.collect {
-          case Htlc(OUT, add, _) => add
-        }
-        (htlcsIn, commitments1)
+        resendRevocation
       case _ => throw CommitmentSyncError
     }
 
     // let's now fail all pending htlc for which we are the final payee
-    val htlcsToFail = htlcsIn.filter {
+    val htlcsToFail = commitments1.remoteCommit.spec.htlcs.collect {
+      case Htlc(OUT, add, _) => add
+    }.filter {
       case add =>
         Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
           .map(_.nextPacket.isLastPacket)
@@ -1395,7 +1389,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     log.debug(s"failing htlcs=${htlcsToFail.map(Commitments.msg2String(_)).mkString(",")}")
     htlcsToFail.foreach(add => self ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true))
 
-    commitments2
+    // have I something to sign?
+    if (Commitments.localHasChanges(commitments1)) {
+      self ! CMD_SIGN
+    }
+
+    commitments1
   }
 
   /**

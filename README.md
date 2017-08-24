@@ -46,6 +46,8 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 
 ### Installing Eclair
 
+The released binaries can be downloaded [here](https://github.com/ACINQ/eclair/releases).
+
 #### Windows
 
 Just use the windows installer, it should create a shortcut on your desktop.
@@ -56,9 +58,14 @@ You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com
 
  :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in `--headless` mode.
 
-Then download the latest fat jar and run:
+Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
+* with GUI:
 ```shell
-java -jar eclair-node_xxxxxx-fat.jar
+java -jar eclair-node-gui-<version>-<commit_id>.jar
+```
+* without GUI:
+```shell
+java -jar eclair-node-<version>-<commit_id>.jar
 ```
 
 ### Configuring Eclair
@@ -68,7 +75,6 @@ java -jar eclair-node_xxxxxx-fat.jar
 option         | description                     | default value
 ---------------|---------------------------------|--------------
 --datadir      | Path to the data directory      | ~/.eclair
---headless     | Run Eclair without the GUI      |
 --help, -h     | Display usage text              |
 
 
@@ -76,7 +82,7 @@ option         | description                     | default value
 
 #### Configuration file
 
-To change your node configuration, edit the file `eclair.conf` in `datadir`.
+To change your node's configuration, create a file named `eclair.conf` in `datadir`. To change an option, for example the HTTP port, write `eclair.api.port=8081` in the created file. 
 
 option                       | description               | default value
 -----------------------------|---------------------------|--------------
@@ -86,7 +92,7 @@ option                       | description               | default value
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
  eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
 
-&rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference.
+&rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
 
 ## JSON-RPC API
 
@@ -98,7 +104,8 @@ option                       | description               | default value
   peers       |                                               | list existing local peers
   channels    |                                               | list existing local channels
   channel     | channelId                                     | retrieve detailed information about a given channel
-  network     |                                               | list all nodes that have been announced
+  allnodes    |                                               | list all known nodes
+  allchannels |                                               | list all known channels
   receive     | amountMsat, description                       | generate a payment request for a given amount
   send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
   send        | paymentRequest                                | send a payment to a lightning node using a BOLT11 payment request

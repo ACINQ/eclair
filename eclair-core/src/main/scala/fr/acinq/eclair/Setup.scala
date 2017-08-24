@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
 import akka.pattern.after
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
@@ -71,10 +71,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       chain = (json \ "chain").extract[String]
       progress = (json \ "verificationprogress").extract[Double]
       chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_))
-      info <- bitcoinClient.rpcClient.invoke("getinfo")
-      version = info \ "version"
-    } yield (chain, progress, chainHash, version)
-    val (chain, progress, chainHash, version) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
+      bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+    } yield (chain, progress, chainHash, bitcoinVersion)
+    val (chain, progress, chainHash, bitcoinVersion) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
     assert(progress > 0.99, "bitcoind should be synchronized")
     (chain, chainHash, Right(bitcoinClient))
   }
@@ -146,11 +145,13 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
       override def appKit = kit
     }
-    val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port"))
+    val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+      case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
+    }
 
     val zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
-    val tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(new TCPBindException(config.getInt("server.port"))))
-    val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(throw new TCPBindException(config.getInt("api.port"))))
+    val tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
+    val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
 
     for {
       _ <- Future.firstCompletedOf(zmqConnected.future :: zmqTimeout :: Nil)
