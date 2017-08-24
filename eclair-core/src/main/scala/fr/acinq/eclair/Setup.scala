@@ -60,7 +60,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     blockCount = (json \ "blocks").extract[Long]
     progress = (json \ "verificationprogress").extract[Double]
     chainHash <- bitcoinClient.client.invoke("getblockhash", 0).map(_.extract[String])
-    bitcoinVersion <- bitcoinClient.client.invoke("getinfo").map(json => (json \ "version")).map(_.extract[String])
+    bitcoinVersion <- bitcoinClient.client.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
   } yield (chain, blockCount, progress, chainHash, bitcoinVersion)
   val (chain, blockCount, progress, chainHash, bitcoinVersion) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
   logger.info(s"using chain=$chain chainHash=$chainHash")
