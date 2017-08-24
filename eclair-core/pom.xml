@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-spv-e</version>
+        <version>0.2-spv-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-core_2.11</artifactId>
@@ -143,7 +143,7 @@
         <dependency>
             <groupId>org.bitcoinj</groupId>
             <artifactId>bitcoinj-core</artifactId>
-            <version>0.15-A5-a5</version>
+            <version>${bitcoinj.version}</version>
         </dependency>
         <!-- SERIALIZATION -->
         <dependency>

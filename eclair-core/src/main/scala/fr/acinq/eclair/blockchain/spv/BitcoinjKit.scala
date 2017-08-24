@@ -20,7 +20,7 @@ import scala.concurrent.Promise
 /**
   * Created by PM on 09/07/2017.
   */
-class BitcoinjKit(chain: String, datadir: File)(implicit system: ActorSystem) extends WalletAppKit(chain2Params(chain), datadir, "bitcoinj") with Logging {
+class BitcoinjKit(chain: String, datadir: File)(implicit system: ActorSystem) extends WalletAppKit(chain2Params(chain), datadir, "bitcoinj", true) with Logging {
 
   // tells us when the peerGroup/chain/wallet are accessible
   private val initializedPromise = Promise[Boolean]()

@@ -1,10 +1,9 @@
 package fr.acinq.eclair.blockchain.wallet
 
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.{Coin, Transaction => BitcoinjTransaction}
 import org.bitcoinj.script.Script
-import org.bitcoinj.wallet.KeyChain.KeyPurpose
 import org.bitcoinj.wallet.{SendRequest, Wallet}
 
 import scala.collection.JavaConversions._
@@ -19,7 +18,7 @@ class BitcoinjWallet(fWallet: Future[Wallet])(implicit ec: ExecutionContext) ext
 
   override def getFinalAddress: Future[String] = for {
     wallet <- fWallet
-  } yield Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, wallet.freshSegwitAddress(KeyPurpose.RECEIVE_FUNDS).getHash160)
+  } yield wallet.currentReceiveAddress().toString
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = for {
     wallet <- fWallet
