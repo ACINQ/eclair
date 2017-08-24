@@ -18,7 +18,7 @@ class BitcoinjWallet(fWallet: Future[Wallet])(implicit ec: ExecutionContext) ext
 
   override def getFinalAddress: Future[String] = for {
     wallet <- fWallet
-  } yield wallet.currentReceiveAddress().toString
+  } yield wallet.currentReceiveAddress().toBase58
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = for {
     wallet <- fWallet
