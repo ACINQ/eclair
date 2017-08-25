@@ -68,7 +68,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_TIMEOUT
       alice2bob.expectMsgType[Error]
-      awaitCond(alice.stateName == CLOSED)
+      awaitCond(alice.stateName == ERR_FUNDING_TIMEOUT)
     }
   }
 

@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-spv-SNAPSHOT</version>
+        <version>0.2-android-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-node_2.11</artifactId>
@@ -90,6 +90,11 @@
             <groupId>janino</groupId>
             <artifactId>janino</artifactId>
             <version>2.5.10</version>
+        </dependency>
+        <dependency>
+            <groupId>com.googlecode.lanterna</groupId>
+            <artifactId>lanterna</artifactId>
+            <version>3.0.0-rc1</version>
         </dependency>
     </dependencies>
 </project>

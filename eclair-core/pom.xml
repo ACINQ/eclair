@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-spv-SNAPSHOT</version>
+        <version>0.2-android-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-core_2.11</artifactId>
@@ -107,21 +107,17 @@
             <artifactId>akka-slf4j_${scala.version.short}</artifactId>
             <version>${akka.version}</version>
         </dependency>
+        <!-- HTTP -->
         <dependency>
-            <groupId>com.typesafe.akka</groupId>
-            <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.7</version>
+            <groupId>com.ning</groupId>
+            <artifactId>async-http-client</artifactId>
+            <version>1.9.40</version>
         </dependency>
         <!-- JSON -->
         <dependency>
             <groupId>org.json4s</groupId>
             <artifactId>json4s-jackson_${scala.version.short}</artifactId>
             <version>3.5.2</version>
-        </dependency>
-        <dependency>
-            <groupId>de.heikoseeberger</groupId>
-            <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.16.1</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>
@@ -141,7 +137,7 @@
             <version>0.4.0</version>
         </dependency>
         <dependency>
-            <groupId>org.bitcoinj</groupId>
+            <groupId>fr.acinq</groupId>
             <artifactId>bitcoinj-core</artifactId>
             <version>${bitcoinj.version}</version>
         </dependency>
@@ -161,12 +157,12 @@
         <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-core</artifactId>
-            <version>1.0.1</version>
+            <version>0.9.0</version>
         </dependency>
         <dependency>
             <groupId>org.jgrapht</groupId>
             <artifactId>jgrapht-ext</artifactId>
-            <version>1.0.1</version>
+            <version>0.9.0</version>
             <exclusions>
                 <exclusion>
                     <groupId>org.tinyjee.jgraphx</groupId>

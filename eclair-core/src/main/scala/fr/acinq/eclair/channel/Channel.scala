@@ -356,10 +356,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       deferred.map(self ! _)
       goto(WAIT_FOR_FUNDING_LOCKED) using store(DATA_WAIT_FOR_FUNDING_LOCKED(commitments, fundingLocked)) sending fundingLocked
 
+    case Event(WatchEventDoubleSpent(_), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      log.error(s"fundingTx=${d.commitments.commitInput.outPoint.txid} was doublespent and won't ever confirm!")
+      val error = Error(d.channelId, "Funding tx doublespent".getBytes)
+      goto(ERR_FUNDING_DOUBLESPENT) sending error
+
     // TODO: not implemented, maybe should be done with a state timer and not a blockchain watch?
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       val error = Error(d.channelId, "Funding tx timed out".getBytes)
-      goto(CLOSED) sending error
+      goto(ERR_FUNDING_TIMEOUT) sending error
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1054,11 +1059,19 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) => handleRemoteSpentOther(tx, d)
   })
 
-  when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds) {
+  def errorStateHandler: StateFunction = {
     case Event(StateTimeout, _) =>
-      log.info("shutting down")
+      log.error(s"shutting down (was in state=$stateName)")
       stop(FSM.Normal)
   }
+
+  when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds)(errorStateHandler)
+
+  when(ERR_FUNDING_DOUBLESPENT, stateTimeout = 10 seconds)(errorStateHandler)
+
+  when(ERR_FUNDING_TIMEOUT, stateTimeout = 10 seconds)(errorStateHandler)
+
+  when(ERR_FUNDING_LOST, stateTimeout = 10 seconds)(errorStateHandler)
 
   whenUnhandled {
 

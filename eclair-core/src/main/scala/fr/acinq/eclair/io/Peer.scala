@@ -57,6 +57,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     channel ! INPUT_RESTORED(state)
     HotChannel(FinalChannelId(state.channelId), channel)
   }, attempts = 0))
+  setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
 
   when(DISCONNECTED) {
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels, _)) =>
@@ -95,9 +96,10 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
+        /* disabled for performance reasons
         if (Features.initialRoutingSync(remoteInit.localFeatures)) {
           router ! SendRoutingState(transport)
-        }
+        }*/
         // let's bring existing/requested channels online
         val channels: Map[ChannelId, ActorRef] = offlineChannels.map {
           case BrandNewChannel(c) =>

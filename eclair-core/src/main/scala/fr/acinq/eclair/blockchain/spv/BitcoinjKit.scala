@@ -9,7 +9,7 @@ import fr.acinq.eclair.blockchain.spv.BitcoinjKit._
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewConfidenceLevel}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
-import org.bitcoinj.core.listeners._
+import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener}
 import org.bitcoinj.core.{NetworkParameters, Peer, StoredBlock, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.params.{RegTestParams, TestNet3Params}

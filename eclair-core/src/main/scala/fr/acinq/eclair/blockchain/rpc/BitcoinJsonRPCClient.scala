@@ -3,17 +3,13 @@ package fr.acinq.eclair.blockchain.rpc
 import java.io.IOException
 
 import akka.actor.ActorSystem
-import akka.http.scaladsl.Http
-import akka.http.scaladsl.marshalling.Marshal
-import akka.http.scaladsl.model._
-import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
-import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
-import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
-import org.json4s.JsonAST.JValue
-import org.json4s.{DefaultFormats, jackson}
+import com.ning.http.client._
+import org.json4s.{DefaultFormats, DefaultReaders}
+import org.json4s.JsonAST.{JInt, JNull, JString, JValue}
+import org.json4s.jackson.JsonMethods.parse
+import org.json4s.jackson.Serialization._
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
 
 // @formatter:off
 case class JsonRPCRequest(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[Any])
@@ -22,38 +18,50 @@ case class JsonRPCResponse(result: JValue, error: Option[Error], id: String)
 case class JsonRPCError(error: Error) extends IOException(s"${error.message} (code: ${error.code})")
 // @formatter:on
 
-class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit system: ActorSystem) {
+class BitcoinJsonRPCClient(config: AsyncHttpClientConfig, host: String, port: Int, ssl: Boolean)(implicit system: ActorSystem) {
 
-  val scheme = if (ssl) "https" else "http"
-  val uri = Uri(s"$scheme://$host:$port")
+    def this(user: String, password: String, host: String = "127.0.0.1", port: Int = 8332, ssl: Boolean = false)(implicit system: ActorSystem) = this(
+      new AsyncHttpClientConfig.Builder()
+        .setRealm(new Realm.RealmBuilder().setPrincipal(user).setPassword(password).setUsePreemptiveAuth(true).setScheme(Realm.AuthScheme.BASIC).build)
+        .build,
+      host,
+      port,
+      ssl
+    )
 
-  implicit val materializer = ActorMaterializer()
-  val httpClient = Http(system)
-  implicit val serialization = jackson.Serialization
+  val client: AsyncHttpClient = new AsyncHttpClient(config)
+
   implicit val formats = DefaultFormats
 
-  def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
-    for {
-      entity <- Marshal(JsonRPCRequest(method = method, params = params)).to[RequestEntity]
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
-      jsonRpcRes <- Unmarshal(httpRes).to[JsonRPCResponse].map {
-        case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
-        case o => o
-      } recover {
-        case t: Throwable if httpRes.status == StatusCodes.Unauthorized => throw new RuntimeException("bitcoind replied with 401/Unauthorized (bad user/password?)", t)
-      }
-    } yield jsonRpcRes.result
+  def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] = {
+    val promise = Promise[JValue]()
+    client
+      .preparePost((if (ssl) "https" else "http") + s"://$host:$port/")
+      .addHeader("Content-Type", "application/json")
+      .setBody(write(JsonRPCRequest(method = method, params = params)))
+      .execute(new AsyncCompletionHandler[Unit] {
+        override def onCompleted(response: Response): Unit =
+          try {
+            val jvalue = parse(response.getResponseBody)
+            val jerror = jvalue \ "error"
+            val result = jvalue \ "result"
+            if (jerror != JNull) {
+              for {
+                JInt(code) <- jerror \ "code"
+                JString(message) <- jerror \ "message"
+              } yield promise.failure(new JsonRPCError(Error(code.toInt, message)))
+            } else {
+              promise.success(result)
+            }
+          } catch {
+            case t: Throwable => promise.failure(t)
+          }
 
-  def invoke(request: Seq[(String, Seq[Any])])(implicit ec: ExecutionContext): Future[Seq[JValue]] =
-    for {
-      entity <- Marshal(request.map(r => JsonRPCRequest(method = r._1, params = r._2))).to[RequestEntity]
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
-      jsonRpcRes <- Unmarshal(httpRes).to[Seq[JsonRPCResponse]].map {
-        //case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
-        case o => o
-      } recover {
-        case t: Throwable if httpRes.status == StatusCodes.Unauthorized => throw new RuntimeException("bitcoind replied with 401/Unauthorized (bad user/password?)", t)
-      }
-    } yield jsonRpcRes.map(_.result)
+        override def onThrowable(t: Throwable): Unit = promise.failure(t)
+      })
+    promise.future
+  }
+
+  def invoke(request: Seq[(String, Seq[Any])])(implicit ec: ExecutionContext): Future[Seq[JValue]] = ???
 
 }

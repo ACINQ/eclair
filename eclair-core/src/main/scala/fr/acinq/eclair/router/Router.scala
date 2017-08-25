@@ -13,7 +13,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.jgrapht.alg.shortestpath.DijkstraShortestPath
+import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
@@ -334,7 +334,7 @@ object Router {
       g.addEdge(d.a, d.b, new DescEdge(d))
     })
     Try(Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))) match {
-      case Success(Some(path)) => path.getEdgeList.map(_.desc)
+      case Success(Some(path)) => path.map(_.desc)
       case _ => throw RouteNotFound
     }
   }
@@ -344,39 +344,7 @@ object Router {
       .map(desc => Hop(desc.a, desc.b, updates(desc)))
   }
 
-  def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = Future {
-    case class DescEdge(channelId: Long) extends DefaultEdge
-    val g = new SimpleGraph[PublicKey, DescEdge](classOf[DescEdge])
-    channels.foreach(d => {
-      g.addVertex(d._2.nodeId1)
-      g.addVertex(d._2.nodeId2)
-      g.addEdge(d._2.nodeId1, d._2.nodeId2, new DescEdge(d._1))
-    })
-    val vertexIDProvider = new ComponentNameProvider[PublicKey]() {
-      override def getName(nodeId: PublicKey): String = "\"" + nodeId.toString() + "\""
-    }
-    val edgeLabelProvider = new ComponentNameProvider[DescEdge]() {
-      override def getName(e: DescEdge): String = e.channelId.toString
-    }
-    val vertexAttributeProvider = new ComponentAttributeProvider[PublicKey]() {
-
-      override def getComponentAttributes(nodeId: PublicKey): java.util.Map[String, String] =
-
-        nodes.get(nodeId) match {
-          case Some(ann) => Map("label" -> ann.alias, "color" -> f"#${ann.rgbColor._1}%02x${ann.rgbColor._2}%02x${ann.rgbColor._3}%02x")
-          case None => Map.empty[String, String]
-        }
-    }
-    val exporter = new DOTExporter[PublicKey, DescEdge](vertexIDProvider, null, edgeLabelProvider, vertexAttributeProvider, null)
-    val writer = new StringWriter()
-    try {
-      exporter.exportGraph(g, writer)
-      writer.toString
-    } finally {
-      writer.close()
-    }
-
-  }
+  def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = ???
 
 
 }

@@ -2,9 +2,9 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
+import com.google.common.io.Files
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
@@ -73,10 +73,10 @@ object NodeParams {
 
     val seedPath = new File(datadir, "seed.dat")
     val seed: BinaryData = seedPath.exists() match {
-      case true => Files.readAllBytes(seedPath.toPath)
+      case true => Files.toByteArray(seedPath)
       case false =>
         val seed = randomKey.toBin
-        Files.write(seedPath.toPath, seed)
+        Files.write(seed, seedPath)
         seed
     }
     val master = DeterministicWallet.generate(seed)
@@ -111,9 +111,9 @@ object NodeParams {
       channelsDb = Dbs.makeChannelDb(db),
       peersDb = Dbs.makePeerDb(db),
       announcementsDb = Dbs.makeAnnouncementDb(db),
-      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
-      routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),
-      pingInterval = FiniteDuration(config.getDuration("ping-interval").getSeconds, TimeUnit.SECONDS),
+      routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
+      routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
+      pingInterval = FiniteDuration(config.getDuration("ping-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       maxFeerateMismatch = config.getDouble("max-feerate-mismatch"),
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),

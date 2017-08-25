@@ -43,6 +43,7 @@ case object CLOSED extends State
 case object OFFLINE extends State
 case object SYNCING extends State
 case object ERR_FUNDING_LOST extends State
+case object ERR_FUNDING_DOUBLESPENT extends State
 case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
 

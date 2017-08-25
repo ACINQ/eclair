@@ -4,13 +4,12 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-spv-SNAPSHOT</version>
+    <version>0.2-android-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
         <module>eclair-core</module>
         <module>eclair-node</module>
-        <module>eclair-node-gui</module>
     </modules>
 
     <description>A scala implementation of the Lightning Network</description>
@@ -42,13 +41,13 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>1.7</maven.compiler.source>
+        <maven.compiler.target>1.7</maven.compiler.target>
         <scala.version>2.11.11</scala.version>
         <scala.version.short>2.11</scala.version.short>
-        <akka.version>2.4.18</akka.version>
+        <akka.version>2.3.14</akka.version>
         <bitcoinlib.version>0.9.13</bitcoinlib.version>
-        <bitcoinj.version>0.15-ACINQ-rc6</bitcoinj.version>
+        <bitcoinj.version>0.15-rc1</bitcoinj.version>
     </properties>
 
     <build>

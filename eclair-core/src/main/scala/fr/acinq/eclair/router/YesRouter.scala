@@ -138,13 +138,8 @@ class YesRouter(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Da
     case Event('tick_validate, d) => stay // ignored
 
     case Event('tick_broadcast, d) =>
-      d.rebroadcast match {
-        case Nil => stay using d.copy(origins = Map.empty)
-        case _ =>
-          log.info(s"broadcasting ${d.rebroadcast.size} routing messages")
-          context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast, d.origins)
-          stay using d.copy(rebroadcast = Nil, origins = Map.empty)
-      }
+      // no-op to save bandwidth and also to not broadcast announcements that we have not verified
+      stay using d.copy(rebroadcast = Nil, origins = Map.empty)
 
     case Event('nodes, d) =>
       sender ! d.nodes.values

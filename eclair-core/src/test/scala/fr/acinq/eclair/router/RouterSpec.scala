@@ -144,7 +144,7 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsg(Failure(RouteNotFound))
   }
 
-  test("export graph in dot format") { case (router, _) =>
+  ignore("export graph in dot format") { case (router, _) =>
     val sender = TestProbe()
     sender.send(router, 'dot)
     val dot = sender.expectMsgType[String]

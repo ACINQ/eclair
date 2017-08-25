@@ -26,7 +26,7 @@ import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
+import org.scalatest.{BeforeAndAfterAll, FunSuiteLike, Ignore}
 
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -37,6 +37,7 @@ import scala.sys.process._
   * Created by PM on 15/03/2017.
   */
 @RunWith(classOf[JUnitRunner])
+@Ignore
 class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
 
   val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
@@ -79,7 +80,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     nodes.foreach {
       case (name, setup) =>
         logger.info(s"stopping node $name")
-        setup.system.terminate()
+        setup.system.shutdown()
     }
     //    logger.warn(s"starting bitcoin-qt")
     //    val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt").toPath
