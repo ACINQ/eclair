@@ -105,7 +105,7 @@ trait Service extends Logging {
                     amount = (req.amount, rest) match {
                       case (Some(amt), Nil) => amt.amount
                       case (Some(_), JInt(amt) :: Nil) => amt.toLong // overriding payment request amount with the one provided
-                      case (None, JInt(amt) :: Nil) => amt.toLong
+                      case (None, JInt(amt) :: Nil) => amt.toLong // amount wasn't specified in request, using custom one
                       case (None, Nil) => throw new RuntimeException("you need to manually specify an amount for this payment request")
                     }
                     res <- (paymentInitiator ? SendPayment(amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
@@ -126,6 +126,7 @@ trait Service extends Logging {
                     "receive (amountMsat, description): generate a payment request for a given amount",
                     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
                     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
+                    "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
                     "help: display this message"))
