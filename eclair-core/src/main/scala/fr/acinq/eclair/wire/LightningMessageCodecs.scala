@@ -222,6 +222,7 @@ object LightningMessageCodecs {
 
   val channelAnnouncementWitnessCodec = (
     ("features" | varsizebinarydata) ::
+      ("chainHash" | binarydata(32)) ::
       ("shortChannelId" | int64) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
@@ -248,7 +249,8 @@ object LightningMessageCodecs {
       nodeAnnouncementWitnessCodec).as[NodeAnnouncement]
 
   val channelUpdateWitnessCodec = (
-    ("shortChannelId" | int64) ::
+    ("chainHash" | binarydata(32)) ::
+      ("shortChannelId" | int64) ::
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::
       ("cltvExpiryDelta" | uint16) ::

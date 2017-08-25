@@ -9,7 +9,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, MilliSatoshi, Satoshi, Script}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, MilliSatoshi, Satoshi, Script}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
@@ -270,7 +270,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // first we find out the short channel id for channel C-D, easiest way is to ask D's register which has only one channel
     sender.send(nodes("D").register, 'shortIds)
     val shortIdCD = sender.expectMsgType[Map[Long, BinaryData]].keys.head
-    val channelUpdateCD = Announcements.makeChannelUpdate(nodes("C").nodeParams.privateKey, nodes("D").nodeParams.privateKey.publicKey, shortIdCD, nodes("D").nodeParams.expiryDeltaBlocks + 1, nodes("D").nodeParams.htlcMinimumMsat, nodes("D").nodeParams.feeBaseMsat, nodes("D").nodeParams.feeProportionalMillionth)
+    val channelUpdateCD = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.blockId, nodes("C").nodeParams.privateKey, nodes("D").nodeParams.privateKey.publicKey, shortIdCD, nodes("D").nodeParams.expiryDeltaBlocks + 1, nodes("D").nodeParams.htlcMinimumMsat, nodes("D").nodeParams.feeBaseMsat, nodes("D").nodeParams.feeProportionalMillionth)
     sender.send(nodes("C").relayer, channelUpdateCD)
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)

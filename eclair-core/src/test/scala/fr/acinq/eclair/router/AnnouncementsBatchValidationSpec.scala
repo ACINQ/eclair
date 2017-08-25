@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.wire.ChannelAnnouncement
@@ -75,9 +75,9 @@ object AnnouncementsBatchValidationSpec {
   def makeChannelAnnouncement(c: SimulatedChannel)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): ChannelAnnouncement = {
     val (blockHeight, txIndex) = Await.result(extendedBitcoinClient.getTransactionShortId(c.fundingTx.txid.toString()), 10 seconds)
     val shortChannelId = toShortId(blockHeight, txIndex, c.fundingOutputIndex)
-    val (channelAnnNodeSig1, channelAnnBitcoinSig1) = Announcements.signChannelAnnouncement(shortChannelId, c.node1Key, c.node2Key.publicKey, c.node1FundingKey, c.node2FundingKey.publicKey, BinaryData(""))
-    val (channelAnnNodeSig2, channelAnnBitcoinSig2) = Announcements.signChannelAnnouncement(shortChannelId, c.node2Key, c.node1Key.publicKey, c.node2FundingKey, c.node1FundingKey.publicKey, BinaryData(""))
-    val channelAnnouncement = Announcements.makeChannelAnnouncement(shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, channelAnnNodeSig1, channelAnnNodeSig2, channelAnnBitcoinSig1, channelAnnBitcoinSig2)
+    val (channelAnnNodeSig1, channelAnnBitcoinSig1) = Announcements.signChannelAnnouncement(Block.RegtestGenesisBlock.blockId, shortChannelId, c.node1Key, c.node2Key.publicKey, c.node1FundingKey, c.node2FundingKey.publicKey, BinaryData(""))
+    val (channelAnnNodeSig2, channelAnnBitcoinSig2) = Announcements.signChannelAnnouncement(Block.RegtestGenesisBlock.blockId, shortChannelId, c.node2Key, c.node1Key.publicKey, c.node2FundingKey, c.node1FundingKey.publicKey, BinaryData(""))
+    val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.blockId, shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, channelAnnNodeSig1, channelAnnNodeSig2, channelAnnBitcoinSig1, channelAnnBitcoinSig2)
     channelAnnouncement
   }
 }
