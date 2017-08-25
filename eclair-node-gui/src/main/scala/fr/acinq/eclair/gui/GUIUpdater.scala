@@ -13,6 +13,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.zmq.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
+import fr.acinq.eclair.gui.utils.CoinFormat
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.NodeAnnouncement
@@ -50,8 +51,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def updateBalance(channelPaneController: ChannelPaneController, commitments: Commitments) = {
     val spec = commitments.localCommit.spec
-    channelPaneController.capacity.setText(s"${millisatoshi2millibtc(MilliSatoshi(spec.totalFunds)).amount}")
-    channelPaneController.amountUs.setText(s"${millisatoshi2millibtc(MilliSatoshi(spec.toLocalMsat)).amount}")
+    channelPaneController.capacity.setText(s"${CoinFormat.MILLI_BTC_FORMAT.format(millisatoshi2millibtc(MilliSatoshi(spec.totalFunds)).amount)}")
+    channelPaneController.amountUs.setText(s"${CoinFormat.MILLI_BTC_FORMAT.format(millisatoshi2millibtc(MilliSatoshi(spec.toLocalMsat)).amount)}")
     channelPaneController.balanceBar.setProgress(spec.toLocalMsat.toDouble / spec.totalFunds)
   }
 
@@ -91,7 +92,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
-          channelPaneController.close.setText( if (OFFLINE == currentState) "Force close" else "Close")
+          channelPaneController.close.setText(if (OFFLINE == currentState) "Force close" else "Close")
           channelPaneController.state.setText(currentState.toString)
         }
       })
@@ -113,7 +114,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case NodeDiscovered(nodeAnnouncement) =>
       log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
-      if(!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
+      if (!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
         mainController.networkNodesList.add(nodeAnnouncement)
         m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.theirNodeIdValue)) {
           Platform.runLater(new Runnable() {
@@ -142,7 +143,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelDiscovered(channelAnnouncement, _) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
-      if(!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
+      if (!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
         mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, None, None))
       }
 
