@@ -7,13 +7,11 @@ import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
-import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.io.PeerRecord
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb}
 import org.sqlite.SQLiteConfig
 
 import scala.collection.JavaConversions._
@@ -42,8 +40,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
                       defaultFinalScriptPubKey: BinaryData,
-                      channelsDb: SimpleTypedDb[BinaryData, HasCommitments],
-                      peersDb: SimpleTypedDb[PublicKey, PeerRecord],
+                      channelsDb: ChannelsDb,
+                      peersDb: PeersDb,
                       networkDb: NetworkDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
@@ -84,10 +82,9 @@ object NodeParams {
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
 
-    val dbDir = new File(datadir, "db")
-    val db = new SimpleFileDb(dbDir)
-    val sqliteConfig = new SQLiteConfig()
-    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "sqlite.db")}")
+    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
+    val channelsDb = new SqliteChannelsDb(sqlite)
+    val peersDb = new SqlitePeersDb(sqlite)
     val networkDb = new SqliteNetworkDb(sqlite)
 
     val color = BinaryData(config.getString("node-color"))
@@ -114,8 +111,8 @@ object NodeParams {
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      channelsDb = Dbs.makeChannelDb(db),
-      peersDb = Dbs.makePeerDb(db),
+      channelsDb = channelsDb,
+      peersDb = peersDb,
       networkDb = networkDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),

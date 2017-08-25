@@ -3,7 +3,6 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.io.PeerRecord
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
@@ -209,9 +208,5 @@ object ChannelCodecs {
     .typecase(0x04, DATA_SHUTDOWN_Codec)
     .typecase(0x05, DATA_NEGOTIATING_Codec)
     .typecase(0x06, DATA_CLOSING_Codec)
-
-  val peerRecordCodec: Codec[PeerRecord] = (
-    ("id" | publicKey) ::
-      ("address" | socketaddress)).as[PeerRecord]
 
 }

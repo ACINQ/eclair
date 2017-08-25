@@ -5,7 +5,7 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
-import fr.acinq.eclair.db.{Dbs, DummyDb, SqliteNetworkDb}
+import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb}
 import fr.acinq.eclair.io.Peer
 
 import scala.concurrent.duration._
@@ -22,9 +22,7 @@ object TestConstants {
     val seed = BinaryData("01" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    def db = new DummyDb()
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
-    def networkDb = new SqliteNetworkDb(sqlite)
     def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -46,9 +44,9 @@ object TestConstants {
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
-      channelsDb = Dbs.makeChannelDb(db),
-      peersDb = Dbs.makePeerDb(db),
-      networkDb = networkDb,
+      channelsDb = new SqliteChannelsDb(sqlite),
+      peersDb = new SqlitePeersDb(sqlite),
+      networkDb = new SqliteNetworkDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
@@ -70,9 +68,7 @@ object TestConstants {
     val seed = BinaryData("02" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
-    def db = new DummyDb()
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
-    def networkDb = new SqliteNetworkDb(sqlite)
     def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -94,9 +90,9 @@ object TestConstants {
       reserveToFundingRatio = 0.01, // note: not used (overriden below)
       maxReserveToFundingRatio = 0.05,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),
-      channelsDb = Dbs.makeChannelDb(db),
-      peersDb = Dbs.makePeerDb(db),
-      networkDb = networkDb,
+      channelsDb = new SqliteChannelsDb(sqlite),
+      peersDb = new SqlitePeersDb(sqlite),
+      networkDb = new SqliteNetworkDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,

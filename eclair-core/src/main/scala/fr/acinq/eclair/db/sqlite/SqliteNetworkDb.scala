@@ -1,8 +1,9 @@
-package fr.acinq.eclair.db
+package fr.acinq.eclair.db.sqlite
 
 import java.sql.{Connection, ResultSet}
 
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
@@ -88,20 +89,4 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     codecIterator(rs, channelUpdateCodec)
   }
 
-}
-
-object SqliteUtils {
-  /**
-    * This helper assumes that there is a "data" column available, decodable with the provided codec
-    *
-    * @param rs
-    * @param codec
-    * @tparam T
-    * @return
-    */
-  def codecIterator[T](rs: ResultSet, codec: Codec[T]): Iterator[T] = new Iterator[T] {
-    override def hasNext: Boolean = rs.next()
-
-    override def next(): T = codec.decode(BitVector(rs.getBytes("data"))).require.value
-  }
 }

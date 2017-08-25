@@ -4,6 +4,7 @@ import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
 import fr.acinq.bitcoin.Crypto
+import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Announcements
 import org.junit.runner.RunWith
