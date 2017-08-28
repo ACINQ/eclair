@@ -44,6 +44,10 @@ class FxApp extends Application with Logging {
       case BitcoinZMQConnectionTimeoutException =>
         notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
         notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
+      case IncompatibleDBException =>
+        notifyPreloader(new ErrorNotification("Setup", "Breaking changes!", null))
+        notifyPreloader(new AppNotification(InfoAppNotification, "Eclair is still in alpha, and under heavy development. Last update was not backward compatible."))
+        notifyPreloader(new AppNotification(InfoAppNotification, "Please reset your datadir."))
       case t: Throwable =>
         notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
     }
