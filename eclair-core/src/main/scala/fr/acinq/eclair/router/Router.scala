@@ -278,7 +278,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         val fakeShortId = BigInt(channelId.take(7).toArray).toLong
         val channelDesc = ChannelDesc(fakeShortId, localNodeId, remoteNodeId)
         // note that we store the channelId in the sig, other values are not used because this will be the first channel in the route
-        val channelUpdate = ChannelUpdate(signature = channelId, fakeShortId, 0, "0000", 0, 0, 0, 0)
+        val channelUpdate = ChannelUpdate(signature = channelId, chainHash = nodeParams.chainHash, fakeShortId, 0, "0000", 0, 0, 0, 0)
         (channelDesc -> channelUpdate)
       }
       // we replace local channelUpdates (we have them for regular public alread-announced channels) by the ones we just generated
