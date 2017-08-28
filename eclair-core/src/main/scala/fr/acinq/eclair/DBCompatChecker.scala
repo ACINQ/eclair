@@ -13,11 +13,9 @@ object DBCompatChecker extends Logging {
     */
   def checkDBCompatibility(nodeParams: NodeParams): Unit =
     Try(nodeParams.announcementsDb.values.size + nodeParams.peersDb.values.size + nodeParams.channelsDb.values.size) match {
-      case Success(s) =>
-      case Failure(f) =>
-        logger.error("DB files are not compatible with this version of eclair.")
-        throw IncompatibleDBException("incompatible version " + getClass.getPackage.getImplementationVersion)
+      case Success(_) => {}
+      case Failure(_) => throw IncompatibleDBException
     }
 }
 
-case class IncompatibleDBException(version: String) extends RuntimeException
+case object IncompatibleDBException extends RuntimeException("DB files are not compatible with this version of eclair.")
