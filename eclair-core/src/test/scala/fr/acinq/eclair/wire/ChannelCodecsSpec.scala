@@ -1,20 +1,14 @@
 package fr.acinq.eclair.wire
 
-import java.nio.charset.Charset
-
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.{UInt64, randomKey}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
-import fr.acinq.eclair.wire.LightningMessageCodecs._
+import fr.acinq.eclair.{UInt64, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-import scodec.Codec
-import scodec.bits.BitVector
-import scodec.codecs._
 
 import scala.util.Random
 

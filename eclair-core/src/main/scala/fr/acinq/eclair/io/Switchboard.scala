@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
@@ -19,15 +19,20 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
   import Switchboard._
 
   // we load peers and channels from database
-  val initialPeers = nodeParams.channelsDb.values
-    .groupBy(_.commitments.remoteParams.nodeId)
+  val initialPeers = {
+    val channels = nodeParams.channelsDb.listChannels().toList.groupBy(_.commitments.remoteParams.nodeId)
+    val peers = nodeParams.peersDb.listPeers().toMap
+    channels
       .map {
-        case (remoteNodeId, states) =>
-          // we might not have an adress if we didn't initiate the connection in the first place
-          val address_opt = nodeParams.peersDb.get(remoteNodeId).map(_.address)
+        case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))
+      }
+      .map {
+        case (remoteNodeId, states, address_opt) =>
+          // we might not have an address if we didn't initiate the connection in the first place
           val peer = createOrGetPeer(Map(), remoteNodeId, address_opt, states.toSet)
           (remoteNodeId -> peer)
-      }
+      }.toMap
+  }
 
   def receive: Receive = main(initialPeers, Map())
 
@@ -60,7 +65,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
     case Terminated(actor) if peers.values.toSet.contains(actor) =>
       log.info(s"$actor is dead, removing from peers/connections/db")
       val remoteNodeId = peers.find(_._2 == actor).get._1
-      nodeParams.peersDb.delete(remoteNodeId)
+      nodeParams.peersDb.removePeer(remoteNodeId)
       context become main(peers - remoteNodeId, connections - remoteNodeId)
 
     case h@HandshakeCompleted(_, remoteNodeId) =>

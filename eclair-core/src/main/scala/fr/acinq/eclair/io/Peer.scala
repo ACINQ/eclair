@@ -2,15 +2,15 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
+import akka.actor.{ActorRef, LoggingFSM, OneForOneStrategy, PoisonPill, Props, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
+import fr.acinq.eclair._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair._
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -37,8 +37,6 @@ sealed trait State
 case object DISCONNECTED extends State
 case object INITIALIZING extends State
 case object CONNECTED extends State
-
-case class PeerRecord(id: PublicKey, address: InetSocketAddress)
 
 // @formatter:on
 
@@ -75,8 +73,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       transport ! Listener(self)
       context watch transport
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
-      // we store the ip upon successful connection
-      address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
+      // we store the ip upon successful connection, keeping only the most recent one
+      address_opt.map(address => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address))
       goto(INITIALIZING) using InitializingData(transport, offlineChannels)
 
     case Event(Terminated(actor), d@DisconnectedData(offlineChannels, _)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size >= 0 =>
@@ -92,7 +90,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
 
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
-      import fr.acinq.eclair.Features._
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
         if (Features.initialRoutingSync(remoteInit.localFeatures)) {
