@@ -9,23 +9,12 @@ import grizzled.slf4j.Logging
   */
 object Boot extends App with Logging {
 
-  case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"), ".eclair"))
-
-  val parser = new scopt.OptionParser[CmdLineConfig]("eclair") {
-    head("eclair", s"${getClass.getPackage.getImplementationVersion} (commit: ${getClass.getPackage.getSpecificationVersion})")
-    help("help").abbr("h").text("display usage text")
-    opt[File]("datadir").optional().valueName("<file>").action((x, c) => c.copy(datadir = x)).text("optional data directory, default is ~/.eclair")
-  }
+  val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    parser.parse(args, CmdLineConfig()) match {
-      case Some(config) =>
-        LogSetup.logTo(config.datadir)
-        import scala.concurrent.ExecutionContext.Implicits.global
-        new Setup(config.datadir).bootstrap onFailure {
-          case t: Throwable => onError(t)
-        }
-      case None => System.exit(0)
+    import scala.concurrent.ExecutionContext.Implicits.global
+    new Setup(datadir).bootstrap onFailure {
+      case t: Throwable => onError(t)
     }
   } catch {
     case t: Throwable => onError(t)
