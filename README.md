@@ -70,13 +70,17 @@ java -jar eclair-node-<version>-<commit_id>.jar
 
 ### Configuring Eclair
 
-#### Command-line parameters
+#### Java Environment Variables
 
-option         | description                     | default value
----------------|---------------------------------|--------------
---datadir      | Path to the data directory      | ~/.eclair
---help, -h     | Display usage text              |
+name            | description                     | default value
+----------------|---------------------------------|--------------
+eclair.datadir  | Path to the data directory      | ~/.eclair
 
+
+To specify a different data directory you would run the following command:
+```shell
+java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
+```
 
 :warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in the configuration (see below).
 
