@@ -13,7 +13,7 @@
         <file>${eclair.datadir:-${user.home}/.eclair}/eclair.log</file>
         <append>true</append>
         <encoder>
-            <pattern>%d %-5level %logger{36} %X{akkaSource} - %msg%ex{24}%n</pattern>
+            <pattern>%d %-5level %logger{36} %X{akkaSource} %X{channelId} - %msg%ex{24}%n</pattern>
         </encoder>
     </appender>
 
@@ -25,7 +25,7 @@
         <then>
             <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
                 <encoder>
-                    <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %msg%ex{12}%n</pattern>
+                    <pattern>%d %-5level %logger{36} %X{akkaSource} %X{channelId} - %msg%ex{24}%n</pattern>
                 </encoder>
             </appender>
             <root>
