@@ -9,7 +9,7 @@ import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.blockchain.zmq.ZMQActor
@@ -54,12 +54,22 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
+  /**
+    *
+    * @return the genesis hash of the blockchain we're on, in Big Endian format i.e. as computed by the hash
+    *         function (byte 0 first, byte 1 next and so on...). Bitcoin reverses block hashes and tx hashes and
+    *         these reversed hashes are often referred to as 'hashes' in the docs which adds to the confusion.
+    *         Theses hashes typically end with 0s, but are almost always reversed when displayed.
+    *         For example, the genesis hash for the testnet chain is 43497fd7f826957108f4a30fd9cec3aeba79972084e90ead01ea330900000000
+    */
+  def genesisHash: Future[BinaryData] = bitcoinClient.client.invoke("getblockhash", 0).map(json => BinaryData(json.extract[String]).reverse)
+
   val future = for {
     json <- bitcoinClient.client.invoke("getblockchaininfo")
     chain = (json \ "chain").extract[String]
     blockCount = (json \ "blocks").extract[Long]
     progress = (json \ "verificationprogress").extract[Double]
-    chainHash <- bitcoinClient.client.invoke("getblockhash", 0).map(_.extract[String])
+    chainHash <- genesisHash
     bitcoinVersion <- bitcoinClient.client.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
   } yield (chain, blockCount, progress, chainHash, bitcoinVersion)
   val (chain, blockCount, progress, chainHash, bitcoinVersion) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get

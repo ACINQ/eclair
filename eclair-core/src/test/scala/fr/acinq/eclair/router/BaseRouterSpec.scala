@@ -47,9 +47,9 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val channelId_ef = toShortId(420000, 4, 0)
 
   def channelAnnouncement(channelId: Long, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
-    val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.blockId, channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
-    val (node2_sig, funding2_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.blockId, channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
-    makeChannelAnnouncement(Block.RegtestGenesisBlock.blockId, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
+    val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
+    val (node2_sig, funding2_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
+    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
 
   val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
@@ -57,10 +57,10 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_cd = channelAnnouncement(channelId_cd, priv_c, priv_d, priv_funding_c, priv_funding_d)
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
-  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.blockId, priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
-  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.blockId, priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
-  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.blockId, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
-  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.blockId, priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
+  val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
+  val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
+  val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
 
   override def withFixture(test: OneArgTest) = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)

@@ -53,7 +53,7 @@ object TestConstants {
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId,
+      chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
@@ -99,7 +99,7 @@ object TestConstants {
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId,
+      chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
