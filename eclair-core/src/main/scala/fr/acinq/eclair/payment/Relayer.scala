@@ -218,6 +218,9 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
           log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (claim-htlc-timeout)")
           paymentHash160
       }
+      // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
+      // TODO: we do not handle the case where htlcs transactions end up beeing unconfirmed this can happen if an htlc-success
+      // tx is published right before a htlc timed out
       val htlcsOut = bindings.collect {
         case b@(htlcOut, Relayed(upstream, htlcIn)) if htlcIn.paymentHash == sha256(extracted) =>
           log.warning(s"found a match between preimage=$extracted and origin htlc=$htlcIn")

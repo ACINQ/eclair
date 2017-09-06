@@ -9,17 +9,19 @@ import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{Base58Check, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Script}
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
+import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.spv.BitcoinjKit
+import fr.acinq.eclair.blockchain.wallet.{BitcoinCoreWallet, BitcoinjWallet, EclairWallet}
 import fr.acinq.eclair.blockchain.zmq.ZMQActor
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, PeerWatcher}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.JString
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
@@ -34,6 +36,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
 
+  val spv = config.getBoolean("spv")
+
   // early check
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
@@ -44,59 +48,76 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   implicit val system = actorSystem
   implicit val materializer = ActorMaterializer()
   implicit val timeout = Timeout(30 seconds)
-
-  val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
-    user = config.getString("bitcoind.rpcuser"),
-    password = config.getString("bitcoind.rpcpassword"),
-    host = config.getString("bitcoind.host"),
-    port = config.getInt("bitcoind.rpcport")))
-
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  val future = for {
-    json <- bitcoinClient.client.invoke("getblockchaininfo")
-    chain = (json \ "chain").extract[String]
-    blockCount = (json \ "blocks").extract[Long]
-    progress = (json \ "verificationprogress").extract[Double]
-    chainHash <- bitcoinClient.client.invoke("getblockhash", 0).map(_.extract[String])
-    bitcoinVersion <- bitcoinClient.client.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-  } yield (chain, blockCount, progress, chainHash, bitcoinVersion)
-  val (chain, blockCount, progress, chainHash, bitcoinVersion) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
-  logger.info(s"using chain=$chain chainHash=$chainHash")
-  assert(progress > 0.99, "bitcoind should be synchronized")
-  chain match {
-    case "test" | "regtest" => ()
-    case _ => throw new RuntimeException("only regtest and testnet are supported for now")
+  val (chain, chainHash, bitcoin) = if (spv) {
+    logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
+    val chain = config.getString("chain")
+    val chainHash = chain match {
+      case "regtest" => Block.RegtestGenesisBlock.blockId
+      case "test" => Block.TestnetGenesisBlock.blockId
+    }
+    val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers = new InetSocketAddress("localhost", 28333) :: Nil)
+    (chain, chainHash, Left(bitcoinjKit))
+  } else {
+    val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
+      user = config.getString("bitcoind.rpcuser"),
+      password = config.getString("bitcoind.rpcpassword"),
+      host = config.getString("bitcoind.host"),
+      port = config.getInt("bitcoind.rpcport")))
+    val future = for {
+      json <- bitcoinClient.rpcClient.invoke("getblockchaininfo")
+      chain = (json \ "chain").extract[String]
+      progress = (json \ "verificationprogress").extract[Double]
+      chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_))
+      bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+    } yield (chain, progress, chainHash, bitcoinVersion)
+    val (chain, progress, chainHash, bitcoinVersion) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
+    assert(progress > 0.99, "bitcoind should be synchronized")
+    (chain, chainHash, Right(bitcoinClient))
   }
-  // we use it as final payment address, so that funds are moved to the bitcoind wallet upon channel termination
-  val JString(finalAddress) = Await.result(bitcoinClient.client.invoke("getnewaddress"), 10 seconds)
-  logger.info(s"finaladdress=$finalAddress")
-  // TODO: we should use p2wpkh instead of p2pkh as soon as bitcoind supports it
-  //val finalScriptPubKey = OP_0 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: Nil
-  val finalScriptPubKey = Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(Base58Check.decode(finalAddress)._2) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
-
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, chainHash, finalScriptPubKey)
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, chainHash)
+  logger.info(s"using chain=$chain chainHash=$chainHash")
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
 
   DBCompatChecker.checkDBCompatibility(nodeParams)
-
-  Globals.blockCount.set(blockCount)
-
-  val defaultFeeratePerKw = config.getLong("default-feerate-perkw")
-  val feeratePerKw = if (chain == "regtest") defaultFeeratePerKw else {
-    val feeratePerKB = Await.result(bitcoinClient.estimateSmartFee(nodeParams.smartfeeNBlocks), 10 seconds)
-    if (feeratePerKB < 0) defaultFeeratePerKw else feerateKB2Kw(feeratePerKB)
-  }
-  logger.info(s"initial feeratePerKw=$feeratePerKw")
-  Globals.feeratePerKw.set(feeratePerKw)
 
   def bootstrap: Future[Kit] = {
     val zmqConnected = Promise[Boolean]()
     val tcpBound = Promise[Unit]()
 
-    val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
-    val watcher = system.actorOf(SimpleSupervisor.props(PeerWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
+    val defaultFeeratePerKb = config.getLong("default-feerate-per-kb")
+    Globals.feeratePerKw.set(feerateKb2Kw(defaultFeeratePerKb))
+    logger.info(s"initial feeratePerKw=${Globals.feeratePerKw.get()}")
+    val feeProvider = chain match {
+      case "regtest" => new ConstantFeeProvider(defaultFeeratePerKb)
+      case _ => new BitpayInsightFeeProvider()
+    }
+    system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeeratePerKB.map {
+      case feeratePerKB =>
+        Globals.feeratePerKw.set(feerateKb2Kw(feeratePerKB))
+        logger.info(s"current feeratePerKw=${Globals.feeratePerKw.get()}")
+    })
+
+    val watcher = bitcoin match {
+      case Left(bitcoinj) =>
+        zmqConnected.success(true)
+        bitcoinj.startAsync()
+        system.actorOf(SimpleSupervisor.props(SpvWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
+      case Right(bitcoinClient) =>
+        system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
+        system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(bitcoinClient), "watcher", SupervisorStrategy.Resume))
+    }
+
+    val wallet = bitcoin match {
+      case Left(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
+      case Right(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient, watcher)
+    }
+    wallet.getFinalAddress.map {
+      case address => logger.info(s"initial wallet address=$address")
+    }
+
     val paymentHandler = system.actorOf(SimpleSupervisor.props(config.getString("payment-handler") match {
       case "local" => LocalPaymentHandler.props(nodeParams)
       case "noop" => Props[NoopPaymentHandler]
@@ -104,14 +125,13 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
     val relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams.privateKey, paymentHandler), "relayer", SupervisorStrategy.Resume))
     val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
-    val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, router, relayer), "switchboard", SupervisorStrategy.Resume))
+    val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
     val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
     val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, switchboard, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
 
     val kit = Kit(
       nodeParams = nodeParams,
       system = system,
-      zmq = zmq,
       watcher = watcher,
       paymentHandler = paymentHandler,
       register = register,
@@ -119,7 +139,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       router = router,
       switchboard = switchboard,
       paymentInitiator = paymentInitiator,
-      server = server)
+      server = server,
+      wallet = wallet)
 
     val api = new Service {
 
@@ -147,7 +168,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,
-               zmq: ActorRef,
                watcher: ActorRef,
                paymentHandler: ActorRef,
                register: ActorRef,
@@ -155,7 +175,8 @@ case class Kit(nodeParams: NodeParams,
                router: ActorRef,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
-               server: ActorRef)
+               server: ActorRef,
+               wallet: EclairWallet)
 
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 

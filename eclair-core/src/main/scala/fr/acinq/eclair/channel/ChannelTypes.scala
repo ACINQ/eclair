@@ -4,7 +4,6 @@ import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.blockchain.MakeFundingTxResponse
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
@@ -32,7 +31,6 @@ case object WAIT_FOR_INIT_INTERNAL extends State
 case object WAIT_FOR_OPEN_CHANNEL extends State
 case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_INTERNAL extends State
-case object WAIT_FOR_FUNDING_PARENT extends State
 case object WAIT_FOR_FUNDING_CREATED extends State
 case object WAIT_FOR_FUNDING_SIGNED extends State
 case object WAIT_FOR_FUNDING_CONFIRMED extends State
@@ -135,7 +133,6 @@ case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Opti
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, lastSent: OpenChannel) extends Data
-final case class DATA_WAIT_FOR_FUNDING_PARENT(fundingResponse: MakeFundingTxResponse, parentCandidates: Set[Transaction], data: DATA_WAIT_FOR_FUNDING_INTERNAL) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments

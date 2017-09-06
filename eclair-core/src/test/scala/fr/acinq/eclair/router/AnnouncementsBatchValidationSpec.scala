@@ -2,9 +2,10 @@ package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Transaction}
-import fr.acinq.eclair.blockchain.{ExtendedBitcoinClient, MakeFundingTxResponse}
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
+import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.wallet.BitcoinCoreWallet
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
@@ -56,20 +57,22 @@ object AnnouncementsBatchValidationSpec {
   case class SimulatedChannel(node1Key: PrivateKey, node2Key: PrivateKey, node1FundingKey: PrivateKey, node2FundingKey: PrivateKey, amount: Satoshi, fundingTx: Transaction, fundingOutputIndex: Int)
 
   def generateBlocks(numBlocks: Int)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext) =
-    Await.result(extendedBitcoinClient.client.invoke("generate", numBlocks), 10 seconds)
+    Await.result(extendedBitcoinClient.rpcClient.invoke("generate", numBlocks), 10 seconds)
 
-  def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): SimulatedChannel = {
+  def simulateChannel()(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext, system: ActorSystem): SimulatedChannel = {
     val node1Key = randomKey
     val node2Key = randomKey
     val node1BitcoinKey = randomKey
     val node2BitcoinKey = randomKey
     val amount = Satoshi(1000000)
     // first we publish the funding tx
-    val fundingTxFuture = extendedBitcoinClient.makeFundingTx(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey, amount, 10000)
-    val MakeFundingTxResponse(parentTx, fundingTx, fundingOutputIndex, _) = Await.result(fundingTxFuture, 10 seconds)
-    Await.result(extendedBitcoinClient.publishTransaction(parentTx), 10 seconds)
-    Await.result(extendedBitcoinClient.publishTransaction(fundingTx), 10 seconds)
-    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, fundingTx, fundingOutputIndex)
+    val wallet = new BitcoinCoreWallet(extendedBitcoinClient.rpcClient, null)
+    val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(node1BitcoinKey.publicKey, node2BitcoinKey.publicKey)))
+    val fundingTxFuture = wallet.makeParentAndFundingTx(fundingPubkeyScript, amount, 10000)
+    val res = Await.result(fundingTxFuture, 10 seconds)
+    Await.result(extendedBitcoinClient.publishTransaction(res.parentTx), 10 seconds)
+    Await.result(extendedBitcoinClient.publishTransaction(res.fundingTx), 10 seconds)
+    SimulatedChannel(node1Key, node2Key, node1BitcoinKey, node2BitcoinKey, amount, res.fundingTx, res.fundingTxOutputIndex)
   }
 
   def makeChannelAnnouncement(c: SimulatedChannel)(implicit extendedBitcoinClient: ExtendedBitcoinClient, ec: ExecutionContext): ChannelAnnouncement = {

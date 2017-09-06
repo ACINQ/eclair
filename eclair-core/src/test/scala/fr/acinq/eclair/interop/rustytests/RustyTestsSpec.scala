@@ -5,12 +5,12 @@ import java.util.concurrent.{CountDownLatch, TimeUnit}
 
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestFSMRef, TestKit, TestProbe}
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
-import fr.acinq.eclair.blockchain.PeerWatcher
+import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.payment.NoopPaymentHandler
 import fr.acinq.eclair.wire.Init
-import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, Matchers, fixture}
@@ -30,14 +30,15 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     Globals.blockCount.set(0)
     val latch = new CountDownLatch(1)
     val pipe: ActorRef = system.actorOf(Props(new SynchronizationPipe(latch)))
-    val blockchainA = system.actorOf(PeerWatcher.props(TestConstants.Alice.nodeParams, new TestBitcoinClient()))
-    val blockchainB = system.actorOf(PeerWatcher.props(TestConstants.Bob.nodeParams, new TestBitcoinClient()))
+    val alice2blockchain = TestProbe()
+    val bob2blockchain = TestProbe()
     val paymentHandler = system.actorOf(Props(new NoopPaymentHandler()))
     // we just bypass the relayer for this test
     val relayer = paymentHandler
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Bob.id, blockchainA, router.ref, relayer))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, Alice.id, blockchainB, router.ref, relayer))
+    val wallet = new TestWallet
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer))
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat
@@ -46,6 +47,15 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
     pipe ! (alice, bob)
     within(30 seconds) {
+      alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchSpent]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+      alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
+      bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)
+      alice2blockchain.expectMsgType[WatchLost]
+      bob2blockchain.expectMsgType[WatchLost]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
     }

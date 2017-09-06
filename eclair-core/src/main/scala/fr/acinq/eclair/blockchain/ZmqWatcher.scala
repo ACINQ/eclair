@@ -5,9 +5,10 @@ import java.util.concurrent.Executors
 import akka.actor.{Actor, ActorLogging, Cancellable, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.blockchain.rpc.ExtendedBitcoinClient
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.{Globals, NodeParams, feerateKB2Kw}
+import fr.acinq.eclair.{Globals, NodeParams}
 
 import scala.collection.SortedMap
 import scala.concurrent.duration._
@@ -20,15 +21,20 @@ import scala.util.Try
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
+
+  // this is to initialize block count
+  self ! 'tick
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
 
   def receive: Receive = watching(Set(), SortedMap(), None)
 
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
+
+    case hint: Hint => {}
 
     case NewTransaction(tx) =>
       //log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
@@ -55,14 +61,14 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
           Globals.blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
-      client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
+      /*client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
         case feeratePerKB if feeratePerKB > 0 =>
           val feeratePerKw = feerateKB2Kw(feeratePerKB)
           log.debug(s"setting feeratePerKB=$feeratePerKB -> feeratePerKw=$feeratePerKw")
           Globals.feeratePerKw.set(feeratePerKw)
           context.system.eventStream.publish(CurrentFeerate(feeratePerKw))
         case _ => () // bitcoind cannot estimate feerate
-      }
+      }*/
       // TODO: beware of the herd effect
       watches.collect {
         case w@WatchConfirmed(_, txId, minDepth, event) =>
@@ -116,9 +122,6 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
         val block2tx1 = block2tx.updated(absTimeout, tx +: block2tx.getOrElse(absTimeout, Seq.empty[Transaction]))
         context.become(watching(watches, block2tx1, None))
       } else publish(tx)
-
-    case MakeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw) =>
-      client.makeFundingTx(ourCommitPub, theirCommitPub, amount, feeRatePerKw).pipeTo(sender)
 
     case ParallelGetRequest(ann) => client.getParallel(ann).pipeTo(sender)
 
@@ -195,8 +198,8 @@ class PeerWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implici
 
 }
 
-object PeerWatcher {
+object ZmqWatcher {
 
-  def props(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new PeerWatcher(nodeParams, client)(ec))
+  def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(client)(ec))
 
 }

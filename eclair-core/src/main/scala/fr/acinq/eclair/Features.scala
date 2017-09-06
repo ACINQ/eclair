@@ -35,9 +35,10 @@ object Features {
     */
   def areSupported(bitset: BitSet): Boolean = {
     // for now there is no mandatory feature bit, so we don't support features with any even bit set
-    bitset.stream().noneMatch(new IntPredicate {
-      override def test(value: Int) = value % 2 == 0
-    })
+    for(i <- 0 until bitset.length() by 2) {
+      if (bitset.get(i)) return false
+    }
+    return true
   }
 
   /**

@@ -38,8 +38,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandlerA), "relayer-a")
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandlerB), "relayer-b")
     val router = TestProbe()
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, Bob.id, alice2blockchain.ref, router.ref, relayerA))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, Alice.id, bob2blockchain.ref, router.ref, relayerB))
+    val wallet = new TestWallet
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.id, alice2blockchain.ref, router.ref, relayerA))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.id, bob2blockchain.ref, router.ref, relayerB))
     within(30 seconds) {
       val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
       val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
@@ -49,14 +50,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
       bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
-      val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
-      val dummyFundingTx = TestBitcoinClient.makeDummyFundingTx(makeFundingTx)
-      alice ! dummyFundingTx
-      val w = alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[PublishAsap]
-      alice ! WatchEventSpent(w.event, dummyFundingTx.parentTx)
-      alice2blockchain.expectMsgType[WatchConfirmed]
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
       alice2blockchain.expectMsgType[PublishAsap]

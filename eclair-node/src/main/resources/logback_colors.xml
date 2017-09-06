@@ -18,6 +18,15 @@
         </encoder>
     </appender>
 
+    <appender name="ORANGE" class="ch.qos.logback.core.ConsoleAppender">
+        <target>System.out</target>
+        <withJansi>false</withJansi>
+        <encoder>
+            <pattern>%boldYellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %yellow(%msg) %ex{12}%n
+            </pattern>
+        </encoder>
+    </appender>
+
     <appender name="RED" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
@@ -75,8 +84,24 @@
         <appender-ref ref="GREEN"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.blockchain.PeerWatcher" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.blockchain.ZmqWatcher" level="DEBUG" additivity="false">
         <appender-ref ref="YELLOW"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.blockchain.SpvWatcher" level="DEBUG" additivity="false">
+        <appender-ref ref="YELLOW"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.blockchain.Broadcaster" level="DEBUG" additivity="false">
+        <appender-ref ref="YELLOW"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.blockchain.spv" level="DEBUG" additivity="false">
+        <appender-ref ref="YELLOW"/>
+    </logger>
+
+    <logger name="fr.acinq.eclair.blockchain.wallet" level="DEBUG" additivity="false">
+        <appender-ref ref="ORANGE"/>
     </logger>
 
     <logger name="fr.acinq.eclair.router" level="DEBUG" additivity="false">

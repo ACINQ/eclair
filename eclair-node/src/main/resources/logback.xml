@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration debug="false">
 
-    <!--appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
             <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %msg%ex{12}%n</pattern>
         </encoder>
-    </appender-->
+    </appender>
 
     <!--appender name="FILE" class="ch.qos.logback.core.FileAppender">
         <file>${user.home}/.eclair/eclair.log</file>
@@ -22,7 +22,7 @@
     <logger name="fr.acinq.eclair.router" level="INFO"/>
 
     <root level="INFO">
-        <!--appender-ref ref="CONSOLE"/-->
+        <appender-ref ref="CONSOLE"/>
         <!--appender-ref ref="FILE"/-->
     </root>
 

@@ -4,8 +4,9 @@ import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
+import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
+import fr.acinq.eclair.blockchain.wallet.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router.Rebroadcast
@@ -14,7 +15,7 @@ import fr.acinq.eclair.router.Rebroadcast
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   import Switchboard._
 
@@ -80,7 +81,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
     peers.get(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, offlineChannels), name = s"peer-$remoteNodeId")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, wallet, offlineChannels), name = s"peer-$remoteNodeId")
         context watch (peer)
         peer
     }
@@ -92,7 +93,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Switchboard(nodeParams, watcher, router, relayer))
+  def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, watcher, router, relayer, wallet))
 
   // @formatter:off
   case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte])
