@@ -9,7 +9,7 @@ import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
@@ -25,7 +25,6 @@ import grizzled.slf4j.Logging
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
-import scala.util.Try
 
 /**
   * Created by PM on 25/01/2016.
@@ -34,12 +33,18 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
+
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-
+  val nodeParams = NodeParams.makeNodeParams(datadir, config)
   val spv = config.getBoolean("spv")
+  val chain = config.getString("chain")
 
-  // early check
+  // early checks
+  DBCompatChecker.checkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
+
+  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   logger.info(s"initializing secure random generator")
   // this will force the secure random instance to initialize itself right now, making sure it doesn't hang later (see comment in package.scala)
@@ -51,15 +56,10 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  val (chain, chainHash, bitcoin) = if (spv) {
+  val bitcoin = if (spv) {
     logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
-    val chain = config.getString("chain")
-    val chainHash = chain match {
-      case "regtest" => Block.RegtestGenesisBlock.blockId
-      case "test" => Block.TestnetGenesisBlock.blockId
-    }
     val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers = new InetSocketAddress("localhost", 28333) :: Nil)
-    (chain, chainHash, Left(bitcoinjKit))
+    Left(bitcoinjKit)
   } else {
     val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
       user = config.getString("bitcoind.rpcuser"),
@@ -67,21 +67,18 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       host = config.getString("bitcoind.host"),
       port = config.getInt("bitcoind.rpcport")))
     val future = for {
-      json <- bitcoinClient.rpcClient.invoke("getblockchaininfo")
-      chain = (json \ "chain").extract[String]
+      json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
       progress = (json \ "verificationprogress").extract[Double]
-      chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_))
+      chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
       bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-    } yield (chain, progress, chainHash, bitcoinVersion)
-    val (chain, progress, chainHash, bitcoinVersion) = Try(Await.result(future, 10 seconds)).recover { case _ => throw BitcoinRPCConnectionException }.get
+    } yield (progress, chainHash, bitcoinVersion)
+    // blocking sanity checks
+    val (progress, chainHash, bitcoinVersion) = Await.result(future, 10 seconds)
+    assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
     assert(progress > 0.99, "bitcoind should be synchronized")
-    (chain, chainHash, Right(bitcoinClient))
+    // TODO: add a check on bitcoin version?
+    Right(bitcoinClient)
   }
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, chainHash)
-  logger.info(s"using chain=$chain chainHash=$chainHash")
-  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
-
-  DBCompatChecker.checkDBCompatibility(nodeParams)
 
   def bootstrap: Future[Kit] = {
     val zmqConnected = Promise[Boolean]()
@@ -144,7 +141,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
     val api = new Service {
 
-      override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(nodeId = nodeParams.privateKey.publicKey, alias = nodeParams.alias, port = config.getInt("server.port"), chainHash = chainHash, blockHeight = Globals.blockCount.intValue()))
+      override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(nodeId = nodeParams.privateKey.publicKey, alias = nodeParams.alias, port = config.getInt("server.port"), chainHash = nodeParams.chainHash, blockHeight = Globals.blockCount.intValue()))
 
       override def appKit = kit
     }

@@ -98,9 +98,9 @@ object PaymentRequest {
 
   def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
     val prefix = chainHash match {
-    case Block.RegtestGenesisBlock.blockId => "lntb"
-    case Block.TestnetGenesisBlock.blockId => "lntb"
-    case Block.LivenetGenesisBlock.blockId => "lnbc"
+    case Block.RegtestGenesisBlock.hash => "lntb"
+    case Block.TestnetGenesisBlock.hash => "lntb"
+    case Block.LivenetGenesisBlock.hash => "lnbc"
     }
     PaymentRequest(
       prefix = prefix,
