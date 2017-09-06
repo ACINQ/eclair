@@ -23,6 +23,7 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 
+import scala.collection.JavaConversions._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
@@ -58,7 +59,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val bitcoin = if (spv) {
     logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
-    val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers = new InetSocketAddress("localhost", 28333) :: Nil)
+    val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
+    logger.info(s"using staticPeers=$staticPeers")
+    val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
     Left(bitcoinjKit)
   } else {
     val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
