@@ -6,6 +6,7 @@ import java.nio.ByteOrder
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
 import fr.acinq.eclair.wire.{ChannelUpdate, FailureMessage, FailureMessageCodecs, LightningMessageCodecs}
+import grizzled.slf4j.Logging
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.macs.HMac
 import org.spongycastle.crypto.params.KeyParameter
@@ -17,7 +18,7 @@ import scala.annotation.tailrec
   * Created by fabrice on 13/01/17.
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
   */
-object Sphinx {
+object Sphinx extends Logging {
   val Version = 1.toByte
 
   // length of a MAC
@@ -268,9 +269,10 @@ object Sphinx {
     +----------------+----------------------------------+-----------------+----------------------+-----+
     | HMAC(32 bytes) | failure message length (2 bytes) | failure message | pad length (2 bytes) | pad |
     +----------------+----------------------------------+-----------------+----------------------+-----+
-    with failure message length + pad length = 128
+    with failure message length + pad length = 256
    */
-  val ErrorPacketLength = MacLength + 128 + 2 + 2
+  val MaxErrorPayloadLength = 256
+  val ErrorPacketLength = MacLength + MaxErrorPayloadLength + 2 + 2
 
   /**
     *
@@ -281,10 +283,13 @@ object Sphinx {
     */
   def createErrorPacket(sharedSecret: BinaryData, failure: FailureMessage): BinaryData = {
     val message: BinaryData = FailureMessageCodecs.failureMessageCodec.encode(failure).require.toByteArray
-    require(message.length <= 128, s"error message length is ${message.length}, it must be less than 128")
+    require(message.length <= MaxErrorPayloadLength, s"error message length is ${message.length}, it must be less than $MaxErrorPayloadLength")
     val um = Sphinx.generateKey("um", sharedSecret)
-    val padlen = 128 - message.length
+    val padlen = MaxErrorPayloadLength - message.length
     val payload = Protocol.writeUInt16(message.length, ByteOrder.BIG_ENDIAN) ++ message ++ Protocol.writeUInt16(padlen, ByteOrder.BIG_ENDIAN) ++ Sphinx.zeroes(padlen)
+    logger.debug(s"um key: $um")
+    logger.debug(s"error payload: ${BinaryData(payload)}")
+    logger.debug(s"raw error packet: ${BinaryData(Sphinx.mac(um, payload) ++ payload)}")
     forwardErrorPacket(Sphinx.mac(um, payload) ++ payload, sharedSecret)
   }
 
@@ -297,7 +302,7 @@ object Sphinx {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
     val len = Protocol.uint16(payload, ByteOrder.BIG_ENDIAN)
-    require((len >= 0) && (len <= 128), "message length must be less than 128")
+    require((len >= 0) && (len <= MaxErrorPayloadLength), s"message length must be less than $MaxErrorPayloadLength")
     FailureMessageCodecs.failureMessageCodec.decode(BitVector(payload.drop(2).take(len))).require.value
   }
 
@@ -311,6 +316,8 @@ object Sphinx {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val key = generateKey("ammag", sharedSecret)
     val stream = generateStream(key, ErrorPacketLength)
+    logger.debug(s"ammag key: $key")
+    logger.debug(s"error stream: $stream")
     Sphinx.xor(packet, stream)
   }
 

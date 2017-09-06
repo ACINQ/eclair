@@ -37,12 +37,13 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   implicit val ec = ExecutionContext.Implicits.global
 
   val (chain, chainHash, bitcoin) = if (spv) {
-    logger.warn("SPV MODE ENABLED")
+    logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
     val chain = config.getString("chain")
     val chainHash = chain match {
       case "regtest" => Block.RegtestGenesisBlock.blockId
       case "test" => Block.TestnetGenesisBlock.blockId
     }
+
     val bitcoinjKit = new BitcoinjKit(chain, datadir)
     (chain, chainHash, Left(bitcoinjKit))
   } else ???
@@ -69,7 +70,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     val watcher = bitcoin match {
       case Left(bitcoinj) =>
         bitcoinj.startAsync()
-        system.actorOf(SimpleSupervisor.props(SpvWatcher.props(nodeParams, bitcoinj), "watcher", SupervisorStrategy.Resume))
+        system.actorOf(SimpleSupervisor.props(SpvWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
       case _ => ???
     }
 
@@ -88,11 +89,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     }, "payment-handler", SupervisorStrategy.Resume))
     val register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
     val relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams.privateKey, paymentHandler), "relayer", SupervisorStrategy.Resume))
-    val router = if (spv) {
-      system.actorOf(SimpleSupervisor.props(YesRouter.props(nodeParams, watcher), "yes-router", SupervisorStrategy.Resume))
-    } else {
-      system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
-    }
+    val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
     val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
     val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
@@ -105,7 +102,8 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
       relayer = relayer,
       router = router,
       switchboard = switchboard,
-      paymentInitiator = paymentInitiator)
+      paymentInitiator = paymentInitiator,
+      wallet = wallet)
 
     kit
   }
@@ -120,4 +118,7 @@ case class Kit(nodeParams: NodeParams,
                relayer: ActorRef,
                router: ActorRef,
                switchboard: ActorRef,
-               paymentInitiator: ActorRef)
+               paymentInitiator: ActorRef,
+               wallet: EclairWallet)
+
+

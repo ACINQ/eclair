@@ -12,18 +12,29 @@ import scala.concurrent.{ExecutionContext, Future}
 /**
   * Created by PM on 08/07/2017.
   */
-class BitcoinjWallet(fWallet: Future[Wallet])(implicit ec: ExecutionContext) extends EclairWallet with Logging {
+class BitcoinjWallet(val fWallet: Future[Wallet])(implicit ec: ExecutionContext) extends EclairWallet with Logging {
 
   fWallet.map(wallet => wallet.allowSpendingUnconfirmedTransactions())
 
+  override def getBalance: Future[Satoshi] = for {
+    wallet <- fWallet
+  } yield {
+    //Context.propagate(wallet.getContext)
+    Satoshi(wallet.getBalance.longValue())
+  }
+
   override def getFinalAddress: Future[String] = for {
     wallet <- fWallet
-  } yield wallet.currentReceiveAddress().toBase58
+  } yield {
+    //Context.propagate(wallet.getContext)
+    wallet.currentReceiveAddress().toBase58
+  }
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] = for {
     wallet <- fWallet
   } yield {
     logger.info(s"building funding tx")
+    //Context.propagate(wallet.getContext)
     val script = new Script(pubkeyScript)
     val tx = new BitcoinjTransaction(wallet.getParams)
     tx.addOutput(Coin.valueOf(amount.amount), script)
@@ -39,6 +50,7 @@ class BitcoinjWallet(fWallet: Future[Wallet])(implicit ec: ExecutionContext) ext
     logger.info(s"committing tx: txid=${tx.txid} tx=$serializedTx")
     for {
       wallet <- fWallet
+      //_ = Context.propagate(wallet.getContext)
       bitcoinjTx = new org.bitcoinj.core.Transaction(wallet.getParams(), serializedTx)
       canCommit = wallet.maybeCommitTx(bitcoinjTx)
       _ = logger.info(s"commit txid=${tx.txid} result=$canCommit")

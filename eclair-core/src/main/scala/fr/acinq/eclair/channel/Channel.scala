@@ -19,7 +19,7 @@ import org.bitcoinj.script.{Script => BitcoinjScript}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.{Failure, Left, Success, Try}
+import scala.util.{Failure, Left, Random, Success, Try}
 
 
 /**
@@ -126,7 +126,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           d match {
             case DATA_NORMAL(_, Some(shortChannelId), _, _, _) =>
               context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
-              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
+              val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
               relayer ! channelUpdate
             case _ => ()
           }
@@ -385,6 +385,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (d.commitments.announceChannel && !nodeParams.spv) {
         // used for announcement of channel (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
         blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
+      } else if (d.commitments.announceChannel && nodeParams.spv && d.commitments.localParams.isFunder && System.getProperty("spvtest") != null) {
+        // hard coded id for testing
+        log.warning("using hardcoded short id for testing!!!!!")
+        context.system.scheduler.scheduleOnce(5 seconds, self, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, Random.nextInt(100), Random.nextInt(100)))
       }
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), None, None, None, None))
 
@@ -582,7 +586,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           case shortChannelId =>
             // we announce that channel is disabled
             log.info(s"disabling the channel (closing initiated)")
-            val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
+            val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
             router ! channelUpdate
         }
         (shutdown, commitments2)
@@ -615,7 +619,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex, sending announcements")
       // TODO: empty features
       val features = BinaryData("")
-      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey, features)
+      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(nodeParams.chainHash, shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey, features)
       val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
       stay using d.copy(localAnnouncementSignatures = Some(annSignatures)) sending annSignatures
 
@@ -628,9 +632,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
           log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
           import commitments.{localParams, remoteParams}
-          val channelAnn = Announcements.makeChannelAnnouncement(localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
+          val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
           val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
-          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, localAnnSigs.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, localAnnSigs.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
           router ! channelAnn
           router ! nodeAnn
           router ! channelUpdate
@@ -668,7 +672,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Some(shortChannelId) =>
           // if channel has be announced, we disable it
           log.info(s"disabling the channel (disconnected)")
-          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
           router ! channelUpdate
         case None => {}
       }
@@ -950,7 +954,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       stateData match {
         case d: HasCommitments =>
           log.info(s"deleting database record for channelId=${d.channelId}")
-          nodeParams.channelsDb.delete(d.channelId)
+          nodeParams.channelsDb.removeChannel(d.channelId)
         case _ => {}
       }
       log.info("shutting down")
@@ -1028,7 +1032,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case shortChannelId =>
           // we re-enable the channel
           log.info(s"enabling the channel (reconnected)")
-          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
           router ! channelUpdate
       }
       goto(NORMAL) using d.copy(commitments = commitments1)
@@ -1195,6 +1199,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       case None => blockchain ! WatchConfirmed(self, localCommitPublished.commitTx.txid, nodeParams.minDepthBlocks, BITCOIN_LOCALCOMMIT_DONE)
     }
 
+    // we need to watch the htlc-success outputs in order to be notified when they can be spent by claim-delayed-output txes
+    if (nodeParams.spv) {
+      // we need to watch the corresponding public key script of the htlc-success tx
+      localCommitPublished.htlcSuccessTxs.map(_.txIn(0).outPoint.index.toInt).map(outputIndex => blockchain ! Hint(new BitcoinjScript(localCommitPublished.commitTx.txOut(outputIndex).publicKeyScript)))
+    }
+
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     localCommitPublished.htlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))
     localCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
@@ -1204,6 +1214,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     localCommitPublished.htlcTimeoutTxs.foreach(tx => {
       require(tx.txIn.size == 1, s"an htlc-timeout tx must have exactly 1 input (has ${tx.txIn.size})")
       val outpoint = tx.txIn(0).outPoint
+      if (nodeParams.spv) {
+        // we need to watch the corresponding public key script of the commit tx
+        blockchain ! Hint(new BitcoinjScript(localCommitPublished.commitTx.txOut(outpoint.index.toInt).publicKeyScript))
+      }
       log.info(s"watching output ${outpoint.index} of commit tx ${outpoint.txid}")
       blockchain ! WatchSpent(relayer, outpoint.txid, outpoint.index.toInt, BITCOIN_HTLC_SPENT)
     })
@@ -1265,6 +1279,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     remoteCommitPublished.claimHtlcTimeoutTxs.foreach(tx => {
       require(tx.txIn.size == 1, s"a claim-htlc-timeout tx must have exactly 1 input (has ${tx.txIn.size})")
       val outpoint = tx.txIn(0).outPoint
+      if (nodeParams.spv) {
+        // we need to watch the corresponding public key script of the commit tx
+        blockchain ! Hint(new BitcoinjScript(remoteCommitPublished.commitTx.txOut(outpoint.index.toInt).publicKeyScript))
+      }
       log.info(s"watching output ${outpoint.index} of commit tx ${outpoint.txid}")
       blockchain ! WatchSpent(relayer, outpoint.txid, outpoint.index.toInt, BITCOIN_HTLC_SPENT)
     })
@@ -1430,7 +1448,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   def store[T](d: T)(implicit tp: T <:< HasCommitments): T = {
     log.debug(s"updating database record for channelId=${d.channelId}")
-    nodeParams.channelsDb.put(d.channelId, d)
+    nodeParams.channelsDb.addOrUpdateChannel(d)
     d
   }
 

@@ -3,7 +3,7 @@ package fr.acinq.eclair.wire
 import java.net.{InetAddress, InetSocketAddress}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.{UInt64, randomBytes, randomKey}
 import fr.acinq.eclair.wire.LightningMessageCodecs.{lightningMessageCodec, rgb, socketaddress, uint64ex, zeropaddedstring}
@@ -183,9 +183,9 @@ class LightningMessageCodecsSpec extends FunSuite {
     val update_fail_malformed_htlc = UpdateFailMalformedHtlc(randomBytes(32), 2, randomBytes(32), 1111)
     val commit_sig = CommitSig(randomBytes(32), randomSignature, randomSignature :: randomSignature :: randomSignature :: Nil)
     val revoke_and_ack = RevokeAndAck(randomBytes(32), scalar(0), point(1))
-    val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, bin(7, 9), 1, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
-    val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0),  1, randomKey.publicKey, (100.toByte, 200.toByte, 300.toByte), "node-alias", new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
-    val channel_update = ChannelUpdate(randomSignature, 1, 2, bin(2, 2), 3, 4, 5, 6)
+    val channel_announcement = ChannelAnnouncement(randomSignature, randomSignature, randomSignature, randomSignature, bin(7, 9), Block.RegtestGenesisBlock.blockId, 1, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    val node_announcement = NodeAnnouncement(randomSignature, bin(0, 0), 1, randomKey.publicKey, (100.toByte, 200.toByte, 300.toByte), "node-alias", new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
+    val channel_update = ChannelUpdate(randomSignature, Block.RegtestGenesisBlock.blockId, 1, 2, bin(2, 2), 3, 4, 5, 6)
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), 42, randomSignature, randomSignature)
     val ping = Ping(100, BinaryData("01" * 10))
     val pong = Pong(BinaryData("01" * 10))
@@ -198,6 +198,7 @@ class LightningMessageCodecsSpec extends FunSuite {
 
     msgs.foreach {
       case msg => {
+        println(msg)
         val encoded = lightningMessageCodec.encode(msg).require
         val decoded = lightningMessageCodec.decode(encoded).require
         assert(msg === decoded.value)

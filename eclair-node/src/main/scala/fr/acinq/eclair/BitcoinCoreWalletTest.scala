@@ -35,7 +35,7 @@ object BitcoinCoreWalletTest extends App with Logging {
   implicit val ec = ExecutionContext.Implicits.global
 
   val zmq = system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), None)), "zmq", SupervisorStrategy.Restart))
-  val watcher = system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(nodeParams, bitcoinClient), "watcher", SupervisorStrategy.Resume))
+  val watcher = system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(bitcoinClient), "watcher", SupervisorStrategy.Resume))
 
   val wallet = new BitcoinCoreWallet(bitcoinClient.rpcClient, watcher)
 

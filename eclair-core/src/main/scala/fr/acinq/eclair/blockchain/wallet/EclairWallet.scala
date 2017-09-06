@@ -9,6 +9,8 @@ import scala.concurrent.Future
   */
 trait EclairWallet {
 
+  def getBalance: Future[Satoshi]
+
   def getFinalAddress: Future[String]
 
   def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse]

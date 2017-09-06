@@ -56,7 +56,7 @@ Just use the windows installer, it should create a shortcut on your desktop.
 
 You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html).
 
- :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in `--headless` mode.
+ :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in headless mode (see below).
 
 Then download the latest fat jar and depending on whether or not you want a GUI run the following command:
 * with GUI:
@@ -70,29 +70,46 @@ java -jar eclair-node-<version>-<commit_id>.jar
 
 ### Configuring Eclair
 
-#### Command-line parameters
-
-option         | description                     | default value
----------------|---------------------------------|--------------
---datadir      | Path to the data directory      | ~/.eclair
---help, -h     | Display usage text              |
-
-
-:warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in the configuration (see below).
-
 #### Configuration file
 
-To change your node's configuration, create a file named `eclair.conf` in `datadir`. To change an option, for example the HTTP port, write `eclair.api.port=8081` in the created file. 
+Eclair reads its configuration file, and write its logs, to a `datadir` directory, located in `~/.eclair` by default.
 
-option                       | description               | default value
+To change your node's configuration, create a file named `eclair.conf` in `datadir`. Here's an example configuration file:
+
+```
+eclair.server.port=9735
+eclair.node-alias=eclair
+eclair.node-color=49daaa
+```
+
+Here are some of the most common options:
+
+name                         | description               | default value
 -----------------------------|---------------------------|--------------
- eclair.server.port          | TCP port                  | 9735
- eclair.api.port             | HTTP port                 | 8080
+ eclair.server.port          | Lightning TCP port        | 9735
+ eclair.api.port             | API HTTP port             | 8080
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
  eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
 
 &rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
+
+#### Java Environment Variables
+
+Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
+
+:warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in eclair.conf (see above).
+
+name                  | description                                | default value
+----------------------|--------------------------------------------|--------------
+eclair.datadir        | Path to the data directory                 | ~/.eclair
+eclair.headless       | Run eclair without a GUI                   | 
+eclair.printToConsole | Log to stdout (in addition to eclair.log)  |
+
+For example, to specify a different data directory you would run the following command:
+```shell
+java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
+```
 
 ## JSON-RPC API
 
@@ -109,6 +126,7 @@ option                       | description               | default value
   receive     | amountMsat, description                       | generate a payment request for a given amount
   send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
   send        | paymentRequest                                | send a payment to a lightning node using a BOLT11 payment request
+  send        | paymentRequest, amountMsat                    | send a payment to a lightning node using a BOLT11 payment request and a custom amount
   close       | channelId                                     | close a channel
   close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
   help        |                                               | display available methods

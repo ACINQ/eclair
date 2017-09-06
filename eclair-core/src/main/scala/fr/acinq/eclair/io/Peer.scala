@@ -39,8 +39,6 @@ case object DISCONNECTED extends State
 case object INITIALIZING extends State
 case object CONNECTED extends State
 
-case class PeerRecord(id: PublicKey, address: InetSocketAddress)
-
 // @formatter:on
 
 /**
@@ -77,8 +75,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       transport ! Listener(self)
       context watch transport
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
-      // we store the ip upon successful connection
-      address_opt.foreach(address => nodeParams.peersDb.put(remoteNodeId, PeerRecord(remoteNodeId, address)))
+      // we store the ip upon successful connection, keeping only the most recent one
+      address_opt.map(address => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address))
       goto(INITIALIZING) using InitializingData(transport, offlineChannels)
 
     case Event(Terminated(actor), d@DisconnectedData(offlineChannels, _)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size >= 0 =>

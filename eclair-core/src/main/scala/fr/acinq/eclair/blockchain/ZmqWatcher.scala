@@ -21,7 +21,7 @@ import scala.util.Try
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class ZmqWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
@@ -200,6 +200,6 @@ class ZmqWatcher(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit
 
 object ZmqWatcher {
 
-  def props(nodeParams: NodeParams, client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(nodeParams, client)(ec))
+  def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(client)(ec))
 
 }

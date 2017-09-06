@@ -18,6 +18,8 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
   */
 class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
 
+  override def getBalance: Future[Satoshi] = ???
+
   override def getFinalAddress: Future[String] = rpcClient.invoke("getnewaddress").map(json => {
     val JString(address) = json
     address
@@ -171,4 +173,5 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     * @return
     */
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
+
 }

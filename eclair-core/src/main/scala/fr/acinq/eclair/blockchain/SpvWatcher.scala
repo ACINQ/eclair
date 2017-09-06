@@ -10,6 +10,10 @@ import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{Globals, NodeParams}
 import org.bitcoinj.core.{Transaction => BitcoinjTransaction}
+import fr.acinq.eclair.{Globals, fromShortId}
+import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
+import fr.acinq.eclair.transactions.Scripts
+import org.bitcoinj.core.{Context, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.script.Script
 
@@ -28,7 +32,7 @@ final case class NewConfidenceLevel(tx: Transaction, blockHeight: Int, confirmat
   * - also uses bitcoin-core rpc api, most notably for tx confirmation count and blockcount (because reorgs)
   * Created by PM on 21/02/2016.
   */
-class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
+class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
   context.system.eventStream.subscribe(self, classOf[NewConfidenceLevel])
@@ -39,9 +43,9 @@ class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: Executi
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
 
-  def receive: Receive = watching(Set(), SortedMap(), Nil)
+  def receive: Receive = watching(Set(), SortedMap(), Nil, Nil)
 
-  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], oldEvents: Seq[NewConfidenceLevel]): Receive = {
+  def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], oldEvents: Seq[NewConfidenceLevel], sent: Seq[TriggerEvent]): Receive = {
 
     case event@NewConfidenceLevel(tx, blockHeight, confirmations) =>
       log.debug(s"analyzing txid=${tx.txid} confirmations=$confirmations tx=${Transaction.write(tx)}")
@@ -56,29 +60,33 @@ class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: Executi
           // the transaction watched was overriden by a competing tx
           self ! TriggerEvent(w, WatchEventDoubleSpent(event))
       }
-      context become watching(watches, block2tx, oldEvents.filterNot(_.tx.txid == tx.txid) :+ event)
+      context become watching(watches, block2tx, oldEvents.filterNot(_.tx.txid == tx.txid) :+ event, sent)
 
-    case TriggerEvent(w, e) if watches.contains(w) =>
+    case t@TriggerEvent(w, e) if watches.contains(w) && !sent.contains(t) =>
       log.info(s"triggering $w")
       w.channel ! e
       // NB: WatchSpent are permanent because we need to detect multiple spending of the funding tx
       // They are never cleaned up but it is not a big deal for now (1 channel == 1 watch)
-      if (!w.isInstanceOf[WatchSpent]) context.become(watching(watches - w, block2tx, oldEvents))
+      val newWatches = if (!w.isInstanceOf[WatchSpent]) watches - w else watches
+      context.become(watching(newWatches, block2tx, oldEvents, sent :+ t))
 
     case CurrentBlockCount(count) => {
       val toPublish = block2tx.filterKeys(_ <= count)
       toPublish.values.flatten.map(tx => publish(tx))
-      context.become(watching(watches, block2tx -- toPublish.keys, oldEvents))
+      context.become(watching(watches, block2tx -- toPublish.keys, oldEvents, sent))
     }
 
-    case hint: Hint => kit.wallet().addWatchedScripts(ImmutableList.of(hint.script))
+    case hint: Hint => {
+      Context.propagate(kit.wallet.getContext)
+      kit.wallet().addWatchedScripts(ImmutableList.of(hint.script))
+    }
 
     case w: Watch if !watches.contains(w) =>
       log.debug(s"adding watch $w for $sender")
       log.warning(s"resending ${oldEvents.size} events in order!")
       oldEvents.foreach(self ! _)
       context.watch(w.channel)
-      context.become(watching(watches + w, block2tx, oldEvents))
+      context.become(watching(watches + w, block2tx, oldEvents, sent))
 
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
@@ -92,7 +100,7 @@ class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: Executi
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))
-        context.become(watching(watches, block2tx1, oldEvents))
+        context.become(watching(watches, block2tx1, oldEvents, sent))
       } else publish(tx)
 
     case WatchEventConfirmed(BITCOIN_PARENT_TX_CONFIRMED(tx), blockHeight, _) =>
@@ -103,17 +111,18 @@ class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: Executi
       if (absTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$absTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(absTimeout, tx +: block2tx.getOrElse(absTimeout, Seq.empty[Transaction]))
-        context.become(watching(watches, block2tx1, oldEvents))
+        context.become(watching(watches, block2tx1, oldEvents, sent))
       } else publish(tx)
 
     case ParallelGetRequest(announcements) => sender ! ParallelGetResponse(announcements.map {
       case c =>
         log.info(s"blindly validating channel=$c")
         val pubkeyScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+        val (_, _, outputIndex) = fromShortId(c.shortChannelId)
         val fakeFundingTx = Transaction(
           version = 2,
           txIn = Seq.empty[TxIn],
-          txOut = TxOut(Satoshi(0), pubkeyScript) :: Nil,
+          txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
           lockTime = 0)
         IndividualResult(c, Some(fakeFundingTx), true)
     })
@@ -121,7 +130,7 @@ class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: Executi
     case Terminated(channel) =>
       // we remove watches associated to dead actor
       val deprecatedWatches = watches.filter(_.channel == channel)
-      context.become(watching(watches -- deprecatedWatches, block2tx, oldEvents))
+      context.become(watching(watches -- deprecatedWatches, block2tx, oldEvents, sent))
 
     case 'watches => sender ! watches
 
@@ -133,7 +142,7 @@ class SpvWatcher(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: Executi
 
 object SpvWatcher {
 
-  def props(nodeParams: NodeParams, kit: WalletAppKit)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new SpvWatcher(nodeParams, kit)(ec))
+  def props(kit: WalletAppKit)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new SpvWatcher(kit)(ec))
 
 }
 
@@ -163,7 +172,9 @@ class Broadcaster(kit: WalletAppKit) extends Actor with ActorLogging {
   }
 
   case class BroadcastResult(tx: Transaction, result: Try[Boolean])
+
   def broadcast(tx: Transaction) = {
+    Context.propagate(kit.wallet().getContext)
     val bitcoinjTx = new org.bitcoinj.core.Transaction(kit.wallet().getParams, Transaction.write(tx))
     log.info(s"broadcasting txid=${tx.txid}")
     Futures.addCallback(kit.peerGroup().broadcastTransaction(bitcoinjTx).future(), new FutureCallback[BitcoinjTransaction] {
@@ -172,7 +183,6 @@ class Broadcaster(kit: WalletAppKit) extends Actor with ActorLogging {
       override def onSuccess(v: BitcoinjTransaction): Unit = self ! BroadcastResult(tx, Success(true))
     }, context.dispatcher)
   }
-
 
 
 }

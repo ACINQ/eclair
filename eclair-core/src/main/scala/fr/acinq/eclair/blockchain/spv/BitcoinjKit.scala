@@ -2,13 +2,21 @@ package fr.acinq.eclair.blockchain.spv
 
 import java.io.File
 
+
 import akka.actor.ActorSystem
+
+import java.net.InetSocketAddress
+
+import akka.actor.ActorSystem
+import com.google.common.util.concurrent.{FutureCallback, Futures}
+
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.spv.BitcoinjKit._
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewConfidenceLevel}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
+
 import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener}
 import org.bitcoinj.core.{NetworkParameters, Peer, StoredBlock, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
@@ -17,10 +25,27 @@ import org.bitcoinj.wallet.Wallet
 
 import scala.concurrent.Promise
 
+import org.bitcoinj.core.listeners._
+import org.bitcoinj.core.{Block, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, Transaction => BitcoinjTransaction}
+import org.bitcoinj.kits.WalletAppKit
+import org.bitcoinj.params.{RegTestParams, TestNet3Params}
+import org.bitcoinj.utils.Threading
+import org.bitcoinj.wallet.Wallet
+
+import scala.collection.JavaConversions._
+import scala.concurrent.Promise
+import scala.util.Try
+
+
 /**
   * Created by PM on 09/07/2017.
   */
-class BitcoinjKit(chain: String, datadir: File)(implicit system: ActorSystem) extends WalletAppKit(chain2Params(chain), datadir, "bitcoinj", true) with Logging {
+class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddress] = Nil)(implicit system: ActorSystem) extends WalletAppKit(chain2Params(chain), datadir, "bitcoinj", true) with Logging {
+
+  if (staticPeers.size > 0) {
+    logger.info(s"using staticPeers=${staticPeers.mkString(",")}")
+    setPeerNodes(staticPeers.map(addr => new PeerAddress(params, addr)).head)
+  }
 
   // tells us when the peerGroup/chain/wallet are accessible
   private val initializedPromise = Promise[Boolean]()
@@ -70,6 +95,34 @@ class BitcoinjKit(chain: String, datadir: File)(implicit system: ActorSystem) ex
         }
     })
 
+    peerGroup.addBlocksDownloadedEventListener(new BlocksDownloadedEventListener {
+      override def onBlocksDownloaded(peer: Peer, block: Block, filteredBlock: FilteredBlock, blocksLeft: Int): Unit = {
+        logger.info(s"received block=${block.getHashAsString} (size=${block.bitcoinSerialize().size} txs=${Try(block.getTransactions.size).getOrElse(-1)}) filteredBlock=${Try(filteredBlock.getHash.toString).getOrElse("N/A")} (size=${Try(block.bitcoinSerialize().size).getOrElse(-1)} txs=${Try(filteredBlock.getTransactionCount).getOrElse(-1)})")
+        Try {
+          if (filteredBlock.getAssociatedTransactions.size() > 0) {
+            logger.info(s"retrieving full block ${block.getHashAsString}")
+            Futures.addCallback(peer.getBlock(block.getHash), new FutureCallback[Block] {
+              override def onFailure(throwable: Throwable) = logger.error(s"could not retrieve full block=${block.getHashAsString}")
+
+              override def onSuccess(fullBlock: Block) = {
+                Try {
+                  fullBlock.getTransactions.foreach {
+                    case tx =>
+                      logger.info(s"received tx=${tx.getHashAsString} witness=${Transaction.read(tx.bitcoinSerialize()).txIn(0).witness.stack.size}} from fullBlock=${fullBlock.getHash} confidence=${tx.getConfidence}")
+                      val depthInBlocks = tx.getConfidence.getConfidenceType match {
+                        case ConfidenceType.DEAD => -1
+                        case _ => tx.getConfidence.getDepthInBlocks
+                      }
+                      system.eventStream.publish(NewConfidenceLevel(Transaction.read(tx.bitcoinSerialize()), 0, depthInBlocks))
+                  }
+                }
+              }
+            }, Threading.USER_THREAD)
+          }
+        }
+      }
+    })
+
     chain().addNewBestBlockListener(new NewBestBlockListener {
       override def notifyNewBestBlock(storedBlock: StoredBlock): Unit =
         updateBlockCount(storedBlock.getHeight)
@@ -78,12 +131,13 @@ class BitcoinjKit(chain: String, datadir: File)(implicit system: ActorSystem) ex
     wallet().addTransactionConfidenceEventListener(new TransactionConfidenceEventListener {
       override def onTransactionConfidenceChanged(wallet: Wallet, bitcoinjTx: BitcoinjTransaction): Unit = {
         val tx = Transaction.read(bitcoinjTx.bitcoinSerialize())
-        logger.info(s"tx confidence changed for txid=${tx.txid} confidence=${bitcoinjTx.getConfidence}")
-        val depthInBlocks = bitcoinjTx.getConfidence.getConfidenceType match {
-          case ConfidenceType.DEAD => -1
-          case _ => bitcoinjTx.getConfidence.getDepthInBlocks
+        logger.info(s"tx confidence changed for txid=${tx.txid} confidence=${bitcoinjTx.getConfidence} witness=${bitcoinjTx.getWitness(0)}")
+        val (blockHeight, confirmations) = bitcoinjTx.getConfidence.getConfidenceType match {
+          case ConfidenceType.DEAD => (-1, -1)
+          case ConfidenceType.BUILDING => (bitcoinjTx.getConfidence.getAppearedAtChainHeight, bitcoinjTx.getConfidence.getDepthInBlocks)
+          case _ => (-1, bitcoinjTx.getConfidence.getDepthInBlocks)
         }
-        system.eventStream.publish(NewConfidenceLevel(tx, 0, depthInBlocks))
+        system.eventStream.publish(NewConfidenceLevel(tx, blockHeight, confirmations))
       }
     })
 

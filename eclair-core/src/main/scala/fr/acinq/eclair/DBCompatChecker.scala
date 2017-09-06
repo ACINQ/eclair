@@ -7,14 +7,15 @@ import scala.util.{Failure, Success, Try}
 object DBCompatChecker extends Logging {
 
   /**
-    * Tests if the DB files are compatible with the current version of eclair. Returns true if compatible, false otherwise.
+    * Tests if the DB files are compatible with the current version of eclair; throws an exception if incompatible.
     *
     * @param nodeParams
     */
-  def isDBCompatible(nodeParams: NodeParams): Boolean = Try(nodeParams.announcementsDb.values.size + nodeParams.peersDb.values.size + nodeParams.channelsDb.values.size) match {
-    case Success(s) => true
-    case Failure(f) =>
-      logger.info("DB files are not compatible with this version of eclair")
-      false
-  }
+  def checkDBCompatibility(nodeParams: NodeParams): Unit =
+    Try(nodeParams.networkDb.listChannels() ++ nodeParams.networkDb.listNodes() ++ nodeParams.peersDb.listPeers() ++ nodeParams.channelsDb.listChannels()) match {
+      case Success(_) => {}
+      case Failure(_) => throw IncompatibleDBException
+    }
 }
+
+case object IncompatibleDBException extends RuntimeException("DB files are not compatible with this version of eclair.")

@@ -11,30 +11,12 @@ import grizzled.slf4j.Logging
   */
 object Boot extends App with Logging {
 
-  case class CmdLineConfig(datadir: File = new File(System.getProperty("user.home"), ".eclair"), textui: Boolean = false)
-
-  val parser = new scopt.OptionParser[CmdLineConfig]("eclair") {
-    head("eclair", s"${getClass.getPackage.getImplementationVersion} (commit: ${getClass.getPackage.getSpecificationVersion})")
-    help("help").abbr("h").text("display usage text")
-    opt[File]("datadir").optional().valueName("<file>").action((x, c) => c.copy(datadir = x)).text("optional data directory, default is ~/.eclair")
-    opt[Unit]("textui").optional().action((_, c) => c.copy(textui = true)).text("runs eclair with a text-based ui")
-  }
+  val datadir = new File(System.getProperty("eclair.datadir", System.getProperty("user.home") + "/.eclair"))
 
   try {
-    parser.parse(args, CmdLineConfig()) match {
-      case Some(config) =>
-        LogSetup.logTo(config.datadir)
-        val kit = new BitcoinjKit2("test", config.datadir)
-        kit.startAsync()
-        import scala.concurrent.ExecutionContext.Implicits.global
-        val wallet = new BitcoinjWallet(kit.initialized.map(_ => kit.wallet()))
-        val setup = new Setup(config.datadir, wallet_opt = Some(wallet))
-        setup.bootstrap.collect {
-          case kit if (config.textui) => new Textui(kit)
-        } onFailure {
-          case t: Throwable => onError(t)
-        }
-      case None => System.exit(0)
+    import scala.concurrent.ExecutionContext.Implicits.global
+    new Setup(datadir).bootstrap onFailure {
+      case t: Throwable => onError(t)
     }
   } catch {
     case t: Throwable => onError(t)

@@ -1,7 +1,5 @@
 package fr.acinq.eclair.router
 
-import java.io.StringWriter
-
 import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
@@ -14,8 +12,7 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
-import org.jgrapht.ext._
-import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
+import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
@@ -56,10 +53,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   import ExecutionContext.Implicits.global
 
-  nodeParams.announcementsDb.values.collect { case ann: ChannelAnnouncement => self ! ann }
-  nodeParams.announcementsDb.values.collect { case ann: NodeAnnouncement => self ! ann }
-  nodeParams.announcementsDb.values.collect { case ann: ChannelUpdate => self ! ann }
-  if (nodeParams.channelsDb.values.size > 0) {
+  val db = nodeParams.networkDb
+
+  db.listChannels().map(self ! _)
+  db.listNodes().map(self ! _)
+  db.listChannelUpdates().map(self ! _)
+  if (db.listChannels().size > 0) {
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
     self ! nodeAnn
   }
@@ -110,14 +109,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId}")
             context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
-            nodeParams.announcementsDb.put(channelKey(c.shortChannelId), c)
+            db.addChannel(c)
             Some(c)
           }
         case IndividualResult(c, Some(tx), false) =>
           // TODO: vulnerability if they flood us with spent funding tx?
           log.warning(s"ignoring shortChannelId=${c.shortChannelId} tx=${tx.txid} (funding tx not found in utxo)")
           // there may be a record if we have just restarted
-          nodeParams.announcementsDb.delete(channelKey(c.shortChannelId))
+          db.removeChannel(c.shortChannelId)
           None
         case IndividualResult(c, None, _) =>
           // TODO: blacklist?
@@ -176,12 +175,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else if (d.nodes.containsKey(n.nodeId)) {
         log.debug(s"updated node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeUpdated(n))
-        nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
+        db.updateNode(n)
         stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else if (d.channels.values.exists(c => isRelatedTo(c, n))) {
         log.debug(s"added node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeDiscovered(n))
-        nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
+        db.addNode(n)
         stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else if (d.awaiting.exists(c => isRelatedTo(c, n)) || d.stash.collectFirst { case c: ChannelAnnouncement if isRelatedTo(c, n) => c }.isDefined) {
         log.debug(s"stashing $n")
@@ -189,7 +188,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         log.warning(s"ignoring $n (no related channel found)")
         // there may be a record if we have just restarted
-        nodeParams.announcementsDb.delete(nodeKey(n.nodeId))
+        db.removeNode(n.nodeId)
         stay
       }
 
@@ -205,10 +204,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         } else if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
           log.debug(s"ignoring $u (old timestamp or duplicate)")
           stay
-        } else {
-          log.debug(s"added/updated $u")
+        } else if (d.updates.contains(desc)) {
+          log.debug(s"updated $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
-          nodeParams.announcementsDb.put(channelUpdateKey(u.shortChannelId, u.flags), u)
+          db.updateChannelUpdate(u)
+          stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
+        } else {
+          log.debug(s"added $u")
+          context.system.eventStream.publish(ChannelUpdateReceived(u))
+          db.addChannelUpdate(u)
           stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
         }
       } else if (d.awaiting.exists(c => c.shortChannelId == u.shortChannelId) || d.stash.collectFirst { case c: ChannelAnnouncement if c.shortChannelId == u.shortChannelId => c }.isDefined) {
@@ -216,8 +220,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(stash = d.stash :+ u, origins = d.origins + (u -> sender))
       } else {
         log.warning(s"ignoring announcement $u (unknown channel)")
-        // there may be a record if we have just restarted
-        nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags))
         stay
       }
 
@@ -238,9 +240,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
 
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
-      nodeParams.announcementsDb.delete(channelKey(shortChannelId))
-      d.updates.values.filter(_.shortChannelId == shortChannelId).foreach(u => nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags)))
-      lostNodes.foreach(id => nodeParams.announcementsDb.delete(s"ann-node-$id"))
+      db.removeChannel(shortChannelId) // NB: this also removes channel updates
+      lostNodes.foreach(nodeId => db.removeNode(nodeId))
       stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
     case Event('tick_validate, d) => stay // ignored
@@ -278,7 +279,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         val fakeShortId = BigInt(channelId.take(7).toArray).toLong
         val channelDesc = ChannelDesc(fakeShortId, localNodeId, remoteNodeId)
         // note that we store the channelId in the sig, other values are not used because this will be the first channel in the route
-        val channelUpdate = ChannelUpdate(signature = channelId, fakeShortId, 0, "0000", 0, 0, 0, 0)
+        val channelUpdate = ChannelUpdate(signature = channelId, chainHash = nodeParams.chainHash, fakeShortId, 0, "0000", 0, 0, 0, 0)
         (channelDesc -> channelUpdate)
       }
       // we replace local channelUpdates (we have them for regular public alread-announced channels) by the ones we just generated

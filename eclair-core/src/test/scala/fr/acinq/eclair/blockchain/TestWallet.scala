@@ -11,6 +11,8 @@ import scala.util.Try
   */
 class TestWallet extends EclairWallet {
 
+  override def getBalance: Future[Satoshi] = ???
+
   override def getFinalAddress: Future[String] = Future.successful("2MsRZ1asG6k94m6GYUufDGaZJMoJ4EV5JKs")
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponse] =
