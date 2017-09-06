@@ -47,9 +47,9 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     def sig = Crypto.encodeSignature(Crypto.sign(randomKey.toBin, randomKey)) :+ 1.toByte
 
-    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.blockId, 42, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
-    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.blockId, 43, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
-    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.blockId, 44, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_1 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, 42, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, 43, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
+    val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, 44, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
 
     assert(db.listChannels().toSet === Set.empty)
     db.addChannel(channel_1)
@@ -59,9 +59,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels().toSet === Set(channel_1, channel_3))
 
-    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.blockId, randomKey, randomKey.publicKey, 42, 5, 7000000, 50000, 100, true)
-    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.blockId, randomKey, randomKey.publicKey, 43, 5, 7000000, 50000, 100, true)
-    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.blockId, randomKey, randomKey.publicKey, 44, 5, 7000000, 50000, 100, true)
+    val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 42, 5, 7000000, 50000, 100, true)
+    val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 43, 5, 7000000, 50000, 100, true)
+    val channel_update_3 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 44, 5, 7000000, 50000, 100, true)
 
     assert(db.listChannelUpdates().toSet === Set.empty)
     db.addChannelUpdate(channel_update_1)

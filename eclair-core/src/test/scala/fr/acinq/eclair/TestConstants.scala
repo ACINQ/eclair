@@ -52,7 +52,7 @@ object TestConstants {
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId,
+      chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       spv = false)
     def id = nodeParams.privateKey.publicKey
@@ -99,7 +99,7 @@ object TestConstants {
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,
       autoReconnect = false,
-      chainHash = Block.RegtestGenesisBlock.blockId,
+      chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       spv = false)
     def id = nodeParams.privateKey.publicKey

@@ -9,7 +9,7 @@ import com.google.common.io.Files
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
+import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb}
 
@@ -66,7 +66,7 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config): NodeParams = {
 
     datadir.mkdirs()
 
@@ -80,6 +80,13 @@ object NodeParams {
     }
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+
+    val chain = config.getString("chain")
+    val chainHash = chain match {
+      case "test" => Block.TestnetGenesisBlock.hash
+      case "regtest" => Block.RegtestGenesisBlock.hash
+      case _ => throw new RuntimeException("only regtest and testnet are supported for now")
+    }
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)

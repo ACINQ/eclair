@@ -5,7 +5,6 @@ import java.io.File
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.blockchain.SpvWatcher
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
 import fr.acinq.eclair.blockchain.spv.BitcoinjKit
@@ -27,30 +26,25 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
 
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val nodeParams = NodeParams.makeNodeParams(datadir, config)
   val spv = config.getBoolean("spv")
+  val chain = config.getString("chain")
+
+  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
+  logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   implicit val system = actorSystem
   implicit val timeout = Timeout(30 seconds)
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  val (chain, chainHash, bitcoin) = if (spv) {
+  val bitcoin = if (spv) {
     logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
-    val chain = config.getString("chain")
-    val chainHash = chain match {
-      case "regtest" => Block.RegtestGenesisBlock.blockId
-      case "test" => Block.TestnetGenesisBlock.blockId
-    }
-
     val bitcoinjKit = new BitcoinjKit(chain, datadir)
-    (chain, chainHash, Left(bitcoinjKit))
+    Left(bitcoinjKit)
   } else ???
-
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, chainHash)
-  logger.info(s"using chain=$chain chainHash=$chainHash")
-  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
 
   def bootstrap: Future[Kit] = Future {
 
