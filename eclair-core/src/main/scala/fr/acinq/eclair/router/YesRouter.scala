@@ -22,6 +22,8 @@ class YesRouter(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Da
 
   import Router._
 
+  val db = nodeParams.networkDb
+
   import ExecutionContext.Implicits.global
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
@@ -60,7 +62,7 @@ class YesRouter(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Da
       } else {
         log.debug(s"added channel channelId=${c.shortChannelId}")
         context.system.eventStream.publish(ChannelDiscovered(c, Satoshi(0)))
-        nodeParams.announcementsDb.put(channelKey(c.shortChannelId), c)
+        db.addChannel(c)
         stay using d.copy(channels = d.channels + (c.shortChannelId -> c), origins = d.origins + (c -> sender))
       }
 
@@ -75,12 +77,12 @@ class YesRouter(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Da
       } else if (d.nodes.containsKey(n.nodeId)) {
         log.debug(s"updated node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeUpdated(n))
-        nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
+        db.updateNode(n)
         stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else if (d.channels.values.exists(c => isRelatedTo(c, n))) {
         log.debug(s"added node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeDiscovered(n))
-        nodeParams.announcementsDb.put(nodeKey(n.nodeId), n)
+        db.addNode(n)
         stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else {
         log.warning(s"ignoring $n (no related channel found)")
@@ -102,7 +104,7 @@ class YesRouter(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Da
         } else {
           log.debug(s"added/updated $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
-          nodeParams.announcementsDb.put(channelUpdateKey(u.shortChannelId, u.flags), u)
+          db.updateChannelUpdate(u)
           stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
         }
       } else {
@@ -127,9 +129,8 @@ class YesRouter(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Da
       }
 
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
-      nodeParams.announcementsDb.delete(channelKey(shortChannelId))
-      d.updates.values.filter(_.shortChannelId == shortChannelId).foreach(u => nodeParams.announcementsDb.delete(channelUpdateKey(u.shortChannelId, u.flags)))
-      lostNodes.foreach(id => nodeParams.announcementsDb.delete(s"ann-node-$id"))
+      db.removeChannel(shortChannelId) // NB: this also removes channel updates
+      lostNodes.foreach(nodeId => db.removeNode(nodeId))
       stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
     case Event('tick_validate, d) => stay // ignored

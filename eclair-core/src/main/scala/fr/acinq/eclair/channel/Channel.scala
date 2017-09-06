@@ -948,7 +948,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       stateData match {
         case d: HasCommitments =>
           log.info(s"deleting database record for channelId=${d.channelId}")
-          nodeParams.channelsDb.delete(d.channelId)
+          nodeParams.channelsDb.removeChannel(d.channelId)
         case _ => {}
       }
       log.info("shutting down")
@@ -1434,7 +1434,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   def store[T](d: T)(implicit tp: T <:< HasCommitments): T = {
     log.debug(s"updating database record for channelId=${d.channelId}")
-    nodeParams.channelsDb.put(d.channelId, d)
+    nodeParams.channelsDb.addOrUpdateChannel(d)
     d
   }
 

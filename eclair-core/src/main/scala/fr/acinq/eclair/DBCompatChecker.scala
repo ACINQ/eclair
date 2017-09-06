@@ -12,7 +12,7 @@ object DBCompatChecker extends Logging {
     * @param nodeParams
     */
   def checkDBCompatibility(nodeParams: NodeParams): Unit =
-    Try(nodeParams.announcementsDb.values.size + nodeParams.peersDb.values.size + nodeParams.channelsDb.values.size) match {
+    Try(nodeParams.networkDb.listChannels() ++ nodeParams.networkDb.listNodes() ++ nodeParams.peersDb.listPeers() ++ nodeParams.channelsDb.listChannels()) match {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleDBException
     }
