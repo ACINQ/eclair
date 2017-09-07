@@ -49,6 +49,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       autoReconnect: Boolean,
                       chainHash: BinaryData,
                       channelFlags: Byte,
+                      channelExcludeDuration: FiniteDuration,
                       spv: Boolean)
 
 object NodeParams {
@@ -127,6 +128,7 @@ object NodeParams {
       autoReconnect = config.getBoolean("auto-reconnect"),
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
+      channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
       spv = config.getBoolean("spv"))
   }
 }

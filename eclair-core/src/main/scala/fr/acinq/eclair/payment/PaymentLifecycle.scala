@@ -84,7 +84,6 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           s ! PaymentFailed(c.paymentHash, failures = failures :+ UnreadableRemoteFailure(hops))
           stop(FSM.Normal)
         case Some(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
-          // TODO: spec says: that MAY retry the payment in certain conditions, see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md#receiving-failure-codes
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           s ! PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
           stop(FSM.Normal)
@@ -94,35 +93,38 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           s ! PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
           stop(FSM.Normal)
         case Some(e@ErrorPacket(nodeId, failureMessage: Node)) =>
-          // TODO: spec says: If the PERM bit is not set, the origin node SHOULD restore the channels as it sees new channel_updates.
           log.info(s"received an error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
           router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Some(e@ErrorPacket(nodeId, failureMessage: Update)) =>
-          // TODO: spec says: if UPDATE is set, and the channel_update is valid *and more recent* than the channel_update used to send the payment
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           if (Announcements.checkSig(failureMessage.update, nodeId)) {
-            // note that we check the sig, but we don't make sure that this update was related to the channel we used
-            // the reason is that we don't to prevent relaying nodes to use another channel to the same N+1 node if they deem necessary
+            // note that we check the sig, but we don't make sure that this update was for the exact channel we required
+            // the reason is that we don't want to prevent relaying nodes to use another channel to the same N+1 node if they deem necessary
+            failureMessage match {
+              case _: TemporaryChannelFailure =>
+                // node indicates that its outgoing channel is experiencing a transient issue (eg. channel capacity reached, too many in-flight htlc)
+                hops.find(_.nodeId == nodeId).map(_.lastUpdate) match {
+                  case Some(u) if u.copy(signature = BinaryData.empty, timestamp = 0) == failureMessage.update.copy(signature = BinaryData.empty, timestamp = 0) =>
+                    // node returned the exact same update we used: in that case, let's temporarily exclude the channel from future routes, giving it time to recover
+                    val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
+                    router ! ExcludeChannel(ChannelDesc(failureMessage.update.shortChannelId, nodeId, nextNodeId))
+                  case _ => // node returned a different update, maybe the payment will go through next time...
+                }
+              case _ => {}
+            }
+            // in any case, we forward the update to the router
             router ! failureMessage.update
             // let's try again, router will have updated its state
             router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels)
           } else {
-            // this node is fishy!! let's filter it out
+            // this node is fishy, it gave us a bad sig!! let's filter it out
+            log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
             router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
           }
-//          val faultyChannel = hops.find(_.nodeId == nodeId).map(_.lastUpdate) match {
-//            case Some(u) if u.copy(signature = BinaryData.empty, timestamp = 0) != failureMessage.update.copy(signature = BinaryData.empty, timestamp = 0) =>
-//              // the channelUpdate they provided is different from the one we last had, we won't filter out this channel for the next try
-//              Set.empty
-//            case _ =>
-//              // the channelUpdate they provided is the same we used last time: let's filter out this channel for the last try
-//              Set(faultyChannel)
-//          }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
         case Some(e@ErrorPacket(nodeId, failureMessage)) =>
-          // TODO: If the PERM bit is not set, the origin node SHOULD restore the channel as it sees a new channel_update.
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
           val faultyChannel = hops.find(_.nodeId == nodeId).map(_.lastUpdate.shortChannelId)
@@ -173,7 +175,7 @@ object PaymentLifecycle {
   /**
     *
     * @param finalAmountMsat the final htlc amount in millisatoshis
-    * @param finalExpiry the final htlc expiry in number of blocks
+    * @param finalExpiry     the final htlc expiry in number of blocks
     * @param hops            the hops as computed by the router
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
     *         - firstAmountMsat is the amount for the first htlc in the route

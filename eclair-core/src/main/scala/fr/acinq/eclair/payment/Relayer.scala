@@ -133,7 +133,7 @@ class Relayer(nodeSecret: PrivateKey, paymentHandler: ActorRef) extends Actor wi
         shortId <- shortIds.map(_.swap).get(channelId)
         update <- channelUpdates.get(shortId)
       } yield update
-      // detail errors should have been catched earlier (when relayer picks the next channel), so here we just answer with generic error messages
+      // detail errors are caught before relaying the htlc to the downstream channel, here we just return generic error messages
       channelUpdate_opt match {
         case None =>
           // TODO: clarify what we're supposed to do in the specs

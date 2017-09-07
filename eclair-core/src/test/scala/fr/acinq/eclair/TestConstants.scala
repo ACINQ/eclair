@@ -54,6 +54,7 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
+      channelExcludeDuration = 5 seconds,
       spv = false)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
@@ -101,6 +102,7 @@ object TestConstants {
       autoReconnect = false,
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
+      channelExcludeDuration = 5 seconds,
       spv = false)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(

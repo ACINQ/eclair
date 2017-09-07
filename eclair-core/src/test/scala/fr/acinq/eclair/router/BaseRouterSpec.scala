@@ -58,9 +58,13 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val chan_ef = channelAnnouncement(channelId_ef, priv_e, priv_f, priv_funding_e, priv_funding_f)
 
   val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, b, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
+  val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, a, channelId_ab, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
   val channelUpdate_bc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, c, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
+  val channelUpdate_cb = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, b, channelId_bc, cltvExpiryDelta = 5, 0, feeBaseMsat = 233000, feeProportionalMillionths = 1)
   val channelUpdate_cd = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
+  val channelUpdate_dc = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_d, c, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4)
   val channelUpdate_ef = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_e, f, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
+  val channelUpdate_fe = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_f, e, channelId_ef, cltvExpiryDelta = 9, 0, feeBaseMsat = 786000, feeProportionalMillionths = 8)
 
   override def withFixture(test: OneArgTest) = {
     // the network will be a --(1)--> b ---(2)--> c --(3)--> d and e --(4)--> f (we are a)
@@ -106,9 +110,13 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! ann_f
       // then channel updates
       router ! channelUpdate_ab
+      router ! channelUpdate_ba
       router ! channelUpdate_bc
+      router ! channelUpdate_cb
       router ! channelUpdate_cd
+      router ! channelUpdate_dc
       router ! channelUpdate_ef
+      router ! channelUpdate_fe
 
       val sender = TestProbe()
 
@@ -122,7 +130,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
       sender.send(router, 'updates)
       val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-      assert(updates.size === 4)
+      assert(updates.size === 8)
 
       test((router, watcher))
     }
