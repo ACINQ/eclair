@@ -2,7 +2,7 @@ package fr.acinq.eclair.blockchain
 
 import akka.actor.ActorSystem
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import org.scalatest.FunSuite
 
 import scala.concurrent.{Await, ExecutionContext}
@@ -22,7 +22,7 @@ class ExtendedBitcoinClientSpec extends FunSuite {
 
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
-  val (chain, blockCount) = Await.result(client.client.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
+  val (chain, blockCount) = Await.result(client.rpcClient.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
   assert(chain == "test", "you should be on testnet")
 
   test("get transaction short id") {

@@ -103,10 +103,10 @@ trait Service extends Logging {
                   for {
                     req <- Future(PaymentRequest.read(paymentRequest))
                     amount = (req.amount, rest) match {
-                      case (Some(amt), Nil) => amt.amount
                       case (Some(_), JInt(amt) :: Nil) => amt.toLong // overriding payment request amount with the one provided
+                      case (Some(amt), _) => amt.amount
                       case (None, JInt(amt) :: Nil) => amt.toLong // amount wasn't specified in request, using custom one
-                      case (None, Nil) => throw new RuntimeException("you need to manually specify an amount for this payment request")
+                      case (None, _) => throw new RuntimeException("you need to manually specify an amount for this payment request")
                     }
                     res <- (paymentInitiator ? SendPayment(amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
                   } yield res

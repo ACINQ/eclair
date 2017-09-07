@@ -58,10 +58,10 @@ package object eclair {
   /**
     * Converts fee-rate-per-kB to fee-rate-per-kw, *based on a standard commit tx*
     *
-    * @param feeratePerKB
+    * @param feeratePerKb
     * @return
     */
-  def feerateKB2Kw(feeratePerKB: Long): Long = feeratePerKB / 2
+  def feerateKb2Kw(feeratePerKb: Long): Long = feeratePerKb / 2
 
 
 }

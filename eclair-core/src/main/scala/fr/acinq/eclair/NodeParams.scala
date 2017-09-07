@@ -9,10 +9,9 @@ import java.util.concurrent.TimeUnit
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{BinaryData, DeterministicWallet}
+import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb}
-import org.sqlite.SQLiteConfig
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -39,7 +38,6 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       feeProportionalMillionth: Int,
                       reserveToFundingRatio: Double,
                       maxReserveToFundingRatio: Double,
-                      defaultFinalScriptPubKey: BinaryData,
                       channelsDb: ChannelsDb,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
@@ -50,7 +48,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       updateFeeMinDiffRatio: Double,
                       autoReconnect: Boolean,
                       chainHash: BinaryData,
-                      channelFlags: Byte)
+                      channelFlags: Byte,
+                      spv: Boolean)
 
 object NodeParams {
 
@@ -67,7 +66,7 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config, chainHash: BinaryData, defaultFinalScriptPubKey: BinaryData): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config): NodeParams = {
 
     datadir.mkdirs()
 
@@ -81,6 +80,13 @@ object NodeParams {
     }
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+
+    val chain = config.getString("chain")
+    val chainHash = chain match {
+      case "test" => Block.TestnetGenesisBlock.hash
+      case "regtest" => Block.RegtestGenesisBlock.hash
+      case _ => throw new RuntimeException("only regtest and testnet are supported for now")
+    }
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
@@ -110,7 +116,6 @@ object NodeParams {
       feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
-      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       channelsDb = channelsDb,
       peersDb = peersDb,
       networkDb = networkDb,
@@ -121,6 +126,7 @@ object NodeParams {
       updateFeeMinDiffRatio = config.getDouble("update-fee_min-diff-ratio"),
       autoReconnect = config.getBoolean("auto-reconnect"),
       chainHash = chainHash,
-      channelFlags = config.getInt("channel-flags").toByte)
+      channelFlags = config.getInt("channel-flags").toByte,
+      spv = config.getBoolean("spv"))
   }
 }

@@ -26,6 +26,8 @@
         </encoder>
     </appender-->
 
+    <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
+
     <root level="INFO">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->

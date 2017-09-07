@@ -1,17 +1,15 @@
 package fr.acinq.eclair.channel.states
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Crypto, OutPoint, Script, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
 import fr.acinq.eclair.router.Hop
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, TestBitcoinClient, TestConstants}
+import fr.acinq.eclair.{Globals, TestConstants}
 
 import scala.util.Random
 
@@ -41,8 +39,9 @@ trait StateTestsHelperMethods extends TestKitBase {
     val router = TestProbe()
     val nodeParamsA = TestConstants.Alice.nodeParams
     val nodeParamsB = TestConstants.Bob.nodeParams
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
+    val wallet = new TestWallet
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
     Setup(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayer)
   }
 
@@ -64,14 +63,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[AcceptChannel]
     bob2alice.forward(alice)
-    val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
-    val dummyFundingTx = TestBitcoinClient.makeDummyFundingTx(makeFundingTx)
-    alice ! dummyFundingTx
-    val w = alice2blockchain.expectMsgType[WatchSpent]
-    alice2blockchain.expectMsgType[PublishAsap]
-    alice ! WatchEventSpent(w.event, dummyFundingTx.parentTx)
-    alice2blockchain.expectMsgType[WatchConfirmed]
-    alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(dummyFundingTx.parentTx), 400000, 42)
     alice2bob.expectMsgType[FundingCreated]
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingSigned]

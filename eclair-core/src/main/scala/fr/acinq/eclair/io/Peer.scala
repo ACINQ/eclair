@@ -6,6 +6,7 @@ import akka.actor.{ActorRef, LoggingFSM, OneForOneStrategy, PoisonPill, Props, S
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair._
+import fr.acinq.eclair.blockchain.wallet.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
@@ -43,7 +44,7 @@ case object CONNECTED extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, storedChannels: Set[HasCommitments]) extends LoggingFSM[State, Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, storedChannels: Set[HasCommitments]) extends LoggingFSM[State, Data] {
 
   import Peer._
 
@@ -231,13 +232,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   def createChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
-    val localParams = makeChannelParams(nodeParams, funder, fundingSatoshis)
+    val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet)
+    val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
     val channel = spawnChannel(nodeParams, transport)
     (channel, localParams)
   }
 
   def spawnChannel(nodeParams: NodeParams, transport: ActorRef): ActorRef = {
-    val channel = context.actorOf(Channel.props(nodeParams, remoteNodeId, watcher, router, relayer))
+    val channel = context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, router, relayer))
     context watch channel
     channel
   }
@@ -253,11 +255,11 @@ object Peer {
 
   val CHANNELID_ZERO = BinaryData("00" * 32)
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, storedChannels: Set[HasCommitments]) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, storedChannels))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, storedChannels: Set[HasCommitments]) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, wallet: EclairWallet, storedChannels))
 
   def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
 
-  def makeChannelParams(nodeParams: NodeParams, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
     // all secrets are generated from the main seed
     // TODO: check this
     val keyIndex = secureRandom.nextInt(1000).toLong
@@ -273,7 +275,7 @@ object Peer {
       revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
       paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
       delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
-      defaultFinalScriptPubKey = nodeParams.defaultFinalScriptPubKey,
+      defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
