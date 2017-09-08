@@ -62,12 +62,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 
     case Event(Reconnect, d@DisconnectedData(_, attempts)) =>
       address_opt match {
-        case Some(address) => context.parent forward NewConnection(remoteNodeId, address, None)
-        case None => {} // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
+        case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
+        case _ if d.offlineChannels.size == 0 => stay // no-op (no more channels with this peer)
+        case Some(address) =>
+          context.parent forward NewConnection(remoteNodeId, address, None)
+          // exponential backoff retry with a finite max
+          setTimer(RECONNECT_TIMER, Reconnect, Math.min(Math.pow(2, attempts), 60) seconds, repeat = false)
+          stay using d.copy(attempts = attempts + 1)
       }
-      // exponential backoff retry with a finite max
-      setTimer(RECONNECT_TIMER, Reconnect, Math.min(Math.pow(2, attempts), 60) seconds, repeat = false)
-      stay using d.copy(attempts = attempts + 1)
 
     case Event(HandshakeCompleted(transport, _), DisconnectedData(offlineChannels, _)) =>
       log.info(s"registering as a listener to $transport")
@@ -227,8 +229,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
   }
 
   onTransition {
-    case _ -> DISCONNECTED if nodeParams.autoReconnect => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
-    case DISCONNECTED -> _ if nodeParams.autoReconnect => cancelTimer(RECONNECT_TIMER)
+    case _ -> DISCONNECTED if nodeParams.autoReconnect && address_opt.isDefined => setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
+    case DISCONNECTED -> _ if nodeParams.autoReconnect && address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
 
   def createChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
