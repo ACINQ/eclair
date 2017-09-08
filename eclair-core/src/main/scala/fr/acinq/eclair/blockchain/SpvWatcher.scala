@@ -85,7 +85,7 @@ class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Executio
 
     case w: Watch if !watches.contains(w) =>
       log.debug(s"adding watch $w for $sender")
-      log.warning(s"resending ${oldEvents.size} events in order!")
+      log.info(s"resending ${oldEvents.size} events!")
       oldEvents.foreach(self ! _)
       context.watch(w.channel)
       context.become(watching(watches + w, block2tx, oldEvents, sent))

@@ -12,7 +12,7 @@ import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewConfidenceLevel}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
 import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener, _}
-import org.bitcoinj.core.{Block, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, Transaction => BitcoinjTransaction}
+import org.bitcoinj.core.{Block, Context, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, VersionMessage, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.params.{RegTestParams, TestNet3Params}
 import org.bitcoinj.utils.Threading
@@ -59,6 +59,8 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
     logger.info(s"peerGroup.getMinBroadcastConnections==${peerGroup().getMinBroadcastConnections}")
     logger.info(s"peerGroup.getMinBroadcastConnections==${peerGroup().getMinBroadcastConnections}")
 
+    peerGroup().setMinRequiredProtocolVersion(70015) // bitcoin core 0.13
+
 //    setDownloadListener(new DownloadProgressTracker {
 //      override def doneDownload(): Unit = {
 //        super.doneDownload()
@@ -72,18 +74,25 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
 
     // as soon as we are connected the peers will tell us their current height and we will advertise it immediately
     peerGroup().addConnectedEventListener(new PeerConnectedEventListener {
-      override def onPeerConnected(peer: Peer, peerCount: Int): Unit =
-      // we wait for at least 3 peers before relying on the information they are giving, but we trust localhost
-        if (peer.getAddress.getAddr.isLoopbackAddress || peerCount > 3) {
-          updateBlockCount(peerGroup().getMostCommonChainHeight)
-          // may be called multiple times
-          atCurrentHeightPromise.trySuccess(true)
+      override def onPeerConnected(peer: Peer, peerCount: Int): Unit = {
+        if ((peer.getPeerVersionMessage.localServices & VersionMessage.NODE_WITNESS) == 0) {
+          peer.close()
+        } else {
+          Context.propagate(wallet.getContext)
+          // we wait for at least 3 peers before relying on the information they are giving, but we trust localhost
+          if (peer.getAddress.getAddr.isLoopbackAddress || peerCount > 3) {
+            updateBlockCount(peerGroup().getMostCommonChainHeight)
+            // may be called multiple times
+            atCurrentHeightPromise.trySuccess(true)
+          }
         }
+      }
     })
 
     peerGroup.addBlocksDownloadedEventListener(new BlocksDownloadedEventListener {
       override def onBlocksDownloaded(peer: Peer, block: Block, filteredBlock: FilteredBlock, blocksLeft: Int): Unit = {
-        logger.info(s"received block=${block.getHashAsString} (size=${block.bitcoinSerialize().size} txs=${Try(block.getTransactions.size).getOrElse(-1)}) filteredBlock=${Try(filteredBlock.getHash.toString).getOrElse("N/A")} (size=${Try(block.bitcoinSerialize().size).getOrElse(-1)} txs=${Try(filteredBlock.getTransactionCount).getOrElse(-1)})")
+        Context.propagate(wallet.getContext)
+        logger.debug(s"received block=${block.getHashAsString} (size=${block.bitcoinSerialize().size} txs=${Try(block.getTransactions.size).getOrElse(-1)}) filteredBlock=${Try(filteredBlock.getHash.toString).getOrElse("N/A")} (size=${Try(block.bitcoinSerialize().size).getOrElse(-1)} txs=${Try(filteredBlock.getTransactionCount).getOrElse(-1)})")
         Try {
           if (filteredBlock.getAssociatedTransactions.size() > 0) {
             logger.info(s"retrieving full block ${block.getHashAsString}")
@@ -92,9 +101,10 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
 
               override def onSuccess(fullBlock: Block) = {
                 Try {
+                  Context.propagate(wallet.getContext)
                   fullBlock.getTransactions.foreach {
                     case tx =>
-                      logger.info(s"received tx=${tx.getHashAsString} witness=${Transaction.read(tx.bitcoinSerialize()).txIn(0).witness.stack.size}} from fullBlock=${fullBlock.getHash} confidence=${tx.getConfidence}")
+                      logger.debug(s"received tx=${tx.getHashAsString} witness=${Transaction.read(tx.bitcoinSerialize()).txIn(0).witness.stack.size} from fullBlock=${fullBlock.getHash} confidence=${tx.getConfidence}")
                       val depthInBlocks = tx.getConfidence.getConfidenceType match {
                         case ConfidenceType.DEAD => -1
                         case _ => tx.getConfidence.getDepthInBlocks
@@ -116,6 +126,7 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
 
     wallet().addTransactionConfidenceEventListener(new TransactionConfidenceEventListener {
       override def onTransactionConfidenceChanged(wallet: Wallet, bitcoinjTx: BitcoinjTransaction): Unit = {
+        Context.propagate(wallet.getContext)
         val tx = Transaction.read(bitcoinjTx.bitcoinSerialize())
         logger.info(s"tx confidence changed for txid=${tx.txid} confidence=${bitcoinjTx.getConfidence} witness=${bitcoinjTx.getWitness(0)}")
         val (blockHeight, confirmations) = bitcoinjTx.getConfidence.getConfidenceType match {

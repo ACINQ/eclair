@@ -18,7 +18,7 @@ import grizzled.slf4j.Logging
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{Await, ExecutionContext, Future}
 
 
 /**
@@ -47,6 +47,8 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
     logger.info(s"using staticPeers=$staticPeers")
     val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
+    bitcoinjKit.startAsync()
+    Await.ready(bitcoinjKit.initialized, 10 seconds)
     Left(bitcoinjKit)
   } else ???
 
@@ -67,7 +69,6 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
     val watcher = bitcoin match {
       case Left(bitcoinj) =>
-        bitcoinj.startAsync()
         system.actorOf(SimpleSupervisor.props(SpvWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
       case _ => ???
     }
