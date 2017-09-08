@@ -9,6 +9,6 @@ trait ChannelsDb {
 
   def removeChannel(channelId: BinaryData)
 
-  def listChannels(): Iterator[HasCommitments]
+  def listChannels(): List[HasCommitments]
 
 }
