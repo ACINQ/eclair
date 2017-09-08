@@ -81,6 +81,20 @@
             </properties>
         </profile>
         <profile>
+            <id>Mac</id>
+            <activation>
+              <os>
+                <family>mac</family>
+              </os>
+            </activation>
+            <properties>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-osx64.tar.gz
+                </bitcoind.url>
+                <bitcoind.md5>1521e1d0901169004b9c1c9b552868b7</bitcoind.md5>
+                <bitcoind.sha1>7216298f77162618f322fdf499f1f1b67a0048b7</bitcoind.sha1>
+            </properties>
+        </profile>
+        <profile>
             <id>Windows</id>
             <activation>
                 <os>
