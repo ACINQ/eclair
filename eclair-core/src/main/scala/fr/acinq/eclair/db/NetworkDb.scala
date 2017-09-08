@@ -11,7 +11,7 @@ trait NetworkDb {
 
   def removeNode(nodeId: PublicKey)
 
-  def listNodes(): Iterator[NodeAnnouncement]
+  def listNodes(): List[NodeAnnouncement]
 
   def addChannel(c: ChannelAnnouncement)
 
@@ -22,12 +22,12 @@ trait NetworkDb {
     */
   def removeChannel(shortChannelId: Long)
 
-  def listChannels(): Iterator[ChannelAnnouncement]
+  def listChannels(): List[ChannelAnnouncement]
 
   def addChannelUpdate(u: ChannelUpdate)
 
   def updateChannelUpdate(u: ChannelUpdate)
 
-  def listChannelUpdates(): Iterator[ChannelUpdate]
+  def listChannelUpdates(): List[ChannelUpdate]
 
 }
