@@ -6,17 +6,22 @@ import scodec.Codec
 import scodec.bits.BitVector
 
 object SqliteUtils {
+
   /**
     * This helper assumes that there is a "data" column available, decodable with the provided codec
+    *
+    * TODO: we should use an [[scala.Iterator]] instead
     *
     * @param rs
     * @param codec
     * @tparam T
     * @return
     */
-  def codecIterator[T](rs: ResultSet, codec: Codec[T]): Iterator[T] = new Iterator[T] {
-    override def hasNext: Boolean = rs.next()
-
-    override def next(): T = codec.decode(BitVector(rs.getBytes("data"))).require.value
+  def codecList[T](rs: ResultSet, codec: Codec[T]): List[T] = {
+    var l: List[T] = Nil
+    while (rs.next()) {
+      l = l :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
+    }
+    l
   }
 }

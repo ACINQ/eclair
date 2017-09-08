@@ -13,6 +13,7 @@ import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
+import scala.concurrent.Future
 import scala.concurrent.duration._
 
 /**
@@ -142,6 +143,24 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, channelUpdate_cd1)
     sender.send(router, RouteRequest(a, d))
     sender.expectMsg(Failure(RouteNotFound))
+  }
+
+  test("temporary channel exclusion") { case (router, _) =>
+    val sender = TestProbe()
+    sender.send(router, RouteRequest(a, d))
+    sender.expectMsgType[RouteResponse]
+    val bc = ChannelDesc(channelId_bc, b, c)
+    // let's exclude channel b->c
+    sender.send(router, ExcludeChannel(bc))
+    sender.send(router, RouteRequest(a, d))
+    sender.expectMsg(Failure(RouteNotFound))
+    // note that cb is still available!
+    sender.send(router, RouteRequest(d, a))
+    sender.expectMsgType[RouteResponse]
+    // let's remove the exclusion
+    sender.send(router, LiftChannelExclusion(bc))
+    sender.send(router, RouteRequest(a, d))
+    sender.expectMsgType[RouteResponse]
   }
 
   ignore("export graph in dot format") { case (router, _) =>

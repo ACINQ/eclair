@@ -6,10 +6,12 @@ import com.google.common.util.concurrent.{FutureCallback, Futures}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Satoshi, Transaction, TxIn, TxOut}
+
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.{Globals, NodeParams}
 import org.bitcoinj.core.{Transaction => BitcoinjTransaction}
+
 import fr.acinq.eclair.{Globals, fromShortId}
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
@@ -183,6 +185,5 @@ class Broadcaster(kit: WalletAppKit) extends Actor with ActorLogging {
       override def onSuccess(v: BitcoinjTransaction): Unit = self ! BroadcastResult(tx, Success(true))
     }, context.dispatcher)
   }
-
 
 }

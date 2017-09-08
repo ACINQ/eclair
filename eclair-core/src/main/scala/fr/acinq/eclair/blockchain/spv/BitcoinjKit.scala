@@ -1,31 +1,17 @@
 package fr.acinq.eclair.blockchain.spv
 
 import java.io.File
-
-
-import akka.actor.ActorSystem
-
 import java.net.InetSocketAddress
 
 import akka.actor.ActorSystem
 import com.google.common.util.concurrent.{FutureCallback, Futures}
-
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.spv.BitcoinjKit._
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewConfidenceLevel}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
-
-import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener}
-import org.bitcoinj.core.{NetworkParameters, Peer, StoredBlock, Transaction => BitcoinjTransaction}
-import org.bitcoinj.kits.WalletAppKit
-import org.bitcoinj.params.{RegTestParams, TestNet3Params}
-import org.bitcoinj.wallet.Wallet
-
-import scala.concurrent.Promise
-
-import org.bitcoinj.core.listeners._
+import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener, _}
 import org.bitcoinj.core.{Block, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.params.{RegTestParams, TestNet3Params}

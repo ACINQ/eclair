@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel
 
-
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
@@ -944,13 +943,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
 
-    case Event(INPUT_DISCONNECTED, _) =>
-      log.info(s"we are disconnected, but it does not matter anymore")
-      stay
+    case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymoer
   })
 
-  when(CLOSED, stateTimeout = 10 seconds)(handleExceptions {
-    case Event(StateTimeout, _) =>
+  when(CLOSED)(handleExceptions {
+    case Event('shutdown, _) =>
       stateData match {
         case d: HasCommitments =>
           log.info(s"deleting database record for channelId=${d.channelId}")
@@ -960,7 +957,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info("shutting down")
       stop(FSM.Normal)
 
-    case Event(INPUT_DISCONNECTED, _) => stay
+    case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymoer
   })
 
   when(OFFLINE)(handleExceptions {
@@ -1064,9 +1061,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   def errorStateHandler: StateFunction = {
-    case Event(StateTimeout, _) =>
-      log.error(s"shutting down (was in state=$stateName)")
-      stop(FSM.Normal)
+    case Event('nevermatches, _) => stay // we can't define a state with no event handler, so we put a dummy one here
   }
 
   when(ERR_INFORMATION_LEAK, stateTimeout = 10 seconds)(errorStateHandler)
@@ -1113,6 +1108,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case WAIT_FOR_INIT_INTERNAL -> OFFLINE =>
       context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, WAIT_FOR_INIT_INTERNAL, OFFLINE, nextStateData))
     case state -> nextState if nextState != state =>
+      if (nextState == CLOSED) {
+        // channel is closed, scheduling this actor for self destruction
+        context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
+      }
       context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, state, nextState, nextStateData))
   }
 

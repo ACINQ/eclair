@@ -43,13 +43,13 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate()
   }
 
-  override def listNodes(): Iterator[NodeAnnouncement] = {
+  override def listNodes(): List[NodeAnnouncement] = {
     val rs = sqlite.createStatement.executeQuery("SELECT data FROM nodes")
-    codecIterator(rs, nodeAnnouncementCodec)
+    codecList(rs, nodeAnnouncementCodec)
   }
 
   override def addChannel(c: ChannelAnnouncement): Unit = {
-    val statement = sqlite.prepareStatement("INSERT INTO channels VALUES (?, ?)")
+    val statement = sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?)")
     statement.setLong(1, c.shortChannelId)
     statement.setBytes(2, channelAnnouncementCodec.encode(c).require.toByteArray)
     statement.executeUpdate()
@@ -63,13 +63,13 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.execute("COMMIT TRANSACTION")
   }
 
-  override def listChannels(): Iterator[ChannelAnnouncement] = {
+  override def listChannels(): List[ChannelAnnouncement] = {
     val rs = sqlite.createStatement.executeQuery("SELECT data FROM channels")
-    codecIterator(rs, channelAnnouncementCodec)
+    codecList(rs, channelAnnouncementCodec)
   }
 
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
-    val statement = sqlite.prepareStatement("INSERT INTO channel_updates VALUES (?, ?, ?)")
+    val statement = sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?)")
     statement.setLong(1, u.shortChannelId)
     statement.setBoolean(2, Announcements.isNode1(u.flags))
     statement.setBytes(3, channelUpdateCodec.encode(u).require.toByteArray)
@@ -84,9 +84,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate()
   }
 
-  override def listChannelUpdates(): Iterator[ChannelUpdate] = {
+  override def listChannelUpdates(): List[ChannelUpdate] = {
     val rs = sqlite.createStatement.executeQuery("SELECT data FROM channel_updates")
-    codecIterator(rs, channelUpdateCodec)
+    codecList(rs, channelUpdateCodec)
   }
 
 }

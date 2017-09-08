@@ -10,6 +10,6 @@ trait PeersDb {
 
   def removePeer(nodeId: PublicKey)
 
-  def listPeers(): Iterator[(PublicKey, InetSocketAddress)]
+  def listPeers(): List[(PublicKey, InetSocketAddress)]
 
 }

@@ -1,5 +1,9 @@
 package fr.acinq.eclair.router
 
+
+import java.io.StringWriter
+
+
 import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
@@ -25,6 +29,8 @@ case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
+case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
+case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendRoutingState(to: ActorRef)
 case class Rebroadcast(ann: Seq[RoutingMessage], origins: Map[RoutingMessage, ActorRef])
 
@@ -35,7 +41,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   stash: Seq[RoutingMessage],
                   awaiting: Seq[ChannelAnnouncement],
                   origins: Map[RoutingMessage, ActorRef],
-                  localChannels: Map[BinaryData, PublicKey])
+                  localChannels: Map[BinaryData, PublicKey],
+                  excludedChannels: Set[ChannelDesc]) // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
 
 sealed trait State
 case object NORMAL extends State
@@ -68,7 +75,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty))
+  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
   when(NORMAL) {
 
@@ -143,7 +150,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(c: ChannelStateChanged, _) => stay
 
-    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _)) =>
+    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _, _)) =>
       log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
       channels.values.foreach(remote ! _)
       nodes.values.foreach(remote ! _)
@@ -255,6 +262,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           stay using d.copy(rebroadcast = Nil, origins = Map.empty)
       }
 
+    case Event(ExcludeChannel(desc@ChannelDesc(channelId, nodeId, _)), d) =>
+      val banDuration = nodeParams.channelExcludeDuration
+      log.info(s"excluding channelId=$channelId from nodeId=$nodeId for duration=$banDuration")
+      context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
+      stay using d.copy(excludedChannels = d.excludedChannels + desc)
+
+    case Event(LiftChannelExclusion(desc@ChannelDesc(channelId, nodeId, _)), d) =>
+      log.info(s"reinstating channelId=$channelId from nodeId=$nodeId")
+      stay using d.copy(excludedChannels = d.excludedChannels - desc)
+
     case Event('nodes, d) =>
       sender ! d.nodes.values
       stay
@@ -275,18 +292,21 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val localNodeId = nodeParams.privateKey.publicKey
       // TODO: HACK!!!!! the following is a workaround to make our routing work with private/not-yet-announced channels, that do not have a channelUpdate
       val fakeUpdates = d.localChannels.map { case (channelId, remoteNodeId) =>
-        // note that this id is deterministic, so that filterUpdates method still works
+        // note that this id is deterministic, otherwise filterUpdates would not work
         val fakeShortId = BigInt(channelId.take(7).toArray).toLong
         val channelDesc = ChannelDesc(fakeShortId, localNodeId, remoteNodeId)
-        // note that we store the channelId in the sig, other values are not used because this will be the first channel in the route
+        // note that we store the channelId in the sig, other values are not used because if it is selected this will be the first channel in the route
         val channelUpdate = ChannelUpdate(signature = channelId, chainHash = nodeParams.chainHash, fakeShortId, 0, "0000", 0, 0, 0, 0)
         (channelDesc -> channelUpdate)
       }
-      // we replace local channelUpdates (we have them for regular public alread-announced channels) by the ones we just generated
+      // we replace local channelUpdates (we have them for regular public already-announced channels) by the ones we just generated
       val updates1 = d.updates.filterKeys(_.a != localNodeId) ++ fakeUpdates
-      val updates2 = filterUpdates(updates1, ignoreNodes, ignoreChannels)
+      // we then filter out the currently excluded channels
+      val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
+      // we also filter out  excluded channels
+      val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.mkString(",")}")
-      findRoute(start, end, updates2).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
+      findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
   }
 
@@ -319,6 +339,9 @@ object Router {
 
   def isRelatedTo(c: ChannelAnnouncement, n: NodeAnnouncement) = n.nodeId == c.nodeId1 || n.nodeId == c.nodeId2
 
+  /**
+    * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
+    */
   def filterUpdates(updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) =
     updates
       .filterNot(u => ignoreNodes.map(_.toBin).contains(u._1.a) || ignoreNodes.map(_.toBin).contains(u._1.b))

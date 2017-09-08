@@ -12,6 +12,7 @@ import scala.concurrent.{ExecutionContext, Future}
   */
 class BitpayInsightFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
 
+
   override def getFeeratePerKB: Future[Long] =
     for {
       json <- get("https://test-insight.bitpay.com/api/utils/estimatefee?nbBlocks=3")
