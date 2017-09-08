@@ -62,6 +62,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
     logger.info(s"using staticPeers=$staticPeers")
     val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
+    bitcoinjKit.startAsync()
+    Await.ready(bitcoinjKit.initialized, 10 seconds)
     Left(bitcoinjKit)
   } else {
     val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
@@ -103,7 +105,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val watcher = bitcoin match {
       case Left(bitcoinj) =>
         zmqConnected.success(true)
-        bitcoinj.startAsync()
         system.actorOf(SimpleSupervisor.props(SpvWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
       case Right(bitcoinClient) =>
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
