@@ -74,13 +74,17 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
 
     // as soon as we are connected the peers will tell us their current height and we will advertise it immediately
     peerGroup().addConnectedEventListener(new PeerConnectedEventListener {
-      override def onPeerConnected(peer: Peer, peerCount: Int): Unit =
-      // we wait for at least 3 peers before relying on the information they are giving, but we trust localhost
+      override def onPeerConnected(peer: Peer, peerCount: Int): Unit = {
+        if ((peer.getPeerVersionMessage.localServices & VersionMessage.NODE_WITNESS) == 0) {
+          peer.close()
+        }
+        // we wait for at least 3 peers before relying on the information they are giving, but we trust localhost
         if (peer.getAddress.getAddr.isLoopbackAddress || peerCount > 3) {
           updateBlockCount(peerGroup().getMostCommonChainHeight)
           // may be called multiple times
           atCurrentHeightPromise.trySuccess(true)
         }
+      }
     })
 
     peerGroup.addBlocksDownloadedEventListener(new BlocksDownloadedEventListener {
