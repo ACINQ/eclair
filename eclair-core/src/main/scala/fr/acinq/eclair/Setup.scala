@@ -63,9 +63,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     logger.info(s"using staticPeers=$staticPeers")
     val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
     bitcoinjKit.startAsync()
-    logger.info("tic")
     Await.ready(bitcoinjKit.initialized, 10 seconds)
-    logger.info("toc")
     Left(bitcoinjKit)
   } else {
     val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
