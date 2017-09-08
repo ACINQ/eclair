@@ -10,9 +10,10 @@ import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.spv.BitcoinjKit._
 import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewConfidenceLevel}
 import grizzled.slf4j.Logging
+import org.bitcoinj.core.NetworkParameters.ProtocolVersion
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
 import org.bitcoinj.core.listeners._
-import org.bitcoinj.core.{Block, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, Transaction => BitcoinjTransaction}
+import org.bitcoinj.core.{Block, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, VersionMessage, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.params.{RegTestParams, TestNet3Params}
 import org.bitcoinj.utils.Threading
@@ -58,6 +59,8 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
     logger.info(s"peerGroup.getMinBroadcastConnections==${peerGroup().getMinBroadcastConnections}")
     logger.info(s"peerGroup.getMinBroadcastConnections==${peerGroup().getMinBroadcastConnections}")
 
+    peerGroup().setMinRequiredProtocolVersion(ProtocolVersion.WITNESS_VERSION.getBitcoinProtocolVersion)
+
 //    setDownloadListener(new DownloadProgressTracker {
 //      override def doneDownload(): Unit = {
 //        super.doneDownload()
@@ -82,7 +85,7 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
 
     peerGroup.addBlocksDownloadedEventListener(new BlocksDownloadedEventListener {
       override def onBlocksDownloaded(peer: Peer, block: Block, filteredBlock: FilteredBlock, blocksLeft: Int): Unit = {
-        logger.info(s"received block=${block.getHashAsString} (size=${block.bitcoinSerialize().size} txs=${Try(block.getTransactions.size).getOrElse(-1)}) filteredBlock=${Try(filteredBlock.getHash.toString).getOrElse("N/A")} (size=${Try(block.bitcoinSerialize().size).getOrElse(-1)} txs=${Try(filteredBlock.getTransactionCount).getOrElse(-1)})")
+        logger.debug(s"received block=${block.getHashAsString} (size=${block.bitcoinSerialize().size} txs=${Try(block.getTransactions.size).getOrElse(-1)}) filteredBlock=${Try(filteredBlock.getHash.toString).getOrElse("N/A")} (size=${Try(block.bitcoinSerialize().size).getOrElse(-1)} txs=${Try(filteredBlock.getTransactionCount).getOrElse(-1)})")
         Try {
           if (filteredBlock.getAssociatedTransactions.size() > 0) {
             logger.info(s"retrieving full block ${block.getHashAsString}")
@@ -93,7 +96,7 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
                 Try {
                   fullBlock.getTransactions.foreach {
                     case tx =>
-                      logger.info(s"received tx=${tx.getHashAsString} witness=${Transaction.read(tx.bitcoinSerialize()).txIn(0).witness.stack.size}} from fullBlock=${fullBlock.getHash} confidence=${tx.getConfidence}")
+                      logger.debug(s"received tx=${tx.getHashAsString} witness=${Transaction.read(tx.bitcoinSerialize()).txIn(0).witness.stack.size}} from fullBlock=${fullBlock.getHash} confidence=${tx.getConfidence}")
                       val depthInBlocks = tx.getConfidence.getConfidenceType match {
                         case ConfidenceType.DEAD => -1
                         case _ => tx.getConfidence.getDepthInBlocks
