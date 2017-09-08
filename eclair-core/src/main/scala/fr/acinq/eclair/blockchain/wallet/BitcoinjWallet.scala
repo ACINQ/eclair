@@ -19,14 +19,14 @@ class BitcoinjWallet(val fWallet: Future[Wallet])(implicit ec: ExecutionContext)
   override def getBalance: Future[Satoshi] = for {
     wallet <- fWallet
   } yield {
-    //Context.propagate(wallet.getContext)
+    Context.propagate(wallet.getContext)
     Satoshi(wallet.getBalance.longValue())
   }
 
   override def getFinalAddress: Future[String] = for {
     wallet <- fWallet
   } yield {
-    //Context.propagate(wallet.getContext)
+    Context.propagate(wallet.getContext)
     wallet.currentReceiveAddress().toBase58
   }
 
@@ -34,7 +34,7 @@ class BitcoinjWallet(val fWallet: Future[Wallet])(implicit ec: ExecutionContext)
     wallet <- fWallet
   } yield {
     logger.info(s"building funding tx")
-    //Context.propagate(wallet.getContext)
+    Context.propagate(wallet.getContext)
     val script = new Script(pubkeyScript)
     val tx = new BitcoinjTransaction(wallet.getParams)
     tx.addOutput(Coin.valueOf(amount.amount), script)
@@ -50,7 +50,7 @@ class BitcoinjWallet(val fWallet: Future[Wallet])(implicit ec: ExecutionContext)
     logger.info(s"committing tx: txid=${tx.txid} tx=$serializedTx")
     for {
       wallet <- fWallet
-      //_ = Context.propagate(wallet.getContext)
+      _ = Context.propagate(wallet.getContext)
       bitcoinjTx = new org.bitcoinj.core.Transaction(wallet.getParams(), serializedTx)
       canCommit = wallet.maybeCommitTx(bitcoinjTx)
       _ = logger.info(s"commit txid=${tx.txid} result=$canCommit")
