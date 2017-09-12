@@ -80,7 +80,10 @@ class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Executio
 
     case hint: Hint => {
       Context.propagate(kit.wallet.getContext)
-      kit.wallet().addWatchedScripts(ImmutableList.of(hint.script))
+      val script = hint.script
+      // set creation time to 2017/09/01, so bitcoinj can still use its checkpoints optimizations
+      script.setCreationTimeSeconds(1501538400L) // 2017-09-01
+      kit.wallet().addWatchedScripts(ImmutableList.of(script))
     }
 
     case w: Watch if !watches.contains(w) =>

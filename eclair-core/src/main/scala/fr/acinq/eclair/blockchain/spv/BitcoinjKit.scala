@@ -60,6 +60,7 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
     logger.info(s"peerGroup.getMinBroadcastConnections==${peerGroup().getMinBroadcastConnections}")
 
     peerGroup().setMinRequiredProtocolVersion(70015) // bitcoin core 0.13
+    wallet().watchMode = true
 
 //    setDownloadListener(new DownloadProgressTracker {
 //      override def doneDownload(): Unit = {

@@ -47,7 +47,7 @@
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.3.14</akka.version>
         <bitcoinlib.version>0.9.13</bitcoinlib.version>
-        <bitcoinj.version>0.15-rc2</bitcoinj.version>
+        <bitcoinj.version>0.15-rc3</bitcoinj.version>
     </properties>
 
     <build>
