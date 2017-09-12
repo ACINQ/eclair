@@ -19,7 +19,7 @@ import scala.annotation.tailrec
   * see https://github.com/lightningnetwork/lightning-rfc/blob/master/04-onion-routing.md
   */
 object Sphinx extends Logging {
-  val Version = 1.toByte
+  val Version = 0.toByte
 
   // length of a MAC
   val MacLength = 32
