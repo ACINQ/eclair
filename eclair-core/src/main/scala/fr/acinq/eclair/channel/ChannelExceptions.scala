@@ -7,7 +7,9 @@ import fr.acinq.eclair.UInt64
   * Created by PM on 11/04/2017.
   */
 
-class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message)
+class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message) {
+  def getChannelId = channelId
+}
 
 case class DebugTriggeredException      (channelId: BinaryData) extends ChannelException(channelId, "debug-mode triggered failure")
 case class ClosingInProgress            (channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
