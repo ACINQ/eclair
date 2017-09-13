@@ -99,6 +99,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeeratePerKB.map {
       case feeratePerKB =>
         Globals.feeratePerKw.set(feerateKb2Kw(feeratePerKB))
+        system.eventStream.publish(CurrentFeerate(Globals.feeratePerKw.get()))
         logger.info(s"current feeratePerKw=${Globals.feeratePerKw.get()}")
     })
 
