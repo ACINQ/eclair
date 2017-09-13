@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.eclair.blockchain.SpvWatcher
+import fr.acinq.eclair.blockchain.{CurrentFeerate, SpvWatcher}
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
 import fr.acinq.eclair.blockchain.spv.BitcoinjKit
 import fr.acinq.eclair.blockchain.wallet.{BitcoinjWallet, EclairWallet}
@@ -64,6 +64,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeeratePerKB.map {
       case feeratePerKB =>
         Globals.feeratePerKw.set(feerateKb2Kw(feeratePerKB))
+        system.eventStream.publish(CurrentFeerate(Globals.feeratePerKw.get()))
         logger.info(s"current feeratePerKw=${Globals.feeratePerKw.get()}")
     })
 

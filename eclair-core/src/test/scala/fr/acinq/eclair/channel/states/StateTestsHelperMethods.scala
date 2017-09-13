@@ -142,4 +142,6 @@ trait StateTestsHelperMethods extends TestKitBase {
 
   }
 
+  def channelId(a: TestFSMRef[State, Data, Channel]) = Helpers.getChannelId(a.stateData)
+
 }

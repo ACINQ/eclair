@@ -52,11 +52,11 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   when(WAITING_FOR_ROUTE) {
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
-      log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")}")
+      log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId.toHexString).mkString("->")}")
       val firstHop = hops.head
       val finalExpiry = Globals.blockCount.get().toInt + defaultHtlcExpiry
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
-      // TODO: HACK!!!! see Router.scala
+      // TODO: HACK!!!! see Router.scala (we actually store the first node id in the sig)
       if (firstHop.lastUpdate.signature.size == 32) {
         register ! Register.Forward(firstHop.lastUpdate.signature, cmd)
       } else {
