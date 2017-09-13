@@ -90,7 +90,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // actual test starts here
       val sender = TestProbe()
       sender.send(alice, CMD_FULFILL_HTLC(42, "42" * 32))
-      sender.expectMsg(Failure(UnknownHtlcId(42)))
+      sender.expectMsg(Failure(UnknownHtlcId(channelId(alice), 42)))
 
       // NB: nominal case is tested in IntegrationSpec
     }
@@ -231,7 +231,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsg(Failure(ClosingAlreadyInProgress))
+      sender.expectMsg(Failure(ClosingAlreadyInProgress(channelId(alice))))
     }
   }
 
