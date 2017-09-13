@@ -118,11 +118,11 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsg(Failure(ClosingAlreadyInProgress))
+      sender.expectMsg(Failure(ClosingAlreadyInProgress(channelId(alice))))
     }
   }
 
-  test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Error") { case (alice, _, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error("00" * 32, "oops".getBytes())

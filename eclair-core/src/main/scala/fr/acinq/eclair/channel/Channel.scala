@@ -408,7 +408,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   when(NORMAL)(handleExceptions {
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined =>
-      handleCommandError(ClosingInProgress)
+      handleCommandError(ClosingInProgress(d.channelId))
 
     case Event(c@CMD_ADD_HTLC(_, _, _, _, downstream_opt, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendAdd(d.commitments, c)) match {
@@ -551,22 +551,22 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
       if (d.localShutdown.isDefined)
-        handleCommandError(ClosingAlreadyInProgress)
+        handleCommandError(ClosingAlreadyInProgress((d.channelId)))
       else if (Commitments.localHasChanges(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
-        handleCommandError(CannotCloseWithPendingChanges)
+        handleCommandError(CannotCloseWithPendingChanges((d.channelId)))
       else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
-        handleCommandError(InvalidFinalScript)
+        handleCommandError(InvalidFinalScript(d.channelId))
       else {
         val shutdown = Shutdown(d.channelId, localScriptPubKey)
         handleCommandSuccess(sender, store(d.copy(localShutdown = Some(shutdown)))) sending shutdown
       }
 
     case Event(Shutdown(_, _), d: DATA_NORMAL) if d.commitments.remoteChanges.proposed.size > 0 =>
-      handleLocalError(CannotCloseWithPendingChanges, d)
+      handleLocalError(CannotCloseWithPendingChanges(d.channelId), d)
 
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d: DATA_NORMAL) =>
-      if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) throw InvalidFinalScript
+      if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) throw InvalidFinalScript(d.channelId)
       Try(d.localShutdown.map(s => (s, d.commitments)).getOrElse {
         // first if we have pending changes, we need to commit them
         val commitments2 = if (Commitments.localHasChanges(d.commitments)) {
@@ -596,7 +596,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      handleLocalError(HtlcTimedout, d)
+      handleLocalError(HtlcTimedout(d.channelId), d)
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_NORMAL) =>
       d.commitments.localParams.isFunder match {
@@ -604,7 +604,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
         case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
-          handleLocalError(FeerateTooDifferent(localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
+          handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
         case _ => stay
       }
 
@@ -811,7 +811,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      handleLocalError(HtlcTimedout, d)
+      handleLocalError(HtlcTimedout(d.channelId), d)
 
     case Event(CurrentFeerate(feeratePerKw), d: DATA_SHUTDOWN) =>
       d.commitments.localParams.isFunder match {
@@ -819,7 +819,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
           stay
         case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
-          handleLocalError(FeerateTooDifferent(localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
+          handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
         case _ => stay
       }
 
@@ -829,7 +829,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_SHUTDOWN) => handleRemoteSpentOther(tx, d)
 
-    case Event(CMD_CLOSE(_), d: DATA_SHUTDOWN) => handleCommandError(ClosingAlreadyInProgress)
+    case Event(CMD_CLOSE(_), d: DATA_SHUTDOWN) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
 
     case Event(e: Error, d: DATA_SHUTDOWN) => handleRemoteError(e, d)
 
@@ -850,7 +850,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
         case Failure(cause) =>
           log.error(cause, "cannot verify their close signature")
-          throw InvalidCloseSignature
+          throw InvalidCloseSignature(d.channelId)
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if tx.txid == Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(d.localClosingSigned.feeSatoshis))._1.tx.txid =>
@@ -863,7 +863,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) => handleRemoteSpentOther(tx, d)
 
-    case Event(CMD_CLOSE(_), d: DATA_NEGOTIATING) => handleCommandError(ClosingAlreadyInProgress)
+    case Event(CMD_CLOSE(_), d: DATA_NEGOTIATING) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
 
     case Event(e: Error, d: DATA_NEGOTIATING) => handleRemoteError(e, d)
 
@@ -934,7 +934,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventConfirmed(BITCOIN_PENALTY_DONE, _, _), d: DATA_CLOSING) if d.revokedCommitPublished.size > 0 => goto(CLOSED)
 
-    case Event(CMD_CLOSE(_), d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress)
+    case Event(CMD_CLOSE(_), d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
 
     case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
 
@@ -967,13 +967,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       log.info(s"rejecting htlc (disconnected)")
-      relayer ! AddHtlcFailed(c, ChannelUnavailable)
-      handleCommandError(ChannelUnavailable)
+      relayer ! AddHtlcFailed(c, ChannelUnavailable(d.channelId))
+      handleCommandError(ChannelUnavailable(d.channelId))
 
-    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while disconnected"), d) replying "ok"
+    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while disconnected"), d) replying "ok"
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      handleLocalError(HtlcTimedout, d)
+      handleLocalError(HtlcTimedout(d.channelId), d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1040,13 +1040,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       log.info(s"rejecting htlc (syncing)")
-      relayer ! AddHtlcFailed(c, ChannelUnavailable)
-      handleCommandError(ChannelUnavailable)
+      relayer ! AddHtlcFailed(c, ChannelUnavailable(d.channelId))
+      handleCommandError(ChannelUnavailable(d.channelId))
 
-    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit("can't do a mutual close while syncing"), d)
+    case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while syncing"), d)
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
-      handleLocalError(HtlcTimedout, d)
+      handleLocalError(HtlcTimedout(d.channelId), d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -1061,7 +1061,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   whenUnhandled {
 
-    case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(ForcedLocalCommit("manual unilateral close"), d)
+    case Event(INPUT_PUBLISH_LOCALCOMMIT, d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "manual unilateral close"), d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(OFFLINE)
 
@@ -1363,7 +1363,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           nextPerCommitmentPoint = localNextPerCommitmentPoint
         )
         forwarder ! revocation
-      } else throw RevocationSyncError
+      } else throw RevocationSyncError(d.channelId)
     }
 
     // re-sending sig/rev (in the right order)
@@ -1391,7 +1391,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // there wasn't any sig in-flight when the disconnection occured
         resendRevocation
-      case _ => throw CommitmentSyncError
+      case _ => throw CommitmentSyncError(d.channelId)
     }
 
     // let's now fail all pending htlc for which we are the final payee

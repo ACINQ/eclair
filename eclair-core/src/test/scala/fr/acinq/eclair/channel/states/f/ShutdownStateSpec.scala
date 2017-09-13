@@ -88,27 +88,27 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FULFILL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv CMD_FULFILL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FULFILL_HTLC(42, "12" * 32))
-      sender.expectMsg(Failure(UnknownHtlcId(42)))
+      sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
       assert(initialState == bob.stateData)
     }
   }
 
-  test("recv CMD_FULFILL_HTLC (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv CMD_FULFILL_HTLC (invalid preimage)") { case (_, bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FULFILL_HTLC(1, "00" * 32))
-      sender.expectMsg(Failure(InvalidHtlcPreimage(1)))
+      sender.expectMsg(Failure(InvalidHtlcPreimage(channelId(bob), 1)))
       assert(initialState == bob.stateData)
     }
   }
 
-  test("recv UpdateFulfillHtlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFulfillHtlc") { case (alice, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
@@ -118,7 +118,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv UpdateFulfillHtlc (unknown htlc id)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -131,7 +131,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv UpdateFulfillHtlc (invalid preimage)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       val sender = TestProbe()
@@ -169,17 +169,17 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
-      sender.expectMsg(Failure(UnknownHtlcId(42)))
+      sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
       assert(initialState == bob.stateData)
     }
   }
 
-  test("recv UpdateFailHtlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFailHtlc") { case (alice, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
@@ -392,7 +392,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
       sender.send(bob, CMD_UPDATE_FEE(20000))
-      sender.expectMsg(Failure(FundeeCannotSendUpdateFee))
+      sender.expectMsg(Failure(FundeeCannotSendUpdateFee(channelId(bob))))
       assert(initialState == bob.stateData)
     }
   }
@@ -427,7 +427,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Globals.feeratePerKw.set(fee.feeratePerKw)
       sender.send(bob, fee)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === CannotAffordFees(missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
+      assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -635,11 +635,11 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsg(Failure(ClosingAlreadyInProgress))
+      sender.expectMsg(Failure(ClosingAlreadyInProgress(channelId(alice))))
     }
   }
 
-  test("recv Error") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _) =>
+  test("recv Error") { case (alice, _, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error("00" * 32, "oops".getBytes)
