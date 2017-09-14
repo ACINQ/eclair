@@ -4,7 +4,7 @@ import akka.actor.{Actor, FSM}
 import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
 
 /**
-  * A version of [[akka.actor.DiagnosticActorLogging]] compatible with an FSM
+  * A version of akka.actor.DiagnosticActorLogging compatible with an FSM
   * See https://groups.google.com/forum/#!topic/akka-user/0CxR8CImr4Q
   */
 trait FSMDiagnosticActorLogging[S, D] extends FSM[S, D] {
