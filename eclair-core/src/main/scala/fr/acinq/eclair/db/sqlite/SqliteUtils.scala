@@ -10,7 +10,7 @@ object SqliteUtils {
   /**
     * This helper assumes that there is a "data" column available, decodable with the provided codec
     *
-    * TODO: we should use an [[scala.Iterator]] instead
+    * TODO: we should use an scala.Iterator instead
     *
     * @param rs
     * @param codec

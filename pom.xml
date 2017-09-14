@@ -4,7 +4,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-android-SNAPSHOT</version>
+    <version>0.2-android-alpha5</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -47,7 +47,7 @@
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.3.14</akka.version>
         <bitcoinlib.version>0.9.13</bitcoinlib.version>
-        <bitcoinj.version>0.15-rc3</bitcoinj.version>
+        <bitcoinj.version>0.15-rc4</bitcoinj.version>
     </properties>
 
     <build>
