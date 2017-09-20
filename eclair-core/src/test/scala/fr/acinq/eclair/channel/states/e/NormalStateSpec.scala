@@ -867,7 +867,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
   test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
-    within(3000 seconds) {
+    within(30 seconds) {
       val sender = TestProbe()
 
       // Alice sends an HTLC to Bob, which they both sign
