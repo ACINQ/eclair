@@ -867,11 +867,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   }
 
   test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
-    within(30 seconds) {
+    within(3000 seconds) {
       val sender = TestProbe()
+
+      // Alice sends an HTLC to Bob, which they both sign
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       crossSign(alice, bob, alice2bob, bob2alice)
 
+      // Bob fails the HTLC because he cannot parse it
       sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
@@ -881,6 +884,15 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.forward(alice)
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
+
+      sender.send(bob, CMD_SIGN)
+      val sig = bob2alice.expectMsgType[CommitSig]
+      // Bob should not have the htlc in its remote commit anymore
+      assert(sig.htlcSignatures.isEmpty)
+
+      // and Alice should accept this signature
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[RevokeAndAck]
     }
   }
 
