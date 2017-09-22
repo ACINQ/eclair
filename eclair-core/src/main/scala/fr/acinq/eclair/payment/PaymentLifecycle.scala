@@ -132,6 +132,14 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
 
+    case Event(fail: UpdateFailMalformedHtlc, _) =>
+      log.info(s"first node in the route couldn't parse our htlc: fail=$fail")
+      // this is a corner case, that can only happen when the *first* node in the route cannot parse the onion
+      // (if this happens higher up in the route, the error would be wrapped in an UpdateFailHtlc and handled above)
+      // let's consider it a local error and treat is as such
+      self ! Status.Failure(new RuntimeException("first hop returned an UpdateFailMalformedHtlc message"))
+      stay
+
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
         s ! PaymentFailed(c.paymentHash, failures :+ LocalFailure(t))
