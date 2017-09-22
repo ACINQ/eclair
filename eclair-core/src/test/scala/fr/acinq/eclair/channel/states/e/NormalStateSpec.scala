@@ -819,7 +819,19 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_MAFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val r: BinaryData = "11" * 32
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+
+      sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
+      sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv CMD_FAIL_MALFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -836,14 +848,22 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _, _) =>
+  test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val r: BinaryData = "11" * 32
       val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
-
-      sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, FailureMessageCodecs.BADONION))
       sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv CMD_FAIL_HTLC (invalid failure_code)") { case (_, bob, _, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = bob.stateData.asInstanceOf[DATA_NORMAL]
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, 42))
+      sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
       assert(initialState == bob.stateData)
     }
   }
@@ -875,13 +895,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       crossSign(alice, bob, alice2bob, bob2alice)
 
       // Bob fails the HTLC because he cannot parse it
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       sender.send(bob, CMD_FAIL_MALFORMED_HTLC(htlc.id, Crypto.sha256(htlc.onionRoutingPacket), FailureMessageCodecs.BADONION))
       sender.expectMsg("ok")
       val fail = bob2alice.expectMsgType[UpdateFailMalformedHtlc]
-
-      // actual test begins
-      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       bob2alice.forward(alice)
+
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail))))
 
@@ -893,6 +912,24 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // and Alice should accept this signature
       bob2alice.forward(alice)
       alice2bob.expectMsgType[RevokeAndAck]
+    }
+  }
+
+  test("recv UpdateFailMalformedHtlc (invalid failure_code)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+
+      // actual test begins
+      val tx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val fail = UpdateFailMalformedHtlc("00" * 32, htlc.id, Crypto.sha256(htlc.onionRoutingPacket), 42)
+      sender.send(alice, fail)
+      val error = alice2bob.expectMsgType[Error]
+      assert(new String(error.data) === InvalidFailureCode("00" * 32).getMessage)
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 

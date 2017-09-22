@@ -38,3 +38,4 @@ case class UnexpectedRevocation         (channelId: BinaryData) extends ChannelE
 case class InvalidRevocation            (channelId: BinaryData) extends ChannelException(channelId, "invalid revocation")
 case class CommitmentSyncError          (channelId: BinaryData) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError          (channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
+case class InvalidFailureCode           (channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
