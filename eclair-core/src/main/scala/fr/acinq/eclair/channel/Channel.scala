@@ -996,16 +996,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
 
-      val commitments1 = if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
-        // no new commitment was exchanged after NORMAL state was reached
+      if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
+        // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
         log.info(s"re-sending fundingLocked")
         val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
         val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
         forwarder ! fundingLocked
-        d.commitments
-      } else {
-        handleSync(channelReestablish, d)
       }
+
+      val commitments1 = handleSync(channelReestablish, d)
 
       d.localShutdown.map {
         case localShutdown =>
