@@ -4,7 +4,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-android-alpha5</version>
+    <version>0.2-android-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -79,7 +79,7 @@
             <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
-                <version>3.2.2</version>
+                <version>3.3.1</version>
                 <configuration>
                     <args>
                         <arg>-deprecation</arg>
