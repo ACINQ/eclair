@@ -156,6 +156,16 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+      sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
+      sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+      assert(initialState == bob.stateData)
+    }
+  }
+
   test("recv CMD_FAIL_MALFORMED_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
@@ -169,12 +179,22 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FAIL_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _) =>
+  test("recv CMD_FAIL_MALFORMED_HTLC (unknown htlc id)") { case (_, bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
-      sender.send(bob, CMD_FAIL_HTLC(42, Right(PermanentChannelFailure)))
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, FailureMessageCodecs.BADONION))
       sender.expectMsg(Failure(UnknownHtlcId(channelId(bob), 42)))
+      assert(initialState == bob.stateData)
+    }
+  }
+
+  test("recv CMD_FAIL_HTLC (invalid failure_code)") { case (_, bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
+      sender.send(bob, CMD_FAIL_MALFORMED_HTLC(42, "00" * 32, 42))
+      sender.expectMsg(Failure(InvalidFailureCode(channelId(bob))))
       assert(initialState == bob.stateData)
     }
   }
@@ -201,13 +221,27 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateFailMalformedHtlc") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv UpdateFailMalformedHtlc") { case (alice, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
       val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), FailureMessageCodecs.BADONION)
       sender.send(alice, fail)
       awaitCond(alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments == initialState.commitments.copy(remoteChanges = initialState.commitments.remoteChanges.copy(initialState.commitments.remoteChanges.proposed :+ fail)))
+    }
+  }
+
+  test("recv UpdateFailMalformedHtlc (invalid failure_code)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val tx = alice.stateData.asInstanceOf[DATA_SHUTDOWN].commitments.localCommit.publishableTxs.commitTx.tx
+      val fail = UpdateFailMalformedHtlc("00" * 32, 1, Crypto.sha256(BinaryData.empty), 42)
+      sender.send(alice, fail)
+      val error = alice2bob.expectMsgType[Error]
+      assert(new String(error.data) === InvalidFailureCode("00" * 32).getMessage)
+      awaitCond(alice.stateName == CLOSING)
+      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 

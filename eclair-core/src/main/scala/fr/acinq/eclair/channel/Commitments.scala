@@ -2,11 +2,11 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
-import fr.acinq.eclair.{Globals, UInt64}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{Globals, UInt64}
 import grizzled.slf4j.Logging
 
 // @formatter:off
@@ -217,7 +217,11 @@ object Commitments extends Logging {
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
 
-  def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): (Commitments, UpdateFailMalformedHtlc) =
+  def sendFailMalformed(commitments: Commitments, cmd: CMD_FAIL_MALFORMED_HTLC): (Commitments, UpdateFailMalformedHtlc) = {
+    // BADONION bit must be set in failure_code
+    if ((cmd.failureCode & FailureMessageCodecs.BADONION) == 0) {
+      throw InvalidFailureCode(commitments.channelId)
+    }
     getHtlcCrossSigned(commitments, IN, cmd.id) match {
       case Some(htlc) if commitments.localChanges.proposed.exists {
         case u: UpdateFulfillHtlc if htlc.id == u.id => true
@@ -233,6 +237,7 @@ object Commitments extends Logging {
         (commitments1, fail)
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
+  }
 
   def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[Commitments, Commitments] =
     getHtlcCrossSigned(commitments, OUT, fail.id) match {
@@ -240,11 +245,17 @@ object Commitments extends Logging {
       case None => throw UnknownHtlcId(commitments.channelId, fail.id)
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, Commitments] =
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, Commitments] = {
+    // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
+    if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
+      throw InvalidFailureCode(commitments.channelId)
+    }
+
     getHtlcCrossSigned(commitments, OUT, fail.id) match {
       case Some(htlc) => Right(addRemoteProposal(commitments, fail))
       case None => throw UnknownHtlcId(commitments.channelId, fail.id)
     }
+  }
 
   def sendFee(commitments: Commitments, cmd: CMD_UPDATE_FEE): (Commitments, UpdateFee) = {
     if (!commitments.localParams.isFunder) {
