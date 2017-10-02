@@ -2,12 +2,13 @@ package fr.acinq.eclair.crypto
 
 import java.nio.ByteOrder
 
-import akka.actor.{Actor, ActorRef, FSM, Terminated}
+import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
+import fr.acinq.eclair.io.WriteAckSender
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -33,6 +34,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   connection ! akka.io.Tcp.Register(self)
 
+  val out = context.actorOf(Props(new WriteAckSender(connection)))
+  def buf(message: BinaryData): ByteString = ByteString.fromArray(message)
+
   // it means we initiate the dialog
   val isWriter = rs.isDefined
 
@@ -42,7 +46,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     val state = makeWriter(keyPair, rs.get)
     val (state1, message, None) = state.write(BinaryData.empty)
     log.debug(s"sending prefix + $message")
-    connection ! Write(TransportHandler.prefix +: message)
+    out ! buf(TransportHandler.prefix +: message)
     state1
   } else {
     makeReader(keyPair)
@@ -82,11 +86,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
                 // we're still in the middle of the handshake process and the other end must first received our next
                 // message before they can reply
                 require(remainder.isEmpty, "unexpected additional data received during handshake")
-                connection ! Write(TransportHandler.prefix +: message)
+                out ! buf(TransportHandler.prefix +: message)
                 stay using HandshakeData(reader1, remainder)
               }
               case (_, message, Some((enc, dec, ck))) => {
-                connection ! Write(TransportHandler.prefix +: message)
+                out ! buf(TransportHandler.prefix +: message)
                 val remoteNodeId = PublicKey(writer.rs)
                 context.parent ! HandshakeCompleted(self, remoteNodeId)
                 val nextStateData = WaitingForListenerData(ExtendedCipherState(enc, ck), ExtendedCipherState(dec, ck), remainder)
@@ -120,7 +124,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     case Event(t: T, WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
       val blob = codec.encode(t).require.toByteArray
       val (enc1, ciphertext) = TransportHandler.encrypt(enc, blob)
-      connection ! Write(ByteString.fromArray(ciphertext.toArray))
+      out ! buf(ciphertext)
       stay using WaitingForCyphertextData(enc1, dec, length, buffer, listener)
   }
 
