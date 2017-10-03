@@ -42,6 +42,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
          case Some(amount) if MilliSatoshi(htlc.amountMsat) < amount => sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
          case Some(amount) if MilliSatoshi(htlc.amountMsat) > amount * 2 => sender ! CMD_FAIL_HTLC(htlc.id, Right(IncorrectPaymentAmount), commit = true)
          case _ =>
+           log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
            // amount is correct or was not specified in the payment request
            sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
            context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
