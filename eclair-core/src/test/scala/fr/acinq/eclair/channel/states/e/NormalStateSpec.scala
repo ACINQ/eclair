@@ -1125,7 +1125,13 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.expectMsgType[Shutdown]
       // actual test begins
       bob2alice.forward(alice)
+      // alice sends a new sig
       alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      // bob replies with a revocation
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      // as soon as alice as received the revocation, she will send her shutdown message
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == SHUTDOWN)
     }
@@ -1197,6 +1203,48 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.forward(alice)
       alice2bob.expectMsgType[Shutdown]
       awaitCond(alice.stateName == SHUTDOWN)
+    }
+  }
+
+  test("recv Shutdown (while waiting for a RevokeAndAck with pending outgoing htlc)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      // let's make bob send a Shutdown message
+      sender.send(bob, CMD_CLOSE(None))
+      bob2alice.expectMsgType[Shutdown]
+      // this is just so we have something to sign
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      // now we can sign
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      // adding an outgoing pending htlc
+      val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      // actual test begins
+      // alice eventually gets bob's shutdown
+      bob2alice.forward(alice)
+      // alice can't do anything for now other than waiting for bob to send the revocation
+      alice2bob.expectNoMsg()
+      // bob sends the revocation
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      // bob will also sign back
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      // then alice can sign the 2nd htlc
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      // and reply to bob's first signature
+      alice2bob.expectMsgType[RevokeAndAck]
+      alice2bob.forward(bob)
+      // bob replies with the 2nd revocation
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+      // then alice can send her shutdown
+      alice2bob.expectMsgType[Shutdown]
+      awaitCond(alice.stateName == SHUTDOWN)
+      // note: bob will sign back a second time, but that is out of our scope
     }
   }
 

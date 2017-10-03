@@ -407,7 +407,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined =>
+    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       handleCommandError(ClosingInProgress(d.channelId))
 
     case Event(c@CMD_ADD_HTLC(_, _, _, _, downstream_opt, do_commit), d: DATA_NORMAL) =>
@@ -544,7 +544,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }
-          stay using d.copy(commitments = commitments1)
+          if (d.remoteShutdown.isDefined && !Commitments.localHasUnsignedOutgoingHtlcs(commitments1)) {
+            // we were waiting for our pending htlcs to be signed before replying with our local shutdown
+            val localShutdown = Shutdown(d.channelId, commitments1.localParams.defaultFinalScriptPubKey)
+            // note: it means that we had pending htlcs to sign, therefore we go to SHUTDOWN, not to NEGOTIATING
+            require(commitments1.remoteCommit.spec.htlcs.size > 0, "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier")
+            goto(SHUTDOWN) using store(DATA_SHUTDOWN(commitments1, localShutdown, d.remoteShutdown.get)) sending localShutdown
+          } else {
+            stay using d.copy(commitments = commitments1)
+          }
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -562,37 +570,60 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         handleCommandSuccess(sender, store(d.copy(localShutdown = Some(shutdown)))) sending shutdown
       }
 
-    case Event(Shutdown(_, _), d: DATA_NORMAL) if d.commitments.remoteChanges.proposed.size > 0 =>
-      handleLocalError(CannotCloseWithPendingChanges(d.channelId), d)
-
     case Event(remoteShutdown@Shutdown(_, remoteScriptPubKey), d: DATA_NORMAL) =>
-      if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) throw InvalidFinalScript(d.channelId)
-      Try(d.localShutdown.map(s => (s, d.commitments)).getOrElse {
-        // first if we have pending changes, we need to commit them
-        val commitments2 = if (Commitments.localHasChanges(d.commitments)) {
-          val (commitments1, commit) = Commitments.sendCommit(d.commitments)
-          forwarder ! commit
-          commitments1
-        } else d.commitments
-        val shutdown = Shutdown(d.channelId, d.commitments.localParams.defaultFinalScriptPubKey)
-        forwarder ! shutdown
-        d.shortChannelId.map {
-          case shortChannelId =>
-            // we announce that channel is disabled
-            log.info(s"disabling the channel (closing initiated)")
-            val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
-            router ! channelUpdate
+      // they have pending unsigned htlcs         => they violated the spec, close the channel
+      // they don't have pending unsigned htlcs
+      //    we have pending unsigned htlcs
+      //      we already sent a shutdown message  => spec violation (we can't send htlcs after having sent shutdown)
+      //      we did not send a shutdown message
+      //        we are ready to sign              => we stop sending further htlcs, we initiate a signature
+      //        we are waiting for a rev          => we stop sending further htlcs, we wait for their revocation, will resign immediately after, and then we will send our shutdown message
+      //    we have no pending unsigned htlcs
+      //      we already sent a shutdown message
+      //        there are pending signed htlcs    => send our shutdown message, go to SHUTDOWN
+      //        there are no htlcs                => send our shutdown message, go to NEGOTIATING
+      //      we did not send a shutdown message
+      //        there are pending signed htlcs    => go to SHUTDOWN
+      //        there are no htlcs                => go to NEGOTIATING
+
+      if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) {
+        handleLocalError(InvalidFinalScript(d.channelId), d)
+      } else if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
+        handleLocalError(CannotCloseWithPendingChanges(d.channelId), d)
+      } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
+        require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
+        // are we in the middle of a signature?
+        d.commitments.remoteNextCommitInfo match {
+          case Left(waitForRevocation) =>
+            // yes, let's just schedule a new signature ASAP, which will include all pending unsigned htlcs
+            val commitments1 = d.commitments.copy(remoteNextCommitInfo = Left(waitForRevocation.copy(reSignAsap = true)))
+            // in the meantime we won't send new htlcs
+            stay using d.copy(commitments = commitments1, remoteShutdown = Some(remoteShutdown))
+          case Right(_) =>
+            // no, let's sign right away
+            self ! CMD_SIGN
+            // in the meantime we won't send new htlcs
+            stay using d.copy(remoteShutdown = Some(remoteShutdown))
         }
-        (shutdown, commitments2)
-      }) match {
-        case Success((localShutdown, commitments3))
-          if (commitments3.remoteNextCommitInfo.isRight && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteCommit.spec.htlcs.size == 0)
-            || (commitments3.remoteNextCommitInfo.isLeft && commitments3.localCommit.spec.htlcs.size == 0 && commitments3.remoteNextCommitInfo.left.get.nextRemoteCommit.spec.htlcs.size == 0) =>
-          val closingSigned = Closing.makeFirstClosingTx(commitments3, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments3, localShutdown, remoteShutdown, closingSigned)) sending closingSigned
-        case Success((localShutdown, commitments3)) =>
-          goto(SHUTDOWN) using store(DATA_SHUTDOWN(commitments3, localShutdown, remoteShutdown))
-        case Failure(cause) => handleLocalError(cause, d)
+      } else {
+        // so we don't have any unsigned outgoing htlcs
+        val (localShutdown, sendList) = d.localShutdown match {
+          case Some(localShutdown) =>
+            (localShutdown, Nil)
+          case None =>
+            val localShutdown = Shutdown(d.channelId, d.commitments.localParams.defaultFinalScriptPubKey)
+            // we need to send our shutdown if we didn't previously
+            (localShutdown, localShutdown :: Nil)
+        }
+        // are there pending signed htlcs on either side?
+        if (d.commitments.localCommit.spec.htlcs.size == 0 && d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(d.commitments.remoteCommit).spec.htlcs.size == 0) {
+          // there are no pending signed htlcs, let's go directly to NEGOTIATING
+          val closingSigned = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingSigned)) sending sendList :+ closingSigned
+        } else {
+          // there are some pending signed htlcs, we need to fail/fullfill them
+          goto(SHUTDOWN) using store(DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown)) sending sendList
+        }
       }
 
     case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
