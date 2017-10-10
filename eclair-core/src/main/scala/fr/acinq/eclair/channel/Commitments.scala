@@ -90,7 +90,9 @@ object Commitments extends Logging {
     // let's compute the current commitment *as seen by them* with this change taken into account
     val add = UpdateAddHtlc(commitments.channelId, commitments.localNextHtlcId, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
     val commitments1 = addLocalProposal(commitments, add).copy(localNextHtlcId = commitments.localNextHtlcId + 1)
-    val reduced = CommitmentSpec.reduce(commitments1.remoteCommit.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
+    // we need to base the next current commitment on the last sig we sent, even if we didn't yet receive their revocation
+    val remoteCommit1 = commitments1.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(commitments1.remoteCommit)
+    val reduced = CommitmentSpec.reduce(remoteCommit1.spec, commitments1.remoteChanges.acked, commitments1.localChanges.proposed)
 
     val htlcValueInFlight = UInt64(reduced.htlcs.map(_.add.amountMsat).sum)
     if (htlcValueInFlight > commitments1.remoteParams.maxHtlcValueInFlightMsat) {

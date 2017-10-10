@@ -4,7 +4,7 @@ import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.Bob
+import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
@@ -208,6 +208,26 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
       sender.expectMsg(Failure(error))
       relayer.expectMsg(AddHtlcFailed(add, error))
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
+  test("recv CMD_ADD_HTLC (while waiting for a revocation)") { case (alice, _, alice2bob, _, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val add1 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2/3 * 1000, "11" * 32, 400144)
+      sender.send(alice, add1)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      relayer.expectMsgType[AddHtlcSucceeded]
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      alice2bob.expectMsgType[CommitSig]
+      // this is over channel-capacity
+      val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2/3 * 1000, "22" * 32, 400144)
+      sender.send(alice, add2)
+      sender.expectMsgType[Failure]
+      relayer.expectMsgType[AddHtlcFailed]
       alice2bob.expectNoMsg(200 millis)
     }
   }
