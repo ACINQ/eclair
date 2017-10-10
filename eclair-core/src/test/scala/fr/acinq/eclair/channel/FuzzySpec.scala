@@ -1,4 +1,4 @@
-package fr.acinq.eclair.channel.states
+package fr.acinq.eclair.channel
 
 import java.util.concurrent.CountDownLatch
 
@@ -9,7 +9,7 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._

@@ -1,8 +1,7 @@
-package fr.acinq.eclair.channel.states
+package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.eclair.channel.Commitments.msg2String
-import fr.acinq.eclair.channel.{INPUT_DISCONNECTED, INPUT_RECONNECTED}
 import fr.acinq.eclair.wire.LightningMessage
 
 import scala.concurrent.duration._
