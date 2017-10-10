@@ -560,9 +560,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
       if (d.localShutdown.isDefined)
         handleCommandError(ClosingAlreadyInProgress((d.channelId)))
-      else if (Commitments.localHasChanges(d.commitments))
+      else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
-        handleCommandError(CannotCloseWithPendingChanges((d.channelId)))
+        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs((d.channelId)))
       else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
         handleCommandError(InvalidFinalScript(d.channelId))
       else {
@@ -589,7 +589,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (!Closing.isValidFinalScriptPubkey(remoteScriptPubKey)) {
         handleLocalError(InvalidFinalScript(d.channelId), d)
       } else if (Commitments.remoteHasUnsignedOutgoingHtlcs(d.commitments)) {
-        handleLocalError(CannotCloseWithPendingChanges(d.channelId), d)
+        handleLocalError(CannotCloseWithUnsignedOutgoingHtlcs(d.channelId), d)
       } else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments)) { // do we have unsigned outgoing htlcs?
         require(d.localShutdown.isEmpty, "can't have pending unsigned outgoing htlcs after having sent Shutdown")
         // are we in the middle of a signature?
@@ -615,8 +615,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             // we need to send our shutdown if we didn't previously
             (localShutdown, localShutdown :: Nil)
         }
-        // are there pending signed htlcs on either side?
-        if (d.commitments.localCommit.spec.htlcs.size == 0 && d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit).getOrElse(d.commitments.remoteCommit).spec.htlcs.size == 0) {
+        // are there pending signed htlcs on either side? we need to have received their last revocation!
+        if (d.commitments.hasNoPendingHtlcs) {
           // there are no pending signed htlcs, let's go directly to NEGOTIATING
           val closingSigned = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingSigned)) sending sendList :+ closingSigned
@@ -808,19 +808,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case (commitments1, revocation) =>
           // we always reply with a revocation
           log.debug(s"received a new sig:\n${Commitments.specs2String(commitments1)}")
-          forwarder ! revocation
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments1))
-          commitments1
+          (commitments1, revocation)
       } match {
-        case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
+        case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
           val closingSigned = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingSigned)) sending closingSigned
-        case Success(commitments1) =>
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingSigned)) sending revocation :: closingSigned :: Nil
+        case Success((commitments1, revocation)) =>
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
-          stay using d.copy(commitments = commitments1)
+          stay using d.copy(commitments = commitments1) sending revocation
         case Failure(cause) => handleLocalError(cause, d)
       }
 
@@ -833,6 +832,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           val closingSigned = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingSigned)) sending closingSigned
         case Success(commitments1) =>
+          // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
+          d.commitments.remoteChanges.signed.collect {
+            case htlc: UpdateAddHtlc =>
+              log.debug(s"closing in progress: failing $htlc")
+              self ! CMD_FAIL_HTLC(htlc.id, Right(PermanentChannelFailure), commit = true)
+          }
           if (Commitments.localHasChanges(commitments1) && d.commitments.remoteNextCommitInfo.left.map(_.reSignAsap) == Left(true)) {
             self ! CMD_SIGN
           }

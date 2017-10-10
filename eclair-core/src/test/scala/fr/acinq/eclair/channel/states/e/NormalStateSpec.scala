@@ -1053,7 +1053,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
       sender.send(alice, CMD_CLOSE(None))
-      sender.expectMsg(Failure(CannotCloseWithPendingChanges(channelId(bob))))
+      sender.expectMsg(Failure(CannotCloseWithUnsignedOutgoingHtlcs(channelId(bob))))
     }
   }
 
