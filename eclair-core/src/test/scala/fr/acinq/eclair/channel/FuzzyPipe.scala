@@ -1,8 +1,7 @@
-package fr.acinq.eclair.channel.states
+package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
 import fr.acinq.eclair.channel.Commitments.msg2String
-import fr.acinq.eclair.channel.{INPUT_DISCONNECTED, INPUT_RECONNECTED}
 import fr.acinq.eclair.wire.LightningMessage
 
 import scala.concurrent.duration._
@@ -11,7 +10,7 @@ import scala.util.Random
 /**
   * A Fuzzy [[fr.acinq.eclair.Pipe]] which randomly disconnects/reconnects peers.
   */
-class FuzzyPipe extends Actor with Stash with ActorLogging {
+class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -24,7 +23,8 @@ class FuzzyPipe extends Actor with Stash with ActorLogging {
   }
 
   def stayOrDisconnect(a: ActorRef, b: ActorRef, countdown: Int) = {
-    if (countdown > 1) context become connected(a, b, countdown - 1)
+    if (!fuzzy) context become connected(a, b, countdown - 1) // fuzzy mode disabled, we never disconnect
+    else if (countdown > 1) context become connected(a, b, countdown - 1)
     else {
       log.debug("DISCONNECTED")
       a ! INPUT_DISCONNECTED

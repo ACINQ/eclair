@@ -39,7 +39,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
 
-  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
+  def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty && remoteNextCommitInfo.isRight
 
   def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
     localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
@@ -305,6 +305,10 @@ object Commitments extends Logging {
 
     commitments1
   }
+
+  def localHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.localChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
+
+  def remoteHasUnsignedOutgoingHtlcs(commitments: Commitments): Boolean = commitments.remoteChanges.proposed.collectFirst { case u: UpdateAddHtlc => u }.isDefined
 
   def localHasChanges(commitments: Commitments): Boolean = commitments.remoteChanges.acked.size > 0 || commitments.localChanges.proposed.size > 0
 

@@ -59,16 +59,17 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob)
       bob2alice.expectMsgType[RevokeAndAck]
       bob2alice.forward(alice)
+      // bob signs back
+      bob2alice.expectMsgType[CommitSig]
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[RevokeAndAck]
+      alice2bob.forward(bob)
       // alice initiates a closing
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
       alice2bob.forward(bob)
-      bob2alice.expectMsgType[CommitSig]
-      bob2alice.forward(alice)
       bob2alice.expectMsgType[Shutdown]
       bob2alice.forward(alice)
-      alice2bob.expectMsgType[RevokeAndAck]
-      alice2bob.forward(bob)
       awaitCond(alice.stateName == SHUTDOWN)
       awaitCond(bob.stateName == SHUTDOWN)
       test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
