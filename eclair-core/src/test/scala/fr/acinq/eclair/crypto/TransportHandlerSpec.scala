@@ -2,7 +2,7 @@ package fr.acinq.eclair.crypto
 
 import java.nio.charset.Charset
 
-import akka.actor.{Actor, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, OneForOneStrategy, Props, Stash, SupervisorStrategy, Terminated}
 import akka.io.Tcp.{Received, Write}
 import akka.testkit.{TestActorRef, TestFSMRef, TestKit, TestProbe}
 import fr.acinq.bitcoin.BinaryData
@@ -183,7 +183,7 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
 
 object TransportHandlerSpec {
 
-  class MyPipe extends Actor with Stash {
+  class MyPipe extends Actor with Stash with ActorLogging {
 
     def receive = {
       case (a: ActorRef, b: ActorRef) =>
@@ -196,11 +196,13 @@ object TransportHandlerSpec {
     }
 
     def ready(a: ActorRef, b: ActorRef): Receive = {
-      case Write(data, ack) if sender() == a => b forward Received(data)
-      case Write(data, ack) if sender() == b => a forward Received(data)
+      case Write(data, ack) if sender().path.parent == a.path =>
+        b forward Received(data)
+        sender ! ack
+      case Write(data, ack) if sender().path.parent == b.path =>
+        a forward Received(data)
+        sender ! ack
       case Terminated(actor) if actor == a || actor == b => context stop self
-      case msg if sender() == a => b forward msg
-      case msg if sender() == b => a forward msg
     }
   }
 
@@ -217,17 +219,19 @@ object TransportHandlerSpec {
     }
 
     def ready(a: ActorRef, b: ActorRef): Receive = {
-      case Write(data, ack) if sender() == a =>
+      case Write(data, ack) if sender().path.parent == a.path =>
         val (chunk1, chunk2) = data.splitAt(data.length / 2)
         b forward Received(chunk1)
+        sender ! ack
         b forward Received(chunk2)
-      case Write(data, ack) if sender() == b =>
+        sender ! ack
+      case Write(data, ack) if sender().path.parent == b.path =>
         val (chunk1, chunk2) = data.splitAt(data.length / 2)
         a forward Received(chunk1)
+        sender ! ack
         a forward Received(chunk2)
+        sender ! ack
       case Terminated(actor) if actor == a || actor == b => context stop self
-      case msg if sender() == a => b forward msg
-      case msg if sender() == b => a forward msg
     }
   }
 
