@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-android-alpha7</version>
+        <version>0.2-android-elecapi-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-core_2.11</artifactId>
@@ -74,10 +74,9 @@
                 <activeByDefault>true</activeByDefault>
             </activation>
             <properties>
-                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-x86_64-linux-gnu.tar.gz
-                </bitcoind.url>
-                <bitcoind.md5>c811c157d4d618f7d7f4b9f24834551c</bitcoind.md5>
-                <bitcoind.sha1>3ab7e537bd00bf35e6a78fca108d0d886f8289c1</bitcoind.sha1>
+                <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.15.0.1/bitcoin-0.15.0.1-x86_64-linux-gnu.tar.gz</bitcoind.url>
+                <bitcoind.md5>7e05085dc0a4e569550b9fa7f6f10d7c</bitcoind.md5>
+                <bitcoind.sha1>a934d7ce3040c57ac5b687ddc778930a6f8621db</bitcoind.sha1>
             </properties>
         </profile>
         <profile>
