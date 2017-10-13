@@ -1,16 +1,23 @@
 package fr.acinq.eclair.blockchain.electrum
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Stash}
+import java.io.File
+import com.google.common.io.Files
+import java.security.SecureRandom
+
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, _}
 
 import scala.annotation.tailrec
 
-class ElectrumWallet(master: DeterministicWallet.ExtendedPrivateKey, client: ActorRef) extends Actor with Stash with ActorLogging {
+class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor with Stash with ActorLogging {
 
   import DeterministicWallet._
   import ElectrumWallet._
+
+  val seed = MnemonicCode.toSeed(mnemonics, "")
+  val master = DeterministicWallet.generate(seed)
 
   client ! ElectrumClient.AddStatusListener(self)
 
@@ -38,6 +45,8 @@ class ElectrumWallet(master: DeterministicWallet.ExtendedPrivateKey, client: Act
       context become running(state)
 
     case GetState => sender ! GetStateResponse(state)
+
+    case GetCurrentReceiveAddress => sender ! GetCurrentReceiveAddressResponse(state.currentReceiveAddress)
   }
 
   def running(state: State): Receive = {
@@ -138,7 +147,10 @@ class ElectrumWallet(master: DeterministicWallet.ExtendedPrivateKey, client: Act
   }
 
   override def unhandled(message: Any): Unit = {
-    super.unhandled(message)
+    message match {
+      case GetMnemonicCode => sender ! GetMnemonicCodeResponse(mnemonics)
+    }
+
     log.warning(s"unhandled $message")
   }
 
@@ -149,9 +161,33 @@ class ElectrumWallet(master: DeterministicWallet.ExtendedPrivateKey, client: Act
 }
 
 object ElectrumWallet {
+
+  def props(mnemonics: Seq[String], client: ActorRef) : Props = {
+    val seed = MnemonicCode.toSeed(mnemonics, "")
+    Props(new ElectrumWallet(mnemonics, client))
+  }
+
+  def props(file: File, client: ActorRef) : Props = {
+    val entropy: BinaryData = (file.exists(), file.canRead(), file.isFile) match {
+      case (true, true, true) => Files.toByteArray(file)
+      case (false, _, _) =>
+        val random = new SecureRandom()
+        val buffer = new Array[Byte](16)
+        random.nextBytes(buffer)
+        Files.write(buffer, file)
+        buffer
+      case _ => throw new IllegalArgumentException(s"cannot create wallet:$file exist but cannot read from")
+    }
+    val mnemonics = MnemonicCode.toMnemonics(entropy)
+    Props(new ElectrumWallet(mnemonics, client))
+  }
+
   // @formatter:off
   sealed trait Request
   sealed trait Response
+
+  case object GetMnemonicCode extends RuntimeException
+  case class GetMnemonicCodeResponse(mnemonics: Seq[String]) extends Response
 
   case object GetBalance extends Request
   case class GetBalanceResponse(balance: Satoshi) extends Response

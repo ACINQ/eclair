@@ -161,8 +161,8 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     val result = Await.result(wallet.makeFundingTx(fundingPubkeyScript, Satoshi(10000L), 20000), 10 seconds)
     watcher ! Hint(new BitcoinjScript(fundingPubkeyScript))
     assert(Await.result(wallet.commit(result.fundingTx), 10 seconds))
-    watcher ! WatchSpent(listener.ref, result.fundingTx.txid, result.fundingTxOutputIndex, BITCOIN_FUNDING_SPENT)
-    watcher ! WatchConfirmed(listener.ref, result.fundingTx.txid, 3, BITCOIN_FUNDING_DEPTHOK)
+    watcher ! WatchSpent(listener.ref, result.fundingTx.txid, result.fundingTxOutputIndex, result.fundingTx.txOut(result.fundingTxOutputIndex).publicKeyScript, BITCOIN_FUNDING_SPENT)
+    watcher ! WatchConfirmed(listener.ref, result.fundingTx.txid, result.fundingTx.txOut(result.fundingTxOutputIndex).publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK)
     watcher ! PublishAsap(result.fundingTx)
 
     logger.info(s"waiting for confirmation of ${result.fundingTx.txid}")
@@ -195,8 +195,8 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
           val result = Await.result(wallet.makeFundingTx(fundingPubkeyScript, Satoshi(10000L), 20000), 10 seconds)
           watcher ! Hint(new BitcoinjScript(fundingPubkeyScript))
           assert(Await.result(wallet.commit(result.fundingTx), 10 seconds))
-          watcher ! WatchSpent(listener.ref, result.fundingTx.txid, result.fundingTxOutputIndex, BITCOIN_FUNDING_SPENT)
-          watcher ! WatchConfirmed(listener.ref, result.fundingTx.txid, 3, BITCOIN_FUNDING_DEPTHOK)
+          watcher ! WatchSpent(listener.ref, result.fundingTx.txid, result.fundingTxOutputIndex, result.fundingTx.txOut(result.fundingTxOutputIndex).publicKeyScript, BITCOIN_FUNDING_SPENT)
+          watcher ! WatchConfirmed(listener.ref, result.fundingTx.txid, result.fundingTx.txOut(result.fundingTxOutputIndex).publicKeyScript, 3, BITCOIN_FUNDING_DEPTHOK)
           watcher ! PublishAsap(result.fundingTx)
           (result.fundingTx.txid, listener)
       }

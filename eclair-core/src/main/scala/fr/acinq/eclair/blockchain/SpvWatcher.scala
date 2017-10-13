@@ -52,13 +52,13 @@ class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Executio
     case event@NewConfidenceLevel(tx, blockHeight, confirmations) =>
       log.debug(s"analyzing txid=${tx.txid} confirmations=$confirmations tx=${Transaction.write(tx)}")
       watches.collect {
-        case w@WatchSpentBasic(_, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
+        case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpentBasic(event))
-        case w@WatchSpent(_, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
+        case w@WatchSpent(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpent(event, tx))
-        case w@WatchConfirmed(_, txId, minDepth, event) if txId == tx.txid && confirmations >= minDepth =>
+        case w@WatchConfirmed(_, txId, _, minDepth, event) if txId == tx.txid && confirmations >= minDepth =>
           self ! TriggerEvent(w, WatchEventConfirmed(event, blockHeight, 0))
-        case w@WatchConfirmed(_, txId, minDepth, event) if txId == tx.txid && confirmations == -1 =>
+        case w@WatchConfirmed(_, txId, _, minDepth, event) if txId == tx.txid && confirmations == -1 =>
           // the transaction watched was overriden by a competing tx
           self ! TriggerEvent(w, WatchEventDoubleSpent(event))
       }
@@ -93,7 +93,7 @@ class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Executio
       context.watch(w.channel)
       context.become(watching(watches + w, block2tx, oldEvents, sent))
 
-    case PublishAsap(tx) =>
+    case PublishAsap(tx, opt) =>
       val blockCount = Globals.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
@@ -101,7 +101,7 @@ class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Executio
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn(0).outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=${Transaction.write(tx)}")
-        self ! WatchConfirmed(self, parentTxid, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        self ! WatchConfirmed(self, parentTxid, opt.get, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))

@@ -6,10 +6,12 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
+import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.{CurrentFeerate, SpvWatcher}
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
 import fr.acinq.eclair.blockchain.spv.BitcoinjKit
-import fr.acinq.eclair.blockchain.wallet.{BitcoinjWallet, EclairWallet}
+import fr.acinq.eclair.blockchain.wallet.{BitcoinjWallet, EclairWallet, MakeFundingTxResponse}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.payment._
@@ -42,15 +44,18 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  val bitcoin = if (spv) {
-    logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
-    val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
-    logger.info(s"using staticPeers=$staticPeers")
-    val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
-    bitcoinjKit.startAsync()
-    Await.ready(bitcoinjKit.initialized, 10 seconds)
-    Left(bitcoinjKit)
-  } else ???
+  logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
+  val stream = chain match {
+    case "test" => classOf[Setup].getResourceAsStream("/electrum/servers_testnet.json")
+    case "regtest" => classOf[Setup].getResourceAsStream("/electrum/servers_regtest.json")
+  }
+  val addresses = ElectrumClient.readServerAddresses(stream)
+  stream.close()
+
+  val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+  val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
+  val electrumSeedPath = new File(datadir, "electrum_seed.dat")
+  val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient), "electrum-wallet")
 
   def bootstrap: Future[Kit] = Future {
 
@@ -68,17 +73,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
         logger.info(s"current feeratePerKw=${Globals.feeratePerKw.get()}")
     })
 
-    val watcher = bitcoin match {
-      case Left(bitcoinj) =>
-        system.actorOf(SimpleSupervisor.props(SpvWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
-      case _ => ???
-    }
-
-    val wallet = bitcoin match {
-      case _ if wallet_opt.isDefined => wallet_opt.get
-      case Left(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
-      case _ => ???
-    }
+    val wallet = new fr.acinq.eclair.blockchain.wallet.ElectrumWallet(electrumWallet)
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
     }

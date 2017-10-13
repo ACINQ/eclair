@@ -3,6 +3,7 @@ package fr.acinq.eclair.blockchain.wallet
 import akka.actor.ActorRef
 import akka.pattern.ask
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 
 import scala.concurrent.ExecutionContext
@@ -14,10 +15,11 @@ class ElectrumWallet(wallet :ActorRef)(implicit ec: ExecutionContext, timeout: a
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long) = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
-    (wallet ? CompleteTransaction(tx)).mapTo[CompleteTransactionResponse].map(response => {
-      MakeFundingTxResponse(response.tx, 0)
+    (wallet ? CompleteTransaction(tx)).mapTo[CompleteTransactionResponse].map(response => response match {
+      case CompleteTransactionResponse(tx1, None) => MakeFundingTxResponse(tx1, 0)
+      case CompleteTransactionResponse(_, Some(error)) => throw error
     })
   }
 
-  override def commit(tx: Transaction) = (wallet ? CommitTransaction(tx)).mapTo[CommitTransactionResponse].map(_.error.isEmpty)
+  override def commit(tx: Transaction) = (wallet ? BroadcastTransaction(tx)).mapTo[BroadcastTransactionResponse].map(_.error.isEmpty)
 }

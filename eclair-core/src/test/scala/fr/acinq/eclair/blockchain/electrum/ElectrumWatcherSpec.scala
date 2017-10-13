@@ -6,6 +6,8 @@ import akka.actor.Props
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchEventConfirmed, WatchSpent}
+import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import org.json4s.JsonAST.{JArray, JString, JValue}
 
 import scala.concurrent.duration._
@@ -27,11 +29,11 @@ class ElectrumWatcherSpec extends IntegrationSpec {
     val tx = Transaction.read(hex)
 
     val listener = TestProbe()
-    probe.send(watcher, ElectrumWatcher.WatchConfirmed(tx, 4, listener.ref))
+    probe.send(watcher, WatchConfirmed(probe.ref, tx.txid.toString(), tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
     probe.send(bitcoincli, BitcoinReq("generate", 3 :: Nil))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
-    val confirmed = listener.expectMsgType[ElectrumWatcher.TransactionConfirmed](20 seconds)
+    val confirmed = listener.expectMsgType[WatchEventConfirmed](20 seconds)
     system.stop(watcher)
   }
 
@@ -69,14 +71,14 @@ class ElectrumWatcherSpec extends IntegrationSpec {
     }
 
     val listener = TestProbe()
-    probe.send(watcher, ElectrumWatcher.WatchSpent(tx, pos, listener.ref))
+    probe.send(watcher, WatchSpent(probe.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", Transaction.write(spendingTx).toString :: Nil))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
     val blocks = probe.expectMsgType[JValue]
     val JArray(List(JString(block1), JString(block2))) = blocks
-    val spent = listener.expectMsgType[ElectrumWatcher.TransactionSpent](20 seconds)
+    val spent = listener.expectMsg(20 seconds, BITCOIN_FUNDING_SPENT)
     system.stop(watcher)
   }
 }

@@ -19,7 +19,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
   var wallet: ActorRef = _
 
   test("wait until wallet is ready") {
-    wallet = system.actorOf(Props(new ElectrumWallet(master, electrumClient)))
+    wallet = system.actorOf(Props(new ElectrumWallet(mnemonics, electrumClient)))
     val probe = TestProbe()
     awaitCond({
       probe.send(wallet, GetState)

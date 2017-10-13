@@ -1,5 +1,6 @@
 package fr.acinq.eclair.blockchain.electrum
 
+import java.io.InputStream
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
@@ -7,10 +8,12 @@ import akka.io.{IO, Tcp}
 import akka.io.Tcp.{PeerClosed, _}
 import akka.util.ByteString
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.Globals
+import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.rpc.{JsonRPCRequest, JsonRPCResponse}
 import org.json4s.DefaultFormats
-import org.json4s.JsonAST.{JNull, JString, JValue}
-import org.json4s.jackson.Serialization
+import org.json4s.JsonAST._
+import org.json4s.jackson.{JsonMethods, Serialization}
 import org.spongycastle.util.encoders.Hex
 
 import scala.concurrent.duration._
@@ -51,6 +54,15 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     log.debug(s"sending $request")
     val bytes = Serialization.write(request).getBytes ++ newline
     connection ! Write(ByteString.fromArray(bytes))
+  }
+
+  private def updateBlockCount(blockCount: Long) = {
+    // when synchronizing we don't want to advertise previous blocks
+    if (Globals.blockCount.get() < blockCount) {
+      log.debug(s"current blockchain height=$blockCount")
+      system.eventStream.publish(CurrentBlockCount(blockCount))
+      Globals.blockCount.set(blockCount)
+    }
   }
 
   val addressSubscriptions = collection.mutable.HashMap.empty[String, ActorRef]
@@ -104,6 +116,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       val response = Serialization.read[JsonRPCResponse](new String(data.toArray))
       val header = response.result.extract[Header]
       log.debug(s"connected, tip = ${header.block_hash} $header")
+      updateBlockCount(header.block_height)
       statusListeners.map(_ ! Ready)
       context become connected(connection, remote, header, "")
 
@@ -145,6 +158,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     case SubscriptionResponse("blockchain.headers.subscribe", header :: Nil, _) =>
       val newtip = header.extract[Header]
       log.info(s"new tip $newtip")
+      updateBlockCount(newtip.block_height)
       headerSubscriptions.map(_ ! HeaderSubscriptionResponse(newtip))
       context become connected(connection, remoteAddress, newtip, buffer)
 
@@ -217,6 +231,9 @@ object ElectrumClient {
   case class GetTransaction(txid: String) extends ElectrumXRequest
   case class GetTransactionResponse(tx: String) extends ElectrumxReponse
 
+  case class GetMerkle(txid: String, height: Long) extends ElectrumXRequest
+  case class GetMerkleResponse(txid: String, merkle: Seq[String], block_height: Long, pos: Int) extends ElectrumxReponse
+
   case class AddressSubscription(address: String, actor: ActorRef) extends ElectrumXRequest
   case class AddressSubscriptionResponse(address: String, status: String) extends ElectrumxReponse
 
@@ -255,6 +272,7 @@ object ElectrumClient {
     case BroadcastTransaction(tx) => JsonRPCRequest("blockchain.transaction.broadcast", Hex.toHexString(Transaction.write(tx)) :: Nil)
     case GetTransaction(txid: String) => JsonRPCRequest("blockchain.transaction.get", txid :: Nil)
     case HeaderSubscription(_) => JsonRPCRequest("blockchain.headers.subscribe", params = Nil)
+    case GetMerkle(txid, height) => JsonRPCRequest("blockchain.transaction.get_merkle", txid :: height :: Nil)
   }
 
   def parseResponse(request: ElectrumXRequest, response: String): ElectrumxReponse = {
@@ -280,7 +298,26 @@ object ElectrumClient {
           val JString(txid) = json.result
           require(BinaryData(txid) == tx.txid)
           BroadcastTransactionResponse(tx, None)
+        case GetMerkle(txid, height) =>
+          // JObject(List((pos,JInt(1)), (merkle,JArray(List(JString(fa4f39f5a6df91539cad1e216161c52c9625325a993df744748b5b3d54bd4ae0)))), (block_height,JInt(4174))))
+          val JArray(hashes) = json.result \ "merkle"
+          val leaves = hashes collect { case JString(value) => value }
+          val blockHeight: Long = json.result \ "block_height" match {
+            case JInt(value) => value.longValue()
+            case JLong(value) => value
+          }
+          val JInt(pos) = json.result \ "pos"
+          GetMerkleResponse(txid, leaves, blockHeight, pos.toInt)
       }
+    }
+  }
+
+  def readServerAddresses(stream: InputStream): Seq[InetSocketAddress] = {
+    val JObject(values) = JsonMethods.parse(stream)
+    values.map {
+      case (name, fields) =>
+        val JString(port) = fields \ "t"
+        new InetSocketAddress(name, port.toInt)
     }
   }
 }
