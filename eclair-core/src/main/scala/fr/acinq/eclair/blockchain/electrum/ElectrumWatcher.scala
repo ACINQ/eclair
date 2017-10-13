@@ -100,8 +100,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       }
       history.filter(_.height > 0).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
 
-    case ElectrumClient.GetTransactionResponse(hex: String) =>
-      val spendingTx = Transaction.read(hex)
+    case ElectrumClient.GetTransactionResponse(spendingTx) =>
       spendingTx.txIn.map(_.outPoint).map(outPoint => {
         watches.collect {
           case WatchSpent(channel, txid, pos, publicKeyScript, event) if txid == outPoint.txid && pos == outPoint.index.toInt =>

@@ -229,7 +229,7 @@ object ElectrumClient {
   case class BroadcastTransactionResponse(tx: Transaction, error: Option[String]) extends ElectrumxReponse
 
   case class GetTransaction(txid: String) extends ElectrumXRequest
-  case class GetTransactionResponse(tx: String) extends ElectrumxReponse
+  case class GetTransactionResponse(tx: Transaction) extends ElectrumxReponse
 
   case class GetMerkle(txid: String, height: Long) extends ElectrumXRequest
   case class GetMerkleResponse(txid: String, merkle: Seq[String], block_height: Long, pos: Int) extends ElectrumxReponse
@@ -285,7 +285,7 @@ object ElectrumClient {
         case GetScriptHashHistory(scripthash) => GetScriptHashHistoryResponse(scripthash, json.result.extract[Seq[TransactionHistoryItem]])
         case AddressListUnspent(address) => AddressListUnspentResponse(address, json.result.extract[Seq[UnspentItem]])
         case ScriptHashListUnspent(scripthash) => ScriptHashListUnspentResponse(scripthash, json.result.extract[Seq[UnspentItem]])
-        case GetTransaction(_) => GetTransactionResponse(json.result.extract[String])
+        case GetTransaction(_) => GetTransactionResponse(Transaction.read(json.result.extract[String]))
         case AddressSubscription(address, _) => json.result match {
           case JString(status) => AddressSubscriptionResponse(address, status)
           case _ => AddressSubscriptionResponse(address, "")

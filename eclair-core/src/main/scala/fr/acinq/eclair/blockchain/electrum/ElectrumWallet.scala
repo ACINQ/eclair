@@ -1,6 +1,7 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import java.io.File
+
 import com.google.common.io.Files
 import java.security.SecureRandom
 
@@ -8,6 +9,8 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, _}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.UnspentItem
+import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
 
@@ -35,7 +38,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
   val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
   val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
-  def receive = disconnected(State(firstAccountKeys, firstChangeKeys, Set(), Map()))
+  def receive = disconnected(State(firstAccountKeys, firstChangeKeys, Set(), Map(), Map(), Map()))
 
   def disconnected(state: State): Receive = {
     case ElectrumClient.Ready =>
@@ -50,19 +53,17 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
   }
 
   def running(state: State): Receive = {
-    case resp@ElectrumClient.ScriptHashListUnspentResponse(scriptHash, unspents) if state.accountKeyMap.contains(scriptHash) =>
-      val key = state.accountKeyMap(scriptHash)
-      log.info(s"unspent for account address ${segwitAddress(key)} script $scriptHash: $unspents")
-      val utxos1 = updateUtxos(state.utxos, key.privateKey, resp)
-      if (utxos1 != state.utxos) log.info(s"balance before ${state.balance} now: ${totalAmount(utxos1)}")
-      context become running(state.copy(utxos = utxos1))
+    case resp@ElectrumClient.ScriptHashListUnspentResponse(scriptHash, unspents)  =>
+      unspents.filterNot(item => state.transactions.contains(BinaryData(item.tx_hash))).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
+      val state1 = state.updateUtxos(resp)
+      if (state1.utxos != state.utxos) log.debug(s"balance before ${state.balance} now: ${state.balance}")
+      context become running(state1)
 
-    case resp@ElectrumClient.ScriptHashListUnspentResponse(scriptHash, unspents) if state.changeKeyMap.contains(scriptHash) =>
-      val key = state.changeKeyMap(scriptHash)
-      log.info(s"unspent for change address ${segwitAddress(key)} script $scriptHash: $unspents")
-      val utxos1 = updateUtxos(state.utxos, key.privateKey, resp)
-      if (utxos1 != state.utxos) log.info(s"balance before ${state.balance} now: ${totalAmount(utxos1)}")
-      context become running(state.copy(utxos = utxos1))
+    case ElectrumClient.GetTransactionResponse(tx) if state.transactions.contains(tx.txid) => ()
+
+    case ElectrumClient.GetTransactionResponse(tx) =>
+      // TODO: find which of our utxos are spent, and which of our keys it sends money to
+      context become running(state.addTransaction(tx))
 
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) if state.status.get(scriptHash) == Some(status) => log.debug(s"$scriptHash is already up to date")
 
@@ -149,9 +150,8 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
   override def unhandled(message: Any): Unit = {
     message match {
       case GetMnemonicCode => sender ! GetMnemonicCodeResponse(mnemonics)
+      case _ => log.warning(s"unhandled $message")
     }
-
-    log.warning(s"unhandled $message")
   }
 
   override def preRestart(reason: Throwable, message: Option[Any]): Unit = {
@@ -162,12 +162,12 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
 
 object ElectrumWallet {
 
-  def props(mnemonics: Seq[String], client: ActorRef) : Props = {
+  def props(mnemonics: Seq[String], client: ActorRef): Props = {
     val seed = MnemonicCode.toSeed(mnemonics, "")
     Props(new ElectrumWallet(mnemonics, client))
   }
 
-  def props(file: File, client: ActorRef) : Props = {
+  def props(file: File, client: ActorRef): Props = {
     val entropy: BinaryData = (file.exists(), file.canRead(), file.isFile) match {
       case (true, true, true) => Files.toByteArray(file)
       case (false, _, _) =>
@@ -259,22 +259,6 @@ object ElectrumWallet {
     */
   def changeKey(master: ExtendedPrivateKey) = DeterministicWallet.derivePrivateKey(master, hardened(44) :: hardened(1) :: hardened(0) :: 1L :: Nil)
 
-  /**
-    * update an utxo set using the latest list of unspents for a given key
-    * @param utxos uxto set
-    * @param key private key
-    * @param unspents list of utxos controlled by this key
-    * @return an updated utxo set
-    */
-  def updateUtxos(utxos: Set[Utxo], key: PrivateKey, unspents: ElectrumClient.ScriptHashListUnspentResponse): Set[Utxo] = {
-    require(scriptHash(key.publicKey) == unspents.scriptHash)
-    val utxosForAddress = utxos.filter(_.key == key)
-    val newUtxos = unspents.unspents.map(item => {
-      Utxo(OutPoint(BinaryData(item.tx_hash).reverse, item.tx_pos), Satoshi(item.value), key, false)
-    })
-    utxos -- utxosForAddress ++ newUtxos
-  }
-
   def totalAmount(utxos: Seq[Utxo]): Satoshi = utxos.map(_.amount).sum
 
   def totalAmount(utxos: Set[Utxo]): Satoshi = totalAmount(utxos.toSeq)
@@ -307,7 +291,16 @@ object ElectrumWallet {
     */
   def computeFee(weight: Int, feeRatePerKw: Long): Satoshi = Satoshi((weight * feeRatePerKw) / 1000)
 
-  case class State(accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey], utxos: Set[Utxo], status: Map[BinaryData, String]) {
+  /**
+    *
+    * @param accountKeys wallet account keys
+    * @param changeKeys wallet change keys
+    * @param utxos current utxo set
+    * @param status
+    * @param transactions wallet transactions (i.e. that send to or receive money from this wallet)
+    * @param heights height at which the wallet transactions were published
+    */
+  case class State(accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey], utxos: Set[Utxo], status: Map[BinaryData, String], transactions: Map[BinaryData, Transaction], heights: Map[BinaryData, Long]) extends Logging {
     lazy val accountKeyMap = accountKeys.map(key => scriptHash(key.publicKey) -> key).toMap
 
     lazy val changeKeyMap = changeKeys.map(key => scriptHash(key.publicKey) -> key).toMap
@@ -317,6 +310,39 @@ object ElectrumWallet {
     lazy val unusedAccountKeys = accountKeys.filter(key => status.get(scriptHash(key.publicKey)) == Some(""))
 
     lazy val unusedChangedKeys = changeKeys.filter(key => status.get(scriptHash(key.publicKey)) == Some(""))
+
+    def updateUtxos(unspents: ElectrumClient.ScriptHashListUnspentResponse) : State = {
+      if (!accountKeyMap.contains(unspents.scriptHash) && !changeKeyMap.contains(unspents.scriptHash)) {
+        this
+      }
+      else {
+        val key = accountKeyMap.get(unspents.scriptHash) match {
+          case Some(value) =>
+            logger.debug(s"unspent for account address ${segwitAddress(value)} script ${unspents.scriptHash}: $unspents")
+            value
+          case None =>
+            val value = changeKeyMap(unspents.scriptHash)
+            logger.debug(s"unspent for change address ${segwitAddress(value)} script ${unspents.scriptHash}: $unspents")
+            value
+        }
+        val utxosForAddress = utxos.filter(_.key == key)
+        val newUtxos = unspents.unspents.map(item => {
+          Utxo(OutPoint(BinaryData(item.tx_hash).reverse, item.tx_pos), Satoshi(item.value), key.privateKey, false)
+        })
+        val utxos1 = utxos -- utxosForAddress ++ newUtxos
+        var heights1 = heights
+        unspents.unspents.map(item => {
+          heights1 = heights1 + (BinaryData(item.tx_hash) -> item.height)
+        })
+        this.copy(utxos = utxos1, heights = heights1)
+      }
+    }
+
+    def addTransaction(tx: Transaction) : State = {
+      this.copy(transactions = this.transactions + (tx.txid -> tx))
+    }
+
+    def addTransaction(tx: String) : State = addTransaction(Transaction.read(tx))
 
     /**
       *
@@ -371,7 +397,7 @@ object ElectrumWallet {
     def commitTransaction(tx: Transaction): State = {
       val outPoints = tx.txIn.map(_.outPoint)
       val utxos1 = utxos.filterNot(utxo => outPoints.contains(utxo.outPoint))
-      this.copy(utxos = utxos1)
+      this.copy(utxos = utxos1, transactions = this.transactions + (tx.txid -> tx))
     }
 
     /**

@@ -25,7 +25,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
 
   val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
   val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
-  val state = State(firstAccountKeys, firstChangeKeys, Set(), Map())
+  val state = State(firstAccountKeys, firstChangeKeys, Set(), Map(), Map(), Map())
 
   test("compute addresses") {
     val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)
