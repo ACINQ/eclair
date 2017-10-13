@@ -1,4 +1,4 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.node
 
 import akka.actor.Actor
 import fr.acinq.bitcoin.Satoshi
