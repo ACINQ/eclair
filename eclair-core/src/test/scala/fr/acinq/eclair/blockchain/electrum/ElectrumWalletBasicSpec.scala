@@ -1,11 +1,13 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin._
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
+
+import scala.util.Try
 
 @RunWith(classOf[JUnitRunner])
 class ElectrumWalletBasicSpec extends FunSuite {
@@ -79,5 +81,46 @@ class ElectrumWalletBasicSpec extends FunSuite {
     val e = intercept[IllegalArgumentException] {
       val (state2, tx1)  = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit)
     }
+  }
+
+  def extractPubkeySentTo(state: State, txOut: TxOut): Option[PublicKey] = {
+    (state.accountKeys ++ state.changeKeys).map(_.publicKey).find(pub => txOut.publicKeyScript == publicKeyScript(pub))
+  }
+
+  test("find what a tx spends from us") {
+    val utxos = Set(
+      Utxo(OutPoint("01" * 32, 0), 1 btc, state.accountKeys(0).privateKey, false),
+      Utxo(OutPoint("02" * 32, 0), 2 btc, state.accountKeys(1).privateKey, false),
+      Utxo(OutPoint("03" * 32, 0), 3 btc, state.accountKeys(2).privateKey, false)
+    )
+    val state1 = state.copy(utxos = utxos, status = (state.accountKeys ++ state.changeKeys).map(key => scriptHash(key.publicKey) -> "").toMap)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+    val (state2, tx1)  = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit)
+
+
+    val pubkeys = tx1.txIn.map(extractPubKeySpentFrom).flatten
+    val utxos1 = state2.utxos.filter(utxo => pubkeys.contains(utxo.key.publicKey))
+    val utxos2 = state2.utxos.filter(utxo => tx1.txIn.map(_.outPoint).contains(utxo.outPoint))
+
+    println(pubkeys)
+  }
+
+  test("find what a tx sends to us") {
+    val utxos = Set(
+      Utxo(OutPoint("01" * 32, 0), 1 btc, state.accountKeys(0).privateKey, false),
+      Utxo(OutPoint("02" * 32, 0), 2 btc, state.accountKeys(1).privateKey, false),
+      Utxo(OutPoint("03" * 32, 0), 3 btc, state.accountKeys(2).privateKey, false)
+    )
+    val state1 = state.copy(utxos = utxos, status = (state.accountKeys ++ state.changeKeys).map(key => scriptHash(key.publicKey) -> "").toMap)
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+    val (state2, tx1)  = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit)
+
+
+    val pubSpent = tx1.txIn.map(extractPubKeySpentFrom).flatten
+    val utxos1 = state2.utxos.filter(utxo => pubSpent.contains(utxo.key.publicKey))
+    val utxos2 = state2.utxos.filter(utxo => tx1.txIn.map(_.outPoint).contains(utxo.outPoint))
+
+
+    println(pubSpent)
   }
 }

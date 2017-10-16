@@ -5,14 +5,16 @@ import java.io.File
 import com.google.common.io.Files
 import java.security.SecureRandom
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
+import akka.actor.Status.Success
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Terminated}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Crypto, DeterministicWallet, OutPoint, Satoshi, Script, _}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.UnspentItem
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetTransaction, UnspentItem}
 import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
+import scala.util.Try
 
 class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor with Stash with ActorLogging {
 
@@ -38,6 +40,8 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
   val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
   val firstChangeKeys = (0 until 10).map(i => derivePrivateKey(changeMaster, i)).toVector
 
+  val statusListeners = collection.mutable.HashSet.empty[ActorRef]
+
   def receive = disconnected(State(firstAccountKeys, firstChangeKeys, Set(), Map(), Map(), Map()))
 
   def disconnected(state: State): Receive = {
@@ -53,23 +57,12 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
   }
 
   def running(state: State): Receive = {
-    case resp@ElectrumClient.ScriptHashListUnspentResponse(scriptHash, unspents)  =>
-      unspents.filterNot(item => state.transactions.contains(BinaryData(item.tx_hash))).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
-      val state1 = state.updateUtxos(resp)
-      if (state1.utxos != state.utxos) log.debug(s"balance before ${state.balance} now: ${state.balance}")
-      context become running(state1)
-
-    case ElectrumClient.GetTransactionResponse(tx) if state.transactions.contains(tx.txid) => ()
-
-    case ElectrumClient.GetTransactionResponse(tx) =>
-      // TODO: find which of our utxos are spent, and which of our keys it sends money to
-      context become running(state.addTransaction(tx))
-
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) if state.status.get(scriptHash) == Some(status) => log.debug(s"$scriptHash is already up to date")
 
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) =>
       log.debug(s"$scriptHash has a new status $status")
       client ! ElectrumClient.ScriptHashListUnspent(scriptHash)
+      client ! ElectrumClient.GetScriptHashHistory(scriptHash)
       val state1 = state.copy(status = state.status + (scriptHash -> status))
 
       // check whether we have status info for all our keys
@@ -77,7 +70,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
         log.info(s"swipe complete")
         val state2 = if (state1.unusedAccountKeys.size < swipeRange) {
           log.info(s"generating new account keys")
-          val start = state1.accountKeys.last.path.lastChildNumber
+          val start = state1.accountKeys.last.path.lastChildNumber + 1
           val end = start + swipeRange - state1.unusedAccountKeys.size
           val newkeys = (start until end).map(i => derivePrivateKey(accountMaster, i)).toVector
           newkeys.map(key => {
@@ -87,7 +80,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
         } else state1
         val state3 = if (state2.unusedChangedKeys.size < swipeRange) {
           log.info(s"generating new change keys")
-          val start = state2.changeKeys.last.path.lastChildNumber
+          val start = state2.changeKeys.last.path.lastChildNumber + 1
           val end = start + swipeRange - state2.unusedChangedKeys.size
           val newkeys = (start until end).map(i => derivePrivateKey(changeMaster, i)).toVector
           newkeys.map(key => {
@@ -99,6 +92,42 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
       } else {
         context become running(state1)
       }
+
+    case resp@ElectrumClient.ScriptHashListUnspentResponse(scriptHash, unspents)  =>
+      unspents.filterNot(item => state.transactions.contains(BinaryData(item.tx_hash))).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
+      val state1 = state.updateUtxos(resp)
+      if (state1.utxos != state.utxos) log.debug(s"balance before ${state.balance} now: ${state1.balance}")
+      context become running(state1)
+
+    case ElectrumClient.GetScriptHashHistoryResponse(scriptHash, history) =>
+     log.debug(s"history for script hash $scriptHash: $history")
+      var heights1 = state.heights
+      history.map(item => {
+        if (!state.transactions.contains(BinaryData(item.tx_hash))) client ! GetTransaction(item.tx_hash)
+        statusListeners.map(_ ! WalletTransactionConfidenceChanged(BinaryData(item.tx_hash), item.height))
+        heights1 = heights1 + (BinaryData(item.tx_hash) -> item.height)
+      })
+      context become running(state.copy(heights = heights1))
+
+    case ElectrumClient.GetTransactionResponse(tx) if state.transactions.contains(tx.txid) => ()
+
+    case ElectrumClient.GetTransactionResponse(tx) =>
+      log.debug(s"received new wallet tx ${tx.txid}")
+      // TODO: find which of our utxos are spent, and which of our keys it sends money to
+
+      // find out what it spends form us
+      val spentPubKeys = tx.txIn.map(extractPubKeySpentFrom).flatten
+      val spentUtxos = state.utxos.filter(utxo => spentPubKeys.contains(utxo.key.publicKey))
+      val spentAmount = totalAmount(spentUtxos)
+
+      // and what it sends to us
+      val receivedTxOuts = tx.txOut.filter(txOut => state.publicScriptMap.contains(txOut.publicKeyScript))
+      val receivedAmount = receivedTxOuts.map(_.amount).sum
+
+      statusListeners.map(_ ! WalletTransactionReceive(tx, spentAmount, receivedAmount))
+      statusListeners.map(_ ! WalletTransactionConfidenceChanged(tx.txid, state.heights(tx.txid)))
+      context become running(state.addTransaction(tx))
+
 
     case CompleteTransaction(tx) =>
       try {
@@ -144,12 +173,19 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
 
     case ElectrumClient.Disconnected =>
       log.info("wallet got disconnected")
+      statusListeners.map(_ ! ElectrumClient.Disconnected)
       context become disconnected(state)
   }
 
   override def unhandled(message: Any): Unit = {
     message match {
       case GetMnemonicCode => sender ! GetMnemonicCodeResponse(mnemonics)
+      case ElectrumClient.AddStatusListener(actor) if statusListeners.contains(actor) => ()
+      case ElectrumClient.AddStatusListener(actor) =>
+        context.watch(actor)
+        statusListeners += actor
+      case Terminated(actor) =>
+        statusListeners -= actor
       case _ => log.warning(s"unhandled $message")
     }
   }
@@ -212,6 +248,9 @@ object ElectrumWallet {
 
   case object InsufficientFunds extends Response
   case class AmountBelowDustLimit(dustLimit: Satoshi) extends Response
+
+  case class WalletTransactionReceive(tx: Transaction, spent: Satoshi, received: Satoshi)
+  case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
 
   case class Utxo(outPoint: OutPoint, amount: Satoshi, key: PrivateKey, locked: Boolean)
   // @formatter:off
@@ -293,6 +332,23 @@ object ElectrumWallet {
 
   /**
     *
+    * @param txIn transaction input
+    * @return Some(pubkey) if this tx input spends a p2sh-of-p2wpkh(pub), None otherwise
+    */
+  def extractPubKeySpentFrom(txIn: TxIn) : Option[PublicKey] = {
+    Try {
+      // we're looking for tx that spend a pay2sh-of-p2wkph output
+      val ScriptWitness(sig :: pub :: Nil) = txIn.witness
+      val OP_PUSHDATA(script, _) :: Nil = Script.parse(txIn.signatureScript)
+      val publicKey = PublicKey(pub)
+      if (Script.write(Script.pay2wpkh(publicKey)) == script) {
+        Some(publicKey)
+      } else None
+    } getOrElse None
+  }
+
+  /**
+    *
     * @param accountKeys wallet account keys
     * @param changeKeys wallet change keys
     * @param utxos current utxo set
@@ -300,7 +356,12 @@ object ElectrumWallet {
     * @param transactions wallet transactions (i.e. that send to or receive money from this wallet)
     * @param heights height at which the wallet transactions were published
     */
-  case class State(accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey], utxos: Set[Utxo], status: Map[BinaryData, String], transactions: Map[BinaryData, Transaction], heights: Map[BinaryData, Long]) extends Logging {
+  case class State(accountKeys: Vector[ExtendedPrivateKey],
+                   changeKeys: Vector[ExtendedPrivateKey],
+                   utxos: Set[Utxo],
+                   status: Map[BinaryData, String],
+                   transactions: Map[BinaryData, Transaction],
+                   heights: Map[BinaryData, Long]) extends Logging {
     lazy val accountKeyMap = accountKeys.map(key => scriptHash(key.publicKey) -> key).toMap
 
     lazy val changeKeyMap = changeKeys.map(key => scriptHash(key.publicKey) -> key).toMap
@@ -310,6 +371,8 @@ object ElectrumWallet {
     lazy val unusedAccountKeys = accountKeys.filter(key => status.get(scriptHash(key.publicKey)) == Some(""))
 
     lazy val unusedChangedKeys = changeKeys.filter(key => status.get(scriptHash(key.publicKey)) == Some(""))
+
+    lazy val publicScriptMap = (accountKeys ++ changeKeys).map(key => Script.write(publicKeyScript(key.publicKey)) -> key).toMap
 
     def updateUtxos(unspents: ElectrumClient.ScriptHashListUnspentResponse) : State = {
       if (!accountKeyMap.contains(unspents.scriptHash) && !changeKeyMap.contains(unspents.scriptHash)) {
@@ -325,11 +388,12 @@ object ElectrumWallet {
             logger.debug(s"unspent for change address ${segwitAddress(value)} script ${unspents.scriptHash}: $unspents")
             value
         }
-        val utxosForAddress = utxos.filter(_.key == key)
+
+        val utxosForAddress = utxos.filter(_.key == key.privateKey)
         val newUtxos = unspents.unspents.map(item => {
           Utxo(OutPoint(BinaryData(item.tx_hash).reverse, item.tx_pos), Satoshi(item.value), key.privateKey, false)
         })
-        val utxos1 = utxos -- utxosForAddress ++ newUtxos
+        val utxos1 = (utxos -- utxosForAddress) ++ newUtxos
         var heights1 = heights
         unspents.unspents.map(item => {
           heights1 = heights1 + (BinaryData(item.tx_hash) -> item.height)

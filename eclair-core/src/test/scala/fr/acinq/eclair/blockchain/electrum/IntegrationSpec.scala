@@ -50,8 +50,10 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     bitcoinrpcclient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
+        case BitcoinReq(method, Nil) =>
+          bitcoinrpcclient.invoke(method) pipeTo sender
         case BitcoinReq(method, params) =>
-          bitcoinrpcclient.invoke(method, params) pipeTo sender
+          bitcoinrpcclient.invoke(method, params: _*) pipeTo sender
       }
     }))
     Files.createDirectories(PATH_ELECTRUMX_DBDIR.toPath)

@@ -143,21 +143,100 @@ class ElectrumWalletSpec extends IntegrationSpec{
     probe.send(wallet, GetCurrentReceiveAddress)
     val GetCurrentReceiveAddressResponse(address) = probe.expectMsgType[GetCurrentReceiveAddressResponse]
 
-    logger.info(s"sending 1 btc to $address")
-    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address :: 1.0 :: Nil))
+    // send money to our receive address
+    logger.info(s"sending 0.7 btc to $address")
+    probe.send(bitcoincli, BitcoinReq("sendtoaddress", address :: 0.7 :: Nil))
     probe.expectMsgType[JValue]
 
+    // generate 1 block
     probe.send(bitcoincli, BitcoinReq("generate", 1 :: Nil))
     val JArray(List(JString(blockId))) = probe.expectMsgType[JValue]
+
+    // wait until our balance has been updated
+    awaitCond({
+      probe.send(wallet, GetBalance)
+      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $balance1")
+      balance1 == balance + Btc(0.7)
+    }, max = 30 seconds, interval = 1 second)
+
+    // now invalidate the last block
+    probe.send(bitcoincli, BitcoinReq("invalidateblock", blockId :: Nil))
+    probe.expectMsgType[JValue]
+
+    // and restart bitcoind, which should remove pending wallet txs
+    // bitcoind was started with -zapwallettxes=2
+    restartBitcoind
+
+    // generate 2 new blocks. the tx that sent us money is no longer there,
+    // the corresponding utxo should have been removed and our balance should
+    // be back to what it was before
+    probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
+    probe.expectMsgType[JValue]
 
     awaitCond({
       probe.send(wallet, GetBalance)
       val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
       logger.debug(s"current balance is $balance1")
-      balance1 == balance + Btc(1)
+      balance1 == balance
+    }, max = 30 seconds, interval = 1 second)
+  }
+
+  test("handle reorgs (pending send)") {
+    val probe = TestProbe()
+    probe.send(bitcoincli, BitcoinReq("getnewaddress"))
+    val JString(address) = probe.expectMsgType[JValue]
+    val (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) = Base58Check.decode(address)
+
+    probe.send(wallet, GetBalance)
+    val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
+
+    // create a tx that sends money to Bitcoin Core's address
+    val amount = 0.5 btc
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2pkh(pubKeyHash)) :: Nil, lockTime = 0L)
+    probe.send(wallet, CompleteTransaction(tx))
+    val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
+
+    // send it ourselves
+    logger.info(s"sending $amount to $address with tx ${tx1.txid}")
+    probe.send(wallet, BroadcastTransaction(tx1))
+    val BroadcastTransactionResponse(_, None) = probe.expectMsgType[BroadcastTransactionResponse]
+
+    probe.send(bitcoincli, BitcoinReq("generate", 1 :: Nil))
+    val JArray(List(JString(blockId))) = probe.expectMsgType[JValue]
+
+    awaitCond({
+      probe.send(bitcoincli, BitcoinReq("getreceivedbyaddress", address :: Nil))
+      val JDouble(value) = probe.expectMsgType[JValue]
+      value == amount.amount.toDouble
     }, max = 30 seconds, interval = 1 second)
 
+    awaitCond({
+      probe.send(wallet, GetBalance)
+      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $balance1")
+      balance1 < balance - amount && balance1 > balance - amount - Satoshi(50000)
+    }, max = 30 seconds, interval = 1 second)
+
+    // now invalidate the last block
     probe.send(bitcoincli, BitcoinReq("invalidateblock", blockId :: Nil))
     probe.expectMsgType[JValue]
+
+    // and restart bitcoind, which should remove pending wallet txs
+    // bitcoind was started with -zapwallettxes=2
+    restartBitcoind
+
+    // generate 2 new blocks. the tx that sent us money is no longer there,
+    // the corresponding utxo should have been removed and our balance should
+    // be back to what it was before
+    probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
+    probe.expectMsgType[JValue]
+
+    awaitCond({
+      probe.send(wallet, GetBalance)
+      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $balance1")
+      balance1 == balance
+    }, max = 30 seconds, interval = 1 second)
   }
 }
