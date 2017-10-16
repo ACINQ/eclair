@@ -4,10 +4,13 @@ import akka.actor.{ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
 import grizzled.slf4j.Logging
+import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
+import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
 
+@RunWith(classOf[JUnitRunner])
 class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging {
 
   import ElectrumClient._
