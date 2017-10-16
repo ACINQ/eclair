@@ -18,6 +18,7 @@ import org.spongycastle.util.encoders.Hex
 
 import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Success, Try}
 
 class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with Stash with ActorLogging {
 
@@ -133,7 +134,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       actor ! HeaderSubscriptionResponse(tip)
       context watch actor
 
-    case request: ElectrumXRequest =>
+    case request: Request =>
       send(connection, makeRequest(request))
       request match {
         case AddressSubscription(address, actor) =>
@@ -190,17 +191,21 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       context become disconnected
   }
 
-  def waitingForAnswer(connection: ActorRef, request: ElectrumXRequest, replyTo: ActorRef, buffer: String): Receive = {
+  def waitingForAnswer(connection: ActorRef, request: Request, replyTo: ActorRef, buffer: String): Receive = {
     case Received(data) =>
       val buffer1 = buffer + new String(data.toArray)
       if (buffer1.endsWith("\n")) {
-        val response = ElectrumClient.parseResponse(request, buffer1)
-        replyTo ! response
-        unstashAll()
-        context unbecome()
-      } else {
-        context become waitingForAnswer(connection, request, replyTo, buffer1)
-      }
+        buffer1.split("\n").map(json => Try(ElectrumClient.parseResponse(request, json))).collectFirst {
+          case Success(response: ElectrumClient.Response) => response
+        } match {
+          case Some(response) =>
+            replyTo ! response
+            unstashAll()
+            context unbecome()
+          case None =>
+            context become (waitingForAnswer(connection, request, replyTo, buffer1))
+        }
+      } else context become (waitingForAnswer(connection, request, replyTo, buffer1))
     case _ => stash()
   }
 }
@@ -208,40 +213,40 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 object ElectrumClient {
 
   // @formatter:off
-  sealed trait ElectrumXRequest
-  sealed trait ElectrumxReponse
+  sealed trait Request
+  sealed trait Response
 
-  case class GetAddressHistory(address: String) extends ElectrumXRequest
+  case class GetAddressHistory(address: String) extends Request
   case class TransactionHistoryItem(height: Long, tx_hash: String)
-  case class GetAddressHistoryResponse(address: String, history: Seq[TransactionHistoryItem]) extends ElectrumxReponse
+  case class GetAddressHistoryResponse(address: String, history: Seq[TransactionHistoryItem]) extends Response
 
-  case class GetScriptHashHistory(scriptHash: BinaryData) extends ElectrumXRequest
-  case class GetScriptHashHistoryResponse(scriptHash: BinaryData, history: Seq[TransactionHistoryItem]) extends ElectrumxReponse
+  case class GetScriptHashHistory(scriptHash: BinaryData) extends Request
+  case class GetScriptHashHistoryResponse(scriptHash: BinaryData, history: Seq[TransactionHistoryItem]) extends Response
 
-  case class AddressListUnspent(address: String) extends ElectrumXRequest
+  case class AddressListUnspent(address: String) extends Request
   case class UnspentItem(tx_hash: String, tx_pos: Int, value: Long, height: Long)
-  case class AddressListUnspentResponse(address: String, unspents: Seq[UnspentItem]) extends ElectrumxReponse
+  case class AddressListUnspentResponse(address: String, unspents: Seq[UnspentItem]) extends Response
 
-  case class ScriptHashListUnspent(scriptHash: BinaryData) extends ElectrumXRequest
-  case class ScriptHashListUnspentResponse(scriptHash: BinaryData, unspents: Seq[UnspentItem]) extends ElectrumxReponse
+  case class ScriptHashListUnspent(scriptHash: BinaryData) extends Request
+  case class ScriptHashListUnspentResponse(scriptHash: BinaryData, unspents: Seq[UnspentItem]) extends Response
 
-  case class BroadcastTransaction(tx: Transaction) extends ElectrumXRequest
-  case class BroadcastTransactionResponse(tx: Transaction, error: Option[String]) extends ElectrumxReponse
+  case class BroadcastTransaction(tx: Transaction) extends Request
+  case class BroadcastTransactionResponse(tx: Transaction, error: Option[String]) extends Response
 
-  case class GetTransaction(txid: String) extends ElectrumXRequest
-  case class GetTransactionResponse(tx: Transaction) extends ElectrumxReponse
+  case class GetTransaction(txid: String) extends Request
+  case class GetTransactionResponse(tx: Transaction) extends Response
 
-  case class GetMerkle(txid: String, height: Long) extends ElectrumXRequest
-  case class GetMerkleResponse(txid: String, merkle: Seq[String], block_height: Long, pos: Int) extends ElectrumxReponse
+  case class GetMerkle(txid: String, height: Long) extends Request
+  case class GetMerkleResponse(txid: String, merkle: Seq[String], block_height: Long, pos: Int) extends Response
 
-  case class AddressSubscription(address: String, actor: ActorRef) extends ElectrumXRequest
-  case class AddressSubscriptionResponse(address: String, status: String) extends ElectrumxReponse
+  case class AddressSubscription(address: String, actor: ActorRef) extends Request
+  case class AddressSubscriptionResponse(address: String, status: String) extends Response
 
-  case class ScriptHashSubscription(scriptHash: BinaryData, actor: ActorRef) extends ElectrumXRequest
-  case class ScriptHashSubscriptionResponse(scriptHash: BinaryData, status: String) extends ElectrumxReponse
+  case class ScriptHashSubscription(scriptHash: BinaryData, actor: ActorRef) extends Request
+  case class ScriptHashSubscriptionResponse(scriptHash: BinaryData, status: String) extends Response
 
-  case class HeaderSubscription(actor: ActorRef) extends ElectrumXRequest
-  case class HeaderSubscriptionResponse(header: Header) extends ElectrumxReponse
+  case class HeaderSubscription(actor: ActorRef) extends Request
+  case class HeaderSubscriptionResponse(header: Header) extends Response
 
   case class Header(block_height: Long, version: Long, prev_block_hash: String, merkle_root: String, timestamp: Long, bits: Long, nonce: Long) {
     lazy val block_hash: BinaryData = {
@@ -249,12 +254,12 @@ object ElectrumClient {
       blockHeader.hash.reverse
     }
   }
-  case class TransactionHistory(history: Seq[TransactionHistoryItem]) extends ElectrumxReponse
+  case class TransactionHistory(history: Seq[TransactionHistoryItem]) extends Response
 
-  case class AddressStatus(address: String, status: String) extends ElectrumxReponse
+  case class AddressStatus(address: String, status: String) extends Response
 
-  case class ServerError(request: ElectrumXRequest, error: String) extends ElectrumxReponse
-  case class AddStatusListener(actor: ActorRef) extends ElectrumxReponse
+  case class ServerError(request: Request, error: String) extends Response
+  case class AddStatusListener(actor: ActorRef) extends Response
 
   case object Ready
   case object Disconnected
@@ -262,7 +267,7 @@ object ElectrumClient {
 
   case class SubscriptionResponse(method: String, params: List[JValue], jsonrpc: String)
 
-  def makeRequest(request: ElectrumXRequest): JsonRPCRequest = request match {
+  def makeRequest(request: Request): JsonRPCRequest = request match {
     case GetAddressHistory(address) => JsonRPCRequest("blockchain.address.get_history", address :: Nil)
     case GetScriptHashHistory(scripthash) => JsonRPCRequest("blockchain.scripthash.get_history", scripthash.toString() :: Nil)
     case AddressListUnspent(address) => JsonRPCRequest("blockchain.address.listunspent", address :: Nil)
@@ -275,7 +280,7 @@ object ElectrumClient {
     case GetMerkle(txid, height) => JsonRPCRequest("blockchain.transaction.get_merkle", txid :: height :: Nil)
   }
 
-  def parseResponse(request: ElectrumXRequest, response: String): ElectrumxReponse = {
+  def parseResponse(request: Request, response: String): Response = {
     implicit val formats = DefaultFormats
     val json = Serialization.read[JsonRPCResponse](response)
     json.error match {
@@ -299,7 +304,6 @@ object ElectrumClient {
           require(BinaryData(txid) == tx.txid)
           BroadcastTransactionResponse(tx, None)
         case GetMerkle(txid, height) =>
-          // JObject(List((pos,JInt(1)), (merkle,JArray(List(JString(fa4f39f5a6df91539cad1e216161c52c9625325a993df744748b5b3d54bd4ae0)))), (block_height,JInt(4174))))
           val JArray(hashes) = json.result \ "merkle"
           val leaves = hashes collect { case JString(value) => value }
           val blockHeight: Long = json.result \ "block_height" match {
