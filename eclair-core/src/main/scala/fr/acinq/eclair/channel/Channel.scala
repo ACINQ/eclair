@@ -819,7 +819,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             // if we have newly acknowledged changes let's sign them
             self ! CMD_SIGN
           }
-          stay using d.copy(commitments = commitments1) sending revocation
+          stay using store(d.copy(commitments = commitments1)) sending revocation
         case Failure(cause) => handleLocalError(cause, d)
       }
 
