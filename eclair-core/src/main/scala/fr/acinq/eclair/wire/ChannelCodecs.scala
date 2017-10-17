@@ -3,7 +3,7 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.payment.{Local2, Origin2, Relayed2}
+import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
@@ -130,14 +130,14 @@ object ChannelCodecs {
       ("sentAfterLocalCommitIndex" | uint64) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation]
 
-  val origin: Codec[Origin2] = discriminated[Origin2].by(uint16)
-    .typecase(0x01, provide(Local2))
-    .typecase(0x02, (("originChannelId" | binarydata(32)) :: ("originHtlcId" | int64)).as[Relayed2])
+  val origin: Codec[Origin] = discriminated[Origin].by(uint16)
+    .typecase(0x01, provide(Local(None)))
+    .typecase(0x02, (("originChannelId" | binarydata(32)) :: ("originHtlcId" | int64)).as[Relayed])
 
-  val originsList: Codec[List[(Long, Origin2)]] = listOfN(uint16, int64 ~ origin)
+  val originsList: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ origin)
 
-  val originsMap: Codec[Map[Long, Origin2]] = Codec[Map[Long, Origin2]](
-    (map: Map[Long, Origin2]) => originsList.encode(map.toList),
+  val originsMap: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
+    (map: Map[Long, Origin]) => originsList.encode(map.toList),
     (wire: BitVector) => originsList.decode(wire).map(_.map(_.toMap))
   )
 

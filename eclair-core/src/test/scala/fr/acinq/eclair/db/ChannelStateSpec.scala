@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
-import fr.acinq.eclair.payment.{Local2, Relayed2}
+import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.{UInt64, randomKey}
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
@@ -90,7 +90,7 @@ object ChannelStateSpec {
   val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 0L,
     remoteNextHtlcId = 0L,
-    originChannels = Map(42L -> Local2, 15000L -> Relayed2("42" * 32, 43)),
+    originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
 

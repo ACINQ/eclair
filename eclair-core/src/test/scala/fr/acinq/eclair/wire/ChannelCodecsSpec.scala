@@ -3,7 +3,7 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Local2, Relayed2}
+import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
@@ -118,19 +118,19 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode origin") {
-    origin.decodeValue(origin.encode(Local2).require).require == Local2
+    origin.decodeValue(origin.encode(Local(None)).require).require == Local(None)
     val originChannelId = randomBytes(32)
-    origin.decodeValue(origin.encode(Relayed2(originChannelId, 42)).require).require == Relayed2(originChannelId, 42)
+    origin.decodeValue(origin.encode(Relayed(originChannelId, 42)).require).require == Relayed(originChannelId, 42)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
-      1L -> Local2,
-      42L -> Relayed2(randomBytes(32), 4324),
-      130L -> Relayed2(randomBytes(32), -45),
-      1000L -> Relayed2(randomBytes(32), 10),
-      -32L -> Relayed2(randomBytes(32), 54),
-      -4L -> Local2)
+      1L -> Local(None),
+      42L -> Relayed(randomBytes(32), 4324),
+      130L -> Relayed(randomBytes(32), -45),
+      1000L -> Relayed(randomBytes(32), 10),
+      -32L -> Relayed(randomBytes(32), 54),
+      -4L -> Local(None))
     originsMap.decodeValue(originsMap.encode(map).require).require == map
   }
 

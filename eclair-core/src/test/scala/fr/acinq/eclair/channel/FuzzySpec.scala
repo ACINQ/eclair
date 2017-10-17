@@ -30,7 +30,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
   type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], ActorRef, ActorRef, ActorRef, ActorRef, ActorRef]
 
   override def withFixture(test: OneArgTest) = {
-    val fuzzy = tags.contains("fuzzy")
+    val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
@@ -107,15 +107,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       case Status.Failure(t) =>
         log.error(s"htlc error: ${t.getMessage}")
         initiatePayment(stopping)
-      case 'cancelled =>
-        log.warning(s"our htlc was cancelled!")
-        // htlc was dropped because of a disconnection
-        initiatePayment(stopping)
       case 'stop =>
         log.warning(s"stopping...")
         context become waitingForFulfill(true)
-
-
     }
 
   }

@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.payment.{ForwardAdd, ForwardLocalFail, Local, PaymentLifecycle}
 import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -37,7 +38,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val cmd1 = PaymentLifecycle.buildCommand(amount1, expiry1, h1, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd1)
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSucceeded]
       val htlc1 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: Nil)
@@ -49,7 +49,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val cmd2 = PaymentLifecycle.buildCommand(amount2, expiry2, h2, Hop(null, TestConstants.Bob.nodeParams.privateKey.publicKey, null) :: Nil)._1.copy(commit = false)
       sender.send(alice, cmd2)
       sender.expectMsg("ok")
-      relayer.expectMsgType[AddHtlcSucceeded]
       val htlc2 = alice2bob.expectMsgType[UpdateAddHtlc]
       alice2bob.forward(bob)
       awaitCond(bob.stateData.asInstanceOf[DATA_NORMAL].commitments.remoteChanges.proposed == htlc1 :: htlc2 :: Nil)
@@ -85,8 +84,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
       sender.send(alice, add)
       val error = ClosingInProgress(channelId(alice))
-      sender.expectMsg(Failure(error))
-      relayer.expectMsg(AddHtlcFailed(add, error))
+      //sender.expectMsg(Failure(error))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
       alice2bob.expectNoMsg(200 millis)
     }
   }
