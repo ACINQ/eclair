@@ -11,7 +11,7 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.rpc.{JsonRPCRequest, JsonRPCResponse}
-import org.json4s.DefaultFormats
+import org.json4s.{DefaultFormats, JInt, JLong, JString}
 import org.json4s.JsonAST._
 import org.json4s.jackson.{JsonMethods, Serialization}
 import org.spongycastle.util.encoders.Hex
@@ -52,8 +52,19 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
 
   def send(connection: ActorRef, request: JsonRPCRequest): Unit = {
+    import org.json4s._
+    import org.json4s.JsonDSL._
+    import org.json4s.jackson.JsonMethods._
+
     log.debug(s"sending $request")
-    val bytes = Serialization.write(request).getBytes ++ newline
+    val json = ("method" -> request.method) ~ ("params" -> request.params.map {
+      case s: String => new JString(s)
+      case t: Int => new JInt(t)
+      case t: Long => new JLong(t)
+      case t: Double => new JDouble(t)
+    }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
+    val serialized = compact(render(json))
+    val bytes = serialized.getBytes ++ newline
     connection ! Write(ByteString.fromArray(bytes))
   }
 
@@ -103,7 +114,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
   def waitingForVersion(connection: ActorRef, remote: InetSocketAddress): Receive = {
     case Received(data) =>
-      val response = Serialization.read[JsonRPCResponse](new String(data.toArray))
+      val response = parseJsonRpcResonse(new String(data.toArray))
       log.debug(s"received $response")
       send(connection, JsonRPCRequest("blockchain.headers.subscribe", params = Nil))
       log.debug("waiting for tip")
@@ -114,8 +125,8 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
   def waitingForTip(connection: ActorRef, remote: InetSocketAddress): Receive = {
     case Received(data) =>
-      val response = Serialization.read[JsonRPCResponse](new String(data.toArray))
-      val header = response.result.extract[Header]
+      val response = parseJsonRpcResonse(new String(data.toArray))
+      val header = parseHeader(response.result)
       log.debug(s"connected, tip = ${header.block_hash} $header")
       updateBlockCount(header.block_height)
       statusListeners.map(_ ! Ready)
@@ -150,14 +161,14 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     case Received(data) =>
       val buffer1 = buffer + new String(data.toArray)
       if (buffer1.endsWith("\n")) {
-        buffer1.split("\n").map(json => self ! Serialization.read[SubscriptionResponse](json))
+        buffer1.split("\n").map(json => self ! parseSubscriptionResponse(json))
         context become connected(connection, remoteAddress, tip, "")
       } else {
         context become connected(connection, remoteAddress, tip, buffer1)
       }
 
     case SubscriptionResponse("blockchain.headers.subscribe", header :: Nil, _) =>
-      val newtip = header.extract[Header]
+      val newtip = parseHeader(header)
       log.info(s"new tip $newtip")
       updateBlockCount(newtip.block_height)
       headerSubscriptions.map(_ ! HeaderSubscriptionResponse(newtip))
@@ -211,6 +222,11 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 }
 
 object ElectrumClient {
+
+  def apply(addresses: java.util.List[InetSocketAddress]) : ElectrumClient = {
+    import collection.JavaConversions._
+    new ElectrumClient(addresses)
+  }
 
   // @formatter:off
   sealed trait Request
@@ -267,6 +283,67 @@ object ElectrumClient {
 
   case class SubscriptionResponse(method: String, params: List[JValue], jsonrpc: String)
 
+  def parseSubscriptionResponse(input: String) : SubscriptionResponse = {
+    implicit val formats = DefaultFormats
+    val json = JsonMethods.parse(new String(input))
+    val JString(method) = json \ "method"
+    val jsonrpc = json \ "jsonrpc" match {
+      case JString(value) => value
+      case _ => ""
+    }
+    val JArray(params) = json \ "params"
+    SubscriptionResponse(method, params, jsonrpc)
+  }
+
+  def parseJsonRpcResonse(input: String) : JsonRPCResponse = {
+    implicit val formats = DefaultFormats
+    val json = JsonMethods.parse(new String(input))
+    val result = json \ "result"
+    val error = json \ "error" match {
+      case JNull => None
+      case JNothing => None
+      case other =>
+        val message = other \ "message" match {
+          case JString(value) => value
+          case _ => ""
+        }
+        val code = other \ " code" match {
+          case JInt(value) => value.intValue()
+          case JLong(value) => value.intValue()
+          case _ => 0
+        }
+        Some(fr.acinq.eclair.blockchain.rpc.Error(code, message))
+    }
+    val id = json \ " id" match {
+      case JString(value) => value
+      case JInt(value) => value.toString()
+      case JLong(value) => value.toString
+      case _ => ""
+    }
+    JsonRPCResponse(result, error, id)
+  }
+
+  def longField(jvalue: JValue, field: String): Long = jvalue \ field match {
+    case JLong(value) => value.longValue()
+    case JInt(value) => value.longValue()
+  }
+
+  def intField(jvalue: JValue, field: String): Int = jvalue \ field match {
+    case JLong(value) => value.intValue()
+    case JInt(value) => value.intValue()
+  }
+
+  def parseHeader(json: JValue) : Header = {
+    val block_height = longField(json, "block_height")
+    val version = longField(json, "version")
+    val timestamp = longField(json, "timestamp")
+    val bits = longField(json, "bits")
+    val nonce = longField(json, "nonce")
+    val JString(prev_block_hash) = json \ "prev_block_hash"
+    val JString(merkle_root) = json \ "merkle_root"
+    Header(block_height, version, prev_block_hash, merkle_root, timestamp, bits, nonce)
+  }
+
   def makeRequest(request: Request): JsonRPCRequest = request match {
     case GetAddressHistory(address) => JsonRPCRequest("blockchain.address.get_history", address :: Nil)
     case GetScriptHashHistory(scripthash) => JsonRPCRequest("blockchain.scripthash.get_history", scripthash.toString() :: Nil)
@@ -282,15 +359,50 @@ object ElectrumClient {
 
   def parseResponse(request: Request, response: String): Response = {
     implicit val formats = DefaultFormats
-    val json = Serialization.read[JsonRPCResponse](response)
+    val json = parseJsonRpcResonse(response)
+
     json.error match {
       case Some(error) => ServerError(request, error.message)
       case None => request match {
-        case GetAddressHistory(address) => GetAddressHistoryResponse(address, json.result.extract[Seq[TransactionHistoryItem]])
-        case GetScriptHashHistory(scripthash) => GetScriptHashHistoryResponse(scripthash, json.result.extract[Seq[TransactionHistoryItem]])
-        case AddressListUnspent(address) => AddressListUnspentResponse(address, json.result.extract[Seq[UnspentItem]])
-        case ScriptHashListUnspent(scripthash) => ScriptHashListUnspentResponse(scripthash, json.result.extract[Seq[UnspentItem]])
-        case GetTransaction(_) => GetTransactionResponse(Transaction.read(json.result.extract[String]))
+        case GetAddressHistory(address) =>
+          val JArray(jitems) = json.result
+          val items = jitems.map(jvalue => {
+            val JString(tx_hash) = jvalue \ "tx_hash"
+            val height = longField(jvalue, "height")
+            TransactionHistoryItem(height, tx_hash)
+          })
+          GetAddressHistoryResponse(address, items)
+        case GetScriptHashHistory(scripthash) =>
+          val JArray(jitems) = json.result
+          val items = jitems.map(jvalue => {
+            val JString(tx_hash) = jvalue \ "tx_hash"
+            val height = longField(jvalue, "height")
+            TransactionHistoryItem(height, tx_hash)
+          })
+          GetScriptHashHistoryResponse(scripthash, items)
+        case AddressListUnspent(address) =>
+          val JArray(jitems) = json.result
+          val items = jitems.map(jvalue => {
+            val JString(tx_hash) = jvalue \ "tx_hash"
+            val tx_pos = intField(jvalue, "tx_pos")
+            val height = longField(jvalue, "height")
+            val value = longField(jvalue, "value")
+            UnspentItem(tx_hash, tx_pos, value, height)
+          })
+          AddressListUnspentResponse(address, items)
+        case ScriptHashListUnspent(scripthash) =>
+          val JArray(jitems) = json.result
+          val items = jitems.map(jvalue => {
+            val JString(tx_hash) = jvalue \ "tx_hash"
+            val tx_pos = intField(jvalue, "tx_pos")
+            val height = longField(jvalue, "height")
+            val value = longField(jvalue, "value")
+            UnspentItem(tx_hash, tx_pos, value, height)
+          })
+          ScriptHashListUnspentResponse(scripthash, items)
+        case GetTransaction(_) =>
+          val JString(hex) = json.result
+          GetTransactionResponse(Transaction.read(hex))
         case AddressSubscription(address, _) => json.result match {
           case JString(status) => AddressSubscriptionResponse(address, status)
           case _ => AddressSubscriptionResponse(address, "")
