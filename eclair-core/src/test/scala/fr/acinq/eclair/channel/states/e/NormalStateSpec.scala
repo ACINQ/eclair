@@ -4,7 +4,8 @@ import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
-import fr.acinq.eclair.TestConstants.{Alice, Bob}
+import fr.acinq.eclair.TestConstants.Bob
+import fr.acinq.eclair.UInt64.Conversions._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
@@ -12,7 +13,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.transactions.{IN, OUT}
 import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
-import fr.acinq.eclair.UInt64.Conversions._
 import org.junit.runner.RunWith
 import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
@@ -232,17 +232,46 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC (while waiting for Shutdown)") { case (alice, _, alice2bob, _, alice2blockchain, _, _) =>
+  test("recv CMD_ADD_HTLC (after having sent Shutdown)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_CLOSE(None))
       sender.expectMsg("ok")
       alice2bob.expectMsgType[Shutdown]
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].localShutdown.isDefined && !alice.stateData.asInstanceOf[DATA_NORMAL].remoteShutdown.isDefined)
 
       // actual test starts here
-      sender.send(alice, CMD_ADD_HTLC(300000000, "11" * 32, 400144))
-      sender.expectMsg(Failure(ClosingInProgress(channelId(alice))))
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 400144)
+      sender.send(alice, add)
+      val error = ClosingInProgress(channelId(alice))
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add, error))
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
+  test("recv CMD_ADD_HTLC (after having received Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, _, relayer) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      // let's make alice send an htlc
+      val add1 = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 400144)
+      sender.send(alice, add1)
+      sender.expectMsg("ok")
+      relayer.expectMsgType[AddHtlcSucceeded]
+      // at the same time bob initiates a closing
+      sender.send(bob, CMD_CLOSE(None))
+      sender.expectMsg("ok")
+      // this command will be received by alice right after having received the shutdown
+      val add2 = CMD_ADD_HTLC(100000000, "22" * 32, expiry = 300000)
+      // messages cross
+      alice2bob.expectMsgType[UpdateAddHtlc]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Shutdown]
+      bob2alice.forward(alice)
+      sender.send(alice, add2)
+      val error = ClosingInProgress(channelId(alice))
+      sender.expectMsg(Failure(error))
+      relayer.expectMsg(AddHtlcFailed(add2, error))
     }
   }
 
@@ -330,7 +359,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 0, 400000000, "11" * 32, 400144, defaultOnion))
       alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 1, 200000000, "22" * 32, 400144, defaultOnion))
       alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 2, 167600000, "33" * 32, 400144, defaultOnion))
-      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 3, 10000000,  "44" * 32, 400144, defaultOnion))
+      alice2bob.forward(bob, UpdateAddHtlc("00" * 32, 3, 10000000, "44" * 32, 400144, defaultOnion))
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
       awaitCond(bob.stateName == CLOSING)
@@ -1036,7 +1065,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Globals.feeratePerKw.set(fee.feeratePerKw)
       sender.send(bob, fee)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis=72400000L).getMessage)
+      assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[WatchConfirmed]
@@ -1180,7 +1209,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(bob.stateName == CLOSING)
     }
   }
- 
+
   test("recv Shutdown (with invalid final script and signed htlcs, in response to a Shutdown)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()

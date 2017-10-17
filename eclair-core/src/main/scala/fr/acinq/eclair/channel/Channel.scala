@@ -409,8 +409,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
    */
 
   when(NORMAL)(handleExceptions {
-    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
-      handleCommandError(ClosingInProgress(d.channelId))
+    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined => {
+      // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
+      // but we want to converge as fast as possible and they would probably not route them anyway
+      val error = ClosingInProgress(d.channelId)
+      relayer ! AddHtlcFailed(c, error)
+      handleCommandError(error)
+    }
 
     case Event(c@CMD_ADD_HTLC(_, _, _, _, downstream_opt, do_commit), d: DATA_NORMAL) =>
       Try(Commitments.sendAdd(d.commitments, c)) match {
@@ -723,6 +728,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
    */
 
   when(SHUTDOWN)(handleExceptions {
+    case Event(c: CMD_ADD_HTLC, d: DATA_SHUTDOWN) => {
+      val error = ClosingInProgress(d.channelId)
+      relayer ! AddHtlcFailed(c, error)
+      handleCommandError(error)
+    }
+
     case Event(c: CMD_FULFILL_HTLC, d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
