@@ -20,6 +20,10 @@ sealed trait Origin
 case class Local(sender: ActorRef) extends Origin
 case class Relayed(upstream: ActorRef, htlcIn: UpdateAddHtlc) extends Origin
 
+sealed trait Origin2
+case object Local2 extends Origin2
+case class Relayed2(originChannelId: BinaryData, originHtlcId: Long) extends Origin2
+
 case class AddHtlcSucceeded(add: UpdateAddHtlc, origin: Origin)
 case class AddHtlcFailed(add: CMD_ADD_HTLC, error: ChannelException)
 case class AddHtlcDiscarded(add: UpdateAddHtlc) // dropped because of disconnection

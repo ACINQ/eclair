@@ -46,7 +46,7 @@ class RelayerSpec extends TestkitBaseClass {
   val channelId_bc: BinaryData = "64864544" * 8
   val channel_flags = 0x00.toByte
   
-  def makeCommitments(channelId: BinaryData) = Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, null, null, null, channelId)
+  def makeCommitments(channelId: BinaryData) = Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId)
 
   test("add a channel") { case (relayer, _) =>
     val sender = TestProbe()

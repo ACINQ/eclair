@@ -50,7 +50,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localNextHtlcId = 1,
-          localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil)
+          localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
+          originChannels = Map(0L -> Local2)
         )))
       relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Local(sender.ref)))
     }
@@ -84,7 +85,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       awaitCond(alice.stateData == initialState.copy(
         commitments = initialState.commitments.copy(
           localNextHtlcId = 1,
-          localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil)
+          localChanges = initialState.commitments.localChanges.copy(proposed = htlc :: Nil),
+          originChannels = Map(0L -> Relayed2(originHtlc.channelId, originHtlc.id))
         )))
       relayer.expectMsg(AddHtlcSucceeded(htlc, origin = Relayed(sender.ref, originHtlc)))
     }
