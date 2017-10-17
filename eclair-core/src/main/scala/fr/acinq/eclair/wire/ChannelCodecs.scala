@@ -53,10 +53,9 @@ object ChannelCodecs {
     (wire: BitVector) => bool.decode(wire).map(_.map(b => if (b) IN else OUT))
   )
 
-  val htlcCodec: Codec[Htlc] = (
+  val htlcCodec: Codec[DirectedHtlc] = (
     ("direction" | directionCodec) ::
-      ("add" | updateAddHtlcCodec) ::
-      ("previousChannelId" | optional(bool, varsizebinarydata))).as[Htlc]
+      ("add" | updateAddHtlcCodec)).as[DirectedHtlc]
 
   def setCodec[T](codec: Codec[T]): Codec[Set[T]] = Codec[Set[T]](
     (elems: Set[T]) => listOfN(uint16, codec).encode(elems.toList),

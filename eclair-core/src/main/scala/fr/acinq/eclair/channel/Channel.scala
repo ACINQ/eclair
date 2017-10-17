@@ -417,7 +417,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       handleCommandError(error)
     }
 
-    case Event(c@CMD_ADD_HTLC(_, _, _, _, downstream_opt, do_commit), d: DATA_NORMAL) =>
+    case Event(c@CMD_ADD_HTLC(_, _, _, _, downstream_opt, _), d: DATA_NORMAL) =>
       Try(Commitments.sendAdd(d.commitments, c)) match {
         case Success(Right((commitments1, add))) =>
           val origin = downstream_opt match {
@@ -1447,7 +1447,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     // let's now fail all pending htlc for which we are the final payee
     val htlcsToFail = commitments1.remoteCommit.spec.htlcs.collect {
-      case Htlc(OUT, add, _) => add
+      case DirectedHtlc(OUT, add) => add
     }.filter {
       case add =>
         Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))

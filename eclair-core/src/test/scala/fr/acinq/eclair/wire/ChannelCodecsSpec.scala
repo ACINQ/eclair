@@ -80,8 +80,8 @@ class ChannelCodecsSpec extends FunSuite {
       expiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
-    val htlc1 = Htlc(direction = IN, add = add, previousChannelId = Some(randomBytes(32)))
-    val htlc2 = Htlc(direction = OUT, add = add, previousChannelId = None)
+    val htlc1 = DirectedHtlc(direction = IN, add = add)
+    val htlc2 = DirectedHtlc(direction = OUT, add = add)
     htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require == htlc1
     htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require == htlc2
   }
@@ -101,8 +101,8 @@ class ChannelCodecsSpec extends FunSuite {
       expiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
-    val htlc1 = Htlc(direction = IN, add = add1, previousChannelId = Some(randomBytes(32)))
-    val htlc2 = Htlc(direction = OUT, add = add2, previousChannelId = None)
+    val htlc1 = DirectedHtlc(direction = IN, add = add1)
+    val htlc2 = DirectedHtlc(direction = OUT, add = add2)
     val htlcs = Set(htlc1, htlc2)
     setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require == htlcs
     val o = CommitmentSpec(
