@@ -113,21 +113,11 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
 
     case ElectrumClient.GetTransactionResponse(tx) =>
       log.debug(s"received new wallet tx ${tx.txid}")
-      // TODO: find which of our utxos are spent, and which of our keys it sends money to
+      val state1 = state.addTransaction(tx)
 
-      // find out what it spends form us
-      val spentPubKeys = tx.txIn.map(extractPubKeySpentFrom).flatten
-      val spentUtxos = state.utxos.filter(utxo => spentPubKeys.contains(utxo.key.publicKey))
-      val spentAmount = totalAmount(spentUtxos)
-
-      // and what it sends to us
-      val receivedTxOuts = tx.txOut.filter(txOut => state.publicScriptMap.contains(txOut.publicKeyScript))
-      val receivedAmount = receivedTxOuts.map(_.amount).sum
-
-      statusListeners.map(_ ! WalletTransactionReceive(tx, spentAmount, receivedAmount))
+      statusListeners.map(_ ! WalletTransactionReceive(tx, state.balance, state1.balance))
       statusListeners.map(_ ! WalletTransactionConfidenceChanged(tx.txid, state.heights(tx.txid)))
-      context become running(state.addTransaction(tx))
-
+      context become running(state1)
 
     case CompleteTransaction(tx) =>
       try {
@@ -338,7 +328,9 @@ object ElectrumWallet {
   def extractPubKeySpentFrom(txIn: TxIn) : Option[PublicKey] = {
     Try {
       // we're looking for tx that spend a pay2sh-of-p2wkph output
-      val ScriptWitness(sig :: pub :: Nil) = txIn.witness
+      require(txIn.witness.stack.size == 2)
+      val sig = txIn.witness.stack(0)
+      val pub = txIn.witness.stack(1)
       val OP_PUSHDATA(script, _) :: Nil = Script.parse(txIn.signatureScript)
       val publicKey = PublicKey(pub)
       if (Script.write(Script.pay2wpkh(publicKey)) == script) {
@@ -403,7 +395,15 @@ object ElectrumWallet {
     }
 
     def addTransaction(tx: Transaction) : State = {
-      this.copy(transactions = this.transactions + (tx.txid -> tx))
+      // find out what it spends form us
+      val spentPubKeys = tx.txIn.map(extractPubKeySpentFrom).flatten
+      val spentUtxos = utxos.filter(utxo => spentPubKeys.contains(utxo.key.publicKey))
+
+      // and what it sends to us
+      val newUtxos = for (i <- 0 until tx.txOut.size) yield publicScriptMap.get(tx.txOut(i).publicKeyScript).map(key => Utxo(OutPoint(tx, i), tx.txOut(i).amount, key.privateKey, false))
+
+      val utxos1 = (utxos -- spentUtxos) ++ newUtxos.flatten
+      this.copy(transactions = this.transactions + (tx.txid -> tx), utxos = utxos1)
     }
 
     def addTransaction(tx: String) : State = addTransaction(Transaction.read(tx))
@@ -459,9 +459,7 @@ object ElectrumWallet {
       * @return an update state where all utxos locked by this tx have been removed
       */
     def commitTransaction(tx: Transaction): State = {
-      val outPoints = tx.txIn.map(_.outPoint)
-      val utxos1 = utxos.filterNot(utxo => outPoints.contains(utxo.outPoint))
-      this.copy(utxos = utxos1, transactions = this.transactions + (tx.txid -> tx))
+      addTransaction(tx)
     }
 
     /**

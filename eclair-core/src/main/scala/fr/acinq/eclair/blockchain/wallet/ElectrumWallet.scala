@@ -1,14 +1,19 @@
 package fr.acinq.eclair.blockchain.wallet
 
-import akka.actor.ActorRef
+import java.util.concurrent.{Executor, TimeUnit}
+
+import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxOut}
+import com.google.common.util.concurrent.ListenableFuture
+import fr.acinq.bitcoin.Crypto.hash160
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, OP_EQUAL, OP_HASH160, OP_PUSHDATA, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 
-class ElectrumWallet(wallet :ActorRef)(implicit ec: ExecutionContext, timeout: akka.util.Timeout)  extends EclairWallet {
+class ElectrumWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout)  extends EclairWallet {
+
   override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(_.balance)
 
   override def getFinalAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
@@ -20,6 +25,22 @@ class ElectrumWallet(wallet :ActorRef)(implicit ec: ExecutionContext, timeout: a
       case CompleteTransactionResponse(_, Some(error)) => throw error
     })
   }
+
+  def sendPayment(amount: Satoshi, address: String) : Future[Boolean] = {
+    val publicKeyScript = Base58Check.decode(address) match {
+      case (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) => Script.pay2pkh(pubKeyHash)
+      case (Base58.Prefix.ScriptAddressTestnet, scriptHash) => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+    }
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
+    val future = for {
+      CompleteTransactionResponse(tx1, None) <- (wallet ? CompleteTransaction(tx)).mapTo[CompleteTransactionResponse]
+      result <- commit(tx1)
+    } yield result
+
+    future
+  }
+
+  def getMnemonics: Future[Seq[String]] = (wallet ? GetMnemonicCode).mapTo[GetMnemonicCodeResponse].map(_.mnemonics)
 
   override def commit(tx: Transaction) = (wallet ? BroadcastTransaction(tx)).mapTo[BroadcastTransactionResponse].map(_.error.isEmpty)
 }

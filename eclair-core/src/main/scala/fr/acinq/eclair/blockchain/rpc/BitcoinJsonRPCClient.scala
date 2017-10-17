@@ -12,7 +12,10 @@ import org.json4s.jackson.Serialization._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
 // @formatter:off
-case class JsonRPCRequest(method: String, params: Seq[Any], jsonrpc: String = "1.0", id: String = "scala-client")
+case class JsonRPCRequest(method: String, params: Seq[Any], jsonrpc: String, id: String)
+object JsonRPCRequest {
+  def apply(method: String, params: Seq[Any]) : JsonRPCRequest = new JsonRPCRequest(method, params, "1.0", "scala-client")
+}
 case class Error(code: Int, message: String)
 case class JsonRPCResponse(result: JValue, error: Option[Error], id: String)
 case class JsonRPCError(error: Error) extends IOException(s"${error.message} (code: ${error.code})")

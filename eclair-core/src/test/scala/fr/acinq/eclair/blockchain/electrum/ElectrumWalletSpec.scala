@@ -4,9 +4,10 @@ import akka.actor.{ActorRef, Props}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
-import org.json4s.JsonAST.{JArray, JDouble, JString, JValue}
+import org.json4s.JsonAST._
 
 import scala.concurrent.duration._
+import scala.sys.process._
 
 class ElectrumWalletSpec extends IntegrationSpec{
   import ElectrumWallet._
@@ -166,13 +167,18 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     // and restart bitcoind, which should remove pending wallet txs
     // bitcoind was started with -zapwallettxes=2
-    restartBitcoind
+    stopBitcoind
+    Thread.sleep(2000)
+    startBitcoind
+    Thread.sleep(2000)
+
 
     // generate 2 new blocks. the tx that sent us money is no longer there,
     // the corresponding utxo should have been removed and our balance should
     // be back to what it was before
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
     probe.expectMsgType[JValue]
+    val reorg = s"$PATH_ELECTRUMX/electrumx_rpc.py reorg 2".!!
 
     awaitCond({
       probe.send(wallet, GetBalance)
@@ -190,6 +196,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     probe.send(wallet, GetBalance)
     val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
+    logger.debug(s"we start with a balance of $balance")
 
     // create a tx that sends money to Bitcoin Core's address
     val amount = 0.5 btc
@@ -219,18 +226,26 @@ class ElectrumWalletSpec extends IntegrationSpec{
     }, max = 30 seconds, interval = 1 second)
 
     // now invalidate the last block
+    probe.send(bitcoincli, BitcoinReq("getblockcount"))
+    val JInt(count) = probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("invalidateblock", blockId :: Nil))
-    probe.expectMsgType[JValue]
+    val foo = probe.expectMsgType[JValue]
+    probe.send(bitcoincli, BitcoinReq("getblockcount"))
+    val JInt(count1) = probe.expectMsgType[JValue]
 
     // and restart bitcoind, which should remove pending wallet txs
     // bitcoind was started with -zapwallettxes=2
-    restartBitcoind
+    stopBitcoind
+    Thread.sleep(2000)
+    startBitcoind
+    Thread.sleep(2000)
 
     // generate 2 new blocks. the tx that sent us money is no longer there,
     // the corresponding utxo should have been removed and our balance should
     // be back to what it was before
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
     probe.expectMsgType[JValue]
+    val reorg = s"$PATH_ELECTRUMX/electrumx_rpc.py reorg 2".!!
 
     awaitCond({
       probe.send(wallet, GetBalance)
