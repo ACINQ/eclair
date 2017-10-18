@@ -97,6 +97,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
       unspents.filterNot(item => state.transactions.contains(BinaryData(item.tx_hash))).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
       val state1 = state.updateUtxos(resp)
       if (state1.utxos != state.utxos) log.debug(s"balance before ${state.balance} now: ${state1.balance}")
+      // TODO: send "confidence changed" event now ?
       context become running(state1)
 
     case ElectrumClient.GetScriptHashHistoryResponse(scriptHash, history) =>
@@ -113,9 +114,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef) extends Actor wit
 
     case ElectrumClient.GetTransactionResponse(tx) =>
       log.debug(s"received new wallet tx ${tx.txid}")
-      val state1 = state.addTransaction(tx)
+      val (state1, balanceBefore, balanceAfter) = state.addTransaction(tx)
 
-      statusListeners.map(_ ! WalletTransactionReceive(tx, state.balance, state1.balance))
+      statusListeners.map(_ ! WalletTransactionReceive(tx, balanceBefore, balanceAfter))
       statusListeners.map(_ ! WalletTransactionConfidenceChanged(tx.txid, state.heights(tx.txid)))
       context become running(state1)
 
@@ -239,7 +240,7 @@ object ElectrumWallet {
   case object InsufficientFunds extends Response
   case class AmountBelowDustLimit(dustLimit: Satoshi) extends Response
 
-  case class WalletTransactionReceive(tx: Transaction, spent: Satoshi, received: Satoshi)
+  case class WalletTransactionReceive(tx: Transaction, oldBalance: Satoshi, newBalance: Satoshi)
   case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
 
   case class Utxo(outPoint: OutPoint, amount: Satoshi, key: PrivateKey, locked: Boolean)
@@ -368,6 +369,7 @@ object ElectrumWallet {
 
     def updateUtxos(unspents: ElectrumClient.ScriptHashListUnspentResponse) : State = {
       if (!accountKeyMap.contains(unspents.scriptHash) && !changeKeyMap.contains(unspents.scriptHash)) {
+        logger.warn(s"we're notified of unspents for scriptHash ${unspents.scriptHash} for which we don't have keys")
         this
       }
       else {
@@ -394,19 +396,23 @@ object ElectrumWallet {
       }
     }
 
-    def addTransaction(tx: Transaction) : State = {
+    def addTransaction(tx: Transaction) : (State, Satoshi, Satoshi) = {
       // find out what it spends form us
       val spentPubKeys = tx.txIn.map(extractPubKeySpentFrom).flatten
       val spentUtxos = utxos.filter(utxo => spentPubKeys.contains(utxo.key.publicKey))
 
       // and what it sends to us
-      val newUtxos = for (i <- 0 until tx.txOut.size) yield publicScriptMap.get(tx.txOut(i).publicKeyScript).map(key => Utxo(OutPoint(tx, i), tx.txOut(i).amount, key.privateKey, false))
+      val newUtxos = (for (i <- 0 until tx.txOut.size) yield publicScriptMap.get(tx.txOut(i).publicKeyScript).map(key => Utxo(OutPoint(tx, i), tx.txOut(i).amount, key.privateKey, false))).flatten
 
-      val utxos1 = (utxos -- spentUtxos) ++ newUtxos.flatten
-      this.copy(transactions = this.transactions + (tx.txid -> tx), utxos = utxos1)
+      val utxosBefore = utxos -- newUtxos
+      val balanceBefore = totalAmount(utxosBefore)
+      val utxosAfter = (utxos -- spentUtxos) ++ newUtxos
+      val balanceAfter = totalAmount(utxosAfter)
+      val state1 = this.copy(transactions = this.transactions + (tx.txid -> tx), utxos = utxosAfter)
+      (state1, balanceBefore, balanceAfter)
     }
 
-    def addTransaction(tx: String) : State = addTransaction(Transaction.read(tx))
+    def addTransaction(tx: String) : (State, Satoshi, Satoshi) = addTransaction(Transaction.read(tx))
 
     /**
       *
@@ -459,7 +465,7 @@ object ElectrumWallet {
       * @return an update state where all utxos locked by this tx have been removed
       */
     def commitTransaction(tx: Transaction): State = {
-      addTransaction(tx)
+      addTransaction(tx)._1
     }
 
     /**
