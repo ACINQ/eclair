@@ -506,6 +506,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
+              commitments1.localChanges.signed.collect { case u: UpdateFulfillHtlc => relayer ! AckFulfillCmd(u.channelId, u.id) }
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause)
           }
@@ -721,10 +722,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
    */
 
   when(SHUTDOWN)(handleExceptions {
-    case Event(c: CMD_ADD_HTLC, d: DATA_SHUTDOWN) =>
-      val error = ClosingInProgress(d.channelId)
-      handleCommandAddError(error, origin(c))
-
     case Event(c: CMD_FULFILL_HTLC, d: DATA_SHUTDOWN) =>
       Try(Commitments.sendFulfill(d.commitments, c)) match {
         case Success((commitments1, fulfill)) =>
@@ -799,6 +796,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           Try(Commitments.sendCommit(d.commitments)) match {
             case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
+              commitments1.localChanges.signed.collect { case u: UpdateFulfillHtlc => relayer ! AckFulfillCmd(u.channelId, u.id) }
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause)
           }
@@ -1048,11 +1046,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       )
       goto(SYNCING) sending channelReestablish
 
-    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      log.info(s"rejecting htlc (disconnected)")
-      val error = ChannelUnavailable(d.channelId)
-      handleCommandAddError(error, origin(c))
-
     case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while disconnected"), d) replying "ok"
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
@@ -1123,11 +1116,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       forwarder ! d.localClosingSigned
       goto(NEGOTIATING)
 
-    case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
-      log.info(s"rejecting htlc (syncing)")
-      val error = ChannelUnavailable(d.channelId)
-      handleCommandAddError(error, origin(c))
-
     case Event(CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while syncing"), d)
 
     case Event(CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
@@ -1164,6 +1152,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val channelId = Helpers.getChannelId(stateData)
       sender ! RES_GETINFO(remoteNodeId, channelId, stateName, stateData)
       stay
+
+    case Event(c: CMD_ADD_HTLC, d: HasCommitments) =>
+      log.info(s"rejecting htlc request in state=$stateName")
+      val error = ChannelUnavailable(d.channelId)
+      handleCommandAddError(error, origin(c))
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentBlockCount(_), _) => stay

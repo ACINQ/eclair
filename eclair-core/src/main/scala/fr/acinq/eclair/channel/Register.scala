@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.channel.Register.{Forward, ForwardShortId}
+import fr.acinq.eclair.channel.Register.{Forward, ForwardFailure, ForwardShortId, ForwardShortIdFailure}
 
 /**
   * Created by PM on 26/01/2016.
@@ -42,23 +42,26 @@ class Register extends Actor with ActorLogging {
 
     case 'shortIds => sender ! shortIds
 
-    case Forward(channelId, msg) =>
+    case fwd@Forward(channelId, msg) =>
       channels.get(channelId) match {
         case Some(channel) => channel forward msg
-        case None => sender ! Failure(new RuntimeException(s"channel $channelId not found"))
+        case None => sender ! Failure(ForwardFailure(fwd))
       }
 
-    case ForwardShortId(shortChannelId, msg) =>
+    case fwd@ForwardShortId(shortChannelId, msg) =>
       shortIds.get(shortChannelId).flatMap(channels.get(_)) match {
         case Some(channel) => channel forward msg
-        case None => sender ! Failure(new RuntimeException(s"channel $shortChannelId not found"))
+        case None => sender ! Failure(ForwardShortIdFailure(fwd))
       }
   }
 }
 
 object Register {
   // @formatter:off
-  case class Forward(channelId: BinaryData, message: Any)
-  case class ForwardShortId(shortChannelId: Long, message: Any)
+  case class Forward[T](channelId: BinaryData, message: T)
+  case class ForwardShortId[T](shortChannelId: Long, message: T)
+
+  case class ForwardFailure[T](fwd: Forward[T]) extends RuntimeException(s"channel ${fwd.channelId} not found")
+  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId} not found")
   // @formatter:on
 }

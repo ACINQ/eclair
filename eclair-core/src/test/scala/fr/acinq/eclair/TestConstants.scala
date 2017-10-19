@@ -5,7 +5,8 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
-import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb}
+import fr.acinq.eclair.TestConstants.Alice.sqlite
+import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb, SqlitePreimagesDb}
 import fr.acinq.eclair.io.Peer
 
 import scala.concurrent.duration._
@@ -46,6 +47,7 @@ object TestConstants {
       channelsDb = new SqliteChannelsDb(sqlite),
       peersDb = new SqlitePeersDb(sqlite),
       networkDb = new SqliteNetworkDb(sqlite),
+      preimagesDb = new SqlitePreimagesDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
@@ -94,6 +96,7 @@ object TestConstants {
       channelsDb = new SqliteChannelsDb(sqlite),
       peersDb = new SqlitePeersDb(sqlite),
       networkDb = new SqliteNetworkDb(sqlite),
+      preimagesDb = new SqlitePreimagesDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
