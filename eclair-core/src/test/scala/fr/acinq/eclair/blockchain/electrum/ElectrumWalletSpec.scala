@@ -20,7 +20,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
   var wallet: ActorRef = _
 
   test("wait until wallet is ready") {
-    wallet = system.actorOf(Props(new ElectrumWallet(mnemonics, electrumClient)))
+    wallet = system.actorOf(Props(new ElectrumWallet(mnemonics, electrumClient, WalletParameters(Block.RegtestGenesisBlock.hash, feeRatePerKw = 10000, minimumFee = Satoshi(5000)))), "wallet")
     val probe = TestProbe()
     awaitCond({
       probe.send(wallet, GetState)
@@ -40,13 +40,19 @@ class ElectrumWalletSpec extends IntegrationSpec{
     probe.send(bitcoincli, BitcoinReq("sendtoaddress", address :: 1.0 :: Nil))
     probe.expectMsgType[JValue]
 
+    awaitCond({
+      probe.send(wallet, GetBalance)
+      val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
+      unconfirmed == Satoshi(100000000L)
+    }, max = 30 seconds, interval = 1 second)
+
     probe.send(bitcoincli, BitcoinReq("generate", 1 :: Nil))
     probe.expectMsgType[JValue]
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
-      balance == Satoshi(100000000L)
+      val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
+      confirmed == Satoshi(100000000L)
     }, max = 30 seconds, interval = 1 second)
 
     probe.send(wallet, GetCurrentReceiveAddress)
@@ -64,8 +70,8 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
-      balance == Satoshi(250000000L)
+      val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
+      confirmed == Satoshi(250000000L)
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -76,11 +82,11 @@ class ElectrumWalletSpec extends IntegrationSpec{
     val (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) = Base58Check.decode(address)
 
     probe.send(wallet, GetBalance)
-    val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
+    val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
 
     // create a tx that sends money to Bitcoin Core's address
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(1 btc, Script.pay2pkh(pubKeyHash)) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx))
+    probe.send(wallet, CompleteTransaction(tx, false))
     val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -99,9 +105,9 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
-      logger.debug(s"current balance is $balance1")
-      balance1 < balance - Btc(1) && balance1 > balance - Btc(1) - Satoshi(50000)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 < confirmed - Btc(1) && confirmed1 > confirmed - Btc(1) - Satoshi(50000)
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -112,11 +118,11 @@ class ElectrumWalletSpec extends IntegrationSpec{
     val (Base58.Prefix.ScriptAddressTestnet, scriptHash) = Base58Check.decode(address)
 
     probe.send(wallet, GetBalance)
-    val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
+    val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
 
     // create a tx that sends money to Bitcoin Core's address
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(1 btc, OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx))
+    probe.send(wallet, CompleteTransaction(tx, false))
     val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -129,9 +135,9 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
-      logger.debug(s"current balance is $balance1")
-      balance1 < balance && balance1 > balance - Satoshi(50000)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 < confirmed && confirmed1 > confirmed - Satoshi(50000)
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -139,7 +145,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
     val probe = TestProbe()
 
     probe.send(wallet, GetBalance)
-    val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
+    val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
 
     probe.send(wallet, GetCurrentReceiveAddress)
     val GetCurrentReceiveAddressResponse(address) = probe.expectMsgType[GetCurrentReceiveAddressResponse]
@@ -156,9 +162,9 @@ class ElectrumWalletSpec extends IntegrationSpec{
     // wait until our balance has been updated
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
-      logger.debug(s"current balance is $balance1")
-      balance1 == balance + Btc(0.7)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 == confirmed + Btc(0.7)
     }, max = 30 seconds, interval = 1 second)
 
     // now invalidate the last block
@@ -182,9 +188,9 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
-      logger.debug(s"current balance is $balance1")
-      balance1 == balance
+      val GetBalanceResponse(confirmed1, unconfirmed1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 == confirmed
     }, max = 30 seconds, interval = 1 second)
   }
 
@@ -195,13 +201,13 @@ class ElectrumWalletSpec extends IntegrationSpec{
     val (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) = Base58Check.decode(address)
 
     probe.send(wallet, GetBalance)
-    val GetBalanceResponse(balance) = probe.expectMsgType[GetBalanceResponse]
-    logger.debug(s"we start with a balance of $balance")
+    val GetBalanceResponse(confirmed, unconfirmed) = probe.expectMsgType[GetBalanceResponse]
+    logger.debug(s"we start with a balance of $confirmed")
 
     // create a tx that sends money to Bitcoin Core's address
     val amount = 0.5 btc
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2pkh(pubKeyHash)) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx))
+    probe.send(wallet, CompleteTransaction(tx, false))
     val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -220,9 +226,9 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
-      logger.debug(s"current balance is $balance1")
-      balance1 < balance - amount && balance1 > balance - amount - Satoshi(50000)
+      val GetBalanceResponse(confirmed1, unconfirmed1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 < confirmed - amount && confirmed1 > confirmed - amount - Satoshi(50000)
     }, max = 30 seconds, interval = 1 second)
 
     // now invalidate the last block
@@ -249,9 +255,9 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       probe.send(wallet, GetBalance)
-      val GetBalanceResponse(balance1) = probe.expectMsgType[GetBalanceResponse]
-      logger.debug(s"current balance is $balance1")
-      balance1 == balance
+      val GetBalanceResponse(confirmed1, unconfirmed1) = probe.expectMsgType[GetBalanceResponse]
+      logger.debug(s"current balance is $confirmed1")
+      confirmed1 == confirmed
     }, max = 30 seconds, interval = 1 second)
   }
 }

@@ -14,13 +14,13 @@ import scala.concurrent.{ExecutionContext, Future}
 
 class ElectrumWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout)  extends EclairWallet {
 
-  override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(_.balance)
+  override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(_.confirmed)
 
   override def getFinalAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long) = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
-    (wallet ? CompleteTransaction(tx)).mapTo[CompleteTransactionResponse].map(response => response match {
+    (wallet ? CompleteTransaction(tx, false)).mapTo[CompleteTransactionResponse].map(response => response match {
       case CompleteTransactionResponse(tx1, None) => MakeFundingTxResponse(tx1, 0)
       case CompleteTransactionResponse(_, Some(error)) => throw error
     })
@@ -33,7 +33,7 @@ class ElectrumWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: Exe
     }
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
     val future = for {
-      CompleteTransactionResponse(tx1, None) <- (wallet ? CompleteTransaction(tx)).mapTo[CompleteTransactionResponse]
+      CompleteTransactionResponse(tx1, None) <- (wallet ? CompleteTransaction(tx, false)).mapTo[CompleteTransactionResponse]
       result <- commit(tx1)
     } yield result
 

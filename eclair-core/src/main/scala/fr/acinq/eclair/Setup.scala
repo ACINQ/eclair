@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.{CurrentFeerate, SpvWatcher}
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
@@ -55,7 +55,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
   val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
   val electrumSeedPath = new File(datadir, "electrum_seed.dat")
-  val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient), "electrum-wallet")
+  val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)), "electrum-wallet")
 
   def bootstrap: Future[Kit] = Future {
 

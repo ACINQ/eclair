@@ -240,7 +240,9 @@ object ElectrumClient {
   case class GetScriptHashHistoryResponse(scriptHash: BinaryData, history: Seq[TransactionHistoryItem]) extends Response
 
   case class AddressListUnspent(address: String) extends Request
-  case class UnspentItem(tx_hash: String, tx_pos: Int, value: Long, height: Long)
+  case class UnspentItem(tx_hash: String, tx_pos: Int, value: Long, height: Long) {
+    lazy val outPoint = OutPoint(BinaryData(tx_hash).reverse, tx_pos)
+  }
   case class AddressListUnspentResponse(address: String, unspents: Seq[UnspentItem]) extends Response
 
   case class ScriptHashListUnspent(scriptHash: BinaryData) extends Request
@@ -270,6 +272,14 @@ object ElectrumClient {
       blockHeader.hash.reverse
     }
   }
+
+  object Header {
+    def makeHeader(height: Long, header: BlockHeader) = ElectrumClient.Header(0, header.version, header.hashPreviousBlock.toString(), header.hashMerkleRoot.toString(), header.time, header.bits, header.nonce)
+
+    val RegtestGenesisHeader = makeHeader(0, Block.RegtestGenesisBlock.header)
+    val TestnetGenesisHeader = makeHeader(0, Block.TestnetGenesisBlock.header)
+  }
+
   case class TransactionHistory(history: Seq[TransactionHistoryItem]) extends Response
 
   case class AddressStatus(address: String, status: String) extends Response
