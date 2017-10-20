@@ -1,7 +1,7 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
@@ -16,7 +16,7 @@ import scala.util.{Failure, Success, Try}
 
 sealed trait Origin
 case class Local(sender: Option[ActorRef]) extends Origin // we don't persist reference to local actors
-case class Relayed(originChannelId: BinaryData, originHtlcId: Long) extends Origin
+case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
@@ -108,10 +108,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFulfill(fulfill, Local(Some(sender))) =>
       sender ! fulfill
 
-    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId)) =>
+    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut)) =>
       val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
-      //context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(htlcIn.amountMsat), MilliSatoshi(htlcIn.amountMsat - htlcOut.amountMsat), htlcIn.paymentHash))
       register ! Register.Forward(originChannelId, cmd)
+      context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
       // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
       preimagesDb.addPreimage(originChannelId, originHtlcId, fulfill.paymentPreimage)
 
@@ -122,7 +122,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardLocalFail(error, Local(Some(sender))) =>
       sender ! Status.Failure(error)
 
-    case ForwardLocalFail(error, Relayed(originChannelId, originHtlcId)) =>
+    case ForwardLocalFail(error, Relayed(originChannelId, originHtlcId, _, _)) =>
       // TODO: clarify what we're supposed to do in the specs depending on the error
       val failure = error match {
         case HtlcTimedout(_) => PermanentChannelFailure
@@ -134,14 +134,14 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFail(fail, Local(Some(sender))) =>
       sender ! fail
 
-    case ForwardFail(fail, Relayed(originChannelId, originHtlcId)) =>
+    case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
       val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
       register ! Register.Forward(originChannelId, cmd)
 
     case ForwardFailMalformed(fail, Local(Some(sender))) =>
       sender ! fail
 
-    case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId)) =>
+    case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
       val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
       register ! Register.Forward(originChannelId, cmd)
   }

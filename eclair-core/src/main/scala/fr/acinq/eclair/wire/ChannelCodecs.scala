@@ -130,15 +130,21 @@ object ChannelCodecs {
       ("sentAfterLocalCommitIndex" | uint64) ::
       ("reSignAsap" | bool)).as[WaitingForRevocation]
 
-  val origin: Codec[Origin] = discriminated[Origin].by(uint16)
+  val relayedCodec: Codec[Relayed] = (
+    ("originChannelId" | binarydata(32)) ::
+      ("originHtlcId" | int64) ::
+      ("amountMsatIn" | uint64) ::
+      ("amountMsatOut" | uint64)).as[Relayed]
+
+  val originCodec: Codec[Origin] = discriminated[Origin].by(uint16)
     .typecase(0x01, provide(Local(None)))
-    .typecase(0x02, (("originChannelId" | binarydata(32)) :: ("originHtlcId" | int64)).as[Relayed])
+    .typecase(0x02, relayedCodec)
 
-  val originsList: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ origin)
+  val originsListCodec: Codec[List[(Long, Origin)]] = listOfN(uint16, int64 ~ originCodec)
 
-  val originsMap: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
-    (map: Map[Long, Origin]) => originsList.encode(map.toList),
-    (wire: BitVector) => originsList.decode(wire).map(_.map(_.toMap))
+  val originsMapCodec: Codec[Map[Long, Origin]] = Codec[Map[Long, Origin]](
+    (map: Map[Long, Origin]) => originsListCodec.encode(map.toList),
+    (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
   val commitmentsCodec: Codec[Commitments] = (
@@ -151,7 +157,7 @@ object ChannelCodecs {
       ("remoteChanges" | remoteChangesCodec) ::
       ("localNextHtlcId" | uint64) ::
       ("remoteNextHtlcId" | uint64) ::
-      ("originChannels" | originsMap) ::
+      ("originChannels" | originsMapCodec) ::
       ("remoteNextCommitInfo" | either(bool, waitingForRevocationCodec, point)) ::
       ("commitInput" | inputInfoCodec) ::
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::

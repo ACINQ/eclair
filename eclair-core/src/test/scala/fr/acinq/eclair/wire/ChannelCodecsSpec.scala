@@ -69,8 +69,8 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode direction") {
-    directionCodec.decodeValue(directionCodec.encode(IN).require).require == IN
-    directionCodec.decodeValue(directionCodec.encode(OUT).require).require == OUT
+    assert(directionCodec.decodeValue(directionCodec.encode(IN).require).require === IN)
+    assert(directionCodec.decodeValue(directionCodec.encode(OUT).require).require === OUT)
   }
 
   test("encode/decode htlc") {
@@ -83,8 +83,8 @@ class ChannelCodecsSpec extends FunSuite {
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
     val htlc1 = DirectedHtlc(direction = IN, add = add)
     val htlc2 = DirectedHtlc(direction = OUT, add = add)
-    htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require == htlc1
-    htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require == htlc2
+    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
+    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require === htlc2)
   }
 
   test("encode/decode commitment spec") {
@@ -105,7 +105,7 @@ class ChannelCodecsSpec extends FunSuite {
     val htlc1 = DirectedHtlc(direction = IN, add = add1)
     val htlc2 = DirectedHtlc(direction = OUT, add = add2)
     val htlcs = Set(htlc1, htlc2)
-    setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require == htlcs
+    assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       feeratePerKw = Random.nextInt(Int.MaxValue),
@@ -118,20 +118,20 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode origin") {
-    origin.decodeValue(origin.encode(Local(None)).require).require == Local(None)
-    val originChannelId = randomBytes(32)
-    origin.decodeValue(origin.encode(Relayed(originChannelId, 42)).require).require == Relayed(originChannelId, 42)
+    assert(originCodec.decodeValue(originCodec.encode(Local(None)).require).require === Local(None))
+    val relayed = Relayed(randomBytes(32), 4324, 12000000L, 11000000L)
+    assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
   }
 
   test("encode/decode map of origins") {
     val map = Map(
       1L -> Local(None),
-      42L -> Relayed(randomBytes(32), 4324),
-      130L -> Relayed(randomBytes(32), -45),
-      1000L -> Relayed(randomBytes(32), 10),
-      -32L -> Relayed(randomBytes(32), 54),
+      42L -> Relayed(randomBytes(32), 4324, 12000000L, 11000000L),
+      130L -> Relayed(randomBytes(32), -45, 13000000L, 12000000L),
+      1000L -> Relayed(randomBytes(32), 10, 14000000L, 13000000L),
+      -32L -> Relayed(randomBytes(32), 54, 15000000L, 14000000L),
       -4L -> Local(None))
-    originsMap.decodeValue(originsMap.encode(map).require).require == map
+    assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
 
 }

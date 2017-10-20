@@ -1521,7 +1521,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   def origin(c: CMD_ADD_HTLC): Origin = c.upstream_opt match {
     case None => Local(Some(sender))
-    case Some(u) => Relayed(u.channelId, u.id)
+    case Some(u) => Relayed(u.channelId, u.id, u.amountMsat, c.amountMsat)
   }
 
   def store[T](d: T)(implicit tp: T <:< HasCommitments): T = {

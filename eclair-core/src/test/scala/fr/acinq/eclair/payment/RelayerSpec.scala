@@ -3,7 +3,7 @@ package fr.acinq.eclair.payment
 import akka.actor.ActorRef
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
@@ -207,14 +207,14 @@ class RelayerSpec extends TestkitBaseClass {
 
     // there isn't any corresponding htlc, it does not matter here
     val fulfill_cb = UpdateFulfillHtlc(channelId = channelId_bc, id = 42, paymentPreimage = "00" * 32)
-    val origin = Relayed(channelId_ab, 150)
+    val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
     sender.send(relayer, ForwardFulfill(fulfill_cb, origin))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FULFILL_HTLC]]
     assert(fwd.channelId === origin.originChannelId)
     assert(fwd.message.id === origin.originHtlcId)
 
-    //eventListener.expectMsg(PaymentRelayed(MilliSatoshi(add_ab.amountMsat), MilliSatoshi(add_ab.amountMsat - cmd_bc.amountMsat), add_ab.paymentHash))
+    eventListener.expectMsg(PaymentRelayed(MilliSatoshi(origin.amountMsatIn), MilliSatoshi(origin.amountMsatOut), Crypto.sha256(fulfill_cb.paymentPreimage)))
   }
 
   test("relay an htlc-fail") { case (relayer, register, _) =>
@@ -222,7 +222,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     // there isn't any corresponding htlc, it does not matter here
     val fail_cb = UpdateFailHtlc(channelId = channelId_bc, id = 42, reason = Sphinx.createErrorPacket(BinaryData("01" * 32), TemporaryChannelFailure(channelUpdate_cd)))
-    val origin = Relayed(channelId_ab, 150)
+    val origin = Relayed(channelId_ab, 150, 11000000L, 10000000L)
     sender.send(relayer, ForwardFail(fail_cb, origin))
 
     val fwd = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]

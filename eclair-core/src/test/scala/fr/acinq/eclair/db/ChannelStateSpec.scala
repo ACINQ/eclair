@@ -90,7 +90,7 @@ object ChannelStateSpec {
   val commitments = Commitments(localParams, remoteParams, channelFlags = 0x01.toByte, localCommit, remoteCommit, LocalChanges(Nil, Nil, Nil), RemoteChanges(Nil, Nil, Nil),
     localNextHtlcId = 0L,
     remoteNextHtlcId = 0L,
-    originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43)),
+    originChannels = Map(42L -> Local(None), 15000L -> Relayed("42" * 32, 43, 11000000L, 10000000L)),
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
 
