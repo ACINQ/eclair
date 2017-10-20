@@ -203,13 +203,13 @@ object PaymentRequest {
     * Hidden hop
     *
     * @param pubkey          node id
-    * @param channelId       channel id
+    * @param shortChannelId  channel id
     * @param fee             node fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class HiddenHop(pubkey: PublicKey, channelId: BinaryData, fee: Long, cltvExpiryDelta: Int) {
-    def pack: Seq[Int5] = pubkey.toBin ++ channelId ++ Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++
-      Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
+  case class ExtraHop(pubkey: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) {
+    def pack: Seq[Byte] = pubkey.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
+      Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
   }
 
   /**
@@ -217,7 +217,7 @@ object PaymentRequest {
     *
     * @param path one or more entries containing extra routing information for a private route
     */
-  case class RoutingInfoTag(path: Seq[HiddenHop]) extends Tag {
+  case class RoutingInfoTag(path: Seq[ExtraHop]) extends Tag {
     override def toInt5s = {
       val ints = Bech32.eight2five(path.flatMap(_.pack))
       Seq(Bech32.map('r'), (ints.length / 32).toByte, (ints.length % 32).toByte) ++ ints
@@ -225,15 +225,15 @@ object PaymentRequest {
   }
 
   object RoutingInfoTag {
-    def parse(data: Seq[Int5]) = {
+    def parse(data: Seq[Byte]) = {
       val pubkey = data.slice(0, 33)
-      val channelId = data.slice(33, 33 + 8)
+      val shortChannelId = Protocol.uint64(data.slice(33, 33 + 8), ByteOrder.BIG_ENDIAN)
       val fee = Protocol.uint64(data.slice(33 + 8, 33 + 8 + 8), ByteOrder.BIG_ENDIAN)
       val cltv = Protocol.uint16(data.slice(33 + 8 + 8, chunkLength), ByteOrder.BIG_ENDIAN)
-      HiddenHop(PublicKey(pubkey), channelId, fee, cltv)
+      ExtraHop(PublicKey(pubkey), shortChannelId, fee, cltv)
     }
 
-    def parseAll(data: Seq[Int5]): Seq[HiddenHop] =
+    def parseAll(data: Seq[Byte]): Seq[ExtraHop] =
       data.grouped(chunkLength).map(parse).toList
 
     val chunkLength: Int = 33 + 8 + 8 + 2
