@@ -200,18 +200,43 @@ object PaymentRequest {
   }
 
   /**
-    * Routing Info Tag
+    * Hidden hop
     *
     * @param pubkey          node id
-    * @param channelId       channel id
+    * @param shortChannelId  channel id
     * @param fee             node fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class RoutingInfoTag(pubkey: PublicKey, channelId: BinaryData, fee: Long, cltvExpiryDelta: Int) extends Tag {
+  case class ExtraHop(pubkey: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) {
+    def pack: Seq[Byte] = pubkey.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
+      Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
+  }
+
+  /**
+    * Routing Info Tag
+    *
+    * @param path one or more entries containing extra routing information for a private route
+    */
+  case class RoutingInfoTag(path: Seq[ExtraHop]) extends Tag {
     override def toInt5s = {
-      val ints = Bech32.eight2five(pubkey.toBin ++ channelId ++ Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN))
+      val ints = Bech32.eight2five(path.flatMap(_.pack))
       Seq(Bech32.map('r'), (ints.length / 32).toByte, (ints.length % 32).toByte) ++ ints
     }
+  }
+
+  object RoutingInfoTag {
+    def parse(data: Seq[Byte]) = {
+      val pubkey = data.slice(0, 33)
+      val shortChannelId = Protocol.uint64(data.slice(33, 33 + 8), ByteOrder.BIG_ENDIAN)
+      val fee = Protocol.uint64(data.slice(33 + 8, 33 + 8 + 8), ByteOrder.BIG_ENDIAN)
+      val cltv = Protocol.uint16(data.slice(33 + 8 + 8, chunkLength), ByteOrder.BIG_ENDIAN)
+      ExtraHop(PublicKey(pubkey), shortChannelId, fee, cltv)
+    }
+
+    def parseAll(data: Seq[Byte]): Seq[ExtraHop] =
+      data.grouped(chunkLength).map(parse).toList
+
+    val chunkLength: Int = 33 + 8 + 8 + 2
   }
 
   /**
@@ -284,11 +309,8 @@ object PaymentRequest {
           }
         case r if r == Bech32.map('r') =>
           val data = Bech32.five2eight(input.drop(3).take(len))
-          val pubkey = PublicKey(data.take(33))
-          val channelId = data.drop(33).take(8)
-          val fee = Protocol.uint64(data.drop(33 + 8), ByteOrder.BIG_ENDIAN)
-          val cltv = Protocol.uint16(data.drop(33 + 8 + 8), ByteOrder.BIG_ENDIAN)
-          RoutingInfoTag(pubkey, channelId, fee, cltv)
+          val path = RoutingInfoTag.parseAll(data)
+          RoutingInfoTag(path)
         case x if x == Bech32.map('x') =>
           require(len == 2, s"invalid length for expiry tag, should be 2 instead of $len")
           val expiry = 32 * input(3) + input(4)
