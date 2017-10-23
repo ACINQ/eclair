@@ -44,14 +44,15 @@ class ElectrumWalletBasicSpec extends FunSuite {
   test("complete transactions (enough funds)") {
     val state1 = state.copy(unspents = unspents, status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHash(key.publicKey) -> "").toMap)
 
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+    val pub = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
+    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
     val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit)
 
     val state3 = state2.cancelTransaction(tx1)
     assert(state3 == state1)
 
     val state4 = state2.commitTransaction(tx1)
-    assert(state4.utxos.size + tx1.txIn.size == state1.utxos.size + 1)
+    assert(state4.utxos.size + tx1.txIn.size == state1.utxos.size)
   }
 
   test("complete transactions (insufficient funds)") {
