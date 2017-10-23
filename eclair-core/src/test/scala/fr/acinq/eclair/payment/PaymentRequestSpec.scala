@@ -3,7 +3,7 @@ package fr.acinq.eclair.payment
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.payment.PaymentRequest.{Amount, ExtraHop, RoutingInfoTag}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -155,5 +155,15 @@ class PaymentRequestSpec extends FunSuite {
     assert(pr.fallbackAddress === Some("bc1qrp33g0q5c5txsp9arysrx4k6zdkfs4nce4xj0gdcccefvpysxf3qccfmv3"))
     assert(pr.tags.size == 3)
     assert(PaymentRequest.write(pr.sign(priv)) == ref)
+  }
+
+  test("expiry is a variable-length unsigned value") {
+    val pr = PaymentRequest(Block.RegtestGenesisBlock.hash, Some(MilliSatoshi(100000L)), BinaryData("0001020304050607080900010203040506070809000102030405060708090102"),
+      priv, "test", fallbackAddress = None, expirySeconds = Some(21600), timestamp = System.currentTimeMillis() / 1000L)
+
+    val serialized = PaymentRequest write pr
+    val pr1 = PaymentRequest read serialized
+    val expiry = pr1.tags.collectFirst { case expiry: PaymentRequest.ExpiryTag => expiry.seconds }.get
+    assert(expiry == 21600)
   }
 }
