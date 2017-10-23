@@ -60,6 +60,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   import ExecutionContext.Implicits.global
 
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+
   val db = nodeParams.networkDb
 
   db.listChannels().map(self ! _)
@@ -69,8 +71,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
     self ! nodeAnn
   }
-
-  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
