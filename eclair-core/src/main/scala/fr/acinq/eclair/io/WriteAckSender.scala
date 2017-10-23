@@ -43,6 +43,6 @@ class WriteAckSender(connection: ActorRef) extends Actor with ActorLogging {
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled message $message")
 
-  val MAX_BUFFERED = 1000L
+  val MAX_BUFFERED = 100000L
 
 }
