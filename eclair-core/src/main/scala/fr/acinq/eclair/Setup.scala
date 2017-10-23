@@ -8,10 +8,9 @@ import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Transaction}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumWallet, ElectrumWatcher}
-import fr.acinq.eclair.blockchain.{CurrentFeerate, SpvWatcher}
+import fr.acinq.eclair.blockchain.{CurrentFeerate}
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
-import fr.acinq.eclair.blockchain.spv.BitcoinjKit
-import fr.acinq.eclair.blockchain.wallet.{BitcoinjWallet, EclairWallet, MakeFundingTxResponse}
+import fr.acinq.eclair.blockchain.wallet.{EclairWallet, MakeFundingTxResponse}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.payment._

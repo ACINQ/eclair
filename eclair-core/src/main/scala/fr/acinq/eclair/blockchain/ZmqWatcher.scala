@@ -34,8 +34,6 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
-    case hint: Hint => {}
-
     case NewTransaction(tx) =>
       //log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
       watches.collect {

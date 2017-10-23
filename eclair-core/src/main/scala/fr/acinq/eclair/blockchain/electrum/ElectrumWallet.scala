@@ -3,7 +3,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.io.File
 import java.security.SecureRandom
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Terminated}
 import com.google.common.io.Files
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
@@ -41,12 +41,23 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case Block.TestnetGenesisBlock.hash => ElectrumClient.Header.TestnetGenesisHeader
   }
 
+  // disconnected --> waitingForTip --> running --
+  // ^                                            |
+  // |                                            |
+  //  --------------------------------------------
+
   def receive = disconnected(State(header, firstAccountKeys, firstChangeKeys))
 
   def disconnected(state: State): Receive = {
     case ElectrumClient.Ready =>
       client ! ElectrumClient.HeaderSubscription(self)
       context become waitingForTip(state)
+
+    case GetCurrentReceiveAddress => sender ! GetCurrentReceiveAddressResponse(state.currentReceiveAddress)
+
+    case GetBalance =>
+      val (confirmed, unconfirmed) = state.balance
+      sender ! GetBalanceResponse(confirmed, unconfirmed)
 
     case GetState => sender ! GetStateResponse(state)
   }
@@ -60,6 +71,12 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case GetState => sender ! GetStateResponse(state)
 
+    case GetCurrentReceiveAddress => sender ! GetCurrentReceiveAddressResponse(state.currentReceiveAddress)
+
+    case GetBalance =>
+      val (confirmed, unconfirmed) = state.balance
+      sender ! GetBalanceResponse(confirmed, unconfirmed)
+
     case ElectrumClient.Disconnected =>
       log.info(s"wallet got disconnected")
       context become disconnected(state)
@@ -70,6 +87,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case ElectrumClient.HeaderSubscriptionResponse(header) =>
       log.info(s"got new tip ${header.block_hash} at ${header.block_height}")
+      state.heights.collect {
+        case (txid, height) if height > 0 => statusListeners.map(_ ! WalletTransactionConfidenceChanged(txid, header.block_height - height + 1))
+      }
       context become running(state.copy(tip = header))
 
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) if state.status.get(scriptHash) == Some(status) => () // we already have it
@@ -79,7 +99,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status) =>
       val key = state.accountKeyMap.getOrElse(scriptHash, state.changeKeyMap(scriptHash))
-      log.debug(s"new status [$status] for script hash $scriptHash for our key ${segwitAddress(key)}")
+      log.info(s"new status [$status] for script hash $scriptHash for our key ${segwitAddress(key)}")
 
       // ask for unspents and history
       client ! ElectrumClient.ScriptHashListUnspent(scriptHash)
@@ -132,6 +152,8 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case GetTransactionResponse(tx) =>
       log.debug(s"received transaction ${tx.txid}")
+      val (received, sent) = state.computeTransactionDelta(tx)
+      statusListeners.map(_ ! WalletTransactionReceive(tx, state.computeTransactionDepth(tx.txid), received, sent))
       context become running(state.copy(transactions = state.transactions + (tx.txid -> tx)))
 
     case CompleteTransaction(tx, allowSpendingUnconfirmed) =>
@@ -155,7 +177,10 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
         case resp@ElectrumClient.BroadcastTransactionResponse(tx, None) =>
           replyTo ! resp
           unstashAll()
-          context become running(state.commitTransaction(tx))
+          val state1 = state.commitTransaction(tx)
+          val (received, sent) = state.computeTransactionDelta(tx)
+          statusListeners.map(_ ! WalletTransactionReceive(tx, state1.computeTransactionDepth(tx.txid), received, sent))
+          context become running(state1)
         case resp@ElectrumClient.BroadcastTransactionResponse(_, Some(error)) =>
           log.error(s"cannot broadcast tx ${tx.txid}: $error")
           replyTo ! resp
@@ -182,6 +207,20 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case ElectrumClient.Disconnected =>
       log.info(s"wallet got disconnected")
       context become disconnected(state)
+  }
+
+  override def unhandled(message: Any): Unit = {
+    message match {
+      case GetMnemonicCode =>
+        sender ! GetMnemonicCodeResponse(mnemonics)
+      case ElectrumClient.AddStatusListener(actor) =>
+        context.watch(actor)
+        statusListeners += actor
+      case Terminated(actor) =>
+        statusListeners -= actor
+      case _ =>
+        log.warning(s"received unhandled message $message")
+    }
   }
 }
 
@@ -243,7 +282,7 @@ object ElectrumWallet {
   case class GetPrivateKey(address: String) extends Request
   case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
 
-  case class WalletTransactionReceive(tx: Transaction, oldBalance: Satoshi, newBalance: Satoshi)
+  case class WalletTransactionReceive(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi)
   case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
 
   case class GotTip(header: ElectrumClient.Header)
@@ -330,13 +369,23 @@ object ElectrumWallet {
   }
 
   /**
+    * Wallet state, which stores data returned by EletrumX servers.
+    * Most items are indexed by script hash (i.e. by pubkey script sha256 hash).
+    * Height follow ElectrumX's conventions:
+    * - h > 0 means that the tx was confirmed at block #h
+    * - 0 means unconfirmed, but all input are confirmed
+    * < 0 means unconfirmed, and sonme inputs are unconfirmed as well
     *
-    * @param accountKeys wallet account keys
-    * @param changeKeys wallet change keys
-    * @param utxos current utxo set
-    * @param status
-    * @param transactions wallet transactions (i.e. that send to or receive money from this wallet)
-    * @param heights height at which the wallet transactions were published
+    * @param tip current blockchain tip
+    * @param accountKeys account keys
+    * @param changeKeys change keys
+    * @param status script hash -> status; "" means that the script hash has not been used
+    *               yet
+    * @param transactions wallet transactions
+    * @param heights transactions heights
+    * @param unspents script hash -> unspents
+    * @param history script hash -> history
+    * @param locks transactions which lock some of our utxos.
     */
   case class State(tip: ElectrumClient.Header,
                    accountKeys: Vector[ExtendedPrivateKey],
@@ -394,11 +443,11 @@ object ElectrumWallet {
     def currentChangeAddress = segwitAddress(currentChangeKey)
 
     def isMine(txIn: TxIn) : Boolean = {
-      extractPubKeySpentFrom(txIn).map(pub => publicScriptMap.contains(Script.write(computePublicKeyScript(pub)))).getOrElse(false)
+      extractPubKeySpentFrom(txIn).exists(pub => publicScriptMap.contains(Script.write(computePublicKeyScript(pub))))
     }
 
     def isSpend(txIn: TxIn, publicKey: PublicKey) : Boolean = {
-       extractPubKeySpentFrom(txIn).map(pub => pub == publicKey).getOrElse(false)
+       extractPubKeySpentFrom(txIn).contains(publicKey)
     }
 
     /**
@@ -408,15 +457,22 @@ object ElectrumWallet {
       * @return true if txIn spends from an address that matches scriptHash
       */
     def isSpend(txIn: TxIn, scriptHash: BinaryData) : Boolean = {
-      extractPubKeySpentFrom(txIn).map(pub => computeScriptHash(pub) == scriptHash).getOrElse(false)
+      extractPubKeySpentFrom(txIn).exists(pub => computeScriptHash(pub) == scriptHash)
     }
 
     def isReceive(txOut: TxOut, scriptHash: BinaryData) : Boolean = {
-      publicScriptMap.get(txOut.publicKeyScript).map(key => computeScriptHash(key.publicKey) == scriptHash).getOrElse(false)
+      publicScriptMap.get(txOut.publicKeyScript).exists(key => computeScriptHash(key.publicKey) == scriptHash)
     }
 
     def isMine(txOut: TxOut): Boolean = publicScriptMap.contains(txOut.publicKeyScript)
 
+    def computeTransactionDepth(txid: BinaryData) : Long = heights.get(txid).map(height => if (height > 0) tip.block_height - height + 1 else 0).getOrElse(0)
+    /**
+      *
+      * @param scriptHash script hash
+      * @return the (confirmed, unconfirmed) balance for this script hash. This balance may not
+      *         be up-to-date if we have not received all data we've asked for yet.
+      */
     def balance(scriptHash: BinaryData) : (Satoshi, Satoshi) = {
       history.get(scriptHash) match {
         case None => (Satoshi(0), Satoshi(0))
@@ -425,8 +481,9 @@ object ElectrumWallet {
 
         case Some(items) =>
           val (confirmedItems, unconfirmedItems) = items.partition(_.height > 0)
-          val confirmedTxs = confirmedItems.map(item => transactions(BinaryData(item.tx_hash)))
-          val unconfirmedTxs = unconfirmedItems.map(item => transactions(BinaryData(item.tx_hash)))
+          val confirmedTxs = confirmedItems.collect { case item if transactions.contains(BinaryData(item.tx_hash)) => transactions(BinaryData(item.tx_hash)) }
+          val unconfirmedTxs = unconfirmedItems.collect { case item if transactions.contains(BinaryData(item.tx_hash)) => transactions(BinaryData(item.tx_hash)) }
+          if (confirmedTxs.size + unconfirmedTxs.size < confirmedItems.size + unconfirmedItems.size) logger.warn(s"we have not received all transactions yet, balance will not be up to date")
 
           def findOurSpentOutputs(txs: Seq[Transaction]): Seq[TxOut] = {
            val inputs = txs.map(_.txIn).flatten.filter(txIn => isSpend(txIn, scriptHash))
@@ -447,10 +504,31 @@ object ElectrumWallet {
       }
     }
 
+    /**
+      *
+      * @return the (confirmed, unconfirmed) balance for this wallet. This balance may not
+      *         be up-to-date if we have not received all data we've asked for yet.
+      */
     def balance: (Satoshi, Satoshi) = {
       (accountKeyMap.keys ++ changeKeyMap.keys).map(scriptHash => balance(scriptHash)).foldLeft((Satoshi(0), Satoshi(0))) {
         case ((confirmed, unconfirmed), (confirmed1, unconfirmed1)) => (confirmed + confirmed1, unconfirmed + unconfirmed1)
       }
+    }
+
+    /**
+      *
+      * @param tx input transaction
+      * @return a (received, sent) tuple where sent if what the tx spends from us, and received is what the tx sends to us
+      */
+    def computeTransactionDelta(tx: Transaction) : (Satoshi, Satoshi) = {
+      val mine = tx.txIn.filter(isMine)
+      val spent = mine.collect {
+        case txIn if transactions.contains(txIn.outPoint.txid) => transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt)
+      }
+      if (spent.size != mine.size) logger.warn(s"we don't have all our pending txs yet")
+      val received = tx.txOut.filter(isMine)
+
+      (received.map(_.amount).sum, spent.map(_.amount).sum)
     }
 
     /**
