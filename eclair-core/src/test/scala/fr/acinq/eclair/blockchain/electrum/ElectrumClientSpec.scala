@@ -38,10 +38,11 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("get merkle tree") {
     probe.send(client, GetMerkle("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202", 1210223L))
-    val GetMerkleResponse(txid, merkle, block_height, pos) = probe.expectMsgType[GetMerkleResponse]
-    assert(txid == "c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202")
-    assert(block_height == 1210223L)
-    assert(pos == 28)
+    val response = probe.expectMsgType[GetMerkleResponse]
+    assert(response.txid == BinaryData("c5efb5cbd35a44ba956b18100be0a91c9c33af4c7f31be20e33741d95f04e202"))
+    assert(response.block_height == 1210223L)
+    assert(response.pos == 28)
+    assert(response.root == BinaryData("fb0234a21e96913682bc4108bcf72b67fb5d2dd680875b7e4671c03ccf523a20"))
   }
 
   test("header subscription") {

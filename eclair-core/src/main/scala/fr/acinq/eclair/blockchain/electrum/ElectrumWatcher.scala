@@ -81,7 +81,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
     case ElectrumClient.GetScriptHashHistoryResponse(scriptHash, history) =>
       history.collect {
         case ElectrumClient.TransactionHistoryItem(height, tx_hash) if height > 0 => watches collect {
-          case WatchConfirmed(channel, txid, publicKeyScript, minDepth, event) if txid.toString() == tx_hash && (tip.block_height - height + 1) >= minDepth =>
+          case WatchConfirmed(channel, txid, publicKeyScript, minDepth, event) if txid == tx_hash && (tip.block_height - height + 1) >= minDepth =>
             log.info(s"transaction ${txid} was confirmed at block $height and we're at ${tip.block_height}")
             val request = GetMerkle(tx_hash, height)
             client ! request

@@ -1,12 +1,10 @@
 package fr.acinq.eclair.blockchain.electrum
 
-import java.net.InetSocketAddress
-
 import akka.actor.Props
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, SigVersion, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchEventConfirmed, WatchSpent}
+import fr.acinq.eclair.blockchain.{WatchConfirmed, WatchEventConfirmed, WatchEventSpent, WatchSpent}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import org.json4s.JsonAST.{JArray, JString, JValue}
 
@@ -29,7 +27,7 @@ class ElectrumWatcherSpec extends IntegrationSpec {
     val tx = Transaction.read(hex)
 
     val listener = TestProbe()
-    probe.send(watcher, WatchConfirmed(probe.ref, tx.txid.toString(), tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
+    probe.send(watcher, WatchConfirmed(listener.ref, tx.txid, tx.txOut(0).publicKeyScript, 4, BITCOIN_FUNDING_DEPTHOK))
     probe.send(bitcoincli, BitcoinReq("generate", 3 :: Nil))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
@@ -71,14 +69,14 @@ class ElectrumWatcherSpec extends IntegrationSpec {
     }
 
     val listener = TestProbe()
-    probe.send(watcher, WatchSpent(probe.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
+    probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
     listener.expectNoMsg(1 second)
     probe.send(bitcoincli, BitcoinReq("sendrawtransaction", Transaction.write(spendingTx).toString :: Nil))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
     val blocks = probe.expectMsgType[JValue]
     val JArray(List(JString(block1), JString(block2))) = blocks
-    val spent = listener.expectMsg(20 seconds, BITCOIN_FUNDING_SPENT)
+    val spent = listener.expectMsgType[WatchEventSpent](20 seconds)
     system.stop(watcher)
   }
 }
