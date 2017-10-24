@@ -19,7 +19,9 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    // TODO: hack! remove duplicates (table channel_updates is missing a PRIMARY KEY, will be fixed later)
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
+    statement.executeUpdate("DELETE FROM channel_updates WHERE rowid NOT IN (SELECT MIN(rowid) FROM channel_updates GROUP BY short_channel_id, node_flag)")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
   }
 
