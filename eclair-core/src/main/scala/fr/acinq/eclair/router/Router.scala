@@ -60,22 +60,22 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   import ExecutionContext.Implicits.global
 
-  val db = nodeParams.networkDb
-
-  db.listChannels().map(self ! _)
-  db.listNodes().map(self ! _)
-  db.listChannelUpdates().map(self ! _)
-  if (db.listChannels().size > 0) {
-    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
-    self ! nodeAnn
-  }
-
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
   setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
+  val db = nodeParams.networkDb
+
+  {
+    val initChannels = db.listChannels().map(c => (c.shortChannelId -> c)).toMap
+    val initNodes = (db.listNodes() match {
+      case Nil => Nil
+      case l => l :+ Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
+    }).map(n => (n.nodeId -> n)).toMap
+    val initChannelUpdates = db.listChannelUpdates().map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
+  }
 
   when(NORMAL) {
 
@@ -257,8 +257,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       d.rebroadcast match {
         case Nil => stay using d.copy(origins = Map.empty)
         case _ =>
-          log.info(s"broadcasting ${d.rebroadcast.size} routing messages")
-          context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast, d.origins)
+          //log.info(s"broadcasting ${d.rebroadcast.size} routing messages")
+          //context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast, d.origins)
           stay using d.copy(rebroadcast = Nil, origins = Map.empty)
       }
 
@@ -320,14 +320,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
 object Router {
 
-  // TODO: temporary, required because we stored all three types of announcements in the same key-value database
-  // @formatter:off
-  def nodeKey(nodeId: BinaryData) = s"ann-node-$nodeId"
-  def channelKey(shortChannelId: Long) = s"ann-channel-$shortChannelId"
-  def channelUpdateKey(shortChannelId: Long, flags: BinaryData) = s"ann-update-$shortChannelId-$flags"
-  // @formatter:on
-
-  val MAX_PARALLEL_JSONRPC_REQUESTS = 50
+  val MAX_PARALLEL_JSONRPC_REQUESTS = 1000
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
