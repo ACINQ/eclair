@@ -62,10 +62,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  val db = nodeParams.networkDb
-
   setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
+
+  val db = nodeParams.networkDb
 
   {
     val initChannels = db.listChannels().map(c => (c.shortChannelId -> c)).toMap
@@ -248,7 +248,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
       val lostNodes = isNodeLost(lostChannel.nodeId1).toSeq ++ isNodeLost(lostChannel.nodeId2).toSeq
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
-      //lostNodes.foreach(nodeId => db.removeNode(nodeId))
+      lostNodes.foreach(nodeId => db.removeNode(nodeId))
       stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
     case Event('tick_validate, d) => stay // ignored
