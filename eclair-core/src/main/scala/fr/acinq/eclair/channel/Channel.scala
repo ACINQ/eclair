@@ -1048,6 +1048,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           forwarder ! localShutdown
       }
 
+      // this clock will be used to detect htlc timeouts
+      context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+      context.system.eventStream.subscribe(self, classOf[CurrentFeerate])
+
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
       // NB: in spv mode we currently can't get the tx index in block (which is used to calculate the short id)
       // instead, we rely on a hack by trusting the index the counterparty sends us
@@ -1067,6 +1071,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(channelReestablish: ChannelReestablish, d: DATA_SHUTDOWN) =>
       val commitments1 = handleSync(channelReestablish, d)
       forwarder ! d.localShutdown
+      // this clock will be used to detect htlc timeouts
+      context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
+      context.system.eventStream.subscribe(self, classOf[CurrentFeerate])
       goto(SHUTDOWN) using d.copy(commitments = commitments1)
 
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING) =>
