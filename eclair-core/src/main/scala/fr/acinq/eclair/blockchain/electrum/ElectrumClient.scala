@@ -79,8 +79,8 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     }
   }
 
-  val addressSubscriptions = collection.mutable.HashMap.empty[String, ActorRef]
-  val scriptHashSubscriptions = collection.mutable.HashMap.empty[BinaryData, ActorRef]
+  val addressSubscriptions = collection.mutable.HashMap.empty[String, Set[ActorRef]]
+  val scriptHashSubscriptions = collection.mutable.HashMap.empty[BinaryData, Set[ActorRef]]
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
 
   self ! Connect(serverAddresses.head)
@@ -151,10 +151,10 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       send(connection, makeRequest(request))
       request match {
         case AddressSubscription(address, actor) =>
-          addressSubscriptions += (address -> actor)
+          addressSubscriptions.update(address, addressSubscriptions.getOrElse(address, Set()) + actor)
           context watch actor
         case ScriptHashSubscription(scriptHash, actor) =>
-          scriptHashSubscriptions += (scriptHash -> actor)
+          scriptHashSubscriptions.update(scriptHash, scriptHashSubscriptions.getOrElse(scriptHash, Set()) + actor)
           context watch actor
         case _ => ()
       }
@@ -178,21 +178,21 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
     case SubscriptionResponse("blockchain.address.subscribe", JString(address) :: JNull :: Nil, _) =>
       log.info(s"address $address changed, status is empty")
-      addressSubscriptions.get(address).map(_ ! AddressSubscriptionResponse(address, ""))
+      addressSubscriptions.get(address).map(listeners => listeners.map(_ ! AddressSubscriptionResponse(address, "")))
 
     case SubscriptionResponse("blockchain.address.subscribe", JString(address) :: JString(status) :: Nil, _) =>
       log.info(s"address $address changed, new status $status")
-      addressSubscriptions.get(address).map(_ ! AddressSubscriptionResponse(address, status))
+      addressSubscriptions.get(address).map(listeners => listeners.map(_ ! AddressSubscriptionResponse(address, status)))
 
     case SubscriptionResponse("blockchain.scripthash.subscribe", JString(scriptHashHex) :: JNull :: Nil, _) =>
       val scriptHash = BinaryData(scriptHashHex)
       log.info(s"script $scriptHash changed, status is empty")
-      scriptHashSubscriptions.get(scriptHash).map(_ ! ScriptHashSubscriptionResponse(scriptHash, ""))
+      scriptHashSubscriptions.get(scriptHash).map(listeners => listeners.map(_ ! ScriptHashSubscriptionResponse(scriptHash, "")))
 
     case SubscriptionResponse("blockchain.scripthash.subscribe", JString(scriptHashHex) :: JString(status) :: Nil, _) =>
       val scriptHash = BinaryData(scriptHashHex)
       log.info(s"script $scriptHash, new status $status")
-      scriptHashSubscriptions.get(scriptHash).map(_ ! ScriptHashSubscriptionResponse(scriptHash, status))
+      scriptHashSubscriptions.get(scriptHash).map(listeners => listeners.map(_ ! ScriptHashSubscriptionResponse(scriptHash, status)))
 
     case PeerClosed =>
       val pos = serverAddresses.indexWhere(_ == remoteAddress)

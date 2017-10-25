@@ -64,10 +64,13 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
   def waitingForTip(state: State): Receive = {
     case ElectrumClient.HeaderSubscriptionResponse(header) =>
+      var hashes = collection.mutable.HashSet.empty[BinaryData]
       (state.accountKeys ++ state.changeKeys).map(key => {
-        client ! ElectrumClient.ScriptHashSubscription(computeScriptHash(key.publicKey), self)
+        val hash = computeScriptHash(key.publicKey)
+        hashes += hash
+        client ! ElectrumClient.ScriptHashSubscription(hash, self)
       })
-      context become running(state.copy(tip = header))
+      context become running(state.copy(tip = header, pendingScriptHashSubscriptionRequests = state.pendingScriptHashSubscriptionRequests ++ hashes))
 
     case GetState => sender ! GetStateResponse(state)
 
@@ -105,26 +108,38 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       client ! ElectrumClient.ScriptHashListUnspent(scriptHash)
       client ! ElectrumClient.GetScriptHashHistory(scriptHash)
 
-      val state1 = state.copy(status = state.status + (scriptHash -> status))
+      val state1 = state.copy(status = state.status + (scriptHash -> status),
+        pendingScriptHashSubscriptionRequests = state.pendingScriptHashSubscriptionRequests - scriptHash,
+        pendingHistoryRequests = state.pendingHistoryRequests + scriptHash)
 
       if (state1.status.size == state1.accountKeys.size + state1.changeKeys.size) {
         // we have status info for all our keys, we can tell if we need new keys
         val newAccountKeys = {
           val start = state1.accountKeys.last.path.lastChildNumber + 1
           val end = start + swipeRange - state1.unusedAccountKeys.size
-          log.info(s"generating ${end - start + 1} account key(s)")
+          log.info(s"generating ${end - start + 1} account key(s) with number $start to $end")
           val newkeys = (start until end).map(i => derivePrivateKey(accountMaster, i)).toVector
           newkeys
         }
         val newChangeKeys = {
           val start = state1.changeKeys.last.path.lastChildNumber + 1
           val end = start + swipeRange - state1.unusedChangedKeys.size
-          log.info(s"generating ${end - start + 1} change key(s)")
+          log.info(s"generating ${end - start + 1} change key(s) with number $start to $end")
           val newkeys = (start until end).map(i => derivePrivateKey(changeMaster, i)).toVector
           newkeys
         }
-        (newAccountKeys ++ newChangeKeys).map(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHash(key.publicKey), self))
-        val state2 = state1.copy(accountKeys = state1.accountKeys ++ newAccountKeys, changeKeys = state1.changeKeys ++ newChangeKeys)
+        val hashes = collection.mutable.HashSet.empty[BinaryData]
+        (newAccountKeys ++ newChangeKeys).map(key => {
+          val hash = computeScriptHash(key.publicKey)
+          hashes += hash
+          client ! ElectrumClient.ScriptHashSubscription(hash, self)
+        })
+        val state2 = state1.copy(accountKeys = state1.accountKeys ++ newAccountKeys, changeKeys = state1.changeKeys ++ newChangeKeys, pendingScriptHashSubscriptionRequests = state1.pendingScriptHashSubscriptionRequests ++ hashes)
+        if (state2.isReady) {
+          val ready = state2.readyMessage
+          log.info(s"wallet is ready with $ready")
+          statusListeners.map(_ ! ready)
+        }
         context become running(state2)
       } else {
         context become running(state1)
@@ -133,28 +148,47 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case ElectrumClient.ScriptHashListUnspentResponse(scriptHash, unspents) =>
       log.debug(s"script hash $scriptHash unspents $unspents")
       var heights1 = state.heights
+      val hashes = collection.mutable.HashSet.empty[BinaryData]
       unspents.map(item => {
-        if (!state.transactions.contains(BinaryData(item.tx_hash))) client ! GetTransaction(item.tx_hash)
+        if (!state.transactions.contains(BinaryData(item.tx_hash))) {
+          hashes += item.tx_hash
+          client ! GetTransaction(item.tx_hash)
+        }
         heights1 = heights1 + (BinaryData(item.tx_hash) -> item.height)
       })
-      val state1 = state.copy(heights = heights1, unspents = state.unspents + (scriptHash -> unspents.toSet))
+      val state1 = state.copy(heights = heights1, unspents = state.unspents + (scriptHash -> unspents.toSet), pendingTransactionRequests = state.pendingTransactionRequests ++ hashes)
       context become running(state1)
 
     case ElectrumClient.GetScriptHashHistoryResponse(scriptHash, history) =>
       log.debug(s"script hash $scriptHash history $history")
       var heights1 = state.heights
+      val hashes = collection.mutable.HashSet.empty[BinaryData]
       history.map(item => {
-        if (!state.transactions.contains(BinaryData(item.tx_hash))) client ! GetTransaction(item.tx_hash)
+        if (!state.transactions.contains(BinaryData(item.tx_hash))) {
+          hashes += item.tx_hash
+          client ! GetTransaction(item.tx_hash)
+        }
         heights1 = heights1 + (BinaryData(item.tx_hash) -> item.height)
       })
-      val state1 = state.copy(heights = heights1, history = state.history + (scriptHash -> history))
+      val state1 = state.copy(heights = heights1, history = state.history + (scriptHash -> history), pendingHistoryRequests = state.pendingHistoryRequests - scriptHash, pendingTransactionRequests = state.pendingTransactionRequests ++ hashes)
+      if (state1.isReady) {
+        val ready = state1.readyMessage
+        log.info(s"wallet is ready with $ready")
+        statusListeners.map(_ ! ready)
+      }
       context become running(state1)
 
     case GetTransactionResponse(tx) =>
       log.debug(s"received transaction ${tx.txid}")
       val (received, sent) = state.computeTransactionDelta(tx)
       statusListeners.map(_ ! WalletTransactionReceive(tx, state.computeTransactionDepth(tx.txid), received, sent))
-      context become running(state.copy(transactions = state.transactions + (tx.txid -> tx)))
+      val state1 = state.copy(transactions = state.transactions + (tx.txid -> tx), pendingTransactionRequests = state.pendingTransactionRequests - tx.txid)
+      if (state1.isReady) {
+        val ready = state1.readyMessage
+        log.info(s"wallet is ready with $ready")
+        statusListeners.map(_ ! ready)
+      }
+      context become running(state1)
 
     case CompleteTransaction(tx, allowSpendingUnconfirmed) =>
       try {
@@ -285,9 +319,7 @@ object ElectrumWallet {
   case class WalletTransactionReceive(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi)
   case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
 
-  case class GotTip(header: ElectrumClient.Header)
-
-  case object SwipeComplete
+  case class Ready(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long)
   // @formatter:off
 
   /**
@@ -395,7 +427,10 @@ object ElectrumWallet {
                    heights: Map[BinaryData, Long],
                    unspents: Map[BinaryData, Set[ElectrumClient.UnspentItem]],
                    history: Map[BinaryData, Seq[ElectrumClient.TransactionHistoryItem]],
-                   locks: Set[Transaction]) extends Logging {
+                   locks: Set[Transaction],
+                   pendingScriptHashSubscriptionRequests: Set[BinaryData],
+                   pendingHistoryRequests: Set[BinaryData],
+                   pendingTransactionRequests: Set[BinaryData]) extends Logging {
     lazy val accountKeyMap = accountKeys.map(key => computeScriptHash(key.publicKey) -> key).toMap
 
     lazy val changeKeyMap = changeKeys.map(key => computeScriptHash(key.publicKey) -> key).toMap
@@ -411,6 +446,13 @@ object ElectrumWallet {
         val key = accountKeyMap.getOrElse(hash, changeKeyMap(hash))
         items.map(item => Utxo(key, item))
     }).flatten.toSeq
+
+    def isReady = pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
+
+    def readyMessage: Ready = {
+      val (confirmed, unconfirmed) = balance
+      Ready(confirmed, unconfirmed, tip.block_height)
+    }
 
     /**
       *
@@ -509,7 +551,7 @@ object ElectrumWallet {
       * @return the (confirmed, unconfirmed) balance for this wallet. This balance may not
       *         be up-to-date if we have not received all data we've asked for yet.
       */
-    def balance: (Satoshi, Satoshi) = {
+    lazy val balance: (Satoshi, Satoshi) = {
       (accountKeyMap.keys ++ changeKeyMap.keys).map(scriptHash => balance(scriptHash)).foldLeft((Satoshi(0), Satoshi(0))) {
         case ((confirmed, unconfirmed), (confirmed1, unconfirmed1)) => (confirmed + confirmed1, unconfirmed + unconfirmed1)
       }
@@ -612,6 +654,7 @@ object ElectrumWallet {
   }
 
   object State {
-    def apply(tip: ElectrumClient.Header, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): State = State(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Map(), Set())
+    def apply(tip: ElectrumClient.Header, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): State
+    = State(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set())
   }
 }
