@@ -200,19 +200,6 @@ object PaymentRequest {
   }
 
   /**
-    * Hidden hop
-    *
-    * @param pubkey          node id
-    * @param shortChannelId  channel id
-    * @param fee             node fee
-    * @param cltvExpiryDelta node cltv expiry delta
-    */
-  case class ExtraHop(pubkey: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) {
-    def pack: Seq[Byte] = pubkey.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
-      Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
-  }
-
-  /**
     * Routing Info Tag
     *
     * @param path one or more entries containing extra routing information for a private route
