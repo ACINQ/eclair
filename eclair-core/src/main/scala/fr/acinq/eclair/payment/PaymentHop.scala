@@ -23,7 +23,7 @@ object PaymentHop {
     * @return a sequence of extra hops with a pre-calculated fee for a given msat amount
     */
   type ChannelUpdateAndKey = (ChannelUpdate, PublicKey)
-  def buildExtra(updates: Vector[ChannelUpdateAndKey], msat: Long): Seq[ExtraHop] =
+  def buildExtra(updates: Seq[ChannelUpdateAndKey], msat: Long): Seq[ExtraHop] =
     (Vector.empty[ExtraHop] /: updates) {
     case (vec, (update, key)) if vec.isEmpty =>
       val fee = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, msat)

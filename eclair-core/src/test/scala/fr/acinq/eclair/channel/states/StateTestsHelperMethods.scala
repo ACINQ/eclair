@@ -7,7 +7,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.payment.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants}
 

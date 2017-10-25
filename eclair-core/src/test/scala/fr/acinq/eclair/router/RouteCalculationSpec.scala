@@ -1,9 +1,10 @@
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.wire.{ChannelUpdate, PerHopPayload}
+import fr.acinq.eclair.payment.{ExtraHop, Hop, PaymentHop, PaymentLifecycle}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -172,6 +173,23 @@ class RouteCalculationSpec extends FunSuite {
     val hops = Await.result(Router.findRoute(a, e, updates), 3 seconds)
 
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
+  }
+
+  test("calculate route with extra hops") {
+    val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
+
+    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 1L, 0L, "0000", 1, 42, 2500, 140)
+    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 2L, 1L, "0000", 1, 44, 2502, 142)
+    val publicHops: Seq[Hop] = Hop(a, b, uab) :: Hop(b, c, ubc) :: Nil
+
+    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 13390952114749440L, 1508747148L, BinaryData.empty, 144, 100, 546000, 10)
+    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 11091873301069824L, 1508752623L, BinaryData.empty, 144, 100, 546000, 10)
+    val pubkey1: PublicKey = PublicKey("0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3")
+    val pubkey2: PublicKey = PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8")
+    val extraHops: Seq[ExtraHop] = PaymentHop.buildExtra(Seq(ucd -> pubkey1, ude -> pubkey2), 100000L)
+
+    val (_, _, payloads) = PaymentLifecycle.buildPayloads(100000L, 6, publicHops ++ extraHops)
+    assert(payloads === Seq(PerHopPayload(1L, 1194678L, 295), PerHopPayload(2L, 1192007L, 294), PerHopPayload(11091873301069824L, 646001L, 150), PerHopPayload(13390952114749440L, 100000L, 6), PerHopPayload(0L, 100000L, 6)))
   }
 
 }
