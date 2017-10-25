@@ -551,7 +551,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             require(commitments1.remoteCommit.spec.htlcs.size > 0, "we must have just signed new htlcs, otherwise we would have sent our Shutdown earlier")
             goto(SHUTDOWN) using store(DATA_SHUTDOWN(commitments1, localShutdown, d.remoteShutdown.get)) sending localShutdown
           } else {
-            stay using d.copy(commitments = commitments1)
+            stay using store(d.copy(commitments = commitments1))
           }
         case Failure(cause) => handleLocalError(cause, d)
       }
@@ -842,7 +842,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             self ! CMD_SIGN
           }
           log.debug(s"received a new rev, spec:\n${Commitments.specs2String(commitments1)}")
-          stay using d.copy(commitments = commitments1)
+          stay using store(d.copy(commitments = commitments1))
         case Failure(cause) => handleLocalError(cause, d)
       }
 
