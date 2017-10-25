@@ -58,7 +58,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
   }
 
-  def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t}
+  def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t }
 
   /**
     *
@@ -98,9 +98,9 @@ object PaymentRequest {
 
   def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
     val prefix = chainHash match {
-    case Block.RegtestGenesisBlock.hash => "lntb"
-    case Block.TestnetGenesisBlock.hash => "lntb"
-    case Block.LivenetGenesisBlock.hash => "lnbc"
+      case Block.RegtestGenesisBlock.hash => "lntb"
+      case Block.TestnetGenesisBlock.hash => "lntb"
+      case Block.LivenetGenesisBlock.hash => "lnbc"
     }
     PaymentRequest(
       prefix = prefix,
@@ -246,8 +246,16 @@ object PaymentRequest {
     */
   case class ExpiryTag(seconds: Long) extends Tag {
     override def toInt5s = {
-      val ints = Seq((seconds / 32).toByte, (seconds % 32).toByte)
-      Seq(Bech32.map('x'), 0.toByte, 2.toByte) ++ ints
+      val ints = writeUnsignedLong(seconds)
+      val size = writeUnsignedLong(ints.size)
+      // make sure that size is encoded on 2 int5 values
+      val size1 = size.length match {
+        case 0 => Seq(0.toByte, 0. toByte)
+        case 1 => 0.toByte +: size
+        case 2 => size
+        case n => throw new IllegalArgumentException("tag data length field must be encoded on 2 5-bits integers")
+      }
+      Bech32.map('x') +: (size1 ++ ints)
     }
   }
 
@@ -312,8 +320,7 @@ object PaymentRequest {
           val path = RoutingInfoTag.parseAll(data)
           RoutingInfoTag(path)
         case x if x == Bech32.map('x') =>
-          require(len == 2, s"invalid length for expiry tag, should be 2 instead of $len")
-          val expiry = 32 * input(3) + input(4)
+          val expiry = readUnsignedLong(len, input.drop(3).take(len))
           ExpiryTag(expiry)
       }
     }
@@ -350,22 +357,24 @@ object PaymentRequest {
     }
   }
 
-  def toBits(value: Int5) : Seq[Bit] = Seq((value & 16) != 0, (value & 8) != 0, (value & 4) != 0, (value & 2) != 0, (value & 1) != 0)
+  def toBits(value: Int5): Seq[Bit] = Seq((value & 16) != 0, (value & 8) != 0, (value & 4) != 0, (value & 2) != 0, (value & 1) != 0)
 
   /**
     * write a 5bits integer to a stream
+    *
     * @param stream stream to write to
-    * @param value a 5bits value
+    * @param value  a 5bits value
     * @return an upated stream
     */
-  def write5(stream: BitStream, value: Int5) : BitStream = stream.writeBits(toBits(value))
+  def write5(stream: BitStream, value: Int5): BitStream = stream.writeBits(toBits(value))
 
   /**
     * read a 5bits value from a stream
+    *
     * @param stream stream to read from
     * @return a (stream, value) pair
     */
-  def read5(stream: BitStream) : (BitStream, Int5) = {
+  def read5(stream: BitStream): (BitStream, Int5) = {
     val (stream1, bits) = stream.readBits(5)
     val value = (if (bits(0)) 1 << 4 else 0) + (if (bits(1)) 1 << 3 else 0) + (if (bits(2)) 1 << 2 else 0) + (if (bits(3)) 1 << 1 else 0) + (if (bits(4)) 1 << 0 else 0)
     (stream1, (value & 0xff).toByte)
@@ -373,15 +382,37 @@ object PaymentRequest {
 
   /**
     * splits a bit stream into 5bits values
+    *
     * @param stream
     * @param acc
     * @return a sequence of 5bits values
     */
   @tailrec
-  def toInt5s(stream: BitStream, acc :Seq[Int5] = Nil) : Seq[Int5] = if (stream.bitCount == 0) acc else {
+  def toInt5s(stream: BitStream, acc: Seq[Int5] = Nil): Seq[Int5] = if (stream.bitCount == 0) acc else {
     val (stream1, value) = read5(stream)
     toInt5s(stream1, acc :+ value)
   }
+
+  /**
+    * prepend an unsigned long value to a sequence of Int5s
+    * @param value input value
+    * @param acc sequence of Int5 values
+    * @return an update sequence of Int5s
+    */
+  @tailrec
+  def writeUnsignedLong(value: Long, acc: Seq[Int5] = Nil): Seq[Int5] = {
+    require(value >= 0)
+    if (value == 0) acc
+    else writeUnsignedLong(value / 32, (value % 32).toByte +: acc)
+  }
+
+  /**
+    * reads an unsigned long value from a sequence of Int5s
+    * @param length length of the seauence
+    * @param ints sequence of Int5s
+    * @return an unsigned long value
+    */
+  def readUnsignedLong(length: Int, ints: Seq[Int5]): Long = ints.take(length).foldLeft(0L) { case (acc, i) => acc * 32 + i }
 
   /**
     *
@@ -399,10 +430,10 @@ object PaymentRequest {
     val data1 = data0.drop(7)
 
     @tailrec
-    def loop(data: Seq[Int5], tags: Seq[Seq[Int5]] = Nil): Seq[Seq[Int5]] = if(data.isEmpty) tags else {
+    def loop(data: Seq[Int5], tags: Seq[Seq[Int5]] = Nil): Seq[Seq[Int5]] = if (data.isEmpty) tags else {
       // 104 is the size of a signature
-        val len = 1 + 2 + 32 * data(1) + data(2)
-        loop(data.drop(len), tags :+ data.take(len))
+      val len = 1 + 2 + 32 * data(1) + data(2)
+      loop(data.drop(len), tags :+ data.take(len))
     }
 
     val rawtags = loop(data1)
