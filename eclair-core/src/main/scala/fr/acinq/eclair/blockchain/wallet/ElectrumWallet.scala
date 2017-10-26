@@ -22,7 +22,7 @@ class ElectrumWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: Exe
 
   override def makeFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long) = {
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, pubkeyScript) :: Nil, lockTime = 0)
-    (wallet ? CompleteTransaction(tx, false)).mapTo[CompleteTransactionResponse].map(response => response match {
+    (wallet ? CompleteTransaction(tx, feeRatePerKw, false)).mapTo[CompleteTransactionResponse].map(response => response match {
       case CompleteTransactionResponse(tx1, None) => MakeFundingTxResponse(tx1, 0)
       case CompleteTransactionResponse(_, Some(error)) => throw error
     })

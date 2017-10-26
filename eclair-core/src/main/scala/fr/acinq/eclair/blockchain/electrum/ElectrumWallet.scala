@@ -280,7 +280,7 @@ object ElectrumWallet {
     Props(new ElectrumWallet(mnemonics, client, params))
   }
 
-  case class WalletParameters(chainHash: BinaryData, feeRatePerKw: Int = 10000, minimumFee: Satoshi = Satoshi(1000), dustLimit: Satoshi = Satoshi(546), swipeRange: Int = 10)
+  case class WalletParameters(chainHash: BinaryData, feeRatePerKw: Int = 20000, minimumFee: Satoshi = Satoshi(2000), dustLimit: Satoshi = Satoshi(546), swipeRange: Int = 10)
 
   // @formatter:off
   sealed trait Request
@@ -298,7 +298,7 @@ object ElectrumWallet {
   case object GetState extends Request
   case class GetStateResponse(state: State) extends Response
 
-  case class CompleteTransaction(tx: Transaction, allowSpendingUnconfirmed: Boolean) extends Request
+  case class CompleteTransaction(tx: Transaction, feeRatePerKw: Long, allowSpendingUnconfirmed: Boolean) extends Request
   case class CompleteTransactionResponse(tx: Transaction, error: Option[Throwable]) extends Response
 
   case class CommitTransaction(tx: Transaction) extends Request

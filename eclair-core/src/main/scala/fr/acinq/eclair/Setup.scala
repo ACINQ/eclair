@@ -48,15 +48,15 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     case "test" => classOf[Setup].getResourceAsStream("/electrum/servers_testnet.json")
     case "regtest" => classOf[Setup].getResourceAsStream("/electrum/servers_regtest.json")
   }
-  val addresses = ElectrumClient.readServerAddresses(stream)
-  stream.close()
-
-  val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
-  val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
-  val electrumSeedPath = new File(datadir, "electrum_seed.dat")
-  val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)), "electrum-wallet")
 
   def bootstrap: Future[Kit] = Future {
+    val addresses = ElectrumClient.readServerAddresses(stream)
+    stream.close()
+
+    val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+    val watcher = system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
+    val electrumSeedPath = new File(datadir, "electrum_seed.dat")
+    val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)), "electrum-wallet")
 
     val defaultFeeratePerKb = config.getLong("default-feerate-per-kb")
     Globals.feeratePerKw.set(feerateKb2Kw(defaultFeeratePerKb))
