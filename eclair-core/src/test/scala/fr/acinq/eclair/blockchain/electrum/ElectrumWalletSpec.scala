@@ -86,7 +86,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     // create a tx that sends money to Bitcoin Core's address
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(1 btc, Script.pay2pkh(pubKeyHash)) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx, false))
+    probe.send(wallet, CompleteTransaction(tx, 20000, false))
     val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -122,7 +122,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     // create a tx that sends money to Bitcoin Core's address
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(1 btc, OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx, false))
+    probe.send(wallet, CompleteTransaction(tx, 20000, false))
     val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves
@@ -207,7 +207,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
     // create a tx that sends money to Bitcoin Core's address
     val amount = 0.5 btc
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2pkh(pubKeyHash)) :: Nil, lockTime = 0L)
-    probe.send(wallet, CompleteTransaction(tx, false))
+    probe.send(wallet, CompleteTransaction(tx, 20000, false))
     val CompleteTransactionResponse(tx1, None) = probe.expectMsgType[CompleteTransactionResponse]
 
     // send it ourselves

@@ -190,7 +190,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       }
       context become running(state1)
 
-    case CompleteTransaction(tx, allowSpendingUnconfirmed) =>
+    case CompleteTransaction(tx, feeRatePerKw, allowSpendingUnconfirmed) =>
       try {
         val (state1, tx1) = state.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit)
         sender ! CompleteTransactionResponse(tx1, None)
@@ -586,10 +586,11 @@ object ElectrumWallet {
       */
     def completeTransaction(tx: Transaction, feeRatePerKw: Long, minimumFee: Satoshi, dustLimit: Satoshi) : (State, Transaction) = {
       require(tx.txIn.isEmpty, "cannot complete a tx that already has inputs")
+      require(feeRatePerKw >= 0, "Fee rate cannot be negative")
       val amount = tx.txOut.map(_.amount).sum
       require(amount > dustLimit, "amount to send is below dust limit")
       val fee = {
-        val estimatedFee = computeFee(500, feeRatePerKw)
+        val estimatedFee = computeFee(700, feeRatePerKw)
         if (estimatedFee < minimumFee) minimumFee else estimatedFee
       }
 

@@ -28,14 +28,14 @@ class ElectrumWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: Exe
     })
   }
 
-  def sendPayment(amount: Satoshi, address: String, callback: ElectrumWallet.CompletionCallback[java.lang.Boolean]) : Future[Unit] = {
+  def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long, callback: ElectrumWallet.CompletionCallback[java.lang.Boolean]) : Future[Unit] = {
     val publicKeyScript = Base58Check.decode(address) match {
       case (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) => Script.pay2pkh(pubKeyHash)
       case (Base58.Prefix.ScriptAddressTestnet, scriptHash) => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
     }
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
     val future = for {
-      CompleteTransactionResponse(tx1, None) <- (wallet ? CompleteTransaction(tx, false)).mapTo[CompleteTransactionResponse]
+      CompleteTransactionResponse(tx1, None) <- (wallet ? CompleteTransaction(tx, feeRatePerKw, false)).mapTo[CompleteTransactionResponse]
       result <- commit(tx1)
     } yield result
 

@@ -16,8 +16,8 @@ class ElectrumWalletBasicSpec extends FunSuite {
 
   val swipeRange = 10
   val dustLimit = 546 satoshi
-  val feeRatePerKw = 10000
-  val minimumFee = Satoshi(1000)
+  val feeRatePerKw = 20000
+  val minimumFee = Satoshi(2000)
 
   val master = DeterministicWallet.generate(BinaryData("01" * 32))
   val accountMaster = accountKey(master)
