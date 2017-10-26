@@ -24,14 +24,14 @@ object PaymentHop {
     */
   type ChannelUpdateAndKey = (ChannelUpdate, PublicKey)
   def buildExtra(updates: Seq[ChannelUpdateAndKey], msat: Long): Seq[ExtraHop] =
-    (Vector.empty[ExtraHop] /: updates) {
-    case (vec, (update, key)) if vec.isEmpty =>
+    (List.empty[ExtraHop] /: updates) {
+    case (Nil, (update, key)) =>
       val fee = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, msat)
-      ExtraHop(key, update.shortChannelId, fee, update.cltvExpiryDelta) +: vec
+      ExtraHop(key, update.shortChannelId, fee, update.cltvExpiryDelta) :: Nil
 
-    case (vec, (update, key)) =>
-      val fee = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, msat + vec.head.fee)
-      ExtraHop(key, update.shortChannelId, fee, update.cltvExpiryDelta) +: vec
+    case (head :: rest, (update, key)) =>
+      val fee = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, msat + head.fee)
+      ExtraHop(key, update.shortChannelId, fee, update.cltvExpiryDelta) :: head :: rest
   }
 }
 
