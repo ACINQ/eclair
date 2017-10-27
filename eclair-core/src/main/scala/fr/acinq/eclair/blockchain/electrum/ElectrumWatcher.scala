@@ -44,10 +44,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
         case watch: WatchConfirmed =>
           val scriptHash: BinaryData = Crypto.sha256(watch.publicKeyScript).reverse
           client ! ElectrumClient.GetScriptHashHistory(scriptHash)
-        //        case WatchSpent(tx, pos, _) =>
-        //          val scriptHash: BinaryData = Crypto.sha256(tx.txOut(pos).publicKeyScript).reverse
-        //          client ! GetScriptHashHistory(scriptHash)
-      }
+     }
       context become running(newtip, watches, scriptHashStatus, block2tx)
 
     case watch: Watch if watches.contains(watch) => ()
@@ -99,7 +96,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
             }, false)
         }
       }
-      history.filter(_.height > 0).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
+      history.filter(_.height >= 0).map(item => client ! ElectrumClient.GetTransaction(item.tx_hash))
 
     case ElectrumClient.GetTransactionResponse(spendingTx) =>
       spendingTx.txIn.map(_.outPoint).map(outPoint => {
@@ -148,16 +145,6 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
 }
 
 object ElectrumWatcher extends App {
-
-//  // @formatter:off
-//  sealed trait Event
-//  case class TransactionSpent(tx: Transaction, pos: Int, spendingTx: Transaction) extends Event
-//  case class TransactionConfirmed(txid: BinaryData, confirmations: Long) extends Event
-//
-//  sealed trait Watch
-//  case class WatchSpent(tx: Transaction, pos: Int, actor: ActorRef) extends Watch
-//  case class WatchConfirmed(tx: Transaction, minDepth: Long, actor: ActorRef) extends Watch
-//  // @formatter:on
 
   val system = ActorSystem()
 
