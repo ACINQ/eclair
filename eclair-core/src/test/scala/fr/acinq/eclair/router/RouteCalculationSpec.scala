@@ -184,12 +184,15 @@ class RouteCalculationSpec extends FunSuite {
 
     val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 13390952114749440L, 1508747148L, BinaryData.empty, 144, 100, 546000, 10)
     val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 11091873301069824L, 1508752623L, BinaryData.empty, 144, 100, 546000, 10)
-    val pubkey1: PublicKey = PublicKey("0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3")
-    val pubkey2: PublicKey = PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8")
-    val extraHops: Seq[ExtraHop] = PaymentHop.buildExtra(Seq(ucd -> pubkey1, ude -> pubkey2), 100000L)
+    val d: PublicKey = PublicKey("0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3")
+    val e: PublicKey = PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8")
 
-    val (_, _, payloads) = PaymentLifecycle.buildPayloads(100000L, 6, publicHops ++ extraHops)
-    assert(payloads === Seq(PerHopPayload(1L, 1194678L, 295), PerHopPayload(2L, 1192007L, 294), PerHopPayload(11091873301069824L, 646001L, 150), PerHopPayload(13390952114749440L, 100000L, 6), PerHopPayload(0L, 100000L, 6)))
+    val reversePathFromRecipient = Hop(d, e, ude) :: Hop(c, d, ucd) :: Nil
+    val extraHops: Seq[ExtraHop] = PaymentHop.buildExtra(reversePathFromRecipient, 100000L)
+
+    // (a -> b), (b -> c) ++ ((d -> e), (c -> d)).reverse
+    val (_, _, payloads) = PaymentLifecycle.buildPayloads(100000L, 6, publicHops ++ extraHops.reverse)
+    assert(payloads === List(PerHopPayload(1L, 1194678L, 295), PerHopPayload(2L, 1192007L, 294), PerHopPayload(11091873301069824L, 646006L, 150), PerHopPayload(13390952114749440L, 100000L, 6), PerHopPayload(0L, 100000L, 6)))
   }
 
 }

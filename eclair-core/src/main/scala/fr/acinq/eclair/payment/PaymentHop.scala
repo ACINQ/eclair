@@ -18,20 +18,13 @@ object PaymentHop {
 
   /**
     *
-    * @param updates sequence of channel updates and node public keys, direction should be from recipient nodeId
+    * @param reversePath sequence of Hops from recipient to a start of assisted path
     * @param msat an amount to send to a payment recipient
     * @return a sequence of extra hops with a pre-calculated fee for a given msat amount
     */
-  type ChannelUpdateAndKey = (ChannelUpdate, PublicKey)
-  def buildExtra(updates: Seq[ChannelUpdateAndKey], msat: Long): Seq[ExtraHop] =
-    (List.empty[ExtraHop] /: updates) {
-    case (Nil, (update, key)) =>
-      val fee = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, msat)
-      ExtraHop(key, update.shortChannelId, fee, update.cltvExpiryDelta) :: Nil
-
-    case (head :: rest, (update, key)) =>
-      val fee = nodeFee(update.feeBaseMsat, update.feeProportionalMillionths, msat + head.fee)
-      ExtraHop(key, update.shortChannelId, fee, update.cltvExpiryDelta) :: head :: rest
+  def buildExtra(reversePath: Seq[Hop], msat: Long): Seq[ExtraHop] = (List.empty[ExtraHop] /: reversePath) {
+    case (Nil, hop) => ExtraHop(hop.nextNodeId, hop.shortChannelId, hop.nextFee(msat), hop.cltvExpiryDelta) :: Nil
+    case (head :: rest, hop) => ExtraHop(hop.nextNodeId, hop.shortChannelId, hop.nextFee(msat + head.fee), hop.cltvExpiryDelta) :: head :: rest
   }
 }
 
