@@ -3,8 +3,9 @@ package fr.acinq.eclair.blockchain.electrum
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, Stash, Terminated}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
-import fr.acinq.eclair.Globals
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, Transaction, TxIn, TxOut}
+import fr.acinq.eclair.{Globals, fromShortId }
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT, BITCOIN_PARENT_TX_CONFIRMED}
@@ -123,6 +124,19 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
         val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))
         context become running(tip, watches, scriptHashStatus, block2tx1)
       } else publish(tx)
+
+    case ParallelGetRequest(announcements) => sender ! ParallelGetResponse(announcements.map {
+      case c =>
+        log.info(s"blindly validating channel=$c")
+        val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+        val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+        val fakeFundingTx = Transaction(
+          version = 2,
+          txIn = Seq.empty[TxIn],
+          txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+          lockTime = 0)
+        IndividualResult(c, Some(fakeFundingTx), true)
+    })
 
     case ElectrumClient.Disconnected => context become disconnected(watches)
   }
