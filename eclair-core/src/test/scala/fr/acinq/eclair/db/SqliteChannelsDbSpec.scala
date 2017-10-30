@@ -27,9 +27,9 @@ class SqliteChannelsDbSpec extends FunSuite {
     assert(db.listChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
     db.addOrUpdateChannel(channel)
-    assert(db.listChannels().toSet === Set(channel))
+    assert(db.listChannels() === List(channel))
     db.removeChannel(channel.channelId)
-    assert(db.listChannels().toSet === Set.empty)
+    assert(db.listChannels() === Nil)
   }
 
 }

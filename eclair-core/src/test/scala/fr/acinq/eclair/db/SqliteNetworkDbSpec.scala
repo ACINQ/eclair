@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.wire.LightningMessageCodecs.channelAnnouncementCodec
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -33,6 +34,8 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     assert(db.listNodes().toSet === Set.empty)
     db.addNode(node_1)
+    db.addNode(node_1) // duplicate is ignored
+    assert(db.listNodes().size === 1)
     db.addNode(node_2)
     db.addNode(node_3)
     assert(db.listNodes().toSet === Set(node_1, node_2, node_3))
@@ -53,6 +56,8 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     assert(db.listChannels().toSet === Set.empty)
     db.addChannel(channel_1)
+    db.addChannel(channel_1) // duplicate is ignored
+    assert(db.listChannels().size === 1)
     db.addChannel(channel_2)
     db.addChannel(channel_3)
     assert(db.listChannels().toSet === Set(channel_1, channel_2, channel_3))
@@ -65,6 +70,8 @@ class SqliteNetworkDbSpec extends FunSuite {
 
     assert(db.listChannelUpdates().toSet === Set.empty)
     db.addChannelUpdate(channel_update_1)
+    db.addChannelUpdate(channel_update_1) // duplicate is ignored
+    assert(db.listChannelUpdates().size === 1)
     intercept[SQLiteException](db.addChannelUpdate(channel_update_2))
     db.addChannelUpdate(channel_update_3)
     db.removeChannel(channel_3.shortChannelId)
