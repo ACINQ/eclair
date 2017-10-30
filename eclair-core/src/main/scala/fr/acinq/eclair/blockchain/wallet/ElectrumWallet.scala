@@ -1,12 +1,7 @@
 package fr.acinq.eclair.blockchain.wallet
 
-import java.util.concurrent.{Executor, TimeUnit}
-
 import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import com.google.common.util.concurrent.ListenableFuture
-import fr.acinq.bitcoin.Crypto.hash160
-import fr.acinq.bitcoin.Script.Runner.Callback
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, OP_EQUAL, OP_HASH160, OP_PUSHDATA, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{BroadcastTransaction, BroadcastTransactionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
@@ -16,7 +11,7 @@ import scala.util.{Failure, Success}
 
 class ElectrumWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout)  extends EclairWallet {
 
-  override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(_.confirmed)
+  override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
 
   override def getFinalAddress = (wallet ? GetCurrentReceiveAddress).mapTo[GetCurrentReceiveAddressResponse].map(_.address)
 
