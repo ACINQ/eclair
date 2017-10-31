@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, Transaction}
 import fr.acinq.eclair.{Globals, UInt64}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.transactions.Transactions._
@@ -38,6 +38,9 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
                        remoteNextCommitInfo: Either[WaitingForRevocation, Point],
                        commitInput: InputInfo,
                        remotePerCommitmentSecrets: ShaChain, channelId: BinaryData) {
+
+  // this is the public key script of the funding tx output that our commit txs are spoending from
+  lazy val fundingPublicKeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)))
 
   def hasNoPendingHtlcs: Boolean = localCommit.spec.htlcs.isEmpty && remoteCommit.spec.htlcs.isEmpty
 

@@ -5,7 +5,7 @@
     <parent>
         <groupId>fr.acinq.eclair</groupId>
         <artifactId>eclair_2.11</artifactId>
-        <version>0.2-android-alpha7</version>
+        <version>0.2-android-elecapi-SNAPSHOT</version>
     </parent>
 
     <artifactId>eclair-node_2.11</artifactId>
@@ -84,6 +84,11 @@
             <groupId>com.googlecode.lanterna</groupId>
             <artifactId>lanterna</artifactId>
             <version>3.0.0-rc1</version>
+        </dependency>
+        <dependency>
+            <groupId>io.undertow</groupId>
+            <artifactId>undertow-core</artifactId>
+            <version>1.4.20.Final</version>
         </dependency>
     </dependencies>
 </project>

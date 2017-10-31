@@ -52,7 +52,6 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
       alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)

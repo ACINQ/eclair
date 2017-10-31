@@ -53,6 +53,13 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] =
     signTransaction(Transaction.write(tx).toString())
 
+  def getTransaction(txid: BinaryData): Future[Transaction] = {
+    rpcClient.invoke("getrawtransaction", txid.toString()).map(json => {
+      val JString(hex) = json
+      Transaction.read(hex)
+    })
+  }
+
   /**
     *
     * @param fundingTxResponse a funding tx response
@@ -137,6 +144,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     val promise = Promise[MakeFundingTxResponse]()
     (for {
       fundingTxResponse@MakeFundingTxResponseWithParent(parentTx, _, _, _) <- makeParentAndFundingTx(pubkeyScript, amount, feeRatePerKw)
+      input0 = parentTx.txIn.head
+      parentOfParentTx <- getTransaction(input0.outPoint.txid)
       _ = logger.debug(s"built parentTxid=${parentTx.txid}, initializing temporary actor")
       tempActor = system.actorOf(Props(new Actor {
         override def receive: Receive = {
@@ -146,7 +155,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
               // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
               logger.warn(s"parent tx has been malleated: originalParentTxid=${parentTx.txid} malleated=${spendingTx.txid}")
             }
-            watcher ! WatchConfirmed(self, spendingTx.txid, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
+            watcher ! WatchConfirmed(self, spendingTx.txid, spendingTx.txOut(0).publicKeyScript, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
 
           case WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _) =>
             // a potential parent for our funding tx has been confirmed, let's update our funding tx
@@ -155,8 +164,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
         }
       }))
       // we watch the first input of the parent tx, so that we can detect when it is spent by a malleated avatar
-      input0 = parentTx.txIn.head
-      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
+      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, parentOfParentTx.txOut(input0.outPoint.index.toInt).publicKeyScript, BITCOIN_INPUT_SPENT(parentTx))
       // and we publish the parent tx
       _ = logger.info(s"publishing parent tx: txid=${parentTx.txid} tx=${Transaction.write(parentTx)}")
       // we use a small delay so that we are sure Publish doesn't race with WatchSpent (which is ok but generates unnecessary warnings)

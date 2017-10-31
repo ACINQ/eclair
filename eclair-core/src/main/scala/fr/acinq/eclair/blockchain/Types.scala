@@ -16,9 +16,10 @@ sealed trait Watch {
   def channel: ActorRef
   def event: BitcoinEvent
 }
-final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
-final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: Int, event: BitcoinEvent) extends Watch
-final case class WatchSpentBasic(channel: ActorRef, txId: BinaryData, outputIndex: Int, event: BitcoinEvent) extends Watch // we use this when we don't care about the spending tx, and we also assume txid already exists
+// we need a public key script to use the electrum api efficiently
+final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, publicKeyScript: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
+final case class WatchSpent(channel: ActorRef, txId: BinaryData, outputIndex: Int, publicKeyScript: BinaryData, event: BitcoinEvent) extends Watch
+final case class WatchSpentBasic(channel: ActorRef, txId: BinaryData, outputIndex: Int, publicKeyScript: BinaryData, event: BitcoinEvent) extends Watch // we use this when we don't care about the spending tx, and we also assume txid already exists
 // TODO: notify me if confirmation number gets below minDepth?
 final case class WatchLost(channel: ActorRef, txId: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 
@@ -34,7 +35,7 @@ final case class WatchEventDoubleSpent(event: BitcoinEvent) extends WatchEvent
 /**
   * Publish the provided tx as soon as possible depending on locktime and csv
   */
-final case class PublishAsap(tx: Transaction)
+final case class PublishAsap(tx: Transaction, parentPublicKeyScript: Option[BinaryData] = None)
 final case class ParallelGetRequest(ann: Seq[ChannelAnnouncement])
 final case class IndividualResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean)
 final case class ParallelGetResponse(r: Seq[IndividualResult])

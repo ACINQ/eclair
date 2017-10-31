@@ -28,6 +28,8 @@
 
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
 
+    <logger name="fr.acinq.eclair.blockchain.electrum" level="DEBUG"/>
+
     <root level="INFO">
         <!--appender-ref ref="FILE"/>
         <appender-ref ref="CONSOLEWARN"/-->

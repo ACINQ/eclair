@@ -166,6 +166,11 @@ object ChannelCodecs {
       ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
       ("htlcPenaltyTxs" | listOfN(uint16, txCodec))).as[RevokedCommitPublished]
 
+  val DATA_WAIT_FOR_FUNDING_PUBLISHED_Codec: Codec[DATA_WAIT_FOR_FUNDING_PUBLISHED] = (
+    ("commitments" | commitmentsCodec) ::
+      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec)) ::
+      ("fundingTx" | txCodec)).as[DATA_WAIT_FOR_FUNDING_PUBLISHED]
+
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
@@ -208,5 +213,7 @@ object ChannelCodecs {
     .typecase(0x04, DATA_SHUTDOWN_Codec)
     .typecase(0x05, DATA_NEGOTIATING_Codec)
     .typecase(0x06, DATA_CLOSING_Codec)
+    .typecase(0x07, DATA_WAIT_FOR_FUNDING_PUBLISHED_Codec)
+
 
 }

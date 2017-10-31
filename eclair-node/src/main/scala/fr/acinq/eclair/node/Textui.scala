@@ -1,4 +1,4 @@
-package fr.acinq.eclair
+package fr.acinq.eclair.node
 
 import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
@@ -12,6 +12,7 @@ import fr.acinq.bitcoin.{BinaryData, MilliBtc, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{PaymentRequest, SendPayment}
+import fr.acinq.eclair.{Kit, SimpleSupervisor}
 import grizzled.slf4j.Logging
 
 import scala.collection.JavaConversions._

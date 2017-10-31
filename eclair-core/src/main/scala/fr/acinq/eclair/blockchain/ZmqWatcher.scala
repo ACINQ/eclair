@@ -34,14 +34,12 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
-    case hint: Hint => {}
-
     case NewTransaction(tx) =>
       //log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
       watches.collect {
-        case w@WatchSpentBasic(_, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
+        case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpentBasic(event))
-        case w@WatchSpent(_, txid, outputIndex, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
+        case w@WatchSpent(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpent(event, tx))
       }
 
@@ -71,7 +69,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       }*/
       // TODO: beware of the herd effect
       watches.collect {
-        case w@WatchConfirmed(_, txId, minDepth, event) =>
+        case w@WatchConfirmed(_, txId, _, minDepth, event) =>
           log.debug(s"checking confirmations of txid=$txId")
           client.getTxConfirmations(txId.toString).map {
             case Some(confirmations) if confirmations >= minDepth =>
@@ -97,7 +95,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
     case w: Watch if !watches.contains(w) => addWatch(w, watches, block2tx)
 
-    case PublishAsap(tx) =>
+    case PublishAsap(tx, opt) =>
       val blockCount = Globals.blockCount.get()
       val cltvTimeout = Scripts.cltvTimeout(tx)
       val csvTimeout = Scripts.csvTimeout(tx)
@@ -105,7 +103,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn(0).outPoint.txid
         log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=${Transaction.write(tx)}")
-        self ! WatchConfirmed(self, parentTxid, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
+        self ! WatchConfirmed(self, parentTxid, opt.get, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
         log.info(s"delaying publication of txid=${tx.txid} until block=$cltvTimeout (curblock=$blockCount)")
         val block2tx1 = block2tx.updated(cltvTimeout, tx +: block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]))
@@ -136,7 +134,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   def addWatch(w: Watch, watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]) = {
     w match {
-      case WatchSpentBasic(_, txid, outputIndex, _) =>
+      case WatchSpentBasic(_, txid, outputIndex, _, _) =>
         // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
         client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
           case false =>
@@ -144,7 +142,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
             self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
         }
 
-      case w@WatchSpent(_, txid, outputIndex, _) =>
+      case w@WatchSpent(_, txid, outputIndex, _, _) =>
         // first let's see if the parent tx was published or not
         client.getTxConfirmations(txid.toString()).collect {
           case Some(_) =>

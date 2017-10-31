@@ -38,7 +38,6 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishAsap]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     }
     test((alice, bob, alice2bob, bob2alice, alice2blockchain))
