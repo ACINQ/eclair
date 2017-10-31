@@ -23,8 +23,8 @@ object PaymentHop {
     * @return a sequence of extra hops with a pre-calculated fee for a given msat amount
     */
   def buildExtra(reversePath: Seq[Hop], msat: Long): Seq[ExtraHop] = (List.empty[ExtraHop] /: reversePath) {
-    case (Nil, hop) => ExtraHop(hop.nextNodeId, hop.shortChannelId, hop.nextFee(msat), hop.cltvExpiryDelta) :: Nil
-    case (head :: rest, hop) => ExtraHop(hop.nextNodeId, hop.shortChannelId, hop.nextFee(msat + head.fee), hop.cltvExpiryDelta) :: head :: rest
+    case (Nil, hop) => ExtraHop(hop.nodeId, hop.shortChannelId, hop.nextFee(msat), hop.cltvExpiryDelta) :: Nil
+    case (head :: rest, hop) => ExtraHop(hop.nodeId, hop.shortChannelId, hop.nextFee(msat + head.fee), hop.cltvExpiryDelta) :: head :: rest
   }
 }
 

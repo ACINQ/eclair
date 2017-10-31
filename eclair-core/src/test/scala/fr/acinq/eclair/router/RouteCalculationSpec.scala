@@ -1,10 +1,10 @@
 package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, MilliSatoshi}
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.{ChannelUpdate, PerHopPayload}
-import fr.acinq.eclair.payment.{ExtraHop, Hop, PaymentHop, PaymentLifecycle}
+import fr.acinq.eclair.payment._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -176,23 +176,46 @@ class RouteCalculationSpec extends FunSuite {
   }
 
   test("calculate route with extra hops") {
-    val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
+    // E (sender) -> D - public -> C - private -> B - private -> A (receiver)
 
-    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 1L, 0L, "0000", 1, 42, 2500, 140)
-    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 2L, 1L, "0000", 1, 44, 2502, 142)
-    val publicHops: Seq[Hop] = Hop(a, b, uab) :: Hop(b, c, ubc) :: Nil
+    val amount = MilliSatoshi(100000000L)
+    val paymentPreimage = BinaryData("0" * 32)
+    val paymentHash = Crypto.sha256(paymentPreimage)
+    val privateKey = PrivateKey("bb77027e3b6ef55f3b16eb6973d124f68e0c2afc16accc00a44ec6b3d1e58cc601")
 
-    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 13390952114749440L, 1508747148L, BinaryData.empty, 144, 100, 546000, 10)
-    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 11091873301069824L, 1508752623L, BinaryData.empty, 144, 100, 546000, 10)
-    val d: PublicKey = PublicKey("0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3")
-    val e: PublicKey = PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8")
+    // Ask router for a route from 02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8 (node C)
+    // to 0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3 (node A)
+    val hopCB = Hop(PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"),
+      PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac"),
+      ChannelUpdate("3044022075bc283539935b1bc126035ef98d0f9bcd5dd7b0832b0a6175dc14a5ee12d47102203d141a4da4f83fca9d65bddfb9ee6ea5cdfcdb364de062d1370500f511b8370701",
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 24412456671576064L, 1509366313, BinaryData("0000"), 144, 1000, 546000, 10))
 
-    val reversePathFromRecipient = Hop(d, e, ude) :: Hop(c, d, ucd) :: Nil
-    val extraHops: Seq[ExtraHop] = PaymentHop.buildExtra(reversePathFromRecipient, 100000L)
+    val hopBA = Hop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac"),
+      PublicKey("0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3"),
+      ChannelUpdate("304402205e9b28e26add5417ad97f6eb161229dd7db0d7848e146a1856a8841238bc627902203cc59996ca490375fd76a3327adfb7c5150ee3288ad1663b8c4fbe8908eb489a01",
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 23366821113626624L, 1509455356, BinaryData("0001"), 144, 1000, 546000, 10))
 
-    // (a -> b), (b -> c) ++ ((d -> e), (c -> d)).reverse
-    val (_, _, payloads) = PaymentLifecycle.buildPayloads(100000L, 6, publicHops ++ extraHops.reverse)
-    assert(payloads === List(PerHopPayload(1L, 1194678L, 295), PerHopPayload(2L, 1192007L, 294), PerHopPayload(11091873301069824L, 646006L, 150), PerHopPayload(13390952114749440L, 100000L, 6), PerHopPayload(0L, 100000L, 6)))
+    val reverseRoute = List(hopBA, hopCB)
+    val extraRoute = PaymentHop.buildExtra(reverseRoute, amount.amount)
+
+    assert(extraRoute === List(ExtraHop(PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"), 24412456671576064L, 547005, 144),
+      ExtraHop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac") ,23366821113626624L, 547000, 144)))
+
+    // Receiver side
+
+    // Ask router for a route D -> C
+    val hopDC = Hop(PublicKey("03c1b07dbe10e178216150b49646ded556466ed15368857fa721cf1acd9d9a6f24"),
+      PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"),
+      ChannelUpdate("3044022060c1034092d4e41d75271eb619ef0a0f00d0b5a61c4245e0f14eeac91a3c823202200da9c8b8067e73c32aea41cb9eec050ce49cb944877d9abb3b08be2dea92497301",
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 24403660578553856L, 1509456040, BinaryData("0001"), 144, 1000, 546000, 10))
+
+    val (amt, expiry, payloads) = PaymentLifecycle.buildPayloads(amount.amount, 10, Seq(hopDC) ++ extraRoute)
+
+    assert(payloads === List(PerHopPayload(24403660578553856L, 101094005L, 298),
+      PerHopPayload(24412456671576064L, 100547000L, 154), PerHopPayload(23366821113626624L, 100000000L, 10), PerHopPayload(0L, 100000000L, 10)))
+
+    assert(amt == 101641015L)
+    assert(expiry == 442)
   }
 
 }
