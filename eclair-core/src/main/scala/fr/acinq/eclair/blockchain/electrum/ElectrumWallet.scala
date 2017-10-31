@@ -10,6 +10,7 @@ import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKe
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, MnemonicCode, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetTransaction, GetTransactionResponse}
 import grizzled.slf4j.Logging
+import scodec.Codec
 
 import scala.annotation.tailrec
 import scala.util.Try
@@ -60,6 +61,8 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       sender ! GetBalanceResponse(confirmed, unconfirmed)
 
     case GetState => sender ! GetStateResponse(state)
+
+
   }
 
   def waitingForTip(state: State): Receive = {
@@ -209,6 +212,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       client ! bc
       context become {
         case resp@ElectrumClient.BroadcastTransactionResponse(tx, None) =>
+          //tx broadcast successfully: commit tx
           replyTo ! resp
           unstashAll()
           val state1 = state.commitTransaction(tx)
@@ -216,17 +220,19 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           statusListeners.map(_ ! WalletTransactionReceive(tx, state1.computeTransactionDepth(tx.txid), received, sent))
           context become running(state1)
         case resp@ElectrumClient.BroadcastTransactionResponse(_, Some(error)) =>
+          //tx broadcast failed: cancel tx
           log.error(s"cannot broadcast tx ${tx.txid}: $error")
           replyTo ! resp
           unstashAll()
           context become running(state.cancelTransaction(tx))
         case ElectrumClient.ServerError(ElectrumClient.BroadcastTransaction(tx1), error) if tx1 == tx =>
+          //tx broadcast failed: cancel tx
           log.error(s"cannot broadcast tx ${tx.txid}: $error")
           replyTo ! ElectrumClient.BroadcastTransactionResponse(tx, Some(error))
           unstashAll()
           context become running(state.cancelTransaction(tx))
         case other =>
-          log.debug(s"received $other while wwiting for a broadcast response")
+          log.debug(s"received $other while waiting for a broadcast response")
           stash()
       }
 
@@ -247,6 +253,10 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     message match {
       case GetMnemonicCode =>
         sender ! GetMnemonicCodeResponse(mnemonics)
+      case CommitTransaction(tx) =>
+        sender ! CommitTransactionResponse(tx, Some(new RuntimeException("wallet is not connected")))
+      case ElectrumClient.BroadcastTransaction(tx) =>
+        sender ! ElectrumClient.BroadcastTransactionResponse(tx, Some("wallet is not connected"))
       case ElectrumClient.AddStatusListener(actor) =>
         context.watch(actor)
         statusListeners += actor
@@ -658,4 +668,13 @@ object ElectrumWallet {
     def apply(tip: ElectrumClient.Header, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): State
     = State(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Map(), Set(), Set(), Set(), Set())
   }
+
+  case class PersistentState(mnemonics: Seq[String], accountKeyCount: Int, changeKeyCount: Int, status: Map[BinaryData, String], transactions: Seq[Transaction])
+
+//  object PersistentState {
+//      val persistentStateCoder: Codec[PersistentState] = (
+//    ("mnemonics" | listOfN(uint8, String)) ::
+//      ("accountKeyCount" | uint16)).as[PersistentState]
+//  }
+
 }

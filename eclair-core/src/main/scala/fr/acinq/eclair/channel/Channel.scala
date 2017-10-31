@@ -119,6 +119,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
         case d: HasCommitments =>
           d match {
+            case DATA_WAIT_FOR_FUNDING_PUBLISHED(_, _, fundingTx) =>
+              wallet.commit(fundingTx).map(_ match {
+                case true => BITCOIN_FUNDING_PUBLISHED
+                case false => BITCOIN_FUNDING_LOST
+              }).pipeTo(self)
+
             case DATA_NORMAL(_, Some(shortChannelId), _, _, _) =>
               context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
               val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
@@ -314,22 +320,31 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"publishing funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           // we do this to make sure that the channel state has been written to disk when we publish the funding tx
-          val nextState = store(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, Left(fundingCreated)))
+
           log.info(s"committing txid=${fundingTx.txid}")
-          wallet.commit(fundingTx).map {
-            case true =>
-              blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.fundingPublicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
-              blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.fundingPublicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
-              blockchain ! PublishAsap(fundingTx)
-            case false =>
-              self ! WatchEventDoubleSpent(BITCOIN_FUNDING_DEPTHOK)
-          }
-          goto(WAIT_FOR_FUNDING_CONFIRMED) using nextState
+          val nextState = store(DATA_WAIT_FOR_FUNDING_PUBLISHED(commitments, Left(fundingCreated), fundingTx))
+          wallet.commit(fundingTx).map(_ match {
+            case true => BITCOIN_FUNDING_PUBLISHED
+            case false => BITCOIN_FUNDING_LOST
+          }).pipeTo(self)
+          goto(WAIT_FOR_FUNDING_PUBLISHED) using nextState
       }
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
     case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+  })
+
+  when(WAIT_FOR_FUNDING_PUBLISHED)(handleExceptions {
+    case Event(BITCOIN_FUNDING_PUBLISHED, DATA_WAIT_FOR_FUNDING_PUBLISHED(commitments, lastSent, fundingTx)) =>
+      blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.fundingPublicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.fundingPublicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+      goto(WAIT_FOR_FUNDING_CONFIRMED) using store(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, lastSent))
+
+    case Event(BITCOIN_FUNDING_LOST, DATA_WAIT_FOR_FUNDING_PUBLISHED(commitments, _, _)) =>
+      log.error(s"cannot publish funding tx, aborting")
+      val error = Error(commitments.channelId, BinaryData.empty)
+      goto(CLOSED) sending error
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -975,9 +990,21 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: HasCommitments) => handleRemoteSpentOther(tx, d)
+
+    case Event(BITCOIN_FUNDING_PUBLISHED, DATA_WAIT_FOR_FUNDING_PUBLISHED(commitments, lastSent, fundingTx)) =>
+      blockchain ! WatchSpent(self, commitments.commitInput.outPoint.txid, commitments.commitInput.outPoint.index.toInt, commitments.fundingPublicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
+      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.fundingPublicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
+      stay using store(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, lastSent))
+
+    case Event(BITCOIN_FUNDING_LOST, DATA_WAIT_FOR_FUNDING_PUBLISHED(commitments, _, _)) =>
+      log.error(s"cannot publish funding tx, aborting")
+      goto(CLOSED)
   })
 
   when(SYNCING)(handleExceptions {
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
+      goto(WAIT_FOR_FUNDING_PUBLISHED)
+
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
       // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
       blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.fundingPublicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
