@@ -52,7 +52,8 @@ case class OpenChannel(chainHash: BinaryData,
                        paymentBasepoint: Point,
                        delayedPaymentBasepoint: Point,
                        firstPerCommitmentPoint: Point,
-                       channelFlags: Byte) extends ChannelMessage with HasTemporaryChannelId
+                       channelFlags: Byte,
+                       htlcBasepoint: Point) extends ChannelMessage with HasTemporaryChannelId
 
 case class AcceptChannel(temporaryChannelId: BinaryData,
                          dustLimitSatoshis: Long,
@@ -66,7 +67,8 @@ case class AcceptChannel(temporaryChannelId: BinaryData,
                          revocationBasepoint: Point,
                          paymentBasepoint: Point,
                          delayedPaymentBasepoint: Point,
-                         firstPerCommitmentPoint: Point) extends ChannelMessage with HasTemporaryChannelId
+                         firstPerCommitmentPoint: Point,
+                         htlcBasepoint: Point) extends ChannelMessage with HasTemporaryChannelId
 
 case class FundingCreated(temporaryChannelId: BinaryData,
                           fundingTxid: BinaryData,
