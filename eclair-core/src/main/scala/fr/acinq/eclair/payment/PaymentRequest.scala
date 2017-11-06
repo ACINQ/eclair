@@ -205,6 +205,22 @@ object PaymentRequest {
   }
 
   /**
+    * Extra hop contained in RoutingInfoTag
+    *
+    * @param nodeId          node id
+    * @param shortChannelId  channel id
+    * @param fee             node fee
+    * @param cltvExpiryDelta node cltv expiry delta
+    */
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) extends PaymentHop {
+    def pack: Seq[Byte] = nodeId.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
+      Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
+
+    // Fee is already pre-calculated for extra hops
+    def nextFee(msat: Long): Long = fee
+  }
+
+  /**
     * Routing Info Tag
     *
     * @param path one or more entries containing extra routing information for a private route

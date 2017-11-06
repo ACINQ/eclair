@@ -2,6 +2,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto, MilliSatoshi}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.wire.{ChannelUpdate, PerHopPayload}
 import fr.acinq.eclair.payment._
@@ -201,7 +202,7 @@ class RouteCalculationSpec extends FunSuite {
     assert(extraRoute === List(ExtraHop(PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"), 24412456671576064L, 547005, 144),
       ExtraHop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac") ,23366821113626624L, 547000, 144)))
 
-    // Receiver side
+    // Sender side
 
     // Ask router for a route D -> C
     val hopDC = Hop(PublicKey("03c1b07dbe10e178216150b49646ded556466ed15368857fa721cf1acd9d9a6f24"),

@@ -1,9 +1,8 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.wire.ChannelUpdate
-import fr.acinq.bitcoin.Protocol
-import java.nio.ByteOrder
 
 
 object PaymentHop {
@@ -33,22 +32,6 @@ trait PaymentHop {
   def shortChannelId: Long
   def cltvExpiryDelta: Int
   def nodeId: PublicKey
-}
-
-/**
-  * Extra hop contained in RoutingInfoTag
-  *
-  * @param nodeId          node id
-  * @param shortChannelId  channel id
-  * @param fee             node fee
-  * @param cltvExpiryDelta node cltv expiry delta
-  */
-case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) extends PaymentHop {
-  def pack: Seq[Byte] = nodeId.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
-    Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
-
-  // Fee is already pre-calculated for extra hops
-  def nextFee(msat: Long): Long = fee
 }
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends PaymentHop {

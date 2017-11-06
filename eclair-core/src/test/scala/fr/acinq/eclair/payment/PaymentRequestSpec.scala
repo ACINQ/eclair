@@ -4,7 +4,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
-import fr.acinq.eclair.payment.PaymentRequest.{Amount, RoutingInfoTag}
+import fr.acinq.eclair.payment.PaymentRequest.{Amount, ExtraHop, RoutingInfoTag}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
