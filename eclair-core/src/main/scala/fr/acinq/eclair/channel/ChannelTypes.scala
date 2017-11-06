@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
+import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
@@ -71,16 +71,10 @@ case object BITCOIN_FUNDING_DEEPLYBURIED extends BitcoinEvent
 case object BITCOIN_FUNDING_LOST extends BitcoinEvent
 case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
 case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
-case object BITCOIN_HTLC_SPENT extends BitcoinEvent
-case object BITCOIN_LOCALCOMMIT_DONE extends BitcoinEvent
-case object BITCOIN_REMOTECOMMIT_DONE extends BitcoinEvent
-case object BITCOIN_NEXTREMOTECOMMIT_DONE extends BitcoinEvent
-case object BITCOIN_PENALTY_DONE extends BitcoinEvent
-case object BITCOIN_CLOSE_DONE extends BitcoinEvent
-case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId: Long) extends BitcoinEvent
+case object BITCOIN_OUTPUT_SPENT extends BitcoinEvent
 case class BITCOIN_TX_CONFIRMED(tx: Transaction) extends BitcoinEvent
+case class BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(shortChannelId: Long) extends BitcoinEvent
 case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEvent
-case class BITCOIN_INPUT_SPENT(tx: Transaction) extends BitcoinEvent
 
 /*
        .d8888b.   .d88888b.  888b     d888 888b     d888        d8888 888b    888 8888888b.   .d8888b.
@@ -126,9 +120,9 @@ trait HasCommitments extends Data {
   def channelId = commitments.channelId
 }
 
-case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTx: List[Transaction])
-case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction])
-case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], htlcPenaltyTxs: List[Transaction])
+case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTx: List[Transaction], spent: Map[OutPoint, BinaryData])
+case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], spent: Map[OutPoint, BinaryData])
+case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], htlcPenaltyTxs: List[Transaction], spent: Map[OutPoint, BinaryData])
 
 final case class DATA_WAIT_FOR_OPEN_CHANNEL(initFundee: INPUT_INIT_FUNDEE) extends Data
 final case class DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder: INPUT_INIT_FUNDER, lastSent: OpenChannel) extends Data

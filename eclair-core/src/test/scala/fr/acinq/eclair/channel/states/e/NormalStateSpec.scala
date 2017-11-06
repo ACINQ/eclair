@@ -289,6 +289,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === UnexpectedHtlcId(channelId(bob), expected = 4, actual = 42).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -302,6 +303,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === InvalidPaymentHash(channelId(bob)).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -315,6 +317,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === ExpiryTooSmall(channelId(bob), minimum = 400003, actual = 1, blockCount = 400000).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -328,6 +331,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === HtlcValueTooSmall(channelId(bob), minimum = 1000, actual = 150).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -341,6 +345,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = Long.MaxValue, missingSatoshis = 9223372036083735L, reserveSatoshis = 20000, feesSatoshis = 8960).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -356,6 +361,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 10000000, missingSatoshis = 11720, reserveSatoshis = 20000, feesSatoshis = 14120).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -370,6 +376,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === InsufficientFunds(channelId(bob), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -382,6 +389,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === HtlcValueTooHighInFlight(channelId(alice), maximum = 150000000, actual = 151000000).getMessage)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -398,6 +406,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === TooManyAcceptedHtlcs(channelId(bob), maximum = 30).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -583,6 +592,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -598,6 +608,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.expectMsgType[Error]
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -720,6 +731,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -733,6 +745,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -811,6 +824,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -823,6 +837,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -839,6 +854,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap] // main delayed
+      alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
+      alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -969,7 +987,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val error = alice2bob.expectMsgType[Error]
       assert(new String(error.data) === InvalidFailureCode("00" * 32).getMessage)
       awaitCond(alice.stateName == CLOSING)
-      alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsg(PublishAsap(tx)) // commit tx
+      alice2blockchain.expectMsgType[PublishAsap] // main delayed
+      alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
+      alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -988,6 +1009,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -1000,6 +1022,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -1044,6 +1067,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -1060,6 +1084,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 71620000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -1073,6 +1098,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(new String(error.data) === "local/remote feerates are too different: remoteFeeratePerKw=85000 localFeeratePerKw=10000")
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -1186,6 +1212,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(bob, Shutdown("00" * 32, TestConstants.Alice.channelParams.defaultFinalScriptPubKey))
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(bob.stateName == CLOSING)
     }
@@ -1196,6 +1223,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(bob, Shutdown("00" * 32, BinaryData("00112233445566778899")))
       bob2alice.expectMsgType[Error]
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(bob.stateName == CLOSING)
@@ -1212,6 +1240,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // actual test begins
       sender.send(bob, Shutdown("00" * 32, BinaryData("00112233445566778899")))
       bob2alice.expectMsgType[Error]
+      bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(bob.stateName == CLOSING)
@@ -1314,8 +1343,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, CurrentBlockCount(400145))
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
 
+      alice2blockchain.expectMsgType[PublishAsap] // main delayed
+      alice2blockchain.expectMsgType[PublishAsap] // htlc timeout
+      alice2blockchain.expectMsgType[PublishAsap] // htlc delayed
       val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.event === BITCOIN_LOCALCOMMIT_DONE)
+      assert(watch.event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
     }
   }
 
@@ -1353,7 +1385,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val event = CurrentFeerate(100)
       sender.send(bob, event)
       bob2alice.expectMsgType[Error]
-      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[PublishAsap] // commit tx
+      bob2blockchain.expectMsgType[PublishAsap] // main delayed
       bob2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(bob.stateName == CLOSING)
     }
@@ -1398,12 +1431,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(bobCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
-      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.event === BITCOIN_REMOTECOMMIT_DONE)
-
+      // in response to that, alice publishes its claim txes
+      val claimTxes = for (i <- 0 until 4) yield alice2blockchain.expectMsgType[PublishAsap].tx
       // in addition to its main output, alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-      val amountClaimed = (for (i <- 0 until 4) yield {
-        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val amountClaimed = (for (claimHtlcTx <- claimTxes) yield {
         assert(claimHtlcTx.txIn.size == 1)
         assert(claimHtlcTx.txOut.size == 1)
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1412,8 +1443,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // at best we have a little less than 450 000 + 250 000 + 100 000 + 50 000 = 850 000 (because fees)
       assert(amountClaimed == Satoshi(814920))
 
-      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
-      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
       alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
@@ -1460,12 +1494,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(bobCommitTx.txOut.size == 5) // two main outputs and 3 pending htlcs
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
-      val watch = alice2blockchain.expectMsgType[WatchConfirmed]
-      assert(watch.event === BITCOIN_NEXTREMOTECOMMIT_DONE)
-
+      // in response to that, alice publishes its claim txes
+      val claimTxes = for (i <- 0 until 3) yield alice2blockchain.expectMsgType[PublishAsap].tx
       // in addition to its main output, alice can only claim 2 out of 3 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the preimage
-      val amountClaimed = (for (i <- 0 until 3) yield {
-        val claimHtlcTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val amountClaimed = (for (claimHtlcTx <- claimTxes) yield {
         assert(claimHtlcTx.txIn.size == 1)
         assert(claimHtlcTx.txOut.size == 1)
         Transaction.correctlySpends(claimHtlcTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1474,8 +1506,10 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // at best we have a little less than 500 000 + 250 000 + 100 000 = 850 000 (because fees)
       assert(amountClaimed == Satoshi(822340))
 
-      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
-      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(bobCommitTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxes(0))) // claim-main
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
       alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
@@ -1517,10 +1551,11 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, revokedTx)
       alice2bob.expectMsgType[Error]
 
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_PENALTY_DONE)
-
       val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
       val penaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
       alice2blockchain.expectNoMsg(1 second)
 
       Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -1564,8 +1599,6 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
       assert(aliceCommitTx.txOut.size == 6) // two main outputs and 4 pending htlcs
 
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
-
       // alice can only claim 3 out of 4 htlcs, she can't do anything regarding the htlc sent by bob for which she does not have the htlc
       // so we expect 7 transactions:
       // - 1 tx to claim the main delayed output
@@ -1586,8 +1619,14 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       Transaction.correctlySpends(claimTxs(5), claimTxs(2) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
       Transaction.correctlySpends(claimTxs(6), claimTxs(3) :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
-      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
-      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_HTLC_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(0))) // main-delayed
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(4))) // htlc-delayed
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(5))) // htlc-delayed
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(claimTxs(6))) // htlc-delayed
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
       alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateName == CLOSING)
