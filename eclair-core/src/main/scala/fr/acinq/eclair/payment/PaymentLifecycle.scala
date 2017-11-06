@@ -13,7 +13,7 @@ import scodec.Attempt
 
 // @formatter:off
 case class ReceivePayment(amountMsat: MilliSatoshi, description: String)
-case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, minFinalCtvExpiry: Long = PaymentLifecycle.defaultHtlcExpiry, maxAttempts: Int = 5)
+case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
 
 sealed trait PaymentResult
 case class PaymentSucceeded(route: Seq[Hop], paymentPreimage: BinaryData) extends PaymentResult
@@ -54,7 +54,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId.toHexString).mkString("->")}")
       val firstHop = hops.head
-      val finalExpiry = Globals.blockCount.get().toInt + c.minFinalCtvExpiry.toInt
+      val finalExpiry = Globals.blockCount.get().toInt + c.minFinalCltvExpiry.toInt
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       // TODO: HACK!!!! see Router.scala (we actually store the first node id in the sig)
       if (firstHop.lastUpdate.signature.size == 32) {
@@ -198,8 +198,8 @@ object PaymentLifecycle {
         (msat + feeMsat, expiry + expiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
-  // TODO: set correct initial expiry
-  val defaultHtlcExpiry = 9
+  // this is defined in BOLT 11
+  val defaultMinFinalCltvExpiry = 9
 
   def buildCommand(finalAmountMsat: Long, finalExpiry: Int, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))

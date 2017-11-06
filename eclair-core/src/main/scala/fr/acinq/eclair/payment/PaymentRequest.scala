@@ -64,7 +64,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.ExpiryTag(seconds) => seconds
   }
 
-  def minFinalCtvExpiry: Option[Long] = tags.collectFirst {
+  def minFinalCltvExpiry: Option[Long] = tags.collectFirst {
     case PaymentRequest.MinFinalCltvExpiryTag(expiry) => expiry
   }
 
@@ -250,7 +250,7 @@ object PaymentRequest {
   /**
     * Expiry Date
     *
-    * @param seconds expriry data for this payment request
+    * @param seconds expiry data for this payment request
     */
   case class ExpiryTag(seconds: Long) extends Tag {
     override def toInt5s = {
@@ -258,9 +258,15 @@ object PaymentRequest {
       Bech32.map('x') +: (writeSize(ints.size) ++ ints)    }
   }
 
-  case class MinFinalCltvExpiryTag(expiryDelta: Long) extends Tag {
+  /**
+    * Min final CLTV expiry
+    *
+    *
+    * @param blocks min final cltv expiry, in blocks
+    */
+  case class MinFinalCltvExpiryTag(blocks: Long) extends Tag {
     override def toInt5s = {
-      val ints = writeUnsignedLong(expiryDelta)
+      val ints = writeUnsignedLong(blocks)
       Bech32.map('c') +: (writeSize(ints.size) ++ ints)
     }
   }

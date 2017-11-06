@@ -149,11 +149,11 @@ object HtlcGenerationSpec {
 
   val finalAmountMsat = 42000000L
   val currentBlockCount = 420000
-  val finalExpiry = currentBlockCount + defaultHtlcExpiry
+  val finalExpiry = currentBlockCount + defaultMinFinalCltvExpiry
   val paymentPreimage = BinaryData("42" * 32)
   val paymentHash = Crypto.sha256(paymentPreimage)
 
-  val expiry_de = currentBlockCount + defaultHtlcExpiry
+  val expiry_de = currentBlockCount + defaultMinFinalCltvExpiry
   val amount_de = finalAmountMsat
   val fee_d = nodeFee(channelUpdate_de.feeBaseMsat, channelUpdate_de.feeProportionalMillionths, amount_de)
 
