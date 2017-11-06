@@ -60,6 +60,14 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t }
 
+  def expiry: Option[Long] = tags.collectFirst {
+    case PaymentRequest.ExpiryTag(seconds) => seconds
+  }
+
+  def minFinalCltvExpiry: Option[Long] = tags.collectFirst {
+    case PaymentRequest.MinFinalCltvExpiryTag(expiry) => expiry
+  }
+
   /**
     *
     * @return a representation of this payment request, without its signature, as a bit stream. This is what will be signed.
@@ -242,20 +250,24 @@ object PaymentRequest {
   /**
     * Expiry Date
     *
-    * @param seconds expriry data for this payment request
+    * @param seconds expiry data for this payment request
     */
   case class ExpiryTag(seconds: Long) extends Tag {
     override def toInt5s = {
       val ints = writeUnsignedLong(seconds)
-      val size = writeUnsignedLong(ints.size)
-      // make sure that size is encoded on 2 int5 values
-      val size1 = size.length match {
-        case 0 => Seq(0.toByte, 0. toByte)
-        case 1 => 0.toByte +: size
-        case 2 => size
-        case n => throw new IllegalArgumentException("tag data length field must be encoded on 2 5-bits integers")
-      }
-      Bech32.map('x') +: (size1 ++ ints)
+      Bech32.map('x') +: (writeSize(ints.size) ++ ints)    }
+  }
+
+  /**
+    * Min final CLTV expiry
+    *
+    *
+    * @param blocks min final cltv expiry, in blocks
+    */
+  case class MinFinalCltvExpiryTag(blocks: Long) extends Tag {
+    override def toInt5s = {
+      val ints = writeUnsignedLong(blocks)
+      Bech32.map('c') +: (writeSize(ints.size) ++ ints)
     }
   }
 
@@ -322,6 +334,9 @@ object PaymentRequest {
         case x if x == Bech32.map('x') =>
           val expiry = readUnsignedLong(len, input.drop(3).take(len))
           ExpiryTag(expiry)
+        case c if c == Bech32.map('c') =>
+          val expiry = readUnsignedLong(len, input.drop(3).take(len))
+          MinFinalCltvExpiryTag(expiry)
       }
     }
   }
@@ -407,8 +422,25 @@ object PaymentRequest {
   }
 
   /**
+    * convert a tag data size to a sequence of Int5s. It * must * fit on a sequence
+    * of 2 Int5 values
+    * @param size data size
+    * @return size as a sequence of exactly 2 Int5 values
+    */
+  def writeSize(size: Long) : Seq[Int5] = {
+    val output = writeUnsignedLong(size)
+    // make sure that size is encoded on 2 int5 values
+    output.length match {
+      case 0 => Seq(0.toByte, 0.toByte)
+      case 1 => 0.toByte +: output
+      case 2 => output
+      case n => throw new IllegalArgumentException("tag data length field must be encoded on 2 5-bits integers")
+    }
+  }
+
+  /**
     * reads an unsigned long value from a sequence of Int5s
-    * @param length length of the seauence
+    * @param length length of the sequence
     * @param ints sequence of Int5s
     * @return an unsigned long value
     */
