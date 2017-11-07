@@ -159,15 +159,6 @@ object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
 
-  /**
-    *
-    * @param baseMsat     fixed fee
-    * @param proportional proportional fee
-    * @param msat         amount in millisatoshi
-    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
-    */
-  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
-
   def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
@@ -184,18 +175,16 @@ object PaymentLifecycle {
     *
     * @param finalAmountMsat the final htlc amount in millisatoshis
     * @param finalExpiry     the final htlc expiry in number of blocks
-    * @param hops            the hops as computed by the router
+    * @param hops            the hops as computed by the router + extra routes from payment request
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
     *         - firstAmountMsat is the amount for the first htlc in the route
     *         - firstExpiry is the cltv expiry for the first htlc in the route
     *         - a sequence of payloads that will be used to build the onion
     */
-  def buildPayloads(finalAmountMsat: Long, finalExpiry: Int, hops: Seq[Hop]): (Long, Int, Seq[PerHopPayload]) =
+  def buildPayloads(finalAmountMsat: Long, finalExpiry: Int, hops: Seq[PaymentHop]): (Long, Int, Seq[PerHopPayload]) =
     hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(0L, finalAmountMsat, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
-        val feeMsat = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
-        val expiryDelta = hop.lastUpdate.cltvExpiryDelta
-        (msat + feeMsat, expiry + expiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
+        (msat + hop.nextFee(msat), expiry + hop.cltvExpiryDelta, PerHopPayload(hop.shortChannelId, msat, expiry) +: payloads)
     }
 
   // this is defined in BOLT 11

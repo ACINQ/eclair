@@ -11,7 +11,6 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import grizzled.slf4j.Logging
 import org.junit.runner.RunWith
