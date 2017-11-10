@@ -31,8 +31,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
 
   case class MakeFundingTxResponseWithParent(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey)
 
-  def fundTransaction(hex: String): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", hex).map(json => {
+  def fundTransaction(hex: String, lockUnspents: Boolean): Future[FundTransactionResponse] = {
+    rpcClient.invoke("fundrawtransaction", hex, BitcoinCoreWallet.Options(lockUnspents)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
@@ -40,8 +40,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     })
   }
 
-  def fundTransaction(tx: Transaction): Future[FundTransactionResponse] =
-    fundTransaction(Transaction.write(tx).toString())
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean): Future[FundTransactionResponse] =
+    fundTransaction(Transaction.write(tx).toString(), lockUnspents)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -111,7 +111,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
         txIn = Nil,
         txOut = TxOut(amount + parentFee, Script.pay2sh(Script.pay2wpkh(pub))) :: Nil,
         lockTime = 0L)
-      FundTransactionResponse(unsignedParentTx, _, _) <- fundTransaction(partialParentTx)
+      FundTransactionResponse(unsignedParentTx, _, _) <- fundTransaction(partialParentTx, lockUnspents = true)
       // this is the first tx that we will publish, a standard tx which send money to our p2wpkh address
       SignTransactionResponse(parentTx, true) <- signTransaction(unsignedParentTx)
       // now we create the funding tx
@@ -174,4 +174,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     */
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
 
+}
+
+object BitcoinCoreWallet {
+  case class Options(lockUnspents: Boolean)
 }
