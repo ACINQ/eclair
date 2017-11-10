@@ -57,11 +57,15 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     }
   }
 
-  def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long) = {
+  def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long, minFinalCltvExpiry: Option[Long]) = {
     logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
+    val request = minFinalCltvExpiry match {
+      case None => SendPayment(amountMsat, paymentHash, nodeId)
+      case Some(value) => SendPayment(amountMsat, paymentHash, nodeId, value)
+    }
     (for {
       kit <- fKit
-      res <- (kit.paymentInitiator ? SendPayment(amountMsat, paymentHash, nodeId)).mapTo[PaymentResult]
+      res <- (kit.paymentInitiator ? request).mapTo[PaymentResult]
     } yield res)
     .onComplete {
       case Success(_: PaymentSucceeded) =>

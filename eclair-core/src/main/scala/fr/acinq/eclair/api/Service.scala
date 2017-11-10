@@ -108,7 +108,11 @@ trait Service extends Logging {
                       case (None, JInt(amt) :: Nil) => amt.toLong // amount wasn't specified in request, using custom one
                       case (None, _) => throw new RuntimeException("you need to manually specify an amount for this payment request")
                     }
-                    res <- (paymentInitiator ? SendPayment(amount, req.paymentHash, req.nodeId)).mapTo[PaymentResult]
+                    sendPayment = req.minFinalCltvExpiry match {
+                      case None => SendPayment(amount, req.paymentHash, req.nodeId)
+                      case Some(value) => SendPayment(amount, req.paymentHash, req.nodeId, value)
+                    }
+                    res <- (paymentInitiator ? sendPayment).mapTo[PaymentResult]
                   } yield res
                 case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
                   getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
