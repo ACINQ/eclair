@@ -92,6 +92,8 @@ name                         | description               | default value
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
  eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
 
+The options syntax follows [the HOCON format](https://github.com/lightbend/config/blob/master/HOCON.md). Quotes are not required unless the value contains special characters.
+
 &rarr; see [`reference.conf`](eclair-core/src/main/resources/reference.conf) for full reference. There are many more options!
 
 #### Java Environment Variables
