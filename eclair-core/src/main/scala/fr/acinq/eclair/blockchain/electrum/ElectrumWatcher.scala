@@ -66,11 +66,11 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       context become running(tip, watches + watch, scriptHashStatus, block2tx)
 
     case watch@WatchSpentBasic(_, txid, outputIndex, publicKeyScript, _) =>
-    /*val scriptHash: BinaryData = Crypto.sha256(publicKeyScript).reverse
+    val scriptHash: BinaryData = Crypto.sha256(publicKeyScript).reverse
     log.info(s"watch spent basic $txid:$outputIndex script hash is $scriptHash")
     client ! ElectrumClient.ScriptHashSubscription(scriptHash, self)
     context.watch(watch.channel)
-    context become running(tip, watches + watch, scriptHashStatus, block2tx)*/
+    context become running(tip, watches + watch, scriptHashStatus, block2tx)
 
     case watch@WatchConfirmed(_, txid, publicKeyScript, minDepth, _) =>
       val scriptHash: BinaryData = Crypto.sha256(publicKeyScript).reverse
