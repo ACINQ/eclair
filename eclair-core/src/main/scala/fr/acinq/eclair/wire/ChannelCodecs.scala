@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxOut}
+import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
@@ -168,13 +168,15 @@ object ChannelCodecs {
       ("claimMainDelayedOutputTx" | optional(bool, txCodec)) ::
       ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
       ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-      ("claimHtlcDelayedTx" | listOfN(uint16, txCodec))).as[LocalCommitPublished]
+      ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
+      ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[LocalCommitPublished]
 
   val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
     ("commitTx" | txCodec) ::
       ("claimMainOutputTx" | optional(bool, txCodec)) ::
       ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
-      ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec))).as[RemoteCommitPublished]
+      ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
+      ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[RemoteCommitPublished]
 
   val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
     ("commitTx" | txCodec) ::
@@ -182,7 +184,8 @@ object ChannelCodecs {
       ("mainPenaltyTx" | optional(bool, txCodec)) ::
       ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
       ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-      ("htlcPenaltyTxs" | listOfN(uint16, txCodec))).as[RevokedCommitPublished]
+      ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
+      ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[RevokedCommitPublished]
 
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::

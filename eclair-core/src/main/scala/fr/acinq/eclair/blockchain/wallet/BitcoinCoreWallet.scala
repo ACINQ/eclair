@@ -1,11 +1,11 @@
 package fr.acinq.eclair.blockchain.wallet
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58Check, BinaryData, Crypto, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.channel.{BITCOIN_INPUT_SPENT, BITCOIN_TX_CONFIRMED, Helpers}
+import fr.acinq.eclair.channel.{BITCOIN_OUTPUT_SPENT, BITCOIN_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JDouble, JInt, JString}
@@ -140,7 +140,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
       _ = logger.debug(s"built parentTxid=${parentTx.txid}, initializing temporary actor")
       tempActor = system.actorOf(Props(new Actor {
         override def receive: Receive = {
-          case WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx) =>
+          case WatchEventSpent(BITCOIN_OUTPUT_SPENT, spendingTx) =>
             if (parentTx.txid != spendingTx.txid) {
               // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
               // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
@@ -156,7 +156,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
       }))
       // we watch the first input of the parent tx, so that we can detect when it is spent by a malleated avatar
       input0 = parentTx.txIn.head
-      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
+      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT)
       // and we publish the parent tx
       _ = logger.info(s"publishing parent tx: txid=${parentTx.txid} tx=${Transaction.write(parentTx)}")
       // we use a small delay so that we are sure Publish doesn't race with WatchSpent (which is ok but generates unnecessary warnings)

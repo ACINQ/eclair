@@ -66,6 +66,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       // bob publishes his commitment tx
       val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
     }
@@ -77,6 +78,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(PublishAsap(tx))
+      alice2blockchain.expectMsgType[PublishAsap]
       awaitCond(alice.stateName == ERR_INFORMATION_LEAK)
     }
   }
@@ -87,7 +89,8 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       alice ! Error("00" * 32, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
+      alice2blockchain.expectMsgType[PublishAsap]
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
     }
   }
 
@@ -97,7 +100,8 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
+      alice2blockchain.expectMsgType[PublishAsap]
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
     }
   }
 }

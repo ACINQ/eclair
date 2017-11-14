@@ -258,7 +258,8 @@ object Helpers {
         claimMainDelayedOutputTx = mainDelayedTx.map(_.tx),
         htlcSuccessTxs = htlcTxes.collect { case c: HtlcSuccessTx => c.tx },
         htlcTimeoutTxs = htlcTxes.collect { case c: HtlcTimeoutTx => c.tx },
-        claimHtlcDelayedTx = htlcDelayedTxes.map(_.tx))
+        claimHtlcDelayedTx = htlcDelayedTxes.map(_.tx),
+        spent = Map.empty)
     }
 
     /**
@@ -320,7 +321,8 @@ object Helpers {
         commitTx = tx,
         claimMainOutputTx = mainTx.map(_.tx),
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
-        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
+        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx },
+        spent = Map.empty
       )
 
     }
@@ -382,9 +384,140 @@ object Helpers {
             mainPenaltyTx = mainPenaltyTx.map(_.tx),
             claimHtlcTimeoutTxs = Nil,
             htlcTimeoutTxs = Nil,
-            htlcPenaltyTxs = Nil
+            htlcPenaltyTxs = Nil,
+            spent = Map.empty
           )
         }
+    }
+
+    /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+      * local commit scenario and keep track of it.
+      *
+      * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+      * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+      * want to wait forever before declaring that the channel is CLOSED.
+      *
+      * @param localCommitPublished
+      * @return
+      */
+    def updateLocalCommitPublished(localCommitPublished: LocalCommitPublished, tx: Transaction) = {
+      // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+      // over all of them to check if they are relevant
+      val relevantOutpoints = tx.txIn.map(_.outPoint).filter { outPoint =>
+        // is this the commit tx itself ? (we could do this outside of the loop...)
+        val isCommitTx = localCommitPublished.commitTx.txid == tx.txid
+        // does the tx spend an output of the local commitment tx?
+        val spendsTheCommitTx = localCommitPublished.commitTx.txid == outPoint.txid
+        // is the tx one of our 3rd stage delayed txes? (a 3rd stage tx is a tx spending the output of an htlc tx, which
+        // is itself spending the output of the commitment tx)
+        val is3rdStageDelayedTx = localCommitPublished.claimHtlcDelayedTx.map(_.txid).contains(outPoint.txid)
+        isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
+      }
+      // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
+      localCommitPublished.copy(spent = localCommitPublished.spent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
+    }
+
+    /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+      * remote commit scenario and keep track of it.
+      *
+      * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+      * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+      * want to wait forever before declaring that the channel is CLOSED.
+      *
+      * @param remoteCommitPublished
+      * @return
+      */
+    def updateRemoteCommitPublished(remoteCommitPublished: RemoteCommitPublished, tx: Transaction) = {
+      // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+      // over all of them to check if they are relevant
+      val relevantOutpoints = tx.txIn.map(_.outPoint).filter { outPoint =>
+        // is this the commit tx itself ? (we could do this outside of the loop...)
+        val isCommitTx = remoteCommitPublished.commitTx.txid == tx.txid
+        // does the tx spend an output of the local commitment tx?
+        val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid
+        // TODO: we don't currently spend htlc transactions
+        isCommitTx || spendsTheCommitTx
+      }
+      // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
+      remoteCommitPublished.copy(spent = remoteCommitPublished.spent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
+    }
+
+    /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
+      * revoked commit scenario and keep track of it.
+      *
+      * We need to keep track of all transactions spending the outputs of the commitment tx, because some outputs can be
+      * spent both by us and our counterparty. Because of that, some of our transactions may never confirm and we don't
+      * want to wait forever before declaring that the channel is CLOSED.
+      *
+      * @param revokedCommitPublished
+      * @return
+      */
+    def updateRevokedCommitPublished(revokedCommitPublished: RevokedCommitPublished, tx: Transaction) = {
+      // even if our txes only have one input, maybe our counterparty uses a different scheme so we need to iterate
+      // over all of them to check if they are relevant
+      val relevantOutpoints = tx.txIn.map(_.outPoint).filter { outPoint =>
+        // is this the commit tx itself ? (we could do this outside of the loop...)
+        val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
+        // does the tx spend an output of the local commitment tx?
+        val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
+        isCommitTx || spendsTheCommitTx
+      }
+      // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
+      revokedCommitPublished.copy(spent = revokedCommitPublished.spent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
+    }
+
+    /**
+      * A local commit is considered done when:
+      * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
+      * - all 3rd stage txes (txes spending htlc txes) have been confirmed
+      * @param localCommitPublished
+      * @return
+      */
+    def isLocalCommitDone(localCommitPublished: LocalCommitPublished) = {
+      // is the commitment tx buried? (we need to check this because we may not have nay outputs)
+      val isCommitTxConfirmed = localCommitPublished.spent.values.toSet.contains(localCommitPublished.commitTx.txid)
+      // are there remaining spendable outputs from the commitment tx? we just substract all known spent outputs from the ones we control
+      val commitOutputsSpendableByUs = (localCommitPublished.claimMainDelayedOutputTx.toSeq ++ localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs)
+        .flatMap(_.txIn.map(_.outPoint)).toSet -- localCommitPublished.spent.keys
+      // which htlc delayed txes can we expect to be confirmed?
+      val unconfirmedHtlcDelayedTxes = localCommitPublished.claimHtlcDelayedTx
+        .filter(tx => (tx.txIn.map(_.outPoint.txid).toSet -- localCommitPublished.spent.values).isEmpty) // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+        .filterNot(tx => localCommitPublished.spent.values.toSet.contains(tx.txid)) // has the tx already been confirmed?
+      isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty && unconfirmedHtlcDelayedTxes.isEmpty
+    }
+
+    /**
+      * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
+      * (even if the spending tx was not ours).
+      * @param remoteCommitPublished
+      * @return
+      */
+    def isRemoteCommitDone(remoteCommitPublished: RemoteCommitPublished) = {
+      // is the commitment tx buried? (we need to check this because we may not have nay outputs)
+      val isCommitTxConfirmed = remoteCommitPublished.spent.values.toSet.contains(remoteCommitPublished.commitTx.txid)
+      // are there remaining spendable outputs from the commitment tx?
+      val commitOutputsSpendableByUs = (remoteCommitPublished.claimMainOutputTx.toSeq ++ remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs)
+        .flatMap(_.txIn.map(_.outPoint)).toSet -- remoteCommitPublished.spent.keys
+      isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty
+    }
+
+    /**
+      * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
+      * (even if the spending tx was not ours).
+      * @param revokedCommitPublished
+      * @return
+      */
+    def isRevokedCommitDone(revokedCommitPublished: RevokedCommitPublished) = {
+      // is the commitment tx buried? (we need to check this because we may not have nay outputs)
+      val isCommitTxConfirmed = revokedCommitPublished.spent.values.toSet.contains(revokedCommitPublished.commitTx.txid)
+      // are there remaining spendable outputs from the commitment tx?
+      val commitOutputsSpendableByUs = (revokedCommitPublished.claimMainOutputTx.toSeq ++ revokedCommitPublished.mainPenaltyTx)
+        .flatMap(_.txIn.map(_.outPoint)).toSet -- revokedCommitPublished.spent.keys
+      // TODO: we don't currently spend htlc transactions
+      isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty
     }
 
   }

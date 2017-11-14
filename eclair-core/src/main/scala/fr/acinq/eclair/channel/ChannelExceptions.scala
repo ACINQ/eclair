@@ -24,7 +24,7 @@ case class UnexpectedHtlcId                    (channelId: BinaryData, expected:
 case class InvalidPaymentHash                  (channelId: BinaryData) extends ChannelException(channelId, "invalid payment hash")
 case class ExpiryTooSmall                      (channelId: BinaryData, minimum: Long, actual: Long, blockCount: Long) extends ChannelException(channelId, s"expiry too small: required=$minimum actual=$actual blockCount=$blockCount")
 case class ExpiryCannotBeInThePast             (channelId: BinaryData, expiry: Long, blockCount: Long) extends ChannelException(channelId, s"expiry can't be in the past: expiry=$expiry blockCount=$blockCount")
-case class HtlcValueTooSmall                   (channelId: BinaryData, minimum: Long, actual: Long) extends ChannelException(channelId, s"htlc value too small: mininmum=$minimum actual=$actual")
+case class HtlcValueTooSmall                   (channelId: BinaryData, minimum: Long, actual: Long) extends ChannelException(channelId, s"htlc value too small: minimum=$minimum actual=$actual")
 case class HtlcValueTooHighInFlight            (channelId: BinaryData, maximum: UInt64, actual: UInt64) extends ChannelException(channelId, s"in-flight htlcs hold too much value: maximum=$maximum actual=$actual")
 case class TooManyAcceptedHtlcs                (channelId: BinaryData, maximum: Long) extends ChannelException(channelId, s"too many accepted htlcs: maximum=$maximum")
 case class InsufficientFunds                   (channelId: BinaryData, amountMsat: Long, missingSatoshis: Long, reserveSatoshis: Long, feesSatoshis: Long) extends ChannelException(channelId, s"insufficient funds: missingSatoshis=$missingSatoshis reserveSatoshis=$reserveSatoshis fees=$feesSatoshis")
