@@ -23,6 +23,8 @@ import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
 
+import scala.concurrent.duration._
+
 // @formatter:off
 
 case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
@@ -147,13 +149,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(ChannelStateChanged(_, _, _, channel.NORMAL, _, d: DATA_NEGOTIATING), d1) =>
       stay using d1.copy(localChannels = d1.localChannels - d.commitments.channelId)
 
-    case Event(c: ChannelStateChanged, _) => stay
+    case Event(_: ChannelStateChanged, _) => stay
 
     case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _, _)) =>
       log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
-      channels.values.foreach(remote ! _)
-      nodes.values.foreach(remote ! _)
-      updates.values.foreach(remote ! _)
+      // we group and add delays to leave room for channel messages
+      context.actorOf(ThrottleForwarder.props(remote, channels.values ++ nodes.values ++ updates.values, 10, 50 millis))
       stay
 
     case Event(c: ChannelAnnouncement, d) =>
@@ -318,13 +319,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 }
 
 object Router {
-
-  // TODO: temporary, required because we stored all three types of announcements in the same key-value database
-  // @formatter:off
-  def nodeKey(nodeId: BinaryData) = s"ann-node-$nodeId"
-  def channelKey(shortChannelId: Long) = s"ann-channel-$shortChannelId"
-  def channelUpdateKey(shortChannelId: Long, flags: BinaryData) = s"ann-update-$shortChannelId-$flags"
-  // @formatter:on
 
   val MAX_PARALLEL_JSONRPC_REQUESTS = 50
 
