@@ -30,14 +30,16 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
   type FixtureParam = Tuple7[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], ActorRef, ActorRef, ActorRef, ActorRef, ActorRef]
 
   override def withFixture(test: OneArgTest) = {
-    val fuzzy = tags.contains("fuzzy")
+    val fuzzy = test.tags.contains("fuzzy")
     val pipe = system.actorOf(Props(new FuzzyPipe(fuzzy)))
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val paymentHandlerA = system.actorOf(Props(new LocalPaymentHandler(Alice.nodeParams)))
     val paymentHandlerB = system.actorOf(Props(new LocalPaymentHandler(Bob.nodeParams)))
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandlerA))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandlerB))
+    val registerA = TestProbe()
+    val registerB = TestProbe()
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandlerA))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, paymentHandlerB))
     val router = TestProbe()
     val wallet = new TestWallet
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.id, alice2blockchain.ref, router.ref, relayerA))
@@ -107,15 +109,9 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       case Status.Failure(t) =>
         log.error(s"htlc error: ${t.getMessage}")
         initiatePayment(stopping)
-      case 'cancelled =>
-        log.warning(s"our htlc was cancelled!")
-        // htlc was dropped because of a disconnection
-        initiatePayment(stopping)
       case 'stop =>
         log.warning(s"stopping...")
         context become waitingForFulfill(true)
-
-
     }
 
   }

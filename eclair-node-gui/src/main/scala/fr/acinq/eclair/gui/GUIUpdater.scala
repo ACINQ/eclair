@@ -175,7 +175,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       mainController.paymentReceivedList.prepend(new PaymentReceivedRecord(p, LocalDateTime.now()))
 
     case p: PaymentRelayed =>
-      log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amount}, feesEarned=${p.feesEarned}")
+      log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amountIn}, feesEarned=${p.amountOut}")
       mainController.paymentRelayedList.prepend(new PaymentRelayedRecord(p, LocalDateTime.now()))
 
     case ZMQConnected =>

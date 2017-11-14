@@ -13,9 +13,9 @@ case object IN extends Direction { def opposite = OUT }
 case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
-case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])
+case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
-final case class CommitmentSpec(htlcs: Set[Htlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
   val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
@@ -26,7 +26,7 @@ object CommitmentSpec {
   })
 
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
-    val htlc = Htlc(direction, update, previousChannelId = None)
+    val htlc = DirectedHtlc(direction, update)
     direction match {
       case OUT => spec.copy(toLocalMsat = spec.toLocalMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
       case IN => spec.copy(toRemoteMsat = spec.toRemoteMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)

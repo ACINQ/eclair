@@ -30,9 +30,13 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   }
 
   override def removeChannel(channelId: BinaryData): Unit = {
-    val statement = sqlite.prepareStatement("DELETE FROM local_channels WHERE channel_id=?")
-    statement.setBytes(1, channelId)
-    statement.executeUpdate()
+    val statement1 = sqlite.prepareStatement("DELETE FROM preimages WHERE channel_id=?")
+    statement1.setBytes(1, channelId)
+    statement1.executeUpdate()
+
+    val statement2 = sqlite.prepareStatement("DELETE FROM local_channels WHERE channel_id=?")
+    statement2.setBytes(1, channelId)
+    statement2.executeUpdate()
   }
 
   override def listChannels(): List[HasCommitments] = {

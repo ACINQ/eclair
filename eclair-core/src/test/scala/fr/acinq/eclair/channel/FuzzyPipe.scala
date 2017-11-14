@@ -56,6 +56,6 @@ class FuzzyPipe(fuzzy: Boolean) extends Actor with Stash with ActorLogging {
       log.debug("RECONNECTED")
       a ! INPUT_RECONNECTED(self)
       b ! INPUT_RECONNECTED(self)
-      context become connected(a, b, Random.nextInt(20))
+      context become connected(a, b, Random.nextInt(40))
   }
 }

@@ -47,10 +47,10 @@ class TransactionsSpec extends FunSuite {
   test("compute fees") {
     // see BOLT #3 specs
     val htlcs = Set(
-      Htlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData("")), None),
-      Htlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData("")), None),
-      Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData("")), None),
-      Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData("")), None)
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData(""))),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData(""))),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData(""))),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData("")))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
     val fee = Transactions.commitTxFee(Satoshi(546), spec)
@@ -152,10 +152,10 @@ class TransactionsSpec extends FunSuite {
     val htlc4 = UpdateAddHtlc("00" * 32, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).amount * 1000, sha256(paymentPreimage4), 300, BinaryData(""))
     val spec = CommitmentSpec(
       htlcs = Set(
-        Htlc(OUT, htlc1, None),
-        Htlc(IN, htlc2, None),
-        Htlc(OUT, htlc3, None),
-        Htlc(IN, htlc4, None)
+        DirectedHtlc(OUT, htlc1),
+        DirectedHtlc(IN, htlc2),
+        DirectedHtlc(OUT, htlc3),
+        DirectedHtlc(IN, htlc4)
       ),
       feeratePerKw = feeratePerKw,
       toLocalMsat = millibtc2satoshi(MilliBtc(400)).amount * 1000,
@@ -288,8 +288,8 @@ class TransactionsSpec extends FunSuite {
     case Failure(t) => fail(t)
   }
 
-  def htlc(direction: Direction, amount: Satoshi): Htlc =
-    Htlc(direction, UpdateAddHtlc("00" * 32, 0, amount.amount * 1000, "00" * 32, 144, ""), None)
+  def htlc(direction: Direction, amount: Satoshi): DirectedHtlc =
+    DirectedHtlc(direction, UpdateAddHtlc("00" * 32, 0, amount.amount * 1000, "00" * 32, 144, ""))
 
   test("BOLT 2 fee tests") {
 
