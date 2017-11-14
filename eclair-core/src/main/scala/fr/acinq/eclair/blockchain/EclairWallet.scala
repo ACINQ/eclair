@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.wallet
+package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
 

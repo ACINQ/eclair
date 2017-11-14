@@ -1,6 +1,7 @@
-package fr.acinq.eclair.blockchain.wallet
+package fr.acinq.eclair.blockchain.bitcoinj
 
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
+import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.{Coin, Context, Transaction => BitcoinjTransaction}
 import org.bitcoinj.script.Script

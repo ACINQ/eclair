@@ -9,14 +9,16 @@ import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
-import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.{EclairWallet, _}
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
-import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.blockchain.spv.BitcoinjKit
-import fr.acinq.eclair.blockchain.wallet.{BitcoinCoreWallet, BitcoinjWallet, EclairWallet}
-import fr.acinq.eclair.blockchain.zmq.ZMQActor
+import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
+import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -37,7 +39,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val nodeParams = NodeParams.makeNodeParams(datadir, config)
-  val spv = config.getBoolean("spv")
   val chain = config.getString("chain")
 
   // early checks
@@ -57,32 +58,43 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  val bitcoin = if (spv) {
-    logger.warn("EXPERIMENTAL SPV MODE ENABLED!!!")
-    val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
-    logger.info(s"using staticPeers=$staticPeers")
-    val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
-    bitcoinjKit.startAsync()
-    Await.ready(bitcoinjKit.initialized, 10 seconds)
-    Left(bitcoinjKit)
-  } else {
-    val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
-      user = config.getString("bitcoind.rpcuser"),
-      password = config.getString("bitcoind.rpcpassword"),
-      host = config.getString("bitcoind.host"),
-      port = config.getInt("bitcoind.rpcport")))
-    val future = for {
-      json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
-      progress = (json \ "verificationprogress").extract[Double]
-      chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
-      bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-    } yield (progress, chainHash, bitcoinVersion)
-    // blocking sanity checks
-    val (progress, chainHash, bitcoinVersion) = Await.result(future, 10 seconds)
-    assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
-    assert(progress > 0.99, "bitcoind should be synchronized")
-    // TODO: add a check on bitcoin version?
-    Right(bitcoinClient)
+  val bitcoin = nodeParams.watcherType match {
+    case BITCOIND =>
+      val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
+        user = config.getString("bitcoind.rpcuser"),
+        password = config.getString("bitcoind.rpcpassword"),
+        host = config.getString("bitcoind.host"),
+        port = config.getInt("bitcoind.rpcport")))
+      val future = for {
+        json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
+        progress = (json \ "verificationprogress").extract[Double]
+        chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
+        bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+      } yield (progress, chainHash, bitcoinVersion)
+      // blocking sanity checks
+      val (progress, chainHash, bitcoinVersion) = Await.result(future, 10 seconds)
+      assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
+      assert(progress > 0.99, "bitcoind should be synchronized")
+      // TODO: add a check on bitcoin version?
+      Bitcoind(bitcoinClient)
+    case BITCOINJ =>
+      logger.warn("EXPERIMENTAL BITCOINJ MODE ENABLED!!!")
+      val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
+      logger.info(s"using staticPeers=$staticPeers")
+      val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
+      bitcoinjKit.startAsync()
+      Await.ready(bitcoinjKit.initialized, 10 seconds)
+      Bitcoinj(bitcoinjKit)
+    case ELECTRUM =>
+      logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
+      val addressesFile = chain match {
+        case "test" => "/electrum/servers_testnet.json"
+        case "regtest" => "/electrum/servers_regtest.json"
+      }
+      val stream = classOf[Setup].getResourceAsStream(addressesFile)
+      val addresses = ElectrumClient.readServerAddresses(stream)
+      val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+      Electrum(electrumClient)
   }
 
   def bootstrap: Future[Kit] = {
@@ -104,17 +116,24 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     })
 
     val watcher = bitcoin match {
-      case Left(bitcoinj) =>
-        zmqConnected.success(true)
-        system.actorOf(SimpleSupervisor.props(SpvWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
-      case Right(bitcoinClient) =>
+      case Bitcoind(bitcoinClient) =>
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(bitcoinClient), "watcher", SupervisorStrategy.Resume))
+      case Bitcoinj(bitcoinj) =>
+        zmqConnected.success(true)
+        system.actorOf(SimpleSupervisor.props(BitcoinjWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
+      case Electrum(electrumClient) =>
+        zmqConnected.success(true)
+        system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
     }
 
     val wallet = bitcoin match {
-      case Left(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
-      case Right(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient, watcher)
+      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient, watcher)
+      case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
+      case Electrum(electrumClient) =>
+        val electrumSeedPath = new File(datadir, "electrum_seed.dat")
+        val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, allowSpendUnconfirmed = true)), "electrum-wallet")
+        new ElectrumEclairWallet(electrumWallet)
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
@@ -167,6 +186,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   }
 
 }
+
+sealed trait Bitcoin
+case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
+case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
+case class Electrum(electrumClient: ActorRef) extends Bitcoin
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,

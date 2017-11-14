@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{ActorContext, ActorRef}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, Transaction}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._

@@ -9,6 +9,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.payment.Relayer
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.junit.runner.RunWith

@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.zmq
+package fr.acinq.eclair.blockchain.bitcoind.zmq
 
 /**
   * Created by PM on 04/04/2017.

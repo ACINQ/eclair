@@ -10,6 +10,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
+import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb, SqlitePreimagesDb}
 
@@ -51,9 +52,14 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      spv: Boolean)
+                      watcherType: WatcherType)
 
 object NodeParams {
+
+  sealed trait WatcherType
+  object BITCOIND extends WatcherType
+  object BITCOINJ extends WatcherType
+  object ELECTRUM extends WatcherType
 
   /**
     * Order of precedence for the configuration parameters:
@@ -99,6 +105,12 @@ object NodeParams {
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
+    val watcherType = config.getString("watcher-type") match {
+      case "bitcoinj" => BITCOINJ
+      case "electrum" => ELECTRUM
+      case _ => BITCOIND
+    }
+
     NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -132,6 +144,6 @@ object NodeParams {
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
-      spv = config.getBoolean("spv"))
+      watcherType = watcherType)
   }
 }

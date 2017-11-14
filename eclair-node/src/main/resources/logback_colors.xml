@@ -84,24 +84,12 @@
         <appender-ref ref="GREEN"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.blockchain.ZmqWatcher" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="DEBUG" additivity="false">
         <appender-ref ref="YELLOW"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.blockchain.SpvWatcher" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.blockchain" level="DEBUG" additivity="false">
         <appender-ref ref="YELLOW"/>
-    </logger>
-
-    <logger name="fr.acinq.eclair.blockchain.Broadcaster" level="DEBUG" additivity="false">
-        <appender-ref ref="YELLOW"/>
-    </logger>
-
-    <logger name="fr.acinq.eclair.blockchain.spv" level="DEBUG" additivity="false">
-        <appender-ref ref="YELLOW"/>
-    </logger>
-
-    <logger name="fr.acinq.eclair.blockchain.wallet" level="DEBUG" additivity="false">
-        <appender-ref ref="ORANGE"/>
     </logger>
 
     <logger name="fr.acinq.eclair.router" level="DEBUG" additivity="false">

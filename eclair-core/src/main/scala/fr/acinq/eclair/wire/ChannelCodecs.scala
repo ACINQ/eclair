@@ -187,6 +187,11 @@ object ChannelCodecs {
       ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[RevokedCommitPublished]
 
+  val DATA_WAIT_FOR_FUNDING_PUBLISHED_Codec: Codec[DATA_WAIT_FOR_FUNDING_PUBLISHED] = (
+    ("commitments" | commitmentsCodec) ::
+      ("lastSent" | either(bool, fundingCreatedCodec, fundingSignedCodec)) ::
+      ("fundingTx" | txCodec)).as[DATA_WAIT_FOR_FUNDING_PUBLISHED]
+
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
       ("deferred" | optional(bool, fundingLockedCodec)) ::
@@ -223,6 +228,7 @@ object ChannelCodecs {
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
+    .typecase(0x00, DATA_WAIT_FOR_FUNDING_PUBLISHED_Codec)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
     .typecase(0x02, DATA_WAIT_FOR_FUNDING_LOCKED_Codec)
     .typecase(0x03, DATA_NORMAL_Codec)
