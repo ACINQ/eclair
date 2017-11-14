@@ -13,9 +13,9 @@ case object IN extends Direction { def opposite = OUT }
 case object OUT extends Direction { def opposite = IN }
 // @formatter:on
 
-case class Htlc(direction: Direction, add: UpdateAddHtlc, val previousChannelId: Option[BinaryData])
+case class DirectedHtlc(direction: Direction, add: UpdateAddHtlc)
 
-final case class CommitmentSpec(htlcs: Set[Htlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
+final case class CommitmentSpec(htlcs: Set[DirectedHtlc], feeratePerKw: Long, toLocalMsat: Long, toRemoteMsat: Long) {
   val totalFunds = toLocalMsat + toRemoteMsat + htlcs.toSeq.map(_.add.amountMsat).sum
 }
 
@@ -26,7 +26,7 @@ object CommitmentSpec {
   })
 
   def addHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateAddHtlc): CommitmentSpec = {
-    val htlc = Htlc(direction, update, previousChannelId = None)
+    val htlc = DirectedHtlc(direction, update)
     direction match {
       case OUT => spec.copy(toLocalMsat = spec.toLocalMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
       case IN => spec.copy(toRemoteMsat = spec.toRemoteMsat - htlc.add.amountMsat, htlcs = spec.htlcs + htlc)
@@ -34,20 +34,20 @@ object CommitmentSpec {
   }
 
   // OUT means we are sending an UpdateFulfillHtlc message which means that we are fulfilling an HTLC that they sent
-  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFulfillHtlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == update.id) match {
+  def fulfillHtlc(spec: CommitmentSpec, direction: Direction, htlcId: Long): CommitmentSpec = {
+    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == htlcId) match {
       case Some(htlc) if direction == OUT => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
+      case None => throw new RuntimeException(s"cannot find htlc id=${htlcId}")
     }
   }
 
   // OUT means we are sending an UpdateFailHtlc message which means that we are failing an HTLC that they sent
-  def failHtlc(spec: CommitmentSpec, direction: Direction, update: UpdateFailHtlc): CommitmentSpec = {
-    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == update.id) match {
+  def failHtlc(spec: CommitmentSpec, direction: Direction, htlcId: Long): CommitmentSpec = {
+    spec.htlcs.find(htlc => htlc.direction != direction && htlc.add.id == htlcId) match {
       case Some(htlc) if direction == OUT => spec.copy(toRemoteMsat = spec.toRemoteMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
       case Some(htlc) if direction == IN => spec.copy(toLocalMsat = spec.toLocalMsat + htlc.add.amountMsat, htlcs = spec.htlcs - htlc)
-      case None => throw new RuntimeException(s"cannot find htlc id=${update.id}")
+      case None => throw new RuntimeException(s"cannot find htlc id=${htlcId}")
     }
   }
 
@@ -61,13 +61,15 @@ object CommitmentSpec {
       case (spec, _) => spec
     }
     val spec3 = localChanges.foldLeft(spec2) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillHtlc(spec, OUT, u)
-      case (spec, u: UpdateFailHtlc) => failHtlc(spec, OUT, u)
+      case (spec, u: UpdateFulfillHtlc) => fulfillHtlc(spec, OUT, u.id)
+      case (spec, u: UpdateFailHtlc) => failHtlc(spec, OUT, u.id)
+      case (spec, u: UpdateFailMalformedHtlc) => failHtlc(spec, OUT, u.id)
       case (spec, _) => spec
     }
     val spec4 = remoteChanges.foldLeft(spec3) {
-      case (spec, u: UpdateFulfillHtlc) => fulfillHtlc(spec, IN, u)
-      case (spec, u: UpdateFailHtlc) => failHtlc(spec, IN, u)
+      case (spec, u: UpdateFulfillHtlc) => fulfillHtlc(spec, IN, u.id)
+      case (spec, u: UpdateFailHtlc) => failHtlc(spec, IN, u.id)
+      case (spec, u: UpdateFailMalformedHtlc) => failHtlc(spec, IN, u.id)
       case (spec, _) => spec
     }
     val spec5 = (localChanges ++ remoteChanges).foldLeft(spec4) {

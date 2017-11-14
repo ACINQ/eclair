@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.zmq
+package fr.acinq.eclair.blockchain.bitcoind.zmq
 
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{Block, Transaction}

@@ -4,10 +4,12 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicLong
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.testkit.TestProbe
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher
 import fr.acinq.eclair.payment.Relayer
 import fr.acinq.eclair.wire.{Init, UpdateAddHtlc}
 import org.junit.runner.RunWith
@@ -52,8 +54,10 @@ class ThroughputSpec extends FunSuite {
           context.become(run(h2r - htlc.paymentHash))
       }
     }), "payment-handler")
-    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams.privateKey, paymentHandler))
-    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams.privateKey, paymentHandler))
+    val registerA = TestProbe()
+    val registerB = TestProbe()
+    val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandler))
+    val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, paymentHandler))
     val wallet = new TestWallet
     val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.id, blockchain, ???, relayerA), "a")
     val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.id, blockchain, ???, relayerB), "b")

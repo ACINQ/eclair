@@ -9,16 +9,13 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{Satoshi, Script}
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.blockchain.spv.BitcoinjKit
-import fr.acinq.eclair.blockchain.wallet.BitcoinjWallet
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Scripts
 import grizzled.slf4j.Logging
-import org.bitcoinj.core.{Coin, Transaction}
 import org.bitcoinj.script.{Script => BitcoinjScript}
-import org.bitcoinj.wallet.{SendRequest, Wallet}
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
 import org.junit.runner.RunWith
@@ -143,7 +140,7 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     bitcoinjKit.awaitRunning()
 
     val sender = TestProbe()
-    val watcher = system.actorOf(Props(new SpvWatcher(bitcoinjKit)), name = "spv-watcher")
+    val watcher = system.actorOf(Props(new BitcoinjWatcher(bitcoinjKit)), name = "bitcoinj-watcher")
     val wallet = new BitcoinjWallet(Future.successful(bitcoinjKit.wallet()))
 
     val address = Await.result(wallet.getFinalAddress, 10 seconds)
@@ -159,10 +156,9 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     val listener = TestProbe()
     val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
     val result = Await.result(wallet.makeFundingTx(fundingPubkeyScript, Satoshi(10000L), 20000), 10 seconds)
-    watcher ! Hint(new BitcoinjScript(fundingPubkeyScript))
     assert(Await.result(wallet.commit(result.fundingTx), 10 seconds))
-    watcher ! WatchSpent(listener.ref, result.fundingTx.txid, result.fundingTxOutputIndex, BITCOIN_FUNDING_SPENT)
-    watcher ! WatchConfirmed(listener.ref, result.fundingTx.txid, 3, BITCOIN_FUNDING_DEPTHOK)
+    watcher ! WatchSpent(listener.ref, result.fundingTx, result.fundingTxOutputIndex, BITCOIN_FUNDING_SPENT)
+    watcher ! WatchConfirmed(listener.ref, result.fundingTx, 3, BITCOIN_FUNDING_DEPTHOK)
     watcher ! PublishAsap(result.fundingTx)
 
     logger.info(s"waiting for confirmation of ${result.fundingTx.txid}")
@@ -177,7 +173,7 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     bitcoinjKit.awaitRunning()
 
     val sender = TestProbe()
-    val watcher = system.actorOf(Props(new SpvWatcher(bitcoinjKit)), name = "spv-watcher")
+    val watcher = system.actorOf(Props(new BitcoinjWatcher(bitcoinjKit)), name = "bitcoinj-watcher")
     val wallet = new BitcoinjWallet(Future.successful(bitcoinjKit.wallet()))
 
     val address = Await.result(wallet.getFinalAddress, 10 seconds)
@@ -193,10 +189,9 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
           val listener = TestProbe()
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(randomKey.publicKey, randomKey.publicKey)))
           val result = Await.result(wallet.makeFundingTx(fundingPubkeyScript, Satoshi(10000L), 20000), 10 seconds)
-          watcher ! Hint(new BitcoinjScript(fundingPubkeyScript))
           assert(Await.result(wallet.commit(result.fundingTx), 10 seconds))
-          watcher ! WatchSpent(listener.ref, result.fundingTx.txid, result.fundingTxOutputIndex, BITCOIN_FUNDING_SPENT)
-          watcher ! WatchConfirmed(listener.ref, result.fundingTx.txid, 3, BITCOIN_FUNDING_DEPTHOK)
+          watcher ! WatchSpent(listener.ref, result.fundingTx, result.fundingTxOutputIndex, BITCOIN_FUNDING_SPENT)
+          watcher ! WatchConfirmed(listener.ref, result.fundingTx, 3, BITCOIN_FUNDING_DEPTHOK)
           watcher ! PublishAsap(result.fundingTx)
           (result.fundingTx.txid, listener)
       }

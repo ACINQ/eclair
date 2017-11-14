@@ -1,8 +1,6 @@
 package fr.acinq.eclair.router
 
-
 import java.io.StringWriter
-
 
 import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
@@ -17,16 +15,20 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
+import fr.acinq.eclair.payment.Hop
+import org.jgrapht.ext._
+import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
 
+import scala.concurrent.duration._
+
 // @formatter:off
 
 case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
-case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
 case class RouteRequest(source: PublicKey, target: PublicKey, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
@@ -112,7 +114,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             log.error(s"invalid script for shortChannelId=${c.shortChannelId} txid=${tx.txid} ann=$c")
             None
           } else {
-            watcher ! WatchSpentBasic(self, tx.txid, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
+            watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId}")
             context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
@@ -148,13 +150,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(ChannelStateChanged(_, _, _, channel.NORMAL, _, d: DATA_NEGOTIATING), d1) =>
       stay using d1.copy(localChannels = d1.localChannels - d.commitments.channelId)
 
-    case Event(c: ChannelStateChanged, _) => stay
+    case Event(_: ChannelStateChanged, _) => stay
 
     case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _, _)) =>
       log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
-      channels.values.foreach(remote ! _)
-      nodes.values.foreach(remote ! _)
-      updates.values.foreach(remote ! _)
+      // we group and add delays to leave room for channel messages
+      context.actorOf(ThrottleForwarder.props(remote, channels.values ++ nodes.values ++ updates.values, 10, 50 millis))
       stay
 
     case Event(c: ChannelAnnouncement, d) =>

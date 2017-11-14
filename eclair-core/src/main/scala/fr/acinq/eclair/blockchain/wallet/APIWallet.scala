@@ -3,6 +3,7 @@ package fr.acinq.eclair.blockchain.wallet
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58Check, BinaryData, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.HttpHelper.get
+import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
 import org.json4s.JsonAST.{JField, JInt, JObject, JString}
 
 import scala.concurrent.{ExecutionContext, Future}

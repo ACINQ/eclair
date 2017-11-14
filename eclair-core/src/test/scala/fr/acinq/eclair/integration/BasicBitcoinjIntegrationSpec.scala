@@ -10,8 +10,8 @@ import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, MilliSatoshi, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script}
-import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.blockchain.wallet.BitcoinjWallet
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoinj.BitcoinjWallet
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
@@ -21,7 +21,7 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, Kit, Setup}
+import fr.acinq.eclair.{Bitcoinj, Globals, Kit, Setup}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.Transaction
 import org.json4s.DefaultFormats
@@ -115,7 +115,7 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     }
     val setup = new Setup(datadir, actorSystem = ActorSystem(s"system-$name"))
     val kit = Await.result(setup.bootstrap, 10 seconds)
-    setup.bitcoin.left.get.awaitRunning()
+    setup.bitcoin.asInstanceOf[Bitcoinj].bitcoinjKit.awaitRunning()
     nodes = nodes + (name -> kit)
   }
 

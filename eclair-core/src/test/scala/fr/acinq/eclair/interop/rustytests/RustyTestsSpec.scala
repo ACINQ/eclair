@@ -49,7 +49,6 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     within(30 seconds) {
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchSpent]
       bob2blockchain.expectMsgType[WatchConfirmed]
       alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)

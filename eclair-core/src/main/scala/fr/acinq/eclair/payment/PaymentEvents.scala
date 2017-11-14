@@ -11,6 +11,6 @@ sealed trait PaymentEvent {
 
 case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
 
-case class PaymentRelayed(amount: MilliSatoshi, feesEarned: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
+case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
 
 case class PaymentReceived(amount: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent

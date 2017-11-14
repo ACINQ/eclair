@@ -31,6 +31,8 @@ class SqlitePeersDbSpec extends FunSuite {
 
     assert(db.listPeers().toSet === Set.empty)
     db.addOrUpdatePeer(peer_1._1, peer_1._2)
+    db.addOrUpdatePeer(peer_1._1, peer_1._2) // duplicate is ignored
+    assert(db.listPeers().size === 1)
     db.addOrUpdatePeer(peer_2._1, peer_2._2)
     db.addOrUpdatePeer(peer_3._1, peer_3._2)
     assert(db.listPeers().toSet === Set(peer_1, peer_2, peer_3))

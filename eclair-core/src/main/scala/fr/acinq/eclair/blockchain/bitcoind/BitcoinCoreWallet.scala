@@ -1,11 +1,11 @@
-package fr.acinq.eclair.blockchain.wallet
+package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{Base58Check, BinaryData, Crypto, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.channel.{BITCOIN_INPUT_SPENT, BITCOIN_TX_CONFIRMED, Helpers}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.channel.{BITCOIN_OUTPUT_SPENT, BITCOIN_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JDouble, JInt, JString}
@@ -31,8 +31,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
 
   case class MakeFundingTxResponseWithParent(parentTx: Transaction, fundingTx: Transaction, fundingTxOutputIndex: Int, priv: PrivateKey)
 
-  def fundTransaction(hex: String): Future[FundTransactionResponse] = {
-    rpcClient.invoke("fundrawtransaction", hex).map(json => {
+  def fundTransaction(hex: String, lockUnspents: Boolean): Future[FundTransactionResponse] = {
+    rpcClient.invoke("fundrawtransaction", hex, BitcoinCoreWallet.Options(lockUnspents)).map(json => {
       val JString(hex) = json \ "hex"
       val JInt(changepos) = json \ "changepos"
       val JDouble(fee) = json \ "fee"
@@ -40,8 +40,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     })
   }
 
-  def fundTransaction(tx: Transaction): Future[FundTransactionResponse] =
-    fundTransaction(Transaction.write(tx).toString())
+  def fundTransaction(tx: Transaction, lockUnspents: Boolean): Future[FundTransactionResponse] =
+    fundTransaction(Transaction.write(tx).toString(), lockUnspents)
 
   def signTransaction(hex: String): Future[SignTransactionResponse] =
     rpcClient.invoke("signrawtransaction", hex).map(json => {
@@ -52,6 +52,21 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] =
     signTransaction(Transaction.write(tx).toString())
+
+  def getTransaction(txid: BinaryData): Future[Transaction] = {
+    rpcClient.invoke("getrawtransaction", txid.toString()).map(json => {
+      val JString(hex) = json
+      Transaction.read(hex)
+    })
+  }
+
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
+    publishTransaction(Transaction.write(tx).toString())
+
+  def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
+    rpcClient.invoke("sendrawtransaction", hex) collect {
+      case JString(txid) => txid
+    }
 
   /**
     *
@@ -111,7 +126,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
         txIn = Nil,
         txOut = TxOut(amount + parentFee, Script.pay2sh(Script.pay2wpkh(pub))) :: Nil,
         lockTime = 0L)
-      FundTransactionResponse(unsignedParentTx, _, _) <- fundTransaction(partialParentTx)
+      FundTransactionResponse(unsignedParentTx, _, _) <- fundTransaction(partialParentTx, lockUnspents = true)
       // this is the first tx that we will publish, a standard tx which send money to our p2wpkh address
       SignTransactionResponse(parentTx, true) <- signTransaction(unsignedParentTx)
       // now we create the funding tx
@@ -137,16 +152,18 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     val promise = Promise[MakeFundingTxResponse]()
     (for {
       fundingTxResponse@MakeFundingTxResponseWithParent(parentTx, _, _, _) <- makeParentAndFundingTx(pubkeyScript, amount, feeRatePerKw)
+      input0 = parentTx.txIn.head
+      parentOfParentTx <- getTransaction(input0.outPoint.txid)
       _ = logger.debug(s"built parentTxid=${parentTx.txid}, initializing temporary actor")
       tempActor = system.actorOf(Props(new Actor {
         override def receive: Receive = {
-          case WatchEventSpent(BITCOIN_INPUT_SPENT(parentTx), spendingTx) =>
+          case WatchEventSpent(BITCOIN_OUTPUT_SPENT, spendingTx) =>
             if (parentTx.txid != spendingTx.txid) {
               // an input of our parent tx was spent by a tx that we're not aware of (i.e. a malleated version of our parent tx)
               // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
               logger.warn(s"parent tx has been malleated: originalParentTxid=${parentTx.txid} malleated=${spendingTx.txid}")
             }
-            watcher ! WatchConfirmed(self, spendingTx.txid, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
+            watcher ! WatchConfirmed(self, spendingTx.txid, spendingTx.txOut(0).publicKeyScript, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
 
           case WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _) =>
             // a potential parent for our funding tx has been confirmed, let's update our funding tx
@@ -155,8 +172,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
         }
       }))
       // we watch the first input of the parent tx, so that we can detect when it is spent by a malleated avatar
-      input0 = parentTx.txIn.head
-      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, BITCOIN_INPUT_SPENT(parentTx))
+      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, parentOfParentTx.txOut(input0.outPoint.index.toInt).publicKeyScript, BITCOIN_OUTPUT_SPENT)
       // and we publish the parent tx
       _ = logger.info(s"publishing parent tx: txid=${parentTx.txid} tx=${Transaction.write(parentTx)}")
       // we use a small delay so that we are sure Publish doesn't race with WatchSpent (which is ok but generates unnecessary warnings)
@@ -172,6 +188,10 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     * @param tx
     * @return
     */
-  override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
+  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx).map(_ => true)
 
+}
+
+object BitcoinCoreWallet {
+  case class Options(lockUnspents: Boolean)
 }

@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.spv
+package fr.acinq.eclair.blockchain.bitcoinj
 
 import java.io.File
 import java.net.InetSocketAddress
@@ -7,8 +7,8 @@ import akka.actor.ActorSystem
 import com.google.common.util.concurrent.{FutureCallback, Futures}
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.Globals
-import fr.acinq.eclair.blockchain.spv.BitcoinjKit._
-import fr.acinq.eclair.blockchain.{CurrentBlockCount, NewConfidenceLevel}
+import fr.acinq.eclair.blockchain.bitcoinj.BitcoinjKit._
+import fr.acinq.eclair.blockchain.CurrentBlockCount
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
 import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener, _}

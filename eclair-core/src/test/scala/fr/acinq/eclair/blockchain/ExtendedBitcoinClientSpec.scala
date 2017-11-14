@@ -2,11 +2,11 @@ package fr.acinq.eclair.blockchain
 
 import akka.actor.ActorSystem
 import com.typesafe.config.ConfigFactory
-import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import org.scalatest.FunSuite
 
-import scala.concurrent.{Await, ExecutionContext}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, ExecutionContext}
 
 // this test is not run automatically
 class ExtendedBitcoinClientSpec extends FunSuite {

@@ -2,7 +2,7 @@ package fr.acinq.eclair.blockchain.spv
 
 import java.io.File
 
-import fr.acinq.eclair.blockchain.spv.BitcoinjKit._
+import fr.acinq.eclair.blockchain.bitcoinj.BitcoinjKit._
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.listeners.PeerConnectedEventListener
 import org.bitcoinj.core.{Peer, VersionMessage}

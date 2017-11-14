@@ -6,7 +6,7 @@ import akka.actor.{ActorRef, LoggingFSM, OneForOneStrategy, PoisonPill, Props, S
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.wallet.EclairWallet
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}

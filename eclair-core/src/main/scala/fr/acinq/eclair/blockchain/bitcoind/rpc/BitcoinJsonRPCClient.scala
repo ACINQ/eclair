@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.rpc
+package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import java.io.IOException
 

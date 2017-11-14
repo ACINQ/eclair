@@ -2,7 +2,7 @@ package fr.acinq.eclair.db
 
 import java.sql.DriverManager
 
-import fr.acinq.eclair.db.sqlite.SqliteChannelsDb
+import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePreimagesDb}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -21,15 +21,16 @@ class SqliteChannelsDbSpec extends FunSuite {
   test("add/remove/list channels") {
     val sqlite = inmem
     val db = new SqliteChannelsDb(sqlite)
+    new SqlitePreimagesDb(sqlite) // needed by db.removeChannel
 
     val channel = ChannelStateSpec.normal
 
     assert(db.listChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
     db.addOrUpdateChannel(channel)
-    assert(db.listChannels().toSet === Set(channel))
+    assert(db.listChannels() === List(channel))
     db.removeChannel(channel.channelId)
-    assert(db.listChannels().toSet === Set.empty)
+    assert(db.listChannels() === Nil)
   }
 
 }

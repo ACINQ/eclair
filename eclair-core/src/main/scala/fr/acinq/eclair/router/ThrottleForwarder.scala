@@ -1,0 +1,39 @@
+package fr.acinq.eclair.router
+
+import akka.actor.{Actor, ActorRef, Props}
+
+import scala.concurrent.duration.{FiniteDuration, _}
+
+/**
+  * This actor forwards messages to another actor, but groups them and introduces
+  * delays between each groups.
+  *
+  * If A wants to send a lot of lower importance messages to B, it is useful to let
+  * higher importance messages go in the stream.
+  */
+class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: Int, delay: FiniteDuration) extends Actor {
+
+  import scala.concurrent.ExecutionContext.Implicits.global
+  val clock = context.system.scheduler.schedule(0 second, delay, self, 'tick)
+
+  override def receive = group(messages)
+
+  def group(messages: Iterable[Any]): Receive = {
+    case 'tick =>
+      messages.splitAt(chunkSize) match {
+        case (Nil, _) =>
+          clock.cancel()
+          context stop self
+        case (chunk, rest) =>
+          chunk.foreach(target ! _)
+          context become group(rest)
+      }
+  }
+
+}
+
+object ThrottleForwarder {
+
+  def props(target: ActorRef, messages: Iterable[Any], groupSize: Int, delay: FiniteDuration) = Props(new ThrottleForwarder(target, messages, groupSize, delay))
+
+}

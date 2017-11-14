@@ -47,10 +47,10 @@ class TransactionsSpec extends FunSuite {
   test("compute fees") {
     // see BOLT #3 specs
     val htlcs = Set(
-      Htlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData("")), None),
-      Htlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData("")), None),
-      Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData("")), None),
-      Htlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData("")), None)
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData(""))),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData(""))),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData(""))),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData("")))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
     val fee = Transactions.commitTxFee(Satoshi(546), spec)
@@ -63,6 +63,7 @@ class TransactionsSpec extends FunSuite {
     val remotePaymentPriv = PrivateKey(BinaryData("ee" * 32), compressed = true)
     val localFinalPriv = PrivateKey(BinaryData("ff" * 32), compressed = true)
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("fe" * 32), compressed = true).publicKey))
+    val localDustLimit = Satoshi(542)
     val toLocalDelay = 144
     val feeratePerKw = 1000
 
@@ -71,7 +72,7 @@ class TransactionsSpec extends FunSuite {
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimP2WPKHOutputTx
       val pubKeyScript = write(pay2wpkh(localPaymentPriv.publicKey))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
-      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx, localDustLimit, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimP2WPKHOutputTx, localPaymentPriv.publicKey, "bb" * 71).tx)
       assert(claimP2WPKHOutputWeight == weight)
@@ -82,7 +83,7 @@ class TransactionsSpec extends FunSuite {
       // first we create a fake htlcSuccessOrTimeoutTx tx, containing only the output that will be spent by the ClaimDelayedOutputTx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
       val htlcSuccessOrTimeoutTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
-      val claimHtlcDelayedTx = makeClaimDelayedOutputTx(htlcSuccessOrTimeoutTx, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimHtlcDelayedTx = makeClaimDelayedOutputTx(htlcSuccessOrTimeoutTx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcDelayedTx, "bb" * 71).tx)
       assert(claimHtlcDelayedWeight == weight)
@@ -93,7 +94,7 @@ class TransactionsSpec extends FunSuite {
       // first we create a fake commitTx tx, containing only the output that will be spent by the MainPenaltyTx
       val pubKeyScript = write(pay2wsh(toLocalDelayed(localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(20000), pubKeyScript) :: Nil, lockTime = 0)
-      val mainPenaltyTx = makeMainPenaltyTx(commitTx, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
+      val mainPenaltyTx = makeMainPenaltyTx(commitTx, localDustLimit, localRevocationPriv.publicKey, finalPubKeyScript, toLocalDelay, localPaymentPriv.publicKey, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(mainPenaltyTx, "bb" * 71).tx)
       assert(mainPenaltyWeight == weight)
@@ -106,7 +107,7 @@ class TransactionsSpec extends FunSuite {
       val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, sha256(paymentPreimage), expiry = 400144, BinaryData(""))
       val pubKeyScript = write(pay2wsh(htlcOffered(localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
-      val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+      val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, localDustLimit, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimHtlcSuccessTx, "bb" * 71, paymentPreimage).tx)
       assert(claimHtlcSuccessWeight == weight)
@@ -119,7 +120,7 @@ class TransactionsSpec extends FunSuite {
       val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, sha256(paymentPreimage), expiry = 400144, BinaryData(""))
       val pubKeyScript = write(pay2wsh(htlcReceived(localPaymentPriv.publicKey, remotePaymentPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.expiry)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
-      val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+      val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, localDustLimit, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
       // we use dummy signatures to compute the weight
       val weight = Transaction.weight(addSigs(claimClaimHtlcTimeoutTx, "bb" * 71).tx)
       assert(claimHtlcTimeoutWeight == weight)
@@ -136,16 +137,25 @@ class TransactionsSpec extends FunSuite {
     val commitInput = Funding.makeFundingInputInfo(BinaryData("12" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val toLocalDelay = 144
     val localDustLimit = Satoshi(542)
-    val feeratePerKw = 1000
+    val feeratePerKw = 22000
 
+
+    // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = BinaryData("11" * 32)
     val htlc1 = UpdateAddHtlc("00" * 32, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, sha256(paymentPreimage1), 300, BinaryData(""))
     val paymentPreimage2 = BinaryData("22" * 32)
     val htlc2 = UpdateAddHtlc("00" * 32, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage2), 300, BinaryData(""))
+    // htlc3 and htlc4 are dust htlcs IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
+    val paymentPreimage3 = BinaryData("33" * 32)
+    val htlc3 = UpdateAddHtlc("00" * 32, 2, (localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).amount * 1000, sha256(paymentPreimage3), 300, BinaryData(""))
+    val paymentPreimage4 = BinaryData("44" * 32)
+    val htlc4 = UpdateAddHtlc("00" * 32, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).amount * 1000, sha256(paymentPreimage4), 300, BinaryData(""))
     val spec = CommitmentSpec(
       htlcs = Set(
-        Htlc(OUT, htlc1, None),
-        Htlc(IN, htlc2, None)
+        DirectedHtlc(OUT, htlc1),
+        DirectedHtlc(IN, htlc2),
+        DirectedHtlc(OUT, htlc3),
+        DirectedHtlc(IN, htlc4)
       ),
       feeratePerKw = feeratePerKw,
       toLocalMsat = millibtc2satoshi(MilliBtc(400)).amount * 1000,
@@ -168,59 +178,68 @@ class TransactionsSpec extends FunSuite {
     }
     val (htlcTimeoutTxs, htlcSuccessTxs) = makeHtlcTxs(commitTx.tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, localPaymentPriv.publicKey, remotePaymentPriv.publicKey, spec)
 
-    assert(htlcTimeoutTxs.size == 1)
-    assert(htlcSuccessTxs.size == 1)
+    assert(htlcTimeoutTxs.size == 2) // htlc1 and htlc3
+    assert(htlcSuccessTxs.size == 2) // htlc2 and htlc4
 
     {
       // either party spends local->remote htlc output with htlc timeout tx
-      val htlcTimeoutTx = htlcTimeoutTxs(0)
-      val localSig = sign(htlcTimeoutTx, localPaymentPriv)
-      val remoteSig = sign(htlcTimeoutTx, remotePaymentPriv)
-      val signed = addSigs(htlcTimeoutTx, localSig, remoteSig)
-      val foo = checkSpendable(signed)
-      assert(checkSpendable(signed).isSuccess)
+      for (htlcTimeoutTx <- htlcTimeoutTxs) {
+        val localSig = sign(htlcTimeoutTx, localPaymentPriv)
+        val remoteSig = sign(htlcTimeoutTx, remotePaymentPriv)
+        val signed = addSigs(htlcTimeoutTx, localSig, remoteSig)
+        assert(checkSpendable(signed).isSuccess)
+      }
     }
 
     {
-      // local spends delayed output of htlc timeout tx
-      val htlcTimeoutTx = htlcTimeoutTxs(0)
-      val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcTimeoutTx.tx, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      // local spends delayed output of htlc1 timeout tx
+      val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcTimeoutTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)
+      // local can't claim delayed output of htlc3 timeout tx because it is below the dust limit
+      intercept[RuntimeException] {
+        makeClaimDelayedOutputTx(htlcTimeoutTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      }
     }
 
     {
-      // remote spends local->remote htlc output directly in case of success
-      val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc1, feeratePerKw)
-      val localSig = sign(claimHtlcSuccessTx, remotePaymentPriv)
-      val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage1)
-      assert(checkSpendable(signed).isSuccess)
+      // remote spends local->remote htlc1/htlc3 output directly in case of success
+      for ((htlc, paymentPreimage) <- (htlc1, paymentPreimage1) :: (htlc3, paymentPreimage3) :: Nil) {
+        val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
+        val localSig = sign(claimHtlcSuccessTx, remotePaymentPriv)
+        val signed = addSigs(claimHtlcSuccessTx, localSig, paymentPreimage)
+        assert(checkSpendable(signed).isSuccess)
+      }
     }
 
     {
-      // local spends remote->local htlc output with htlc success tx using payment preimage
-      val htlcSuccessTx = htlcSuccessTxs(0)
-      val localSig = sign(htlcSuccessTx, localPaymentPriv)
-      val remoteSig = sign(htlcSuccessTx, remotePaymentPriv)
-      val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage2)
-      assert(checkSpendable(signedTx).isSuccess)
-      // check remote sig
-      assert(checkSig(htlcSuccessTx, remoteSig, remotePaymentPriv.publicKey))
+      // local spends remote->local htlc2/htlc4 output with htlc success tx using payment preimage
+      for ((htlcSuccessTx, paymentPreimage) <- (htlcSuccessTxs(0), paymentPreimage2) :: (htlcSuccessTxs(1), paymentPreimage4) :: Nil) {
+        val localSig = sign(htlcSuccessTx, localPaymentPriv)
+        val remoteSig = sign(htlcSuccessTx, remotePaymentPriv)
+        val signedTx = addSigs(htlcSuccessTx, localSig, remoteSig, paymentPreimage)
+        assert(checkSpendable(signedTx).isSuccess)
+        // check remote sig
+        assert(checkSig(htlcSuccessTx, remoteSig, remotePaymentPriv.publicKey))
+      }
     }
 
     {
-      // local spends delayed output of htlc success tx
-      val htlcSuccessTx = htlcSuccessTxs(0)
-      val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcSuccessTx.tx, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      // local spends delayed output of htlc2 success tx
+      val claimHtlcDelayed = makeClaimDelayedOutputTx(htlcSuccessTxs(0).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       val localSig = sign(claimHtlcDelayed, localPaymentPriv)
       val signedTx = addSigs(claimHtlcDelayed, localSig)
       assert(checkSpendable(signedTx).isSuccess)
+      // local can't claim delayed output of htlc4 timeout tx because it is below the dust limit
+      intercept[RuntimeException] {
+        makeClaimDelayedOutputTx(htlcSuccessTxs(1).tx, localDustLimit, localRevocationPriv.publicKey, toLocalDelay, localPaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      }
     }
 
     {
       // remote spends main output
-      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx.tx, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
+      val claimP2WPKHOutputTx = makeClaimP2WPKHOutputTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, finalPubKeyScript, feeratePerKw)
       val localSig = sign(claimP2WPKHOutputTx, remotePaymentPriv)
       val signedTx = addSigs(claimP2WPKHOutputTx, remotePaymentPriv.publicKey, localSig)
       assert(checkSpendable(signedTx).isSuccess)
@@ -228,7 +247,7 @@ class TransactionsSpec extends FunSuite {
 
     {
       // remote spends remote->local htlc output directly in case of timeout
-      val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
+      val claimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx.tx, localDustLimit, remotePaymentPriv.publicKey, localPaymentPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc2, feeratePerKw)
       val localSig = sign(claimHtlcTimeoutTx, remotePaymentPriv)
       val signed = addSigs(claimHtlcTimeoutTx, localSig)
       assert(checkSpendable(signed).isSuccess)
@@ -269,8 +288,8 @@ class TransactionsSpec extends FunSuite {
     case Failure(t) => fail(t)
   }
 
-  def htlc(direction: Direction, amount: Satoshi): Htlc =
-    Htlc(direction, UpdateAddHtlc("00" * 32, 0, amount.amount * 1000, "00" * 32, 144, ""), None)
+  def htlc(direction: Direction, amount: Satoshi): DirectedHtlc =
+    DirectedHtlc(direction, UpdateAddHtlc("00" * 32, 0, amount.amount * 1000, "00" * 32, 144, ""))
 
   test("BOLT 2 fee tests") {
 
