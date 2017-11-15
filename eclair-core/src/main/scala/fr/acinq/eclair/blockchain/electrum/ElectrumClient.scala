@@ -224,10 +224,18 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
 object ElectrumClient {
 
-  def apply(addresses: java.util.List[InetSocketAddress]) : ElectrumClient = {
+  def apply(addresses: java.util.List[InetSocketAddress]): ElectrumClient = {
     import collection.JavaConversions._
     new ElectrumClient(addresses)
   }
+
+  /**
+    * Utility function to converts a publicKeyScript to electrum's scripthash
+    *
+    * @param publicKeyScript public key script
+    * @return the hash of the public key script, as used by ElectrumX's hash-based methods
+    */
+  def computeScriptHash(publicKeyScript: BinaryData): BinaryData = Crypto.sha256(publicKeyScript).reverse
 
   // @formatter:off
   sealed trait Request
@@ -253,7 +261,7 @@ object ElectrumClient {
   case class ScriptHashListUnspentResponse(scriptHash: BinaryData, unspents: Seq[UnspentItem]) extends Response
 
   case class BroadcastTransaction(tx: Transaction) extends Request
-  case class BroadcastTransactionResponse(tx: Transaction, error: Option[String]) extends Response
+  case class BroadcastTransactionResponse(tx: Transaction, error: Option[Error]) extends Response
 
   case class GetTransaction(txid: BinaryData) extends Request
   case class GetTransactionResponse(tx: Transaction) extends Response
@@ -300,7 +308,7 @@ object ElectrumClient {
 
   case class AddressStatus(address: String, status: String) extends Response
 
-  case class ServerError(request: Request, error: String) extends Response
+  case class ServerError(request: Request, error: Error) extends Response
   case class AddStatusListener(actor: ActorRef) extends Response
 
   case object Ready
@@ -318,14 +326,14 @@ object ElectrumClient {
           case ("blockchain.headers.subscribe", header :: Nil) => HeaderSubscriptionResponse(parseHeader(header))
           case ("blockchain.address.subscribe", JString(address) :: JNull :: Nil) => AddressSubscriptionResponse(address, "")
           case ("blockchain.address.subscribe", JString(address) :: JString(status) :: Nil) => AddressSubscriptionResponse(address, status)
-          case ("blockchain.scripthash.subscribe", JString(scriptHashHex):: JNull :: Nil) => ScriptHashSubscriptionResponse(BinaryData(scriptHashHex), "")
-          case ("blockchain.scripthash.subscribe", JString(scriptHashHex):: JString(status) :: Nil) => ScriptHashSubscriptionResponse(BinaryData(scriptHashHex), status)
+          case ("blockchain.scripthash.subscribe", JString(scriptHashHex) :: JNull :: Nil) => ScriptHashSubscriptionResponse(BinaryData(scriptHashHex), "")
+          case ("blockchain.scripthash.subscribe", JString(scriptHashHex) :: JString(status) :: Nil) => ScriptHashSubscriptionResponse(BinaryData(scriptHashHex), status)
         })
       case _ => Right(parseJsonRpcResponse(json))
     }
   }
 
-  def parseJsonRpcResponse(json: JValue) : JsonRPCResponse = {
+  def parseJsonRpcResponse(json: JValue): JsonRPCResponse = {
     implicit val formats = DefaultFormats
     val result = json \ "result"
     val error = json \ "error" match {
@@ -362,7 +370,7 @@ object ElectrumClient {
     case JInt(value) => value.intValue()
   }
 
-  def parseHeader(json: JValue) : Header = {
+  def parseHeader(json: JValue): Header = {
     val block_height = longField(json, "block_height")
     val version = longField(json, "version")
     val timestamp = longField(json, "timestamp")
@@ -390,7 +398,10 @@ object ElectrumClient {
   def parseJsonResponse(request: Request, json: JsonRPCResponse): Response = {
     implicit val formats = DefaultFormats
     json.error match {
-      case Some(error) => ServerError(request, error.message)
+      case Some(error) => (request: @unchecked) match {
+        case BroadcastTransaction(tx) => BroadcastTransactionResponse(tx, Some(error)) // for this request type, error are considered a "normal" response
+        case _ => ServerError(request, error)
+      }
       case None => (request: @unchecked) match {
         case s: ServerVersion =>
           val JArray(jitems) = json.result
