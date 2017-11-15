@@ -33,9 +33,9 @@ class ElectrumWalletBasicSpec extends FunSuite {
 
   val state = Data(params, ElectrumClient.Header.RegtestGenesisHeader, firstAccountKeys, firstChangeKeys)
   val unspents = Map(
-    computeScriptHash(state.accountKeys(0).publicKey) -> Set(ElectrumClient.UnspentItem("01" * 32, 0, 1 * Satoshi(Coin).toLong, 100)),
-    computeScriptHash(state.accountKeys(1).publicKey) -> Set(ElectrumClient.UnspentItem("02" * 32, 0, 2 * Satoshi(Coin).toLong, 100)),
-    computeScriptHash(state.accountKeys(2).publicKey) -> Set(ElectrumClient.UnspentItem("03" * 32, 0, 3 * Satoshi(Coin).toLong, 100))
+    computeScriptHashFromPublicKey(state.accountKeys(0).publicKey) -> Set(ElectrumClient.UnspentItem("01" * 32, 0, 1 * Satoshi(Coin).toLong, 100)),
+    computeScriptHashFromPublicKey(state.accountKeys(1).publicKey) -> Set(ElectrumClient.UnspentItem("02" * 32, 0, 2 * Satoshi(Coin).toLong, 100)),
+    computeScriptHashFromPublicKey(state.accountKeys(2).publicKey) -> Set(ElectrumClient.UnspentItem("03" * 32, 0, 3 * Satoshi(Coin).toLong, 100))
   )
 
   test("compute addresses") {
@@ -45,7 +45,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
   }
 
   ignore("complete transactions (enough funds)") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHash(key.publicKey) -> "").toMap)
+    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
     val pub = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
@@ -59,7 +59,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
   }
 
   test("complete transactions (insufficient funds)") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHash(key.publicKey) -> "").toMap)
+    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(6 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val e = intercept[IllegalArgumentException] {
       val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
@@ -67,7 +67,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
   }
 
   ignore("find what a tx spends from us") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHash(key.publicKey) -> "").toMap)
+    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
 
@@ -78,7 +78,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
   }
 
   ignore("find what a tx sends to us") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHash(key.publicKey) -> "").toMap)
+    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
 
