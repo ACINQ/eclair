@@ -115,7 +115,7 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     }
     val setup = new Setup(datadir, actorSystem = ActorSystem(s"system-$name"))
     val kit = Await.result(setup.bootstrap, 10 seconds)
-    setup.bitcoin.asInstanceOf[Bitcoinj].bitcoinjKit.awaitRunning()
+    //TODO setup.bitcoin.asInstanceOf[Bitcoinj].bitcoinjKit.awaitRunning()
     nodes = nodes + (name -> kit)
   }
 

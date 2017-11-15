@@ -43,29 +43,29 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   implicit val formats = org.json4s.DefaultFormats
   implicit val ec = ExecutionContext.Implicits.global
 
-  val bitcoin = nodeParams.watcherType match {
-    case BITCOINJ =>
-      logger.warn("EXPERIMENTAL BITCOINJ MODE ENABLED!!!")
-      val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
-      logger.info(s"using staticPeers=$staticPeers")
-      val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
-      bitcoinjKit.startAsync()
-      Await.ready(bitcoinjKit.initialized, 10 seconds)
-      Bitcoinj(bitcoinjKit)
-    case ELECTRUM =>
-      logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addressesFile = chain match {
-        case "test" => "/electrum/servers_testnet.json"
-        case "regtest" => "/electrum/servers_regtest.json"
-      }
-      val stream = classOf[Setup].getResourceAsStream(addressesFile)
-      val addresses = ElectrumClient.readServerAddresses(stream)
-      val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
-      Electrum(electrumClient)
-    case _ => ???
-  }
-
   def bootstrap: Future[Kit] = Future {
+
+    val bitcoin = nodeParams.watcherType match {
+      case BITCOINJ =>
+        logger.warn("EXPERIMENTAL BITCOINJ MODE ENABLED!!!")
+        val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
+        logger.info(s"using staticPeers=$staticPeers")
+        val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
+        bitcoinjKit.startAsync()
+        Await.ready(bitcoinjKit.initialized, 10 seconds)
+        Bitcoinj(bitcoinjKit)
+      case ELECTRUM =>
+        logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
+        val addressesFile = chain match {
+          case "test" => "/electrum/servers_testnet.json"
+          case "regtest" => "/electrum/servers_regtest.json"
+        }
+        val stream = classOf[Setup].getResourceAsStream(addressesFile)
+        val addresses = ElectrumClient.readServerAddresses(stream)
+        val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+        Electrum(electrumClient)
+      case _ => ???
+    }
 
     val defaultFeeratePerKb = config.getLong("default-feerate-per-kb")
     Globals.feeratePerKw.set(feerateKb2Kw(defaultFeeratePerKb))
