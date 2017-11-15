@@ -50,7 +50,7 @@ class RouterSpec extends BaseRouterSpec {
         IndividualResult(chan_ax, None, false) ::
         IndividualResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true) ::
         IndividualResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false) :: Nil))
-    watcher.expectMsgType[WatchSpentBasic]
+    //watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 
     eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))

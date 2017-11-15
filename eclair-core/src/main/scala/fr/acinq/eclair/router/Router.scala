@@ -114,7 +114,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             log.error(s"invalid script for shortChannelId=${c.shortChannelId} txid=${tx.txid} ann=$c")
             None
           } else {
-            watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
+            // On Android we disable the ability to detect when external channels die. If we try to use them during a
+            // payment, we simply will get an error from the node that is just before the missing channel.
+            //watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId}")
             context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))

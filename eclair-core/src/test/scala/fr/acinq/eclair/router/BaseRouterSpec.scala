@@ -97,10 +97,10 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         IndividualResult(chan_ef, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0)), true) :: Nil
       ))
       // watcher receives watch-spent request
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
+      //watcher.expectMsgType[WatchSpentBasic]
+      //watcher.expectMsgType[WatchSpentBasic]
+      //watcher.expectMsgType[WatchSpentBasic]
+      //watcher.expectMsgType[WatchSpentBasic]
       // then nodes
       router ! ann_a
       router ! ann_b
