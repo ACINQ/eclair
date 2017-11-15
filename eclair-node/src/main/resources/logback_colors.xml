@@ -72,7 +72,7 @@
         </encoder>
     </appender>
 
-    <logger name="fr.acinq.eclair.io.Peer" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.io.Peer" level="INFO" additivity="false">
         <appender-ref ref="RED"/>
     </logger>
 
@@ -92,7 +92,7 @@
         <appender-ref ref="YELLOW"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.router" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.router" level="INFO" additivity="false">
         <appender-ref ref="CYAN"/>
     </logger>
 
