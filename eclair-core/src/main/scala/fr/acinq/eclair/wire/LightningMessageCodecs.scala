@@ -134,9 +134,9 @@ object LightningMessageCodecs {
       ("revocationBasepoint" | point) ::
       ("paymentBasepoint" | point) ::
       ("delayedPaymentBasepoint" | point) ::
+      ("htlcBasepoint" | point) ::
       ("firstPerCommitmentPoint" | point) ::
-      ("channelFlags" | byte) ::
-      ("htlcBasepoint" | point)).as[OpenChannel]
+      ("channelFlags" | byte)).as[OpenChannel]
 
   val acceptChannelCodec: Codec[AcceptChannel] = (
     ("temporaryChannelId" | binarydata(32)) ::
@@ -151,8 +151,8 @@ object LightningMessageCodecs {
       ("revocationBasepoint" | point) ::
       ("paymentBasepoint" | point) ::
       ("delayedPaymentBasepoint" | point) ::
-      ("firstPerCommitmentPoint" | point) ::
-      ("htlcBasepoint" | point)).as[AcceptChannel]
+      ("htlcBasepoint" | point) ::
+      ("firstPerCommitmentPoint" | point)).as[AcceptChannel]
 
   val fundingCreatedCodec: Codec[FundingCreated] = (
     ("temporaryChannelId" | binarydata(32)) ::
