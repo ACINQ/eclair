@@ -123,11 +123,21 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
     case Event(GetTransactionResponse(tx), data) =>
-      log.debug(s"received transaction id=${tx.txid}")
-      val (received, sent, fee) = data.computeTransactionDelta(tx)
-      statusListeners.map(_ ! WalletTransactionReceive(tx, data.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
-      val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid)
-      goto(stateName) using data1 // goto instead of stay because we want to fire transitions
+      log.debug(s"received transaction ${tx.txid}")
+      data.computeTransactionDelta(tx) match {
+        case Some((received, sent, fee_opt)) =>
+          log.info(s"successfully connected txid=${tx.txid}")
+          statusListeners.map(_ ! WalletTransactionReceive(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
+          // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
+          data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
+          val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
+          goto(stateName) using data1 // goto instead of stay because we want to fire transitions
+        case None =>
+          // missing parents
+          log.info(s"couldn't connect txid=${tx.txid}")
+          val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
+          stay using data1
+      }
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
       Try(data.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, allowSpendUnconfirmed)) match {
@@ -137,7 +147,10 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case Event(CommitTransaction(tx), data) =>
       val data1 = data.commitTransaction(tx)
-      val (received, sent, fee) = data.computeTransactionDelta(tx) // we use the initial state to compute the effect of the tx
+      // we use the initial state to compute the effect of the tx
+      // note: we know that computeTransactionDelta and the fee will be defined, because we built the tx ourselves so
+      // we know all the parents
+      val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
       statusListeners.map(_ ! WalletTransactionReceive(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
       goto(stateName) using data1 replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
@@ -247,6 +260,14 @@ object ElectrumWallet {
   case class GetPrivateKey(address: String) extends Request
   case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
 
+  /**
+    *
+    * @param tx
+    * @param depth
+    * @param received
+    * @param sent
+    * @param feeOpt is set only when we know it (i.e. for outgoing transactions)
+    */
   case class WalletTransactionReceive(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi])
   case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
 
@@ -358,7 +379,8 @@ object ElectrumWallet {
                   history: Map[BinaryData, Seq[ElectrumClient.TransactionHistoryItem]],
                   locks: Set[Transaction],
                   pendingHistoryRequests: Set[BinaryData],
-                  pendingTransactionRequests: Set[BinaryData]) extends Logging {
+                  pendingTransactionRequests: Set[BinaryData],
+                  pendingTransactions: Seq[Transaction]) extends Logging {
     lazy val accountKeyMap = accountKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 
     lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
@@ -513,18 +535,25 @@ object ElectrumWallet {
       * Computes the effect of this transaction on the wallet
       *
       * @param tx input transaction
-      * @return a (received, sent, fee) tuple where sent if what the tx spends from us, received is what the tx sends to us,
-      *         and fee is the fee for the tx
+      * @return an option:
+      *         - Some(received, sent, fee) where sent if what the tx spends from us, received is what the tx sends to us,
+      *         and fee is the fee for the tx) tuple where sent if what the tx spends from us, and received is what the tx sends to us
+      *         - None if we are missing one or more parent txs
       */
-    def computeTransactionDelta(tx: Transaction): (Satoshi, Satoshi, Satoshi) = {
-      val spent = tx.txIn.flatMap {
-        case txIn if transactions.contains(txIn.outPoint.txid) => Some(transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt))
-        case txIn =>
-          logger.info(s"tx spends our output but we don't have the parent yet txid=${tx.txid} parentTxId=${txIn.outPoint.txid}")
-          None
+    def computeTransactionDelta(tx: Transaction): Option[(Satoshi, Satoshi, Option[Satoshi])] = {
+      val ourInputs = tx.txIn.filter(isMine)
+      // we need to make sure that for all inputs spending an output we control, we already  have the parent tx
+      // (otherwise we can't estimate our balance)
+      val missingParent = ourInputs.exists(txIn => !transactions.contains(txIn.outPoint.txid))
+      if (missingParent) {
+        None
+      } else {
+        val sent = ourInputs.map(txIn => transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt)).map(_.amount).sum
+        val received = tx.txOut.filter(isMine).map(_.amount).sum
+        // if all the inputs were ours, we can compute the fee, otherwise we can't
+        val fee_opt = if (ourInputs.size == tx.txIn.size) Some(sent - tx.txOut.map(_.amount).sum) else None
+        Some((received, sent, fee_opt))
       }
-      val received = tx.txOut
-      (received.filter(isMine).map(_.amount).sum, spent.filter(isMine).map(_.amount).sum, spent.map(_.amount).sum - received.map(_.amount).sum)
     }
 
     /**
@@ -616,7 +645,7 @@ object ElectrumWallet {
 
   object Data {
     def apply(params: ElectrumWallet.WalletParameters, tip: ElectrumClient.Header, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): Data
-    = Data(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set())
+    = Data(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Seq())
   }
 
 }
