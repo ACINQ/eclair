@@ -39,7 +39,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
   // this will be used to make sure the current commitment fee is up-to-date
-  context.system.eventStream.subscribe(self, classOf[CurrentFeerate])
+  context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -217,7 +217,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.debug(s"remote params: $remoteParams")
           val localFundingPubkey = localParams.fundingPrivKey.publicKey
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
-          wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), Globals.feeratePerKw.get()).pipeTo(self)
+          val fundingTxFeeratePerKw = Globals.feeratesPerKw.get.blocks_6
+          wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
@@ -640,13 +641,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CurrentBlockCount(count), d: DATA_NORMAL) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       handleLocalError(HtlcTimedout(d.channelId), d)
 
-    case Event(CurrentFeerate(feeratePerKw), d: DATA_NORMAL) =>
+    case Event(CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
+      val networkFeeratePerKw = feeratesPerKw.block_1
       d.commitments.localParams.isFunder match {
-        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
-          self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
+        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
+          self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
           stay
-        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
-          handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.maxFeerateMismatch) =>
+          handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
         case _ => stay
       }
 
@@ -861,13 +863,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CurrentBlockCount(count), d: DATA_SHUTDOWN) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       handleLocalError(HtlcTimedout(d.channelId), d)
 
-    case Event(CurrentFeerate(feeratePerKw), d: DATA_SHUTDOWN) =>
+    case Event(CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
+      val networkFeeratePerKw = feerates.block_1
       d.commitments.localParams.isFunder match {
-        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
-          self ! CMD_UPDATE_FEE(feeratePerKw, commit = true)
+        case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
+          self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
           stay
-        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, feeratePerKw, nodeParams.maxFeerateMismatch) =>
-          handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = feeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
+        case false if Helpers.isFeeDiffTooHigh(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.maxFeerateMismatch) =>
+          handleLocalError(FeerateTooDifferent(d.channelId, localFeeratePerKw = networkFeeratePerKw, remoteFeeratePerKw = d.commitments.localCommit.spec.feeratePerKw), d)
         case _ => stay
       }
 
@@ -1203,7 +1206,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CurrentBlockCount(_), _) => stay
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
-    case Event(CurrentFeerate(_), _) => stay
+    case Event(CurrentFeerates(_), _) => stay
 
     // we receive this when we send command to ourselves
     case Event("ok", _) => stay

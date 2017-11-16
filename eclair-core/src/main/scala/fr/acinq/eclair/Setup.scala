@@ -13,12 +13,12 @@ import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
-import fr.acinq.eclair.blockchain.fee.{BitpayInsightFeeProvider, ConstantFeeProvider}
-import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
+import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
+import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
+import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
+import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -101,18 +101,20 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val zmqConnected = Promise[Boolean]()
     val tcpBound = Promise[Unit]()
 
-    val defaultFeeratePerKb = config.getLong("default-feerate-per-kb")
-    Globals.feeratePerKw.set(feerateKb2Kw(defaultFeeratePerKb))
-    logger.info(s"initial feeratePerKw=${Globals.feeratePerKw.get()}")
+    val defaultFeerates = FeeratesPerByte(block_1 = config.getLong("default-feerates.delay-blocks.1"), blocks_2 = config.getLong("default-feerates.delay-blocks.2"), blocks_6 = config.getLong("default-feerates.delay-blocks.6"), blocks_12 = config.getLong("default-feerates.delay-blocks.12"), blocks_36 = config.getLong("default-feerates.delay-blocks.36"), blocks_72 = config.getLong("default-feerates.delay-blocks.72"))
+    Globals.feeratesPerByte.set(defaultFeerates)
+    Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
+    logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
     val feeProvider = chain match {
-      case "regtest" => new ConstantFeeProvider(defaultFeeratePerKb)
-      case _ => new BitpayInsightFeeProvider()
+      case "regtest" => new ConstantFeeProvider(defaultFeerates)
+      case _ => new FallbackFeeProvider(new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
-    system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeeratePerKB.map {
-      case feeratePerKB =>
-        Globals.feeratePerKw.set(feerateKb2Kw(feeratePerKB))
-        system.eventStream.publish(CurrentFeerate(Globals.feeratePerKw.get()))
-        logger.info(s"current feeratePerKw=${Globals.feeratePerKw.get()}")
+    system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
+      case feerates: FeeratesPerByte =>
+        Globals.feeratesPerByte.set(feerates)
+        Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
+        system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
+        logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
     })
 
     val watcher = bitcoin match {

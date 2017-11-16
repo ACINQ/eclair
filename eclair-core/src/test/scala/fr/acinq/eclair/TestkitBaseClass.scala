@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 import akka.actor.{ActorNotFound, ActorSystem, PoisonPill}
 import akka.testkit.TestKit
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import org.scalatest.{BeforeAndAfterAll, BeforeAndAfterEach, fixture}
 
 import scala.concurrent.Await
@@ -14,7 +15,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def beforeAll {
     Globals.blockCount.set(400000)
-    Globals.feeratePerKw.set(TestConstants.feeratePerKw)
+    Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
   }
 
   override def afterEach() {
@@ -27,7 +28,7 @@ abstract class TestkitBaseClass extends TestKit(ActorSystem("test")) with fixtur
 
   override def afterAll {
     TestKit.shutdownActorSystem(system)
-    Globals.feeratePerKw.set(0)
+    Globals.feeratesPerKw.set(FeeratesPerKw.single(0))
   }
 
 }
