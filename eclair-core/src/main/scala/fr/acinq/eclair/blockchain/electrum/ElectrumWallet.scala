@@ -106,6 +106,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
         status = data.status + (scriptHash -> status),
         pendingHistoryRequests = data.pendingHistoryRequests + scriptHash)
 
+      manualTransition(data1)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
     case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, history), data) =>
@@ -120,6 +121,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           (heights + (item.tx_hash -> item.height), hashes)
       }
       val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> history), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
+      manualTransition(data1)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
     case Event(GetTransactionResponse(tx), data) =>
@@ -131,6 +133,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
           data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
+          manualTransition(data1)
           goto(stateName) using data1 // goto instead of stay because we want to fire transitions
         case None =>
           // missing parents
@@ -153,6 +156,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
       statusListeners.map(_ ! WalletTransactionReceive(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
+      manualTransition(data1)
       goto(stateName) using data1 replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
@@ -191,12 +195,15 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       stay
   }
 
-  onTransition {
-    case _ -> _ if nextStateData.isReady(params.swipeRange) =>
+  /**
+    * Bug in akka 2.3 onTransition won't fire on same-state transitions
+    */
+  def manualTransition(nextStateData: Data) = {
+    if (nextStateData.isReady(params.swipeRange)) {
       val ready = nextStateData.readyMessage
       log.info(s"wallet is ready with $ready")
       statusListeners.map(_ ! ready)
-  }
+  }}
 
   initialize()
 
