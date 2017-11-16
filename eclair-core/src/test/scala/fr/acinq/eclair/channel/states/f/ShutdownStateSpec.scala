@@ -5,6 +5,7 @@ import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
@@ -508,13 +509,13 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       val fee = UpdateFee("00" * 32, 100000000)
       // we first update the global variable so that we don't trigger a 'fee too different' error
-      Globals.feeratePerKw.set(fee.feeratePerKw)
+      Globals.feeratesPerKw.set(FeeratesPerKw.single(fee.feeratePerKw))
       sender.send(bob, fee)
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data) === CannotAffordFees(channelId(bob), missingSatoshis = 72120000L, reserveSatoshis = 20000L, feesSatoshis = 72400000L).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx)) // commit tx
-      bob2blockchain.expectMsgType[PublishAsap] // main delayed
+      //bob2blockchain.expectMsgType[PublishAsap] // main delayed (removed because of the high fees)
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
@@ -563,16 +564,16 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
-      val event = CurrentFeerate(20000)
+      val event = CurrentFeerates(FeeratesPerKw.single(20000))
       sender.send(alice, event)
-      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratePerKw))
+      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.block_1))
     }
   }
 
   test("recv CurrentFeerate (when funder, doesn't trigger an UpdateFee)") { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val event = CurrentFeerate(10010)
+      val event = CurrentFeerates(FeeratesPerKw.single(10010))
       sender.send(alice, event)
       alice2bob.expectNoMsg(500 millis)
     }
@@ -581,7 +582,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are close)") { case (_, bob, _, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val event = CurrentFeerate(11000)
+      val event = CurrentFeerates(FeeratesPerKw.single(11000))
       sender.send(bob, event)
       bob2alice.expectNoMsg(500 millis)
     }
@@ -590,7 +591,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CurrentFeerate (when fundee, commit-fee/network-fee are very different)") { case (_, bob, _, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val event = CurrentFeerate(1000)
+      val event = CurrentFeerates(FeeratesPerKw.single(1000))
       sender.send(bob, event)
       bob2alice.expectMsgType[Error]
       bob2blockchain.expectMsgType[PublishAsap] // commit tx
@@ -604,7 +605,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
       // this happens when in regtest mode
-      val event = CurrentFeerate(-1)
+      val event = CurrentFeerates(FeeratesPerKw.single(-1))
       sender.send(alice, event)
       alice2bob.expectNoMsg(500 millis)
     }
