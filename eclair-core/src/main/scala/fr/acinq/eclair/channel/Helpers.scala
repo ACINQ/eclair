@@ -1,14 +1,15 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.wallet.EclairWallet
 import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, NodeParams}
 import grizzled.slf4j.Logging
 
@@ -71,6 +72,13 @@ object Helpers {
   def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = {
     // negative feerate can happen in regtest mode
     remoteFeeratePerKw > 0 && feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
+  }
+
+  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: Long) = {
+    // TODO: empty features
+    val features = BinaryData("")
+    val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(nodeParams.chainHash, shortChannelId, nodeParams.privateKey, commitments.remoteParams.nodeId, commitments.localParams.fundingPrivKey, commitments.remoteParams.fundingPubKey, features)
+    AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
   def getFinalScriptPubKey(wallet: EclairWallet): BinaryData = {
