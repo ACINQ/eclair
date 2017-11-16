@@ -390,6 +390,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), None, None, None, None))
 
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
+      log.info(s"received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist the announcement, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_LOCKED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_WAIT_FOR_FUNDING_LOCKED) => handleInformationLeak(d)
@@ -675,6 +682,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case None =>
           log.info(s"received remote announcement signatures, delaying")
           // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
+          // note: no need to persist the announcement, in case of disconnection they will resend it
           context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
           if (nodeParams.spv) {
             log.warning(s"HACK: since we cannot get the tx index in spv mode, we copy the value sent by remote")
