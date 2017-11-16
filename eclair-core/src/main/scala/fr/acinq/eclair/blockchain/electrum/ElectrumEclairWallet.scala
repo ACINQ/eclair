@@ -9,7 +9,6 @@ import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
 import grizzled.slf4j.Logging
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
 
 class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout)  extends EclairWallet with Logging {
 
