@@ -123,9 +123,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
     case Event(GetTransactionResponse(tx), data) =>
-      log.debug(s"received transaction ${tx.txid}")
-      val (received, sent) = data.computeTransactionDelta(tx)
-      statusListeners.map(_ ! WalletTransactionReceive(tx, data.computeTransactionDepth(tx.txid), received, sent))
+      log.debug(s"received transaction id=${tx.txid}")
+      val (received, sent, fee) = data.computeTransactionDelta(tx)
+      statusListeners.map(_ ! WalletTransactionReceive(tx, data.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
       val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
@@ -137,9 +137,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case Event(CommitTransaction(tx), data) =>
       val data1 = data.commitTransaction(tx)
-      val (received, sent) = data.computeTransactionDelta(tx) // we use the initial state to compute the effect of the tx
+      val (received, sent, fee) = data.computeTransactionDelta(tx) // we use the initial state to compute the effect of the tx
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
-      statusListeners.map(_ ! WalletTransactionReceive(tx, data1.computeTransactionDepth(tx.txid), received, sent))
+      statusListeners.map(_ ! WalletTransactionReceive(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
       goto(stateName) using data1 replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
@@ -247,7 +247,7 @@ object ElectrumWallet {
   case class GetPrivateKey(address: String) extends Request
   case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
 
-  case class WalletTransactionReceive(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi)
+  case class WalletTransactionReceive(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi])
   case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
 
   case class Ready(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long)
@@ -513,17 +513,18 @@ object ElectrumWallet {
       * Computes the effect of this transaction on the wallet
       *
       * @param tx input transaction
-      * @return a (received, sent) tuple where sent if what the tx spends from us, and received is what the tx sends to us
+      * @return a (received, sent, fee) tuple where sent if what the tx spends from us, received is what the tx sends to us,
+      *         and fee is the fee for the tx
       */
-    def computeTransactionDelta(tx: Transaction): (Satoshi, Satoshi) = {
-      val spent = tx.txIn.filter(isMine).flatMap {
+    def computeTransactionDelta(tx: Transaction): (Satoshi, Satoshi, Satoshi) = {
+      val spent = tx.txIn.flatMap {
         case txIn if transactions.contains(txIn.outPoint.txid) => Some(transactions(txIn.outPoint.txid).txOut(txIn.outPoint.index.toInt))
         case txIn =>
           logger.info(s"tx spends our output but we don't have the parent yet txid=${tx.txid} parentTxId=${txIn.outPoint.txid}")
           None
       }
-      val received = tx.txOut.filter(isMine)
-      (received.map(_.amount).sum, spent.map(_.amount).sum)
+      val received = tx.txOut
+      (received.filter(isMine).map(_.amount).sum, spent.filter(isMine).map(_.amount).sum, spent.map(_.amount).sum - received.map(_.amount).sum)
     }
 
     /**
