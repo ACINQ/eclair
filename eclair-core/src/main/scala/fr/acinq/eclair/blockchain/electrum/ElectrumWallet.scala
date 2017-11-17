@@ -94,7 +94,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
       stay
 
-    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" => stay using data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
+    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" =>
+      val data1 = data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
+      goto(stateName) using data1
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
@@ -109,7 +111,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           // first time this script hash is used, need to generate a new key
           val newKey = if (isChange) derivePrivateKey(changeMaster, data.changeKeys.last.path.lastChildNumber + 1) else derivePrivateKey(accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
           val newScriptHash = computeScriptHashFromPublicKey(newKey.publicKey)
-          log.info(s"generated key with index=${key.path.lastChildNumber} scriptHash=$newScriptHash key=${segwitAddress(key)} isChange=$isChange")
+          log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash key=${segwitAddress(newKey)} isChange=$isChange")
           // listens to changes for the newly generated key
           client ! ElectrumClient.ScriptHashSubscription(newScriptHash, self)
           if (isChange) (data.accountKeys, data.changeKeys :+ newKey) else (data.accountKeys :+ newKey, data.changeKeys)
@@ -221,6 +223,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       val ready = nextStateData.readyMessage
       log.info(s"wallet is ready with $ready")
       context.system.eventStream.publish(ready)
+      context.system.eventStream.publish(NewWalletReceiveAddress(nextStateData.currentReceiveAddress))
   }
 
   initialize()
@@ -297,6 +300,7 @@ object ElectrumWallet {
     */
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi]) extends WalletEvent
   case class TransactionConfidenceChanged(txid: BinaryData, depth: Long) extends WalletEvent
+  case class NewWalletReceiveAddress(address: String) extends WalletEvent
   case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long) extends WalletEvent
   // @formatter:on
 
@@ -424,8 +428,9 @@ object ElectrumWallet {
     /**
       * The wallet is ready if all current keys have an empty status, and we don't have
       * any history/tx request pending
+      * NB: swipeRange * 2 because we have account keys and change keys
       */
-    def isReady(swipeRange: Int) = status.filter(_._2 == "").size >= swipeRange && pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
+    def isReady(swipeRange: Int) = status.filter(_._2 == "").size >= swipeRange * 2 && pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
 
     def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
@@ -441,8 +446,8 @@ object ElectrumWallet {
       */
     def currentReceiveKey = firstUnusedAccountKeys.headOption.getOrElse {
       // bad luck we are still looking for unused keys
-      // use the last account key
-      accountKeys.last
+      // use the first account key
+      accountKeys.head
     }
 
     def currentReceiveAddress = segwitAddress(currentReceiveKey)
@@ -456,8 +461,8 @@ object ElectrumWallet {
       */
     def currentChangeKey = firstUnusedChangeKeys.headOption.getOrElse {
       // bad luck we are still looking for unused keys
-      // use the last account key
-      changeKeys.last
+      // use the first account key
+      changeKeys.head
     }
 
     def currentChangeAddress = segwitAddress(currentChangeKey)
