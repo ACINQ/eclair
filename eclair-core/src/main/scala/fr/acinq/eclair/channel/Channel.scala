@@ -367,6 +367,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val error = Error(d.channelId, "Funding tx timed out".getBytes)
       goto(CLOSED) sending error
 
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
+      log.info(s"received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist their message, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleInformationLeak(d)
@@ -389,6 +396,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         context.system.scheduler.scheduleOnce(5 seconds, self, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, Random.nextInt(100), Random.nextInt(100)))
       }
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), None, None, None, None))
+
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
+      log.info(s"received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist their message, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_LOCKED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -643,21 +657,22 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) if d.commitments.announceChannel && d.shortChannelId.isEmpty =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex, sending announcements")
-      // TODO: empty features
-      val features = BinaryData("")
-      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(nodeParams.chainHash, shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey, features)
-      val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
-      stay using d.copy(localAnnouncementSignatures = Some(annSignatures)) sending annSignatures
+      val annSignatures = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId)
+      stay using store(d.copy(localAnnouncementSignatures = Some(annSignatures))) sending annSignatures
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d@DATA_NORMAL(commitments, None, _, _, _)) if d.commitments.announceChannel =>
-      // announce channels only if we want to and our peer too
-      // we would already have closed the connection if we require channels to be announced (even feature bit) but our
-      // peer does not want channels to be announced
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
+      // channels are publicly announced if both parties want it (defined as feature bit)
       d.localAnnouncementSignatures match {
+        case Some(localAnnSigs) if d.shortChannelId.isDefined =>
+          // this can happen if our announcement_signatures was lost during a disconnection
+          // specs says that we "MUST respond to the first announcement_signatures message after reconnection with its own announcement_signatures message"
+          // current implementation always replies to announcement_signatures, not only the first time
+          log.info(s"re-sending our announcement sigs")
+          stay sending localAnnSigs
         case Some(localAnnSigs) =>
           require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
           log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
-          import commitments.{localParams, remoteParams}
+          import d.commitments.{localParams, remoteParams}
           val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
           val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, localAnnSigs.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
@@ -671,10 +686,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
-          stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None))
+          stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId))) // note: we don't clear our announcement sigs because we may need to re-send them
         case None =>
           log.info(s"received remote announcement signatures, delaying")
           // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
+          // note: no need to persist their message, in case of disconnection they will resend it
           context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
           if (nodeParams.spv) {
             log.warning(s"HACK: since we cannot get the tx index in spv mode, we copy the value sent by remote")
@@ -1103,11 +1119,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           forwarder ! localShutdown
       }
 
-      // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
+      // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
+      // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
       // NB: in spv mode we currently can't get the tx index in block (which is used to calculate the short id)
       // instead, we rely on a hack by trusting the index the counterparty sends us
-      if (d.commitments.announceChannel && d.shortChannelId.isEmpty && !nodeParams.spv) {
+      if (d.commitments.announceChannel && d.localAnnouncementSignatures.isEmpty && !nodeParams.spv) {
         blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
+      }
+      // rfc: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
+      if (d.localAnnouncementSignatures.isDefined && d.shortChannelId.isEmpty) {
+        forwarder ! d.localAnnouncementSignatures.get
       }
 
       d.shortChannelId.map {
