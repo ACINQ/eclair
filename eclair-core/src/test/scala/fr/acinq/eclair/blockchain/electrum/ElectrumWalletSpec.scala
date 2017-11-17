@@ -92,7 +92,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
     val JString(txid) = probe.expectMsgType[JValue]
     logger.info(s"$txid send 1 btc to us at $address")
 
-    val WalletTransactionReceive(tx, 0, received, sent, _) = listener.receiveOne(5 seconds)
+    val TransactionReceived(tx, 0, received, sent, _) = listener.receiveOne(5 seconds)
     assert(tx.txid === BinaryData(txid))
     assert(received === Satoshi(100000000))
 
@@ -107,7 +107,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       val msg = listener.receiveOne(5 seconds)
-      msg == WalletTransactionConfidenceChanged(BinaryData(txid),1)
+      msg == TransactionConfidenceChanged(BinaryData(txid),1)
     }, max = 30 seconds, interval = 1 second)
   }
 
