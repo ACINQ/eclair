@@ -38,6 +38,7 @@ class ChannelCodecsSpec extends FunSuite {
       revocationSecret = randomKey.value,
       paymentKey = randomKey,
       delayedPaymentKey = randomKey.value,
+      htlcKey = randomKey,
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       shaSeed = randomBytes(32),
       isFunder = Random.nextBoolean(),
@@ -61,6 +62,7 @@ class ChannelCodecsSpec extends FunSuite {
       revocationBasepoint = randomKey.publicKey.value,
       paymentBasepoint = randomKey.publicKey.value,
       delayedPaymentBasepoint = randomKey.publicKey.value,
+      htlcBasepoint = randomKey.publicKey.value,
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
     val encoded = remoteParamsCodec.encode(o).require

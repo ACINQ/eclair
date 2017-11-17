@@ -277,8 +277,9 @@ object Peer {
       revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
       paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
       delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
+      htlcKey = generateKey(nodeParams, keyIndex :: 4L :: Nil),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
+      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 5L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures)

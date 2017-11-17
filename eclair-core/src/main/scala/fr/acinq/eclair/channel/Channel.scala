@@ -98,6 +98,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         revocationBasepoint = localParams.revocationBasepoint,
         paymentBasepoint = localParams.paymentBasepoint,
         delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
+        htlcBasepoint = localParams.htlcBasepoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint,
         channelFlags = channelFlags)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
@@ -162,6 +163,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             revocationBasepoint = localParams.revocationBasepoint,
             paymentBasepoint = localParams.paymentBasepoint,
             delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
+            htlcBasepoint = localParams.htlcBasepoint,
             firstPerCommitmentPoint = firstPerCommitmentPoint)
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
@@ -175,6 +177,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             revocationBasepoint = open.revocationBasepoint,
             paymentBasepoint = open.paymentBasepoint,
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
+            htlcBasepoint = open.htlcBasepoint,
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
@@ -209,6 +212,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             revocationBasepoint = accept.revocationBasepoint,
             paymentBasepoint = accept.paymentBasepoint,
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
+            htlcBasepoint = accept.htlcBasepoint,
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
