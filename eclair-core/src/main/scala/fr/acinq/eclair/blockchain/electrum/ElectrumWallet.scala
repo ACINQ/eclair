@@ -67,9 +67,6 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case Event(ElectrumClient.HeaderSubscriptionResponse(header), data) =>
       log.info(s"got new tip ${header.block_hash} at ${header.block_height}")
-      data.heights.collect {
-        case (txid, height) if height > 0 => statusListeners.map(_ ! WalletTransactionConfidenceChanged(txid, header.block_height - height + 1))
-      }
       stay using data.copy(tip = header)
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) => stay // we already have it
@@ -118,6 +115,20 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
         case ((heights, hashes), item) =>
           // otherwise we just update the height
           (heights + (item.tx_hash -> item.height), hashes)
+      }
+
+      // we now have updated height for all our transactions, tell our listeners that their confidence hash changed
+      // we skip transactions for which height = 0 which means they're still unconfirmed
+      // workflow is:
+      // client ---- header update ----> wallet
+      // client ---- status update ----> wallet
+      // client <--- ask history   ----> wallet
+      // client ---- history       ----> wallet
+      // so our tip (header.block_height) be up-to-date and our number of confirmation should be correct
+      heights1.collect {
+        case (txid, height) if height > 0 =>
+          log.info(s"tx=$txid has height $height and we're at ${data.tip.block_height}")
+          statusListeners.map(_ ! WalletTransactionConfidenceChanged(txid, data.tip.block_height - height + 1))
       }
       val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> history), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
