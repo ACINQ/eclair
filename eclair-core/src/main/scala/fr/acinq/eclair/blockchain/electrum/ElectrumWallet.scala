@@ -2,7 +2,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import java.io.File
 
-import akka.actor.{ActorRef, LoggingFSM, Props, Terminated}
+import akka.actor.{ActorRef, LoggingFSM, Props}
 import com.google.common.io.Files
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
@@ -15,15 +15,26 @@ import grizzled.slf4j.Logging
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
 
+/**
+  * Simple electrum wallet
+  *
+  * Typical workflow:
+  *
+  * client ---- header update ----> wallet
+  * client ---- status update ----> wallet
+  * client <--- ask history   ----- wallet
+  * client ---- history       ----> wallet
+  * client <--- ask tx        ----- wallet
+  * client ---- tx            ----> wallet
+  *
+  * @param mnemonics
+  * @param client
+  * @param params
+  */
 class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumWallet.WalletParameters) extends LoggingFSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
   import ElectrumWallet._
   import params._
-
-  val header = chainHash match {
-    case Block.RegtestGenesisBlock.hash => ElectrumClient.Header.RegtestGenesisHeader
-    case Block.TestnetGenesisBlock.hash => ElectrumClient.Header.TestnetGenesisHeader
-  }
 
   val seed = MnemonicCode.toSeed(mnemonics, "")
   val master = DeterministicWallet.generate(seed)
@@ -32,7 +43,6 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   val changeMaster = changeKey(master)
 
   client ! ElectrumClient.AddStatusListener(self)
-  val statusListeners = collection.mutable.HashSet.empty[ActorRef]
 
   // disconnected --> waitingForTip --> running --
   // ^                                            |
@@ -40,6 +50,10 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   //  --------------------------------------------
 
   startWith(DISCONNECTED, {
+    val header = chainHash match {
+      case Block.RegtestGenesisBlock.hash => ElectrumClient.Header.RegtestGenesisHeader
+      case Block.TestnetGenesisBlock.hash => ElectrumClient.Header.TestnetGenesisHeader
+    }
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
     Data(params, header, firstAccountKeys, firstChangeKeys)
@@ -68,7 +82,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case Event(ElectrumClient.HeaderSubscriptionResponse(header), data) =>
       log.info(s"got new tip ${header.block_hash} at ${header.block_height}")
       data.heights.collect {
-        case (txid, height) if height > 0 => statusListeners.map(_ ! WalletTransactionConfidenceChanged(txid, header.block_height - height + 1))
+        case (txid, height) if height > 0 =>
+          val confirmations = computeDepth(header.block_height, height)
+          context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
       }
       stay using data.copy(tip = header)
 
@@ -78,7 +94,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
       stay
 
-    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" => stay using data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
+    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" =>
+      val data1 = data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
+      goto(stateName) using data1
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
@@ -93,7 +111,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           // first time this script hash is used, need to generate a new key
           val newKey = if (isChange) derivePrivateKey(changeMaster, data.changeKeys.last.path.lastChildNumber + 1) else derivePrivateKey(accountMaster, data.accountKeys.last.path.lastChildNumber + 1)
           val newScriptHash = computeScriptHashFromPublicKey(newKey.publicKey)
-          log.info(s"generated key with index=${key.path.lastChildNumber} scriptHash=$newScriptHash key=${segwitAddress(key)} isChange=$isChange")
+          log.info(s"generated key with index=${newKey.path.lastChildNumber} scriptHash=$newScriptHash key=${segwitAddress(newKey)} isChange=$isChange")
           // listens to changes for the newly generated key
           client ! ElectrumClient.ScriptHashSubscription(newScriptHash, self)
           if (isChange) (data.accountKeys, data.changeKeys :+ newKey) else (data.accountKeys :+ newKey, data.changeKeys)
@@ -120,6 +138,24 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           // otherwise we just update the height
           (heights + (item.tx_hash -> item.height), hashes)
       }
+
+      // we now have updated height for all our transactions,
+      heights1.collect {
+        case (txid, height) =>
+          val confirmations = if (height <= 0) 0 else computeDepth(data.tip.block_height, height)
+          (data.heights.get(txid), height) match {
+            case (None, height) if height <= 0 =>
+            // height=0 => unconfirmed, height=-1 => unconfirmed and one input is unconfirmed
+            case (None, height) if height > 0 =>
+              // first time we get a height for this tx: either it was just confirmed, or we restarted the wallet
+              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+            case (Some(previousHeight), height) if previousHeight != height =>
+              // there was a reorg
+              context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
+            case (Some(previousHeight), height) if previousHeight == height =>
+            // no reorg, nothing to do
+          }
+      }
       val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> history), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
       manualTransition(data1)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
@@ -129,7 +165,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       data.computeTransactionDelta(tx) match {
         case Some((received, sent, fee_opt)) =>
           log.info(s"successfully connected txid=${tx.txid}")
-          statusListeners.map(_ ! WalletTransactionReceive(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
+          context.system.eventStream.publish(TransactionReceived(tx, data.computeTransactionDepth(tx.txid), received, sent, fee_opt))
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
           data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
@@ -155,7 +191,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       // we know all the parents
       val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
-      statusListeners.map(_ ! WalletTransactionReceive(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
+      context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
       manualTransition(data1)
       goto(stateName) using data1 replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
@@ -184,15 +220,6 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
-
-    case Event(ElectrumClient.AddStatusListener(actor), _) =>
-      context.watch(actor)
-      statusListeners += actor
-      stay
-
-    case Event(Terminated(actor), _) =>
-      statusListeners -= actor
-      stay
   }
 
   /**
@@ -202,8 +229,10 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     if (nextStateData.isReady(params.swipeRange)) {
       val ready = nextStateData.readyMessage
       log.info(s"wallet is ready with $ready")
-      statusListeners.map(_ ! ready)
-  }}
+      context.system.eventStream.publish(ready)
+      context.system.eventStream.publish(NewWalletReceiveAddress(nextStateData.currentReceiveAddress))
+    }
+  }
 
   initialize()
 
@@ -267,6 +296,8 @@ object ElectrumWallet {
   case class GetPrivateKey(address: String) extends Request
   case class GetPrivateKeyResponse(address: String, key: Option[ExtendedPrivateKey]) extends Response
 
+
+  sealed trait WalletEvent
   /**
     *
     * @param tx
@@ -275,10 +306,10 @@ object ElectrumWallet {
     * @param sent
     * @param feeOpt is set only when we know it (i.e. for outgoing transactions)
     */
-  case class WalletTransactionReceive(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi])
-  case class WalletTransactionConfidenceChanged(txid: BinaryData, depth: Long)
-
-  case class Ready(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long)
+  case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi]) extends WalletEvent
+  case class TransactionConfidenceChanged(txid: BinaryData, depth: Long) extends WalletEvent
+  case class NewWalletReceiveAddress(address: String) extends WalletEvent
+  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long) extends WalletEvent
   // @formatter:on
 
   /**
@@ -355,6 +386,8 @@ object ElectrumWallet {
     } getOrElse None
   }
 
+  def computeDepth(currentHeight: Long, txHeight: Long): Long = currentHeight - txHeight + 1
+
   case class Utxo(key: ExtendedPrivateKey, item: ElectrumClient.UnspentItem) {
     def outPoint: OutPoint = item.outPoint
   }
@@ -403,12 +436,13 @@ object ElectrumWallet {
     /**
       * The wallet is ready if all current keys have an empty status, and we don't have
       * any history/tx request pending
+      * NB: swipeRange * 2 because we have account keys and change keys
       */
-    def isReady(swipeRange: Int) = status.filter(_._2 == "").size >= swipeRange && pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
+    def isReady(swipeRange: Int) = status.filter(_._2 == "").size >= swipeRange * 2 && pendingHistoryRequests.isEmpty && pendingTransactionRequests.isEmpty
 
-    def readyMessage: Ready = {
+    def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
-      Ready(confirmed, unconfirmed, tip.block_height)
+      WalletReady(confirmed, unconfirmed, tip.block_height)
     }
 
     /**
@@ -420,8 +454,8 @@ object ElectrumWallet {
       */
     def currentReceiveKey = firstUnusedAccountKeys.headOption.getOrElse {
       // bad luck we are still looking for unused keys
-      // use the last account key
-      accountKeys.last
+      // use the first account key
+      accountKeys.head
     }
 
     def currentReceiveAddress = segwitAddress(currentReceiveKey)
@@ -435,8 +469,8 @@ object ElectrumWallet {
       */
     def currentChangeKey = firstUnusedChangeKeys.headOption.getOrElse {
       // bad luck we are still looking for unused keys
-      // use the last account key
-      changeKeys.last
+      // use the first account key
+      changeKeys.head
     }
 
     def currentChangeAddress = segwitAddress(currentChangeKey)
@@ -457,7 +491,7 @@ object ElectrumWallet {
 
     def isMine(txOut: TxOut): Boolean = publicScriptMap.contains(txOut.publicKeyScript)
 
-    def computeTransactionDepth(txid: BinaryData): Long = heights.get(txid).map(height => if (height > 0) tip.block_height - height + 1 else 0).getOrElse(0)
+    def computeTransactionDepth(txid: BinaryData): Long = heights.get(txid).map(height => if (height > 0) computeDepth(tip.block_height, height) else 0).getOrElse(0)
 
     /**
       *
