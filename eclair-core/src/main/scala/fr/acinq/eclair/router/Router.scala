@@ -64,8 +64,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   import ExecutionContext.Implicits.global
 
+  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+
+  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
+  setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
+
   val db = nodeParams.networkDb
 
+  // Note: We go through the whole validation process instead of directly loading into memory, because the channels
+  // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
+  // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
+  log.info(s"loading network announcements from db...")
   db.listChannels().map(self ! _)
   db.listNodes().map(self ! _)
   db.listChannelUpdates().map(self ! _)
@@ -73,16 +82,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
     self ! nodeAnn
   }
-
-  context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
-
-  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
-  setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
+  log.info(s"starting state machine")
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
   when(NORMAL) {
-
     case Event(TickValidate, d) =>
       require(d.awaiting.size == 0)
       var i = 0
@@ -101,7 +105,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   }
 
   when(WAITING_FOR_VALIDATION) {
-
     case Event(ParallelGetResponse(results), d) =>
       val validated = results.map {
         case IndividualResult(c, Some(tx), true) =>
@@ -145,7 +148,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   }
 
   whenUnhandled {
-
     case Event(ChannelStateChanged(_, _, _, _, channel.NORMAL, d: DATA_NORMAL), d1) =>
       stay using d1.copy(localChannels = d1.localChannels + (d.commitments.channelId -> d.commitments.remoteParams.nodeId))
 
