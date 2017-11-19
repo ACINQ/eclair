@@ -3,13 +3,14 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto, MilliSatoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.wire.{ChannelUpdate, PerHopPayload}
+import fr.acinq.eclair.{Globals, randomKey, toShortId}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PerHopPayload}
 import fr.acinq.eclair.payment._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
@@ -217,6 +218,44 @@ class RouteCalculationSpec extends FunSuite {
 
     assert(amt == 101641015L)
     assert(expiry == 442)
+  }
+
+  test("stale channels pruning") {
+    // set current block height
+    Globals.blockCount.set(500000)
+    // we only care about timestamps
+    def channelAnnouncement(shortChannelId: Long) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    def channelUpdate(shortChannelId: Long, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
+    def desc(shortChannelId: Long) = ChannelDesc(shortChannelId, randomKey.publicKey, randomKey.publicKey)
+    def daysAgoInBlocks(daysAgo: Int): Int = Globals.blockCount.get().toInt - 144 * daysAgo
+    def daysAgoInSeconds(daysAgo: Int): Long = Platform.currentTime / 1000 - daysAgo * 24 * 3600
+
+    // a is an old channel with an old channel update => PRUNED
+    val id_a = toShortId(daysAgoInBlocks(16), 0, 0)
+    val chan_a = channelAnnouncement(id_a)
+    val upd_a = channelUpdate(id_a, daysAgoInSeconds(30))
+    // b is an old channel with no channel update  => PRUNED
+    val id_b = toShortId(daysAgoInBlocks(16), 1, 0)
+    val chan_b = channelAnnouncement(id_b)
+    // c is an old channel with a recent channel update  => KEPT
+    val id_c = toShortId(daysAgoInBlocks(16), 2, 0)
+    val chan_c = channelAnnouncement(id_c)
+    val upd_c = channelUpdate(id_c, daysAgoInSeconds(2))
+    // d is a recent channel with a recent channel update  => KEPT
+    val id_d = toShortId(daysAgoInBlocks(2), 0, 0)
+    val chan_d = channelAnnouncement(id_d)
+    val upd_d = channelUpdate(id_d, daysAgoInSeconds(2))
+    // e is a recent channel with no channel update  => KEPT
+    val id_e = toShortId(daysAgoInBlocks(1), 0, 0)
+    val chan_e = channelAnnouncement(id_e)
+
+    val channels = Map(id_a -> chan_a, id_b -> chan_b, id_c -> chan_c, id_d -> chan_d, id_e -> chan_e)
+    val updates = Map(desc(id_a) -> upd_a, desc(id_c) -> upd_c, desc(id_d) -> upd_d)
+
+    val staleChannels = Router.getStaleChannels(channels, updates).toSet
+
+    assert(staleChannels === Set(id_a, id_b))
+
   }
 
 }

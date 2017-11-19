@@ -47,7 +47,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
   // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
-  context.system.scheduler.schedule(1 day, 1 day, self, TickRefreshChannelUpdate)
+  setTimer(TickRefreshChannelUpdate.toString, TickRefreshChannelUpdate, 1 day, repeat = true)
 
   /*
           8888888 888b    888 8888888 88888888888
