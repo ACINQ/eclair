@@ -14,12 +14,13 @@ import scala.concurrent.duration.{FiniteDuration, _}
 class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: Int, delay: FiniteDuration) extends Actor {
 
   import scala.concurrent.ExecutionContext.Implicits.global
-  val clock = context.system.scheduler.schedule(0 second, delay, self, 'tick)
+  import ThrottleForwarder.Tick
+  val clock = context.system.scheduler.schedule(0 second, delay, self, Tick)
 
   override def receive = group(messages)
 
   def group(messages: Iterable[Any]): Receive = {
-    case 'tick =>
+    case Tick =>
       messages.splitAt(chunkSize) match {
         case (Nil, _) =>
           clock.cancel()
@@ -35,5 +36,7 @@ class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: In
 object ThrottleForwarder {
 
   def props(target: ActorRef, messages: Iterable[Any], groupSize: Int, delay: FiniteDuration) = Props(new ThrottleForwarder(target, messages, groupSize, delay))
+
+  case object Tick
 
 }

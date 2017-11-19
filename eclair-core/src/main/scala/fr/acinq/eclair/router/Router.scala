@@ -49,6 +49,9 @@ sealed trait State
 case object NORMAL extends State
 case object WAITING_FOR_VALIDATION extends State
 
+case object TickBroadcast
+case object TickValidate
+
 // @formatter:on
 
 /**
@@ -73,14 +76,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
 
-  setTimer("broadcast", 'tick_broadcast, nodeParams.routerBroadcastInterval, repeat = true)
-  setTimer("validate", 'tick_validate, nodeParams.routerValidateInterval, repeat = true)
+  setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
+  setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
   when(NORMAL) {
 
-    case Event('tick_validate, d) =>
+    case Event(TickValidate, d) =>
       require(d.awaiting.size == 0)
       var i = 0
       // we extract a batch of channel announcements from the stash
@@ -251,9 +254,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       lostNodes.foreach(nodeId => db.removeNode(nodeId))
       stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
-    case Event('tick_validate, d) => stay // ignored
+    case Event(TickValidate, d) => stay // ignored
 
-    case Event('tick_broadcast, d) =>
+    case Event(TickBroadcast, d) =>
       d.rebroadcast match {
         case Nil => stay using d.copy(origins = Map.empty)
         case _ =>

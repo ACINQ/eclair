@@ -43,7 +43,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! chan_ax
     router ! chan_ay
     router ! chan_az
-    router ! 'tick_validate // we manually trigger a validation
+    router ! TickValidate // we manually trigger a validation
     watcher.expectMsg(ParallelGetRequest(chan_ac :: chan_ax :: chan_ay :: chan_az :: Nil))
     watcher.send(router, ParallelGetResponse(
       IndividualResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true) ::

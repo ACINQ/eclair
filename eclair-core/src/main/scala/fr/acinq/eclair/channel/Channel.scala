@@ -8,11 +8,11 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.wallet.{EclairWallet, MakeFundingTxResponse}
-import fr.acinq.eclair.channel.Channel.RefreshChannelUpdate
+import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.{Announcements, TickBroadcast}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 import org.bitcoinj.script.{Script => BitcoinjScript}
@@ -29,23 +29,25 @@ import scala.util.{Failure, Left, Random, Success, Try}
 object Channel {
   def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer))
 
-  case object RefreshChannelUpdate
+  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
+  val ANNOUNCEMENTS_MINCONF = 6
+
+  case object TickRefreshChannelUpdate
 
 }
 
 class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
-  val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
+  import Channel._
 
-  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
-  val ANNOUNCEMENTS_MINCONF = 6
+  val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
   // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
-  context.system.scheduler.schedule(1 day, 1 day, self, RefreshChannelUpdate)
+  context.system.scheduler.schedule(1 day, 1 day, self, TickRefreshChannelUpdate)
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -695,7 +697,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // TODO: remove this later when we use testnet/mainnet
           // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
           // we give 3 seconds for the router-watcher roundtrip
-          context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
+          context.system.scheduler.scheduleOnce(3 seconds, router, TickBroadcast)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
           stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId))) // note: we don't clear our announcement sigs because we may need to re-send them
@@ -712,7 +714,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           stay
       }
 
-    case Event(RefreshChannelUpdate, d: DATA_NORMAL) if d.shortChannelId.isDefined =>
+    case Event(TickRefreshChannelUpdate, d: DATA_NORMAL) if d.shortChannelId.isDefined =>
       d.shortChannelId match {
         case Some(shortChannelId) => // periodic refresh is used as a keep alive
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
@@ -1222,7 +1224,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CurrentFeerates(_), _) => stay
 
     // we only care about this event in NORMAL state, and the scheduler is never disabled
-    case Event(RefreshChannelUpdate, _) => stay
+    case Event(TickRefreshChannelUpdate, _) => stay
 
     // we receive this when we send command to ourselves
     case Event("ok", _) => stay

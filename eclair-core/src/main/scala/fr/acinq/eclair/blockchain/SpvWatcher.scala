@@ -33,8 +33,6 @@ class SpvWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Executio
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
   context.system.eventStream.subscribe(self, classOf[NewConfidenceLevel])
 
-  context.system.scheduler.schedule(10 seconds, 1 minute, self, 'tick)
-
   val broadcaster = context.actorOf(Props(new Broadcaster(kit: WalletAppKit)), name = "broadcaster")
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
