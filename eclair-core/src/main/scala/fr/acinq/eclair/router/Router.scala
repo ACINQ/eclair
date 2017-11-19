@@ -165,12 +165,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2}")
-      if (!Announcements.checkSigs(c)) {
+      if (d.channels.containsKey(c.shortChannelId) || d.awaiting.exists(_.shortChannelId == c.shortChannelId) || d.stash.contains(c)) {
+        log.debug(s"ignoring $c (duplicate)")
+        stay
+      } else if (!Announcements.checkSigs(c)) {
         log.error(s"bad signature for announcement $c")
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else if (d.channels.containsKey(c.shortChannelId) || d.awaiting.exists(_.shortChannelId == c.shortChannelId) || d.stash.contains(c)) {
-        log.debug(s"ignoring $c (duplicate)")
         stay
       } else {
         log.debug(s"stashing $c")
@@ -178,12 +178,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      if (!Announcements.checkSig(n)) {
+      if (d.nodes.containsKey(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
+        log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
+        stay
+      } else if (!Announcements.checkSig(n)) {
         log.error(s"bad signature for announcement $n")
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else if (d.nodes.containsKey(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
-        log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
         stay
       } else if (d.nodes.containsKey(n.nodeId)) {
         log.debug(s"updated node nodeId=${n.nodeId}")
@@ -209,13 +209,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (d.channels.contains(u.shortChannelId)) {
         val c = d.channels(u.shortChannelId)
         val desc = getDesc(u, c)
-        if (!Announcements.checkSig(u, getDesc(u, d.channels(u.shortChannelId)).a)) {
+        if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
+          log.debug(s"ignoring $u (old timestamp or duplicate)")
+          stay
+        } else if (!Announcements.checkSig(u, getDesc(u, d.channels(u.shortChannelId)).a)) {
           // TODO: (dirty) this will make the origin channel close the connection
           log.error(s"bad signature for announcement $u")
           sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-          stay
-        } else if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-          log.debug(s"ignoring $u (old timestamp or duplicate)")
           stay
         } else if (d.updates.contains(desc)) {
           log.debug(s"updated $u")
@@ -371,8 +371,8 @@ object Router {
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
-        .filterKeys(shortChannelId => fromShortId(shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-        .filterKeys(shortChannelId => !updates.values.exists(u => u.shortChannelId == shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
+      .filterKeys(shortChannelId => fromShortId(shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
+      .filterKeys(shortChannelId => !updates.values.exists(u => u.shortChannelId == shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
     staleChannels.keys
   }
 

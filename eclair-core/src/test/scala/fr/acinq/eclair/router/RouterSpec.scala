@@ -91,14 +91,14 @@ class RouterSpec extends BaseRouterSpec {
 
   test("handle bad signature for NodeAnnouncement") { case (router, _) =>
     val sender = TestProbe()
-    val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = 1)
+    val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
     sender.send(router, buggy_ann_a)
     sender.expectMsgType[Error]
   }
 
   test("handle bad signature for ChannelUpdate") { case (router, _) =>
     val sender = TestProbe()
-    val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = 1)
+    val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
     sender.send(router, buggy_channelUpdate_ab)
     sender.expectMsgType[Error]
   }
