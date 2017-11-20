@@ -4,7 +4,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.channel.{BITCOIN_OUTPUT_SPENT, BITCOIN_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
@@ -112,7 +112,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
 
   def makeParentAndFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponseWithParent] =
     for {
-    // ask for a new address and the corresponding private key
+      // ask for a new address and the corresponding private key
       JString(address) <- rpcClient.invoke("getnewaddress")
       JString(wif) <- rpcClient.invoke("dumpprivkey", address)
       JString(segwitAddress) <- rpcClient.invoke("addwitnessaddress", address)
@@ -183,15 +183,15 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     promise.future
   }
 
-  /**
-    * We don't manage double spends yet
-    * @param tx
-    * @return
-    */
-  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx).map(_ => true)
+  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
+    .map(_ => true) // if bitcoind says OK, then we consider the tx succesfully published
+    .recoverWith { case JsonRPCError(_) => getTransaction(tx.txid).map(_ => true).recover { case _ => false } } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
+    .recover { case _ => true } // in all other cases we consider that the tx has been published
 
 }
 
 object BitcoinCoreWallet {
+
   case class Options(lockUnspents: Boolean)
+
 }
