@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Error, NodeAnnouncement}
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -175,6 +175,15 @@ class RouterSpec extends BaseRouterSpec {
     "dot -Tpng" #< input #> output !
     val img = output.toByteArray
     Files.write(img, new File("graph.png"))*/
+  }
+
+  test("send routing state") { case (router, _) =>
+    val sender = TestProbe()
+    val receiver = TestProbe()
+    sender.send(router, SendRoutingState(receiver.ref))
+    for (_ <- 0 until 4) receiver.expectMsgType[ChannelAnnouncement]
+    for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
+    for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
   }
 
 }
