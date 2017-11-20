@@ -155,9 +155,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(_: ChannelStateChanged, _) => stay
 
     case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _, _)) =>
-      log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
+      // disabled on Android for performance reasons
+      //log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
       // we group and add delays to leave room for channel messages
-      context.actorOf(ThrottleForwarder.props(remote, channels.values ++ nodes.values ++ updates.values, 10, 50 millis))
+      //context.actorOf(ThrottleForwarder.props(remote, channels.values ++ nodes.values ++ updates.values, 10, 50 millis))
       stay
 
     case Event(c: ChannelAnnouncement, d) =>

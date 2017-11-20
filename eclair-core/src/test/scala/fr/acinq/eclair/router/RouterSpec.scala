@@ -181,9 +181,7 @@ class RouterSpec extends BaseRouterSpec {
     val sender = TestProbe()
     val receiver = TestProbe()
     sender.send(router, SendRoutingState(receiver.ref))
-    for (_ <- 0 until 4) receiver.expectMsgType[ChannelAnnouncement]
-    for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
-    for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
+    receiver.expectNoMsg(1 second)
   }
 
 }
