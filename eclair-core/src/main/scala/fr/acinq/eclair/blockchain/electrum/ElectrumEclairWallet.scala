@@ -29,6 +29,9 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
       case ElectrumClient.BroadcastTransactionResponse(tx, None) =>
         //tx broadcast successfully: commit tx
         wallet ? CommitTransaction(tx)
+      case ElectrumClient.BroadcastTransactionResponse(tx, Some(error)) if error.message.contains("transaction already in block chain") =>
+        // tx was already in the blockchain, that's weird but it is OK
+        wallet ? CommitTransaction(tx)
       case ElectrumClient.BroadcastTransactionResponse(_, Some(error)) =>
         //tx broadcast failed: cancel tx
         logger.error(s"cannot broadcast tx ${tx.txid}: $error")
@@ -38,11 +41,8 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
         logger.error(s"cannot broadcast tx ${tx.txid}: $error")
         wallet ? CancelTransaction(tx)
     } map {
-      case CommitTransactionResponse(tx) => true
-      case CancelTransactionResponse(tx) =>
-        logger.info(s"tx=${tx.txid} has been cancelled")
-        false
-      case _ => false
+      case CommitTransactionResponse(_) => true
+      case CancelTransactionResponse(_) => false
     }
 
   def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long) : Future[String] = {

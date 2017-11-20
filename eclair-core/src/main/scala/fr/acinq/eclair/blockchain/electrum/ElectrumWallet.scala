@@ -185,6 +185,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       }
 
     case Event(CommitTransaction(tx), data) =>
+      log.info(s"committing txid=${tx.txid}")
       val data1 = data.commitTransaction(tx)
       // we use the initial state to compute the effect of the tx
       // note: we know that computeTransactionDelta and the fee will be defined, because we built the tx ourselves so
@@ -196,6 +197,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       goto(stateName) using data1 replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
+      log.info(s"cancelling txid=${tx.txid}")
       stay using data.cancelTransaction(tx) replying CancelTransactionResponse(tx)
 
     case Event(bc@ElectrumClient.BroadcastTransaction(tx), _) =>

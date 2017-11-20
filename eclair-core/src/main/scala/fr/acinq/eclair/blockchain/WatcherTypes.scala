@@ -55,7 +55,6 @@ final case class WatchEventConfirmed(event: BitcoinEvent, blockHeight: Int, txIn
 final case class WatchEventSpent(event: BitcoinEvent, tx: Transaction) extends WatchEvent
 final case class WatchEventSpentBasic(event: BitcoinEvent) extends WatchEvent
 final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
-final case class WatchEventDoubleSpent(event: BitcoinEvent) extends WatchEvent
 
 /**
   * Publish the provided tx as soon as possible depending on locktime and csv

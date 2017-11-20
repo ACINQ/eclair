@@ -51,9 +51,6 @@ class BitcoinjWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Exe
           self ! TriggerEvent(w, WatchEventSpent(event, tx))
         case w@WatchConfirmed(_, txId, _, minDepth, event) if txId == tx.txid && confirmations >= minDepth =>
           self ! TriggerEvent(w, WatchEventConfirmed(event, blockHeight, 0))
-        case w@WatchConfirmed(_, txId, minDepth, _, event) if txId == tx.txid && confirmations == -1 =>
-          // the transaction watched was overriden by a competing tx
-          self ! TriggerEvent(w, WatchEventDoubleSpent(event))
       }
       context become watching(watches, block2tx, oldEvents.filterNot(_.tx.txid == tx.txid) :+ event, sent)
 
