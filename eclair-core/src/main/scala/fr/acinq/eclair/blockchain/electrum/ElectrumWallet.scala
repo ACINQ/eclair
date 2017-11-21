@@ -60,7 +60,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   })
 
   when(DISCONNECTED) {
-    case Event(ElectrumClient.Ready, data) =>
+    case Event(ElectrumClient.ElectrumReady, data) =>
       client ! ElectrumClient.HeaderSubscription(self)
       goto(WAITING_FOR_TIP) using data
   }
@@ -71,7 +71,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
       goto(RUNNING) using data.copy(tip = header)
 
-    case Event(ElectrumClient.Disconnected, data) =>
+    case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
       goto(DISCONNECTED) using data
   }
@@ -201,7 +201,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       client forward bc
       stay
 
-    case Event(ElectrumClient.Disconnected, data) =>
+    case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
       goto(DISCONNECTED) using data
   }

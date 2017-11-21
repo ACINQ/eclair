@@ -4,14 +4,12 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
-import akka.io.Tcp.{PeerClosed, _}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{Error, JsonRPCRequest, JsonRPCResponse}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{apply => _}
 import org.json4s.JsonAST._
 import org.json4s.jackson.JsonMethods
 import org.json4s.{DefaultFormats, JInt, JLong, JString}
@@ -38,6 +36,14 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
   override def unhandled(message: Any): Unit = {
     message match {
+      case _: Tcp.ConnectionClosed =>
+        val nextAddress = nextPeer()
+        log.warning(s"connection failed, trying $nextAddress")
+        self ! Tcp.Connect(nextAddress)
+        statusListeners.map(_ ! ElectrumDisconnected)
+        context.system.eventStream.publish(ElectrumDisconnected)
+        context become disconnected
+
       case Terminated(deadActor) =>
         val removeMe = addressSubscriptions collect {
           case (address, actor) if actor == deadActor => address
@@ -76,7 +82,12 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
     val serialized = compact(render(json))
     val bytes = (serialized + newline).getBytes
-    connection ! Write(ByteString.fromArray(bytes))
+    connection ! Tcp.Write(ByteString.fromArray(bytes))
+  }
+
+  private def nextPeer() = {
+    val nextPos = Random.nextInt(serverAddresses.size)
+    serverAddresses(nextPos)
   }
 
   private def updateBlockCount(blockCount: Long) = {
@@ -92,22 +103,23 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
   val scriptHashSubscriptions = collection.mutable.HashMap.empty[BinaryData, Set[ActorRef]]
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
 
-  self ! Connect(serverAddresses.head)
+  context.system.eventStream.publish(ElectrumDisconnected)
+  self ! Tcp.Connect(serverAddresses.head)
 
   var reqId = 0L
 
   def receive = disconnected
 
   def disconnected: Receive = {
-    case c: Connect =>
+    case c: Tcp.Connect =>
       log.info(s"connecting to $c")
       IO(Tcp) ! c
 
-    case Connected(remote, _) =>
+    case Tcp.Connected(remote, _) =>
       log.info(s"connected to $remote")
       connectionFailures.clear()
       val connection = sender()
-      connection ! Register(self)
+      connection ! Tcp.Register(self)
       val request = version
       send(connection, makeRequest(request, "" + reqId))
       reqId = reqId + 1
@@ -115,20 +127,17 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
     case AddStatusListener(actor) => statusListeners += actor
 
-    case CommandFailed(Connect(remoteAddress, _, _, _, _)) =>
-      val pos = serverAddresses.indexWhere(_ == remoteAddress)
-      val nextPos = (pos + 1) % serverAddresses.size
-      val nextAddress = serverAddresses(nextPos)
+    case Tcp.CommandFailed(Tcp.Connect(remoteAddress, _, _, _, _)) =>
+      val nextAddress = nextPeer()
       log.warning(s"connection to $remoteAddress failed, trying $nextAddress")
       connectionFailures.put(remoteAddress, connectionFailures.getOrElse(remoteAddress, 0L) + 1L)
       val count = connectionFailures.getOrElse(nextAddress, 0L)
-      val delay = Math.min(Math.pow(2.0, count), 60.0) seconds
-
-      context.system.scheduler.scheduleOnce(delay, self, Connect(nextAddress))
+      val delay = Math.min(Math.pow(2.0, count), 60.0) seconds;
+      context.system.scheduler.scheduleOnce(delay, self, Tcp.Connect(nextAddress))
   }
 
   def waitingForVersion(connection: ActorRef, remote: InetSocketAddress): Receive = {
-    case Received(data) =>
+    case Tcp.Received(data) =>
       val response = parseResponse(new String(data.toArray)).right.get
       val serverVersion = parseJsonResponse(version, response)
       log.debug(s"serverVersion=$serverVersion")
@@ -143,12 +152,13 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
   }
 
   def waitingForTip(connection: ActorRef, remote: InetSocketAddress): Receive = {
-    case Received(data) =>
+    case Tcp.Received(data) =>
       val response = parseResponse(new String(data.toArray)).right.get
       val header = parseHeader(response.result)
       log.debug(s"connected, tip = ${header.block_hash} $header")
       updateBlockCount(header.block_height)
-      statusListeners.map(_ ! Ready)
+      statusListeners.map(_ ! ElectrumReady)
+      context.system.eventStream.publish(ElectrumConnected)
       context become connected(connection, remote, header, "", Map.empty)
 
     case AddStatusListener(actor) => statusListeners += actor
@@ -157,7 +167,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
   def connected(connection: ActorRef, remoteAddress: InetSocketAddress, tip: Header, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
     case AddStatusListener(actor) =>
       statusListeners += actor
-      actor ! Ready
+      actor ! ElectrumReady
 
     case HeaderSubscription(actor) =>
       headerSubscriptions += actor
@@ -179,7 +189,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       reqId = reqId + 1
       context become connected(connection, remoteAddress, tip, buffer, requests + (curReqId -> (request, sender())))
 
-    case Received(data) =>
+    case Tcp.Received(data) =>
       val buffer1 = buffer + new String(data.toArray)
       val (jsons, buffer2) = buffer1.split(newline) match {
         case chunks if buffer1.endsWith(newline) => (chunks, "")
@@ -209,15 +219,6 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       log.info(s"new tip $newtip")
       updateBlockCount(newtip.block_height)
       context become connected(connection, remoteAddress, newtip, buffer, requests)
-
-    case PeerClosed =>
-      val pos = serverAddresses.indexWhere(_ == remoteAddress)
-      val nextPos = (pos + 1) % serverAddresses.size
-      val nextAddress = serverAddresses(nextPos)
-      log.warning(s"connection to $remoteAddress failed, trying $nextAddress")
-      self ! Connect(nextAddress)
-      statusListeners.map(_ ! Disconnected)
-      context become disconnected
   }
 
 }
@@ -311,8 +312,11 @@ object ElectrumClient {
   case class ServerError(request: Request, error: Error) extends Response
   case class AddStatusListener(actor: ActorRef) extends Response
 
-  case object Ready
-  case object Disconnected
+  sealed trait ElectrumEvent
+  case object ElectrumConnected extends ElectrumEvent
+  case object ElectrumReady extends ElectrumEvent
+  case object ElectrumDisconnected extends ElectrumEvent
+
   // @formatter:on
 
   def parseResponse(input: String): Either[Response, JsonRPCResponse] = {

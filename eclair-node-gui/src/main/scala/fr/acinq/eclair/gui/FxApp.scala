@@ -11,7 +11,8 @@ import javafx.stage.{Popup, Screen, Stage, WindowEvent}
 
 import akka.actor.{ActorSystem, Props, SupervisorStrategy}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQEvents
+import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
 import fr.acinq.eclair.payment.PaymentEvent
@@ -67,7 +68,8 @@ class FxApp extends Application with Logging {
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
-          setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvents])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)
           import scala.concurrent.ExecutionContext.Implicits.global
           pKit.future.onComplete {
