@@ -81,7 +81,7 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](10 seconds)
+    sender.expectMsgType[JValue](30 seconds)
   }
 
   ignore("bitcoinj wallet commit") {

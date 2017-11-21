@@ -12,13 +12,13 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
-import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
 import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
+import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.{Server, Switchboard}
 import fr.acinq.eclair.payment._
@@ -105,8 +105,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     Globals.feeratesPerByte.set(defaultFeerates)
     Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    val feeProvider = chain match {
-      case "regtest" => new ConstantFeeProvider(defaultFeerates)
+    val feeProvider = (chain, bitcoin) match {
+      case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
+      case (_, Bitcoind(client)) => new FallbackFeeProvider(new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(client.rpcClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
       case _ => new FallbackFeeProvider(new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
