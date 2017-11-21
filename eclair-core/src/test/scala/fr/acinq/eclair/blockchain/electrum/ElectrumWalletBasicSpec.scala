@@ -44,6 +44,16 @@ class ElectrumWalletBasicSpec extends FunSuite {
     assert(segwitAddress(priv) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
   }
 
+  test("implement BIP49") {
+    val mnemonics = "pizza afraid guess romance pair steel record jazz rubber prison angle hen heart engage kiss visual helmet twelve lady found between wave rapid twist".split(" ")
+    val seed = MnemonicCode.toSeed(mnemonics, "")
+    val master = DeterministicWallet.generate(seed)
+
+    val accountMaster = accountKey(master)
+    val firstKey = derivePrivateKey(accountMaster, 0)
+    assert(segwitAddress(firstKey) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
+  }
+
   ignore("complete transactions (enough funds)") {
     val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
