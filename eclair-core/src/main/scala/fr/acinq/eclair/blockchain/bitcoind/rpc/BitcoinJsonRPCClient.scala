@@ -8,12 +8,15 @@ import akka.http.scaladsl.marshalling.Marshal
 import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.{Authorization, BasicHttpCredentials}
 import akka.http.scaladsl.unmarshalling.Unmarshal
-import akka.stream.ActorMaterializer
+import akka.stream.{ActorMaterializer, OverflowStrategy, QueueOfferResult}
+import akka.stream.scaladsl.{Keep, Sink, Source}
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, jackson}
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.{Failure, Success}
 
 // @formatter:off
 case class JsonRPCRequest(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[Any])
@@ -26,16 +29,35 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
 
   val scheme = if (ssl) "https" else "http"
   val uri = Uri(s"$scheme://$host:$port")
-
-  implicit val materializer = ActorMaterializer()
-  val httpClient = Http(system)
   implicit val serialization = jackson.Serialization
   implicit val formats = DefaultFormats
+
+  implicit val materializer = ActorMaterializer()
+  val httpClientFlow = Http().cachedHostConnectionPool[Promise[HttpResponse]](host, port)
+
+  val queueSize = 512
+  val queue = Source.queue[(HttpRequest, Promise[HttpResponse])](queueSize, OverflowStrategy.dropNew)
+      .via(httpClientFlow)
+      .toMat(Sink.foreach({
+        case ((Success(resp), p)) => p.success(resp)
+        case ((Failure(e), p))    => p.failure(e)
+      }))(Keep.left)
+      .run()
+
+  def queueRequest(request: HttpRequest): Future[HttpResponse] = {
+    val responsePromise = Promise[HttpResponse]()
+    queue.offer(request -> responsePromise).flatMap {
+      case QueueOfferResult.Enqueued    => responsePromise.future
+      case QueueOfferResult.Dropped     => Future.failed(new RuntimeException("Queue overflowed. Try again later."))
+      case QueueOfferResult.Failure(ex) => Future.failed(ex)
+      case QueueOfferResult.QueueClosed => Future.failed(new RuntimeException("Queue was closed (pool shut down) while running the request. Try again later."))
+    }
+  }
 
   def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     for {
       entity <- Marshal(JsonRPCRequest(method = method, params = params)).to[RequestEntity]
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
+      httpRes <- queueRequest(HttpRequest(uri = "/", method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
       jsonRpcRes <- Unmarshal(httpRes).to[JsonRPCResponse].map {
         case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
         case o => o
@@ -47,7 +69,7 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
   def invoke(request: Seq[(String, Seq[Any])])(implicit ec: ExecutionContext): Future[Seq[JValue]] =
     for {
       entity <- Marshal(request.map(r => JsonRPCRequest(method = r._1, params = r._2))).to[RequestEntity]
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
+      httpRes <- queueRequest(HttpRequest(uri = "/", method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
       jsonRpcRes <- Unmarshal(httpRes).to[Seq[JsonRPCResponse]].map {
         //case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
         case o => o
