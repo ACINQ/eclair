@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain
+package fr.acinq.eclair.blockchain.bitcoinj
 
 import java.io.File
 import java.net.InetSocketAddress
@@ -10,7 +10,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{Satoshi, Script}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
-import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
+import fr.acinq.eclair.blockchain.{PublishAsap, WatchConfirmed, WatchEventConfirmed, WatchSpent}
 import fr.acinq.eclair.channel.{BITCOIN_FUNDING_DEPTHOK, BITCOIN_FUNDING_SPENT}
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Scripts
