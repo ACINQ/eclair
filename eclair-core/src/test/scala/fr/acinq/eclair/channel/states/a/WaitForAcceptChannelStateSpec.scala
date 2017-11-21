@@ -50,21 +50,10 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
       alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
       val error = alice2bob.expectMsgType[Error]
-      assert(new String(error.data) === "requirement failed: channelReserveSatoshis too high: ratio=0.3 max=0.05")
+      assert(new String(error.data) === "channelReserveSatoshis too high: reserve=300000 fundingRatio=0.3 maxFundingRatio=0.05")
       awaitCond(alice.stateName == CLOSED)
     }
   }
-
-  /*test("recv funding tx") { case (alice, alice2bob, bob2alice, alice2blockchain, blockchain) =>
-    within(30 seconds) {
-      bob2alice.expectMsgType[OpenChannel]
-      bob2alice.forward(alice)
-      alice2blockchain.expectMsgType[MakeFundingTx]
-      alice2blockchain.forward(blockchain)
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
-      alice2bob.expectMsgType[OpenChannel]
-    }
-  }*/
 
   test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {

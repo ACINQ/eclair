@@ -36,15 +36,6 @@ class WaitForFundingCreatedInternalStateSpec extends TestkitBaseClass with State
     test((alice, alice2bob, bob2alice, alice2blockchain))
   }
 
-  /*test("recv MakeFundingTxResponse") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
-    within(30 seconds) {
-      val makeFundingTx = alice2blockchain.expectMsgType[MakeFundingTx]
-      val dummyFundingTx = TestWallet.makeDummyFundingTx(makeFundingTx)
-      alice ! dummyFundingTx
-      awaitCond(alice.stateName == WAIT_FOR_FUNDING_SIGNED)
-    }
-  }*/
-
   test("recv Error") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes)
