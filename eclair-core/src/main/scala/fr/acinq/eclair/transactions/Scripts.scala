@@ -156,13 +156,13 @@ object Scripts {
     else tx.txIn.map(_.sequence).map(sequenceToBlockHeight).max
   }
 
-  def toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: Int, localDelayedPubkey: PublicKey) = {
+  def toLocalDelayed(revocationPubkey: PublicKey, toSelfDelay: Int, localDelayedPaymentPubkey: PublicKey) = {
     // @formatter:off
     OP_IF ::
       OP_PUSHDATA(revocationPubkey) ::
     OP_ELSE ::
       encodeNumber(toSelfDelay) :: OP_CHECKSEQUENCEVERIFY :: OP_DROP ::
-      OP_PUSHDATA(localDelayedPubkey) ::
+      OP_PUSHDATA(localDelayedPaymentPubkey) ::
     OP_ENDIF ::
     OP_CHECKSIG :: Nil
     // @formatter:on
@@ -181,17 +181,17 @@ object Scripts {
   def witnessToLocalDelayedWithRevocationSig(revocationSig: BinaryData, toLocalScript: BinaryData) =
     ScriptWitness(revocationSig :: BinaryData("01") :: toLocalScript :: Nil)
 
-  def htlcOffered(localPubkey: PublicKey, remotePubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData): Seq[ScriptElt] = {
+  def htlcOffered(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData): Seq[ScriptElt] = {
     // @formatter:off
     // To you with revocation key
     OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
     OP_IF ::
         OP_CHECKSIG ::
     OP_ELSE ::
-        OP_PUSHDATA(remotePubkey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+        OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP  :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
         OP_NOTIF ::
             // To me via HTLC-timeout transaction (timelocked).
-            OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
+            OP_DROP :: OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
             OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
             OP_CHECKSIG ::
@@ -213,18 +213,18 @@ object Scripts {
   def witnessClaimHtlcSuccessFromCommitTx(localSig: BinaryData, paymentPreimage: BinaryData, htlcOfferedScript: BinaryData) =
     ScriptWitness(localSig :: paymentPreimage :: htlcOfferedScript :: Nil)
 
-  def htlcReceived(localKey: PublicKey, remotePubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
+  def htlcReceived(localHtlcPubkey: PublicKey, remoteHtlcPubkey: PublicKey, revocationPubKey: PublicKey, paymentHash: BinaryData, lockTime: Long) = {
     // @formatter:off
     // To you with revocation key
     OP_DUP :: OP_HASH160 :: OP_PUSHDATA(revocationPubKey.hash160) :: OP_EQUAL ::
     OP_IF ::
         OP_CHECKSIG ::
     OP_ELSE ::
-        OP_PUSHDATA(remotePubkey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
+        OP_PUSHDATA(remoteHtlcPubkey) :: OP_SWAP :: OP_SIZE :: encodeNumber(32) :: OP_EQUAL ::
         OP_IF ::
             // To me via HTLC-success transaction.
             OP_HASH160 :: OP_PUSHDATA(paymentHash) :: OP_EQUALVERIFY ::
-            OP_2 :: OP_SWAP :: OP_PUSHDATA(localKey) :: OP_2 :: OP_CHECKMULTISIG ::
+            OP_2 :: OP_SWAP :: OP_PUSHDATA(localHtlcPubkey) :: OP_2 :: OP_CHECKMULTISIG ::
         OP_ELSE ::
             // To you after timeout.
             OP_DROP :: encodeNumber(lockTime) :: OP_CHECKLOCKTIMEVERIFY :: OP_DROP ::

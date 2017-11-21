@@ -1640,27 +1640,46 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv BITCOIN_FUNDING_DEEPLYBURIED", Tag("channels_public")) { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
-      val ann = alice2bob.expectMsgType[AnnouncementSignatures]
-      assert(alice.stateData.asInstanceOf[DATA_NORMAL] === initialState.copy(localAnnouncementSignatures = Some(ann)))
+      val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL] === initialState.copy(localAnnouncementSignatures = Some(annSigs)))
     }
   }
 
-  test("recv AnnouncementSignatures", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv AnnouncementSignatures", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
-      val annA = alice2bob.expectMsgType[AnnouncementSignatures]
+      val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
       sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
-      val annB = bob2alice.expectMsgType[AnnouncementSignatures]
+      val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
       // actual test starts here
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = Some(annB.shortChannelId)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = Some(annSigsB.shortChannelId), localAnnouncementSignatures = Some(annSigsA)))
+    }
+  }
+
+  test("recv AnnouncementSignatures (re-send)", Tag("channels_public")) { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val sender = TestProbe()
+      sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
+      val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
+      sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
+      val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
+      bob2alice.forward(alice)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = Some(annSigsB.shortChannelId), localAnnouncementSignatures = Some(annSigsA)))
+
+      // actual test starts here
+      // simulate bob re-sending its sigs
+      bob2alice.send(alice, annSigsA)
+      // alice re-sends her sigs
+      alice2bob.expectMsg(annSigsA)
     }
   }
 

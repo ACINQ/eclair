@@ -15,6 +15,8 @@ import scala.util.Try
   */
 class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) extends Actor with ActorLogging {
 
+  import ZMQActor._
+
   val ctx = new ZContext
 
   val subscriber = ctx.createSocket(ZMQ.SUB)
@@ -73,5 +75,15 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
       case topic => log.warning(s"unexpected topic=$topic")
     }
   }
+
+}
+
+object ZMQActor {
+
+  // @formatter:off
+  sealed trait ZMQEvent
+  case object ZMQConnected extends ZMQEvent
+  case object ZMQDisconnected extends ZMQEvent
+  // @formatter:on
 
 }

@@ -60,7 +60,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   })
 
   when(DISCONNECTED) {
-    case Event(ElectrumClient.Ready, data) =>
+    case Event(ElectrumClient.ElectrumReady, data) =>
       client ! ElectrumClient.HeaderSubscription(self)
       goto(WAITING_FOR_TIP) using data
   }
@@ -71,7 +71,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
       goto(RUNNING) using data.copy(tip = header)
 
-    case Event(ElectrumClient.Disconnected, data) =>
+    case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
       goto(DISCONNECTED) using data
   }
@@ -205,7 +205,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       client forward bc
       stay
 
-    case Event(ElectrumClient.Disconnected, data) =>
+    case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
       goto(DISCONNECTED) using data
   }
@@ -242,13 +242,16 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
 object ElectrumWallet {
 
+  // use 32 bytes seed, which will generate a 24 words mnemonic code
+  val SEED_BYTES_LENGTH = 32
+
   def props(mnemonics: Seq[String], client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(mnemonics, client, params))
 
   def props(file: File, client: ActorRef, params: WalletParameters): Props = {
     val entropy: BinaryData = (file.exists(), file.canRead(), file.isFile) match {
       case (true, true, true) => Files.toByteArray(file)
       case (false, _, _) =>
-        val buffer = randomBytes(16)
+        val buffer = randomBytes(SEED_BYTES_LENGTH)
         Files.write(buffer, file)
         buffer
       case _ => throw new IllegalArgumentException(s"cannot create wallet:$file exist but cannot read from")
@@ -344,18 +347,18 @@ object ElectrumWallet {
   def computeScriptHashFromPublicKey(key: PublicKey): BinaryData = Crypto.sha256(Script.write(computePublicKeyScript(key))).reverse
 
   /**
-    *
+    * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
     * @param master master key
-    * @return the BIP44 account key for this master key: m/44'/1'/0'/0
+    * @return the BIP49 account key for this master key: m/49'/1'/0'/0
     */
-  def accountKey(master: ExtendedPrivateKey) = DeterministicWallet.derivePrivateKey(master, hardened(44) :: hardened(1) :: hardened(0) :: 0L :: Nil)
+  def accountKey(master: ExtendedPrivateKey) = DeterministicWallet.derivePrivateKey(master, hardened(49) :: hardened(1) :: hardened(0) :: 0L :: Nil)
 
   /**
-    *
+    * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
     * @param master master key
-    * @return the BIP44 change key for this master key: m/44'/1'/0'/1
+    * @return the BIP49 change key for this master key: m/49'/1'/0'/1
     */
-  def changeKey(master: ExtendedPrivateKey) = DeterministicWallet.derivePrivateKey(master, hardened(44) :: hardened(1) :: hardened(0) :: 1L :: Nil)
+  def changeKey(master: ExtendedPrivateKey) = DeterministicWallet.derivePrivateKey(master, hardened(49) :: hardened(1) :: hardened(0) :: 1L :: Nil)
 
   def totalAmount(utxos: Seq[Utxo]): Satoshi = Satoshi(utxos.map(_.item.value).sum)
 

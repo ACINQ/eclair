@@ -1,7 +1,6 @@
 package fr.acinq.eclair.channel.states.b
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -31,11 +30,10 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     } else {
       (TestConstants.fundingSatoshis, TestConstants.pushMsat)
     }
-    val feeratePerKw = if (test.tags.contains("fee_too_low")) 100 else TestConstants.feeratePerKw
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     within(30 seconds) {
-      alice ! INPUT_INIT_FUNDER("00" * 32, fundingSatoshis, pushMsat, feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
+      alice ! INPUT_INIT_FUNDER("00" * 32, fundingSatoshis, pushMsat, TestConstants.feeratePerKw, Alice.channelParams, alice2bob.ref, bobInit, ChannelFlags.Empty)
       bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, bob2alice.ref, aliceInit)
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -57,37 +55,27 @@ class WaitForFundingCreatedStateSpec extends TestkitBaseClass with StateTestsHel
     }
   }
 
-  test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv FundingCreated (funder can't pay fees)", Tag("funder_below_reserve")) { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
-      val fees = Satoshi(Transactions.commitWeight * TestConstants.feeratePerKw / 1000)
-      val reserve = Satoshi(Bob.channelParams.channelReserveSatoshis)
-      alice2bob.expectMsgType[FundingCreated]
-      alice2bob.forward(bob)
-      val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === s"requirement failed: remote cannot pay the fees for the initial commit tx: toRemote=MilliSatoshi(100000) reserve=$reserve fees=$fees")
-      awaitCond(bob.stateName == CLOSED)
-    }
-  }
-
-  test("recv FundingCreated (fee too low)", Tag("fee_too_low")) { case (bob, alice2bob, bob2alice, bob2blockchain) =>
-    within(30 seconds) {
+      val fees = Transactions.commitWeight * TestConstants.feeratePerKw / 1000
+      val reserve = Bob.channelParams.channelReserveSatoshis
+      val missing = 100 - fees - reserve
       val fundingCreated = alice2bob.expectMsgType[FundingCreated]
       alice2bob.forward(bob)
       val error = bob2alice.expectMsgType[Error]
-      // we check that the error uses the temporary channel id
-      assert(error === Error(fundingCreated.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=100 localFeeratePerKw=10000".getBytes("UTF-8")))
+      assert(error === Error(fundingCreated.temporaryChannelId, s"can't pay the fee: missingSatoshis=${-1 * missing} reserveSatoshis=$reserve feesSatoshis=$fees".getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv Error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv Error") { case (bob, _, _, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes)
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv CMD_CLOSE") { case (bob, _, _, _) =>
     within(30 seconds) {
       bob ! CMD_CLOSE(None)
       awaitCond(bob.stateName == CLOSED)

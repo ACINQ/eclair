@@ -161,8 +161,9 @@ final case class LocalParams(nodeId: PublicKey,
                              maxAcceptedHtlcs: Int,
                              fundingPrivKey: PrivateKey,
                              revocationSecret: Scalar,
-                             paymentKey: PrivateKey,
+                             paymentKey: Scalar,
                              delayedPaymentKey: Scalar,
+                             htlcKey: Scalar,
                              defaultFinalScriptPubKey: BinaryData,
                              shaSeed: BinaryData,
                              isFunder: Boolean,
@@ -172,6 +173,7 @@ final case class LocalParams(nodeId: PublicKey,
   val paymentBasepoint = paymentKey.toPoint
   val delayedPaymentBasepoint = delayedPaymentKey.toPoint
   val revocationBasepoint = revocationSecret.toPoint
+  val htlcBasepoint = htlcKey.toPoint
 }
 
 final case class RemoteParams(nodeId: PublicKey,
@@ -185,6 +187,7 @@ final case class RemoteParams(nodeId: PublicKey,
                               revocationBasepoint: Point,
                               paymentBasepoint: Point,
                               delayedPaymentBasepoint: Point,
+                              htlcBasepoint: Point,
                               globalFeatures: BinaryData,
                               localFeatures: BinaryData)
 

@@ -26,8 +26,9 @@ object ChannelCodecs {
       ("maxAcceptedHtlcs" | uint16) ::
       ("fundingPrivKey" | privateKey) ::
       ("revocationSecret" | scalar) ::
-      ("paymentKey" | privateKey) ::
+      ("paymentKey" | scalar) ::
       ("delayedPaymentKey" | scalar) ::
+      ("htlcKey" | scalar) ::
       ("defaultFinalScriptPubKey" | varsizebinarydata) ::
       ("shaSeed" | varsizebinarydata) ::
       ("isFunder" | bool) ::
@@ -46,6 +47,7 @@ object ChannelCodecs {
       ("revocationBasepoint" | point) ::
       ("paymentBasepoint" | point) ::
       ("delayedPaymentBasepoint" | point) ::
+      ("htlcBasepoint" | point) ::
       ("globalFeatures" | varsizebinarydata) ::
       ("localFeatures" | varsizebinarydata)).as[RemoteParams]
 

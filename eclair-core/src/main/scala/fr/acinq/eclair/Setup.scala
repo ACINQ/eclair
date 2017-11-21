@@ -8,10 +8,10 @@ import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.NodeParams.{BITCOINJ, ELECTRUM}
-import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
+import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.io.Switchboard
 import fr.acinq.eclair.payment._
@@ -71,8 +71,8 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     Globals.feeratesPerByte.set(defaultFeerates)
     Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    val feeProvider = chain match {
-      case "regtest" => new ConstantFeeProvider(defaultFeerates)
+    val feeProvider = (chain, bitcoin) match {
+      case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
       case _ => new FallbackFeeProvider(new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {

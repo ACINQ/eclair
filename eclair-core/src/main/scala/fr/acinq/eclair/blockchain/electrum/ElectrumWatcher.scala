@@ -37,7 +37,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
   def receive = disconnected(Set.empty, Nil, SortedMap.empty)
 
   def disconnected(watches: Set[Watch], publishQueue: Seq[PublishAsap], block2tx: SortedMap[Long, Seq[Transaction]]): Receive = {
-    case ElectrumClient.Ready =>
+    case ElectrumClient.ElectrumReady =>
       client ! ElectrumClient.HeaderSubscription(self)
     case ElectrumClient.HeaderSubscriptionResponse(header) =>
       watches.map(self ! _)
@@ -182,7 +182,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       }
       context become running(tip, watches, scriptHashStatus, block2tx, sent diff Seq(tx))
 
-    case ElectrumClient.Disconnected =>
+    case ElectrumClient.ElectrumDisconnected =>
       // we remember watches and keep track of tx that have not yet been published
       // we also re-send the txes that we previsouly sent but hadn't yet received the confirmation
       context become disconnected(watches, sent.map(PublishAsap(_)), block2tx)
@@ -205,7 +205,7 @@ object ElectrumWatcher extends App {
     }
 
     def receive = {
-      case ElectrumClient.Ready =>
+      case ElectrumClient.ElectrumReady =>
         log.info(s"starting watcher")
         context become running(context.actorOf(Props(new ElectrumWatcher(client)), "watcher"))
     }

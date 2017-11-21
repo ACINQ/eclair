@@ -68,7 +68,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     startElectrum
     electrumClient = system.actorOf(Props(new ElectrumClient(Seq(new InetSocketAddress("localhost", 51001)))))
     sender.send(electrumClient, ElectrumClient.AddStatusListener(sender.ref))
-    sender.expectMsg(3 seconds, ElectrumClient.Ready)
+    sender.expectMsg(3 seconds, ElectrumClient.ElectrumReady)
   }
 
   override protected def afterAll(): Unit = {

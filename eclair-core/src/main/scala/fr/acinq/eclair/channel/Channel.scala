@@ -99,6 +99,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         revocationBasepoint = localParams.revocationBasepoint,
         paymentBasepoint = localParams.paymentBasepoint,
         delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
+        htlcBasepoint = localParams.htlcBasepoint,
         firstPerCommitmentPoint = firstPerCommitmentPoint,
         channelFlags = channelFlags)
       goto(WAIT_FOR_ACCEPT_CHANNEL) using DATA_WAIT_FOR_ACCEPT_CHANNEL(initFunder, open) sending open
@@ -137,8 +138,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
-    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(_, localParams, _, remoteInit))) =>
-      Try(Helpers.validateParamsFundee(nodeParams, open.channelReserveSatoshis, open.fundingSatoshis, open.chainHash)) match {
+    case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(temporaryChannelId, localParams, _, remoteInit))) =>
+      Try(Helpers.validateParamsFundee(temporaryChannelId, nodeParams, open.channelReserveSatoshis, open.fundingSatoshis, open.chainHash, open.feeratePerKw)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(open.temporaryChannelId, t.getMessage.getBytes)
@@ -160,6 +161,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             revocationBasepoint = localParams.revocationBasepoint,
             paymentBasepoint = localParams.paymentBasepoint,
             delayedPaymentBasepoint = localParams.delayedPaymentBasepoint,
+            htlcBasepoint = localParams.htlcBasepoint,
             firstPerCommitmentPoint = firstPerCommitmentPoint)
           val remoteParams = RemoteParams(
             nodeId = remoteNodeId,
@@ -173,6 +175,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             revocationBasepoint = open.revocationBasepoint,
             paymentBasepoint = open.paymentBasepoint,
             delayedPaymentBasepoint = open.delayedPaymentBasepoint,
+            htlcBasepoint = open.htlcBasepoint,
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
@@ -188,7 +191,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit, _), open)) =>
-      Try(Helpers.validateParamsFunder(nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
+      Try(Helpers.validateParamsFunder(temporaryChannelId, nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(temporaryChannelId, t.getMessage.getBytes)
@@ -207,6 +210,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             revocationBasepoint = accept.revocationBasepoint,
             paymentBasepoint = accept.paymentBasepoint,
             delayedPaymentBasepoint = accept.delayedPaymentBasepoint,
+            htlcBasepoint = accept.htlcBasepoint,
             globalFeatures = remoteInit.globalFeatures,
             localFeatures = remoteInit.localFeatures)
           log.debug(s"remote params: $remoteParams")
@@ -227,7 +231,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
     case Event(MakeFundingTxResponse(fundingTx, fundingTxOutputIndex), data@DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, open)) =>
       // let's create the first commitment tx that spends the yet uncommitted funding tx
-      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTx.hash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
       require(fundingTx.txOut(fundingTxOutputIndex).publicKeyScript == localCommitTx.input.txOut.publicKeyScript, s"pubkey script mismatch!")
       val localSigOfRemoteTx = Transactions.sign(remoteCommitTx, localParams.fundingPrivKey)
       // signature of their initial commitment tx that pays remote pushMsat
@@ -257,7 +261,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
     case Event(FundingCreated(_, fundingTxHash, fundingTxOutputIndex, remoteSig), DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, remoteFirstPerCommitmentPoint, channelFlags, _)) =>
       // they fund the channel with their funding tx, so the money is theirs (but we are paid pushMsat)
-      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(localParams, remoteParams, fundingSatoshis: Long, pushMsat, initialFeeratePerKw, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
+      val (localSpec, localCommitTx, remoteSpec, remoteCommitTx) = Funding.makeFirstCommitTxs(temporaryChannelId, localParams, remoteParams, fundingSatoshis: Long, pushMsat, initialFeeratePerKw, fundingTxHash, fundingTxOutputIndex, remoteFirstPerCommitmentPoint, nodeParams.maxFeerateMismatch)
 
       // check remote signature validity
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
@@ -310,6 +314,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
           val error = Error(channelId, cause.getMessage.getBytes)
+          // we rollback the funding tx, it will never be published
+          wallet.rollback(fundingTx)
           // we haven't published anything yet, we can just stop
           goto(CLOSED) sending error
         case Success(_) =>
@@ -336,9 +342,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_CONFIRMED) using nextState
       }
 
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+    case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+      // we rollback the funding tx, it will never be published
+      wallet.rollback(d.fundingTx)
+      goto(CLOSED)
 
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+      // we rollback the funding tx, it will never be published
+      wallet.rollback(d.fundingTx)
+      handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -363,6 +375,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val error = Error(d.channelId, "Funding tx timed out".getBytes)
       goto(ERR_FUNDING_TIMEOUT) sending error
 
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if d.commitments.announceChannel =>
+      log.info(s"received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist their message, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay
+
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, _), d: DATA_WAIT_FOR_FUNDING_CONFIRMED) => handleInformationLeak(d)
@@ -385,6 +404,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         context.system.scheduler.scheduleOnce(5 seconds, self, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, Random.nextInt(100), Random.nextInt(100)))
       }
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), None, None, None, None))
+
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_WAIT_FOR_FUNDING_LOCKED) if d.commitments.announceChannel =>
+      log.info(s"received remote announcement signatures, delaying")
+      // we may receive their announcement sigs before our watcher notifies us that the channel has reached min_conf (especially during testing when blocks are generated in bulk)
+      // note: no need to persist their message, in case of disconnection they will resend it
+      context.system.scheduler.scheduleOnce(2 seconds, self, remoteAnnSigs)
+      stay
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_FUNDING_LOCKED) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
@@ -640,21 +666,22 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) if d.commitments.announceChannel && d.shortChannelId.isEmpty =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex, sending announcements")
-      // TODO: empty features
-      val features = BinaryData("")
-      val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(nodeParams.chainHash, shortChannelId, nodeParams.privateKey, remoteNodeId, d.commitments.localParams.fundingPrivKey, d.commitments.remoteParams.fundingPubKey, features)
-      val annSignatures = AnnouncementSignatures(d.channelId, shortChannelId, localNodeSig, localBitcoinSig)
-      stay using d.copy(localAnnouncementSignatures = Some(annSignatures)) sending annSignatures
+      val annSignatures = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId)
+      stay using store(d.copy(localAnnouncementSignatures = Some(annSignatures))) sending annSignatures
 
-    case Event(remoteAnnSigs: AnnouncementSignatures, d@DATA_NORMAL(commitments, None, _, _, _)) if d.commitments.announceChannel =>
-      // announce channels only if we want to and our peer too
-      // we would already have closed the connection if we require channels to be announced (even feature bit) but our
-      // peer does not want channels to be announced
+    case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
+      // channels are publicly announced if both parties want it (defined as feature bit)
       d.localAnnouncementSignatures match {
+        case Some(localAnnSigs) if d.shortChannelId.isDefined =>
+          // this can happen if our announcement_signatures was lost during a disconnection
+          // specs says that we "MUST respond to the first announcement_signatures message after reconnection with its own announcement_signatures message"
+          // current implementation always replies to announcement_signatures, not only the first time
+          log.info(s"re-sending our announcement sigs")
+          stay sending localAnnSigs
         case Some(localAnnSigs) =>
           require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
           log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
-          import commitments.{localParams, remoteParams}
+          import d.commitments.{localParams, remoteParams}
           val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
           val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, localAnnSigs.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
@@ -668,10 +695,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
-          stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId), localAnnouncementSignatures = None))
+          stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId))) // note: we don't clear our announcement sigs because we may need to re-send them
         case None =>
           log.info(s"received remote announcement signatures, delaying")
           // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
+          // note: no need to persist their message, in case of disconnection they will resend it
           context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
           if (nodeParams.watcherType == BITCOINJ) {
             log.warning(s"HACK: since we cannot get the tx index with bitcoinj, we copy the value sent by remote")
@@ -1043,6 +1071,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info("shutting down")
       stop(FSM.Normal)
 
+    case Event(MakeFundingTxResponse(fundingTx, _), _) =>
+      // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
+      // in that case we rollback the tx
+      wallet.rollback(fundingTx)
+      stay
+
     case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymoer
   })
 
@@ -1102,11 +1136,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           forwarder ! localShutdown
       }
 
-      // we put back the watch (operation is idempotent) because the event may have been fired while we were in OFFLINE
-      // NB: in spv mode we currently can't get the tx index in block (which is used to calculate the short id)
+      // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
+      // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
+      // NB: in BITCOINJ mode we currently can't get the tx index in block (which is used to calculate the short id)
       // instead, we rely on a hack by trusting the index the counterparty sends us
-      if (d.commitments.announceChannel && d.shortChannelId.isEmpty && nodeParams.watcherType != BITCOINJ) {
+      if (d.commitments.announceChannel && d.localAnnouncementSignatures.isEmpty && nodeParams.watcherType != BITCOINJ) {
         blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
+      }
+      // rfc: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
+      if (d.localAnnouncementSignatures.isDefined && d.shortChannelId.isEmpty) {
+        forwarder ! d.localAnnouncementSignatures.get
       }
 
       d.shortChannelId.map {

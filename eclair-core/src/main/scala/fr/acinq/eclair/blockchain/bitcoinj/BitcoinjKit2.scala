@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.spv
+package fr.acinq.eclair.blockchain.bitcoinj
 
 import java.io.File
 

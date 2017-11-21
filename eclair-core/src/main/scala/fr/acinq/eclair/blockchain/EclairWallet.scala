@@ -28,6 +28,13 @@ trait EclairWallet {
     */
   def commit(tx: Transaction): Future[Boolean]
 
+  /**
+    * Cancels this transaction: this probably translates to "release locks on utxos".
+    * @param tx
+    * @return
+    */
+  def rollback(tx: Transaction): Future[Boolean]
+
 }
 
 final case class MakeFundingTxResponse(fundingTx: Transaction, fundingTxOutputIndex: Int)

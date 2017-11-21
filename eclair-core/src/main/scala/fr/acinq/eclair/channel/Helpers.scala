@@ -5,10 +5,11 @@ import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.Generators
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, NodeParams}
 import grizzled.slf4j.Logging
 
@@ -37,14 +38,21 @@ object Helpers {
     case d: HasCommitments => d.channelId
   }
 
-  def validateParamsFunder(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+  def validateParamsFunder(temporaryChannelId: BinaryData, nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
     val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-    require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
+    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
+      throw new ChannelReserveTooHigh(temporaryChannelId, channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+    }
   }
 
-  def validateParamsFundee(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData): Unit = {
+  def validateParamsFundee(temporaryChannelId: BinaryData, nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData, initialFeeratePerKw: Long): Unit = {
     require(nodeParams.chainHash == chainHash, s"invalid chain hash $chainHash (we are on ${nodeParams.chainHash})")
-    validateParamsFunder(nodeParams, channelReserveSatoshis, fundingSatoshis)
+    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
+    // we are fundee => initialFeeratePerKw has been set by remote
+    if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) {
+      throw new FeerateTooDifferent(temporaryChannelId, localFeeratePerKw, initialFeeratePerKw)
+    }
+    validateParamsFunder(temporaryChannelId, nodeParams, channelReserveSatoshis, fundingSatoshis)
   }
 
   /**
@@ -71,6 +79,13 @@ object Helpers {
   def isFeeDiffTooHigh(remoteFeeratePerKw: Long, localFeeratePerKw: Long, maxFeerateMismatchRatio: Double): Boolean = {
     // negative feerate can happen in regtest mode
     remoteFeeratePerKw > 0 && feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
+  }
+
+  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: Long) = {
+    // TODO: empty features
+    val features = BinaryData("")
+    val (localNodeSig, localBitcoinSig) = Announcements.signChannelAnnouncement(nodeParams.chainHash, shortChannelId, nodeParams.privateKey, commitments.remoteParams.nodeId, commitments.localParams.fundingPrivKey, commitments.remoteParams.fundingPubKey, features)
+    AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
   def getFinalScriptPubKey(wallet: EclairWallet): BinaryData = {
@@ -102,24 +117,21 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
 
-      // TODO: should we check the fees sooner in the process?
       if (!localParams.isFunder) {
-        // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
-        val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
-        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
-          throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
+        // they are funder, therefore they pay the fee: we need to make sure they can afford it!
+        val toRemoteMsat = remoteSpec.toLocalMsat
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec).amount
+        val missing = toRemoteMsat / 1000 - localParams.channelReserveSatoshis - fees
+        if (missing < 0) {
+          throw CannotAffordFees(temporaryChannelId, missingSatoshis = -1 * missing, reserveSatoshis = localParams.channelReserveSatoshis, feesSatoshis = fees)
         }
-        val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
-        val reserve = Satoshi(localParams.channelReserveSatoshis)
-        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec)
-        require(toRemote >= reserve + fees, s"remote cannot pay the fees for the initial commit tx: toRemote=$toRemote reserve=$reserve fees=$fees")
       }
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)
@@ -275,8 +287,9 @@ object Helpers {
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
-      val remotePubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
+      val localPaymentPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
+      val localHtlcPrivkey = Generators.derivePrivKey(localParams.htlcKey, remoteCommit.remotePerCommitmentPoint)
+      val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
       val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
       val localRevocationPubKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
       val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationBasepoint, remoteCommit.remotePerCommitmentPoint)
@@ -288,9 +301,9 @@ object Helpers {
 
       // first we will claim our main output right away
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
-        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = Transactions.sign(claimMain, localPrivkey)
-        Transactions.addSigs(claimMain, localPrivkey.publicKey, sig)
+        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPaymentPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
+        val sig = Transactions.sign(claimMain, localPaymentPrivkey)
+        Transactions.addSigs(claimMain, localPaymentPrivkey.publicKey, sig)
       })
 
       // those are the preimages to existing received htlcs
@@ -301,8 +314,8 @@ object Helpers {
         // incoming htlc for which we have the preimage: we spend it directly
         case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
-          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
-          val sig = Transactions.sign(tx, localPrivkey)
+          val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localHtlcPrivkey.publicKey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
+          val sig = Transactions.sign(tx, localHtlcPrivkey)
           Transactions.addSigs(tx, sig, preimage)
         })
 
@@ -310,8 +323,8 @@ object Helpers {
 
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case DirectedHtlc(IN, add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
-          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localPrivkey.publicKey, remotePubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
-          val sig = Transactions.sign(tx, localPrivkey)
+          val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localHtlcPrivkey.publicKey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
+          val sig = Transactions.sign(tx, localHtlcPrivkey)
           Transactions.addSigs(tx, sig)
         })
       }.toSeq.flatten
@@ -352,7 +365,7 @@ object Helpers {
         .map { remotePerCommitmentSecret =>
           val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
 
-          val remoteDelayedPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
+          val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
           val remoteRevocationPrivkey = Generators.revocationPrivKey(localParams.revocationSecret, remotePerCommitmentSecret)
           val localPrivkey = Generators.derivePrivKey(localParams.paymentKey, remotePerCommitmentPoint)
 
@@ -371,7 +384,7 @@ object Helpers {
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
             // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-            val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPubkey, feeratePerKwPenalty)
+            val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
             val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
             Transactions.addSigs(txinfo, sig)
           })
