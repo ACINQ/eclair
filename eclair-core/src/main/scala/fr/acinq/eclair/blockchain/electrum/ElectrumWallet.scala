@@ -56,7 +56,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     }
     val firstAccountKeys = (0 until params.swipeRange).map(i => derivePrivateKey(accountMaster, i)).toVector
     val firstChangeKeys = (0 until params.swipeRange).map(i => derivePrivateKey(changeMaster, i)).toVector
-    Data(params, header, firstAccountKeys, firstChangeKeys)
+    val data = Data(params, header, firstAccountKeys, firstChangeKeys)
+    context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
+    data
   })
 
   when(DISCONNECTED) {
