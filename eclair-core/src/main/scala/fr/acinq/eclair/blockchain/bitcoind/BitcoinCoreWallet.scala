@@ -1,10 +1,10 @@
-package fr.acinq.eclair.blockchain.wallet
+package fr.acinq.eclair.blockchain.bitcoind
 
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{Base58Check, BinaryData, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, JsonRPCError}
 import fr.acinq.eclair.channel.{BITCOIN_OUTPUT_SPENT, BITCOIN_TX_CONFIRMED}
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
@@ -14,6 +14,14 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
+  * Due to bitcoin-core wallet not fully supporting segwit txes yet, our current scheme is:
+  *   utxos <- parent-tx <- funding-tx
+  *
+  * With:
+  *   - utxos may be non-segwit
+  *   - parent-tx pays to a p2wpkh segwit output
+  *   - funding-tx is a segwit tx
+  *
   * Created by PM on 06/07/2017.
   */
 class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
@@ -52,6 +60,21 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
 
   def signTransaction(tx: Transaction): Future[SignTransactionResponse] =
     signTransaction(Transaction.write(tx).toString())
+
+  def getTransaction(txid: BinaryData): Future[Transaction] = {
+    rpcClient.invoke("getrawtransaction", txid.toString()).map(json => {
+      val JString(hex) = json
+      Transaction.read(hex)
+    })
+  }
+
+  def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
+    publishTransaction(Transaction.write(tx).toString())
+
+  def publishTransaction(hex: String)(implicit ec: ExecutionContext): Future[String] =
+    rpcClient.invoke("sendrawtransaction", hex) collect {
+      case JString(txid) => txid
+    }
 
   /**
     *
@@ -97,7 +120,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
 
   def makeParentAndFundingTx(pubkeyScript: BinaryData, amount: Satoshi, feeRatePerKw: Long): Future[MakeFundingTxResponseWithParent] =
     for {
-    // ask for a new address and the corresponding private key
+      // ask for a new address and the corresponding private key
       JString(address) <- rpcClient.invoke("getnewaddress")
       JString(wif) <- rpcClient.invoke("dumpprivkey", address)
       JString(segwitAddress) <- rpcClient.invoke("addwitnessaddress", address)
@@ -137,6 +160,8 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     val promise = Promise[MakeFundingTxResponse]()
     (for {
       fundingTxResponse@MakeFundingTxResponseWithParent(parentTx, _, _, _) <- makeParentAndFundingTx(pubkeyScript, amount, feeRatePerKw)
+      input0 = parentTx.txIn.head
+      parentOfParentTx <- getTransaction(input0.outPoint.txid)
       _ = logger.debug(s"built parentTxid=${parentTx.txid}, initializing temporary actor")
       tempActor = system.actorOf(Props(new Actor {
         override def receive: Receive = {
@@ -146,7 +171,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
               // set a new watch; if it is confirmed, we'll use it as the new parent for our funding tx
               logger.warn(s"parent tx has been malleated: originalParentTxid=${parentTx.txid} malleated=${spendingTx.txid}")
             }
-            watcher ! WatchConfirmed(self, spendingTx.txid, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
+            watcher ! WatchConfirmed(self, spendingTx.txid, spendingTx.txOut(0).publicKeyScript, minDepth = 1, BITCOIN_TX_CONFIRMED(spendingTx))
 
           case WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _) =>
             // a potential parent for our funding tx has been confirmed, let's update our funding tx
@@ -155,8 +180,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
         }
       }))
       // we watch the first input of the parent tx, so that we can detect when it is spent by a malleated avatar
-      input0 = parentTx.txIn.head
-      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT)
+      _ = watcher ! WatchSpent(tempActor, input0.outPoint.txid, input0.outPoint.index.toInt, parentOfParentTx.txOut(input0.outPoint.index.toInt).publicKeyScript, BITCOIN_OUTPUT_SPENT)
       // and we publish the parent tx
       _ = logger.info(s"publishing parent tx: txid=${parentTx.txid} tx=${Transaction.write(parentTx)}")
       // we use a small delay so that we are sure Publish doesn't race with WatchSpent (which is ok but generates unnecessary warnings)
@@ -167,15 +191,23 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     promise.future
   }
 
+  override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
+    .map(_ => true) // if bitcoind says OK, then we consider the tx succesfully published
+    .recoverWith { case JsonRPCError(_) => getTransaction(tx.txid).map(_ => true).recover { case _ => false } } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
+    .recover { case _ => true } // in all other cases we consider that the tx has been published
+
+
   /**
-    * We don't manage double spends yet
+    * We currently only put a lock on the parent tx inputs, and we publish the parent tx immediately so there is nothing
+    * to do here.
     * @param tx
     * @return
     */
-  override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
-
+  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
 }
 
 object BitcoinCoreWallet {
+
   case class Options(lockUnspents: Boolean)
+
 }

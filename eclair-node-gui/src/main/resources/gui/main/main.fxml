@@ -6,6 +6,8 @@
 <?import javafx.scene.layout.*?>
 <?import java.net.URL?>
 <?import javafx.scene.shape.Rectangle?>
+<?import javafx.scene.text.TextFlow?>
+<?import javafx.scene.text.Text?>
 <AnchorPane fx:id="root" minHeight="300.0" prefHeight="400.0" styleClass="root" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <children>
         <BorderPane AnchorPane.leftAnchor="0" AnchorPane.rightAnchor="0" AnchorPane.topAnchor="0" AnchorPane.bottomAnchor="0">
@@ -213,8 +215,18 @@
                         </ImageView>
                         <VBox spacing="10.0" GridPane.columnIndex="1">
                             <children>
-                                <Label fx:id="message" styleClass="text-strong" text="Lost connection to Bitcoin Core..." wrapText="true" />
-                                <Label fx:id="details" text="Make sure that Bitcoin core is up and running." wrapText="true" />
+                                <TextFlow>
+                                    <children>
+                                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" text="Lost connection to " />
+                                        <Text fx:id="blockerDialogTitleEngineName" strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-strong" />
+                                        <Text strokeType="OUTSIDE" styleClass="text-strong" strokeWidth="0.0" text="..." />
+                                    </children>
+                                </TextFlow>
+                                <TextFlow>
+                                    <children>
+                                        <Text strokeType="OUTSIDE" strokeWidth="0.0" styleClass="text-sm" text="Please check your connection." />
+                                    </children>
+                                </TextFlow>
                             </children>
                         </VBox>
                     </children>

@@ -120,7 +120,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             log.error(s"invalid script for shortChannelId=${c.shortChannelId} txid=${tx.txid} ann=$c")
             None
           } else {
-            watcher ! WatchSpentBasic(self, tx.txid, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+            watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId}")
             context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))

@@ -10,6 +10,7 @@ import fr.acinq.eclair.UInt64
 class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message)
 
 case class DebugTriggeredException             (channelId: BinaryData) extends ChannelException(channelId, "debug-mode triggered failure")
+case class ChannelReserveTooHigh               (channelId: BinaryData, channelReserveSatoshis: Long, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserveSatoshis too high: reserve=$channelReserveSatoshis fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
 case class ClosingInProgress                   (channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress            (channelId: BinaryData) extends ChannelException(channelId, "closing already in progress")
 case class CannotCloseWithUnsignedOutgoingHtlcs(channelId: BinaryData) extends ChannelException(channelId, "cannot close when there are unsigned outgoing htlcs")

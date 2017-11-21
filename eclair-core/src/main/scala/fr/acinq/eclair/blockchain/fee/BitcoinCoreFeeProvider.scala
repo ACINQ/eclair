@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain.fee
 
 import fr.acinq.bitcoin.Btc
-import fr.acinq.eclair.blockchain.rpc.BitcoinJsonRPCClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import org.json4s.JsonAST.{JDouble, JInt}
 
 import scala.concurrent.{ExecutionContext, Future}

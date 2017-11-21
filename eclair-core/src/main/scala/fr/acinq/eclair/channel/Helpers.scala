@@ -1,9 +1,9 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, sha256}
+import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
-import fr.acinq.eclair.blockchain.wallet.EclairWallet
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts._
@@ -38,14 +38,21 @@ object Helpers {
     case d: HasCommitments => d.channelId
   }
 
-  def validateParamsFunder(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
+  def validateParamsFunder(temporaryChannelId: BinaryData, nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
     val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-    require(reserveToFundingRatio <= nodeParams.maxReserveToFundingRatio, s"channelReserveSatoshis too high: ratio=$reserveToFundingRatio max=${nodeParams.maxReserveToFundingRatio}")
+    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
+      throw new ChannelReserveTooHigh(temporaryChannelId, channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
+    }
   }
 
-  def validateParamsFundee(nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData): Unit = {
+  def validateParamsFundee(temporaryChannelId: BinaryData, nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData, initialFeeratePerKw: Long): Unit = {
     require(nodeParams.chainHash == chainHash, s"invalid chain hash $chainHash (we are on ${nodeParams.chainHash})")
-    validateParamsFunder(nodeParams, channelReserveSatoshis, fundingSatoshis)
+    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
+    // we are fundee => initialFeeratePerKw has been set by remote
+    if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) {
+      throw new FeerateTooDifferent(temporaryChannelId, localFeeratePerKw, initialFeeratePerKw)
+    }
+    validateParamsFunder(temporaryChannelId, nodeParams, channelReserveSatoshis, fundingSatoshis)
   }
 
   /**
@@ -110,24 +117,21 @@ object Helpers {
       * @param remoteFirstPerCommitmentPoint
       * @return (localSpec, localTx, remoteSpec, remoteTx, fundingTxOutput)
       */
-    def makeFirstCommitTxs(localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
+    def makeFirstCommitTxs(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxHash: BinaryData, fundingTxOutputIndex: Int, remoteFirstPerCommitmentPoint: Point, maxFeerateMismatch: Double): (CommitmentSpec, CommitTx, CommitmentSpec, CommitTx) = {
       val toLocalMsat = if (localParams.isFunder) fundingSatoshis * 1000 - pushMsat else pushMsat
       val toRemoteMsat = if (localParams.isFunder) pushMsat else fundingSatoshis * 1000 - pushMsat
 
       val localSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toLocalMsat, toRemoteMsat = toRemoteMsat)
       val remoteSpec = CommitmentSpec(Set.empty[DirectedHtlc], feeratePerKw = initialFeeratePerKw, toLocalMsat = toRemoteMsat, toRemoteMsat = toLocalMsat)
 
-      // TODO: should we check the fees sooner in the process?
       if (!localParams.isFunder) {
-        // they are funder, we need to make sure that they can pay the fee is reasonable, and that they can afford to pay it
-        val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
-        if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
-          throw new RuntimeException(s"local/remote feerates are too different: remoteFeeratePerKw=$initialFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
+        // they are funder, therefore they pay the fee: we need to make sure they can afford it!
+        val toRemoteMsat = remoteSpec.toLocalMsat
+        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec).amount
+        val missing = toRemoteMsat / 1000 - localParams.channelReserveSatoshis - fees
+        if (missing < 0) {
+          throw CannotAffordFees(temporaryChannelId, missingSatoshis = -1 * missing, reserveSatoshis = localParams.channelReserveSatoshis, feesSatoshis = fees)
         }
-        val toRemote = MilliSatoshi(remoteSpec.toLocalMsat)
-        val reserve = Satoshi(localParams.channelReserveSatoshis)
-        val fees = Transactions.commitTxFee(Satoshi(remoteParams.dustLimitSatoshis), remoteSpec)
-        require(toRemote >= reserve + fees, s"remote cannot pay the fees for the initial commit tx: toRemote=$toRemote reserve=$reserve fees=$fees")
       }
 
       val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)

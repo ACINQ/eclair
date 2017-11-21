@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.rpc
+package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.{IndividualResult, ParallelGetResponse}

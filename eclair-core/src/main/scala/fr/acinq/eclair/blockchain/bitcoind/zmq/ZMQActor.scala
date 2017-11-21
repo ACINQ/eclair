@@ -1,4 +1,4 @@
-package fr.acinq.eclair.blockchain.zmq
+package fr.acinq.eclair.blockchain.bitcoind.zmq
 
 import akka.actor.{Actor, ActorLogging}
 import fr.acinq.bitcoin.{Block, Transaction}
@@ -14,6 +14,8 @@ import scala.util.Try
   * Created by PM on 04/04/2017.
   */
 class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) extends Actor with ActorLogging {
+
+  import ZMQActor._
 
   val ctx = new ZContext
 
@@ -73,5 +75,15 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
       case topic => log.warning(s"unexpected topic=$topic")
     }
   }
+
+}
+
+object ZMQActor {
+
+  // @formatter:off
+  sealed trait ZMQEvent
+  case object ZMQConnected extends ZMQEvent
+  case object ZMQDisconnected extends ZMQEvent
+  // @formatter:on
 
 }

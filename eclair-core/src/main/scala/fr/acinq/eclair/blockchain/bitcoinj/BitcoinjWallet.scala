@@ -1,6 +1,7 @@
-package fr.acinq.eclair.blockchain.wallet
+package fr.acinq.eclair.blockchain.bitcoinj
 
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction}
+import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.{Coin, Context, Transaction => BitcoinjTransaction}
 import org.bitcoinj.script.Script
@@ -56,4 +57,12 @@ class BitcoinjWallet(val fWallet: Future[Wallet])(implicit ec: ExecutionContext)
       _ = logger.info(s"commit txid=${tx.txid} result=$canCommit")
     } yield canCommit
   }
+
+  /**
+    * There are no locks on bitcoinj, this is a no-op
+    *
+    * @param tx
+    * @return
+    */
+  override def rollback(tx: Transaction) = Future.successful(true)
 }

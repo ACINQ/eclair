@@ -4,7 +4,6 @@ import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 
 import fr.acinq.eclair.blockchain.fee.{FeeratesPerByte, FeeratesPerKw}
 
-
 /**
   * Created by PM on 25/01/2016.
   */

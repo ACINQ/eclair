@@ -5,7 +5,7 @@ import java.sql.DriverManager
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
-import fr.acinq.eclair.TestConstants.Alice.sqlite
+import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb, SqlitePreimagesDb}
 import fr.acinq.eclair.io.Peer
 
@@ -57,7 +57,7 @@ object TestConstants {
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
-      spv = false)
+      watcherType = BITCOIND)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -106,7 +106,7 @@ object TestConstants {
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
-      spv = false)
+      watcherType = BITCOIND)
     def id = nodeParams.privateKey.publicKey
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

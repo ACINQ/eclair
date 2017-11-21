@@ -19,6 +19,7 @@ import javafx.scene.input.ContextMenuEvent
 import javafx.scene.layout.{AnchorPane, HBox, StackPane, VBox}
 import javafx.scene.paint.Color
 import javafx.scene.shape.Rectangle
+import javafx.scene.text.Text
 import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
 import javafx.util.{Callback, Duration}
@@ -117,6 +118,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
   @FXML var blocker: StackPane = _
   @FXML var blockerDialog: HBox = _
+  @FXML var blockerDialogTitleEngineName: Text = _
 
   val PAYMENT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
   val moneyFormatter = NumberFormat.getInstance(Locale.getDefault)
@@ -460,7 +462,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     receiveStage.show
   }
 
-  def showBlockerModal = {
+  def showBlockerModal(backendName: String) = {
+    blockerDialogTitleEngineName.setText(backendName)
     val fadeTransition = new FadeTransition(Duration.millis(300))
     fadeTransition.setFromValue(0)
     fadeTransition.setToValue(1)

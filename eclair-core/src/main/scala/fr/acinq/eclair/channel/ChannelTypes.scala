@@ -33,6 +33,7 @@ case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_INTERNAL extends State
 case object WAIT_FOR_FUNDING_CREATED extends State
 case object WAIT_FOR_FUNDING_SIGNED extends State
+case object WAIT_FOR_FUNDING_PUBLISHED extends State
 case object WAIT_FOR_FUNDING_CONFIRMED extends State
 case object WAIT_FOR_FUNDING_LOCKED extends State
 case object NORMAL extends State
@@ -42,6 +43,7 @@ case object CLOSING extends State
 case object CLOSED extends State
 case object OFFLINE extends State
 case object SYNCING extends State
+case object ERR_FUNDING_PUBLISH_FAILED extends State
 case object ERR_FUNDING_LOST extends State
 case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
@@ -66,6 +68,7 @@ case class INPUT_RECONNECTED(remote: ActorRef)
 case class INPUT_RESTORED(data: HasCommitments)
 
 sealed trait BitcoinEvent
+case object BITCOIN_FUNDING_PUBLISH_FAILED extends BitcoinEvent
 case object BITCOIN_FUNDING_DEPTHOK extends BitcoinEvent
 case object BITCOIN_FUNDING_DEEPLYBURIED extends BitcoinEvent
 case object BITCOIN_FUNDING_LOST extends BitcoinEvent
