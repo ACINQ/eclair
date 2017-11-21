@@ -18,6 +18,8 @@ class TestWallet extends EclairWallet {
     Future.successful(TestWallet.makeDummyFundingTx(pubkeyScript, amount, feeRatePerKw))
 
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
+
+  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
 }
 
 object TestWallet {

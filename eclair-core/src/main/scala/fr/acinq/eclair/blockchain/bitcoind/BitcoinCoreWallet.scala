@@ -14,6 +14,14 @@ import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
+  * Due to bitcoin-core wallet not fully supporting segwit txes yet, our current scheme is:
+  *   utxos <- parent-tx <- funding-tx
+  *
+  * With:
+  *   - utxos may be non-segwit
+  *   - parent-tx pays to a p2wpkh segwit output
+  *   - funding-tx is a segwit tx
+  *
   * Created by PM on 06/07/2017.
   */
 class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext) extends EclairWallet with Logging {
@@ -188,6 +196,14 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
     .recoverWith { case JsonRPCError(_) => getTransaction(tx.txid).map(_ => true).recover { case _ => false } } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published
     .recover { case _ => true } // in all other cases we consider that the tx has been published
 
+
+  /**
+    * We currently only put a lock on the parent tx inputs, and we publish the parent tx immediately so there is nothing
+    * to do here.
+    * @param tx
+    * @return
+    */
+  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
 }
 
 object BitcoinCoreWallet {

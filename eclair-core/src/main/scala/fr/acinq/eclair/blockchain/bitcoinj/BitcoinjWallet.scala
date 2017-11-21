@@ -57,4 +57,12 @@ class BitcoinjWallet(val fWallet: Future[Wallet])(implicit ec: ExecutionContext)
       _ = logger.info(s"commit txid=${tx.txid} result=$canCommit")
     } yield canCommit
   }
+
+  /**
+    * There are no locks on bitcoinj, this is a no-op
+    *
+    * @param tx
+    * @return
+    */
+  override def rollback(tx: Transaction) = Future.successful(true)
 }

@@ -310,6 +310,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
           val error = Error(channelId, cause.getMessage.getBytes)
+          // we rollback the funding tx, it will never be published
+          wallet.rollback(fundingTx)
           // we haven't published anything yet, we can just stop
           goto(CLOSED) sending error
         case Success(_) =>
@@ -336,9 +338,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_CONFIRMED) using nextState
       }
 
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+    case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+      // we rollback the funding tx, it will never be published
+      wallet.rollback(d.fundingTx)
+      goto(CLOSED)
 
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+      // we rollback the funding tx, it will never be published
+      wallet.rollback(d.fundingTx)
+      handleRemoteErrorNoCommitments(e)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -1042,6 +1050,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
       log.info("shutting down")
       stop(FSM.Normal)
+
+    case Event(MakeFundingTxResponse(fundingTx, _), _) =>
+      // this may happen if connection is lost, or remote sends an error while we were waiting for the funding tx to be created by our wallet
+      // in that case we rollback the tx
+      wallet.rollback(fundingTx)
+      stay
 
     case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymoer
   })
