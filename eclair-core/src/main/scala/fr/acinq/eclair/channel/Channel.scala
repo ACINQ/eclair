@@ -8,10 +8,11 @@ import fr.acinq.bitcoin._
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.wallet.{EclairWallet, MakeFundingTxResponse}
+import fr.acinq.eclair.channel.Channel.TickRefreshChannelUpdate
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.router.{Announcements, TickBroadcast}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 import org.bitcoinj.script.{Script => BitcoinjScript}
@@ -27,19 +28,26 @@ import scala.util.{Failure, Left, Random, Success, Try}
 
 object Channel {
   def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer))
+
+  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
+  val ANNOUNCEMENTS_MINCONF = 6
+
+  case object TickRefreshChannelUpdate
+
 }
 
 class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends LoggingFSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
-  val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
+  import Channel._
 
-  // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
-  val ANNOUNCEMENTS_MINCONF = 6
+  val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
   // this will be used to detect htlc timeouts
   context.system.eventStream.subscribe(self, classOf[CurrentBlockCount])
   // this will be used to make sure the current commitment fee is up-to-date
   context.system.eventStream.subscribe(self, classOf[CurrentFeerates])
+  // we need to periodically re-send channel updates, otherwise channel will be considered stale and get pruned by network
+  setTimer(TickRefreshChannelUpdate.toString, TickRefreshChannelUpdate, 1 day, repeat = true)
 
   /*
           8888888 888b    888 8888888 88888888888
@@ -689,7 +697,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // TODO: remove this later when we use testnet/mainnet
           // let's trigger the broadcast immediately so that we don't wait for 60 seconds to announce our newly created channel
           // we give 3 seconds for the router-watcher roundtrip
-          context.system.scheduler.scheduleOnce(3 seconds, router, 'tick_broadcast)
+          context.system.scheduler.scheduleOnce(3 seconds, router, TickBroadcast)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, localAnnSigs.shortChannelId))
           // we acknowledge our AnnouncementSignatures message
           stay using store(d.copy(shortChannelId = Some(localAnnSigs.shortChannelId))) // note: we don't clear our announcement sigs because we may need to re-send them
@@ -704,6 +712,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             self ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex)
           }
           stay
+      }
+
+    case Event(TickRefreshChannelUpdate, d: DATA_NORMAL) if d.shortChannelId.isDefined =>
+      d.shortChannelId match {
+        case Some(shortChannelId) => // periodic refresh is used as a keep alive
+          val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth)
+          router ! channelUpdate
+          stay
+        case None => stay // channel is not announced
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NORMAL) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
@@ -1037,12 +1054,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
       // then let's see if any of the possible close scenarii can be considered done
       val mutualCloseDone = d.mutualClosePublished.map(_.txid == tx.txid).getOrElse(false) // this case is trivial, in a mutual close scenario we only need to make sure that the closing tx is confirmed
-      val localCommitDone = localCommitPublished1.map(Closing.isLocalCommitDone(_)).getOrElse(false)
+    val localCommitDone = localCommitPublished1.map(Closing.isLocalCommitDone(_)).getOrElse(false)
       val remoteCommitDone = remoteCommitPublished1.map(Closing.isRemoteCommitDone(_)).getOrElse(false)
       val nextRemoteCommitDone = nextRemoteCommitPublished1.map(Closing.isRemoteCommitDone(_)).getOrElse(false)
       val revokedCommitDone = revokedCommitPublished1.map(Closing.isRevokedCommitDone(_)).exists(_ == true) // we only need one revoked commit done
-      // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
-      val d1 = d.copy( localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1, revokedCommitPublished = revokedCommitPublished1)
+    // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
+    val d1 = d.copy(localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1, revokedCommitPublished = revokedCommitPublished1)
       if (mutualCloseDone || localCommitDone || remoteCommitDone || nextRemoteCommitDone || revokedCommitDone) {
         log.info(s"channel closed (mutualClose=$mutualCloseDone localCommit=$localCommitDone remoteCommit=$remoteCommitDone nextRemoteCommit=$nextRemoteCommitDone revokedCommit=$revokedCommitDone)")
         goto(CLOSED) using d1
@@ -1205,6 +1222,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentFeerates(_), _) => stay
+
+    // we only care about this event in NORMAL state, and the scheduler is never disabled
+    case Event(TickRefreshChannelUpdate, _) => stay
 
     // we receive this when we send command to ourselves
     case Event("ok", _) => stay
