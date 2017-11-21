@@ -86,7 +86,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! chan_bc
       router ! chan_cd
       router ! chan_ef
-      router ! 'tick_validate // we manually trigger a validation
+      router ! TickValidate // we manually trigger a validation
       // watcher receives the get tx requests
       watcher.expectMsg(ParallelGetRequest(chan_ab :: chan_bc :: chan_cd :: chan_ef :: Nil))
       // and answers with valid scripts
