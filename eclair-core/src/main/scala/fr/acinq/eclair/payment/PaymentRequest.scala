@@ -58,7 +58,15 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
   }
 
-  def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t}
+  def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t }
+
+  def expiry: Option[Long] = tags.collectFirst {
+    case PaymentRequest.ExpiryTag(seconds) => seconds
+  }
+
+  def minFinalCltvExpiry: Option[Long] = tags.collectFirst {
+    case PaymentRequest.MinFinalCltvExpiryTag(expiry) => expiry
+  }
 
   /**
     *
@@ -96,12 +104,16 @@ object PaymentRequest {
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
   val maxAmount = MilliSatoshi(4294967296L)
 
-  def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey, description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
+  def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey,
+            description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,
+            extraHops: Seq[Seq[ExtraHop]] = Nil, timestamp: Long = System.currentTimeMillis() / 1000L): PaymentRequest = {
+
     val prefix = chainHash match {
-    case Block.RegtestGenesisBlock.hash => "lntb"
-    case Block.TestnetGenesisBlock.hash => "lntb"
-    case Block.LivenetGenesisBlock.hash => "lnbc"
+      case Block.RegtestGenesisBlock.hash => "lntb"
+      case Block.TestnetGenesisBlock.hash => "lntb"
+      case Block.LivenetGenesisBlock.hash => "lnbc"
     }
+
     PaymentRequest(
       prefix = prefix,
       amount = amount,
@@ -110,7 +122,8 @@ object PaymentRequest {
       tags = List(
         Some(PaymentHashTag(paymentHash)),
         Some(DescriptionTag(description)),
-        expirySeconds.map(ExpiryTag(_))).flatten,
+        expirySeconds.map(ExpiryTag(_))
+      ).flatten ++ extraHops.map(RoutingInfoTag(_)),
       signature = BinaryData.empty)
       .sign(privateKey)
   }
@@ -200,29 +213,69 @@ object PaymentRequest {
   }
 
   /**
-    * Routing Info Tag
+    * Extra hop contained in RoutingInfoTag
     *
-    * @param pubkey          node id
-    * @param channelId       channel id
+    * @param nodeId          node id
+    * @param shortChannelId  channel id
     * @param fee             node fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class RoutingInfoTag(pubkey: PublicKey, channelId: BinaryData, fee: Long, cltvExpiryDelta: Int) extends Tag {
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) extends PaymentHop {
+    def pack: Seq[Byte] = nodeId.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
+      Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
+
+    // Fee is already pre-calculated for extra hops
+    def nextFee(msat: Long): Long = fee
+  }
+
+  /**
+    * Routing Info Tag
+    *
+    * @param path one or more entries containing extra routing information for a private route
+    */
+  case class RoutingInfoTag(path: Seq[ExtraHop]) extends Tag {
     override def toInt5s = {
-      val ints = Bech32.eight2five(pubkey.toBin ++ channelId ++ Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN))
+      val ints = Bech32.eight2five(path.flatMap(_.pack))
       Seq(Bech32.map('r'), (ints.length / 32).toByte, (ints.length % 32).toByte) ++ ints
     }
+  }
+
+  object RoutingInfoTag {
+    def parse(data: Seq[Byte]) = {
+      val pubkey = data.slice(0, 33)
+      val shortChannelId = Protocol.uint64(data.slice(33, 33 + 8), ByteOrder.BIG_ENDIAN)
+      val fee = Protocol.uint64(data.slice(33 + 8, 33 + 8 + 8), ByteOrder.BIG_ENDIAN)
+      val cltv = Protocol.uint16(data.slice(33 + 8 + 8, chunkLength), ByteOrder.BIG_ENDIAN)
+      ExtraHop(PublicKey(pubkey), shortChannelId, fee, cltv)
+    }
+
+    def parseAll(data: Seq[Byte]): Seq[ExtraHop] =
+      data.grouped(chunkLength).map(parse).toList
+
+    val chunkLength: Int = 33 + 8 + 8 + 2
   }
 
   /**
     * Expiry Date
     *
-    * @param seconds expriry data for this payment request
+    * @param seconds expiry data for this payment request
     */
   case class ExpiryTag(seconds: Long) extends Tag {
     override def toInt5s = {
-      val ints = Seq((seconds / 32).toByte, (seconds % 32).toByte)
-      Seq(Bech32.map('x'), 0.toByte, 2.toByte) ++ ints
+      val ints = writeUnsignedLong(seconds)
+      Bech32.map('x') +: (writeSize(ints.size) ++ ints)    }
+  }
+
+  /**
+    * Min final CLTV expiry
+    *
+    *
+    * @param blocks min final cltv expiry, in blocks
+    */
+  case class MinFinalCltvExpiryTag(blocks: Long) extends Tag {
+    override def toInt5s = {
+      val ints = writeUnsignedLong(blocks)
+      Bech32.map('c') +: (writeSize(ints.size) ++ ints)
     }
   }
 
@@ -284,15 +337,14 @@ object PaymentRequest {
           }
         case r if r == Bech32.map('r') =>
           val data = Bech32.five2eight(input.drop(3).take(len))
-          val pubkey = PublicKey(data.take(33))
-          val channelId = data.drop(33).take(8)
-          val fee = Protocol.uint64(data.drop(33 + 8), ByteOrder.BIG_ENDIAN)
-          val cltv = Protocol.uint16(data.drop(33 + 8 + 8), ByteOrder.BIG_ENDIAN)
-          RoutingInfoTag(pubkey, channelId, fee, cltv)
+          val path = RoutingInfoTag.parseAll(data)
+          RoutingInfoTag(path)
         case x if x == Bech32.map('x') =>
-          require(len == 2, s"invalid length for expiry tag, should be 2 instead of $len")
-          val expiry = 32 * input(3) + input(4)
+          val expiry = readUnsignedLong(len, input.drop(3).take(len))
           ExpiryTag(expiry)
+        case c if c == Bech32.map('c') =>
+          val expiry = readUnsignedLong(len, input.drop(3).take(len))
+          MinFinalCltvExpiryTag(expiry)
       }
     }
   }
@@ -328,22 +380,24 @@ object PaymentRequest {
     }
   }
 
-  def toBits(value: Int5) : Seq[Bit] = Seq((value & 16) != 0, (value & 8) != 0, (value & 4) != 0, (value & 2) != 0, (value & 1) != 0)
+  def toBits(value: Int5): Seq[Bit] = Seq((value & 16) != 0, (value & 8) != 0, (value & 4) != 0, (value & 2) != 0, (value & 1) != 0)
 
   /**
     * write a 5bits integer to a stream
+    *
     * @param stream stream to write to
-    * @param value a 5bits value
+    * @param value  a 5bits value
     * @return an upated stream
     */
-  def write5(stream: BitStream, value: Int5) : BitStream = stream.writeBits(toBits(value))
+  def write5(stream: BitStream, value: Int5): BitStream = stream.writeBits(toBits(value))
 
   /**
     * read a 5bits value from a stream
+    *
     * @param stream stream to read from
     * @return a (stream, value) pair
     */
-  def read5(stream: BitStream) : (BitStream, Int5) = {
+  def read5(stream: BitStream): (BitStream, Int5) = {
     val (stream1, bits) = stream.readBits(5)
     val value = (if (bits(0)) 1 << 4 else 0) + (if (bits(1)) 1 << 3 else 0) + (if (bits(2)) 1 << 2 else 0) + (if (bits(3)) 1 << 1 else 0) + (if (bits(4)) 1 << 0 else 0)
     (stream1, (value & 0xff).toByte)
@@ -351,15 +405,54 @@ object PaymentRequest {
 
   /**
     * splits a bit stream into 5bits values
+    *
     * @param stream
     * @param acc
     * @return a sequence of 5bits values
     */
   @tailrec
-  def toInt5s(stream: BitStream, acc :Seq[Int5] = Nil) : Seq[Int5] = if (stream.bitCount == 0) acc else {
+  def toInt5s(stream: BitStream, acc: Seq[Int5] = Nil): Seq[Int5] = if (stream.bitCount == 0) acc else {
     val (stream1, value) = read5(stream)
     toInt5s(stream1, acc :+ value)
   }
+
+  /**
+    * prepend an unsigned long value to a sequence of Int5s
+    * @param value input value
+    * @param acc sequence of Int5 values
+    * @return an update sequence of Int5s
+    */
+  @tailrec
+  def writeUnsignedLong(value: Long, acc: Seq[Int5] = Nil): Seq[Int5] = {
+    require(value >= 0)
+    if (value == 0) acc
+    else writeUnsignedLong(value / 32, (value % 32).toByte +: acc)
+  }
+
+  /**
+    * convert a tag data size to a sequence of Int5s. It * must * fit on a sequence
+    * of 2 Int5 values
+    * @param size data size
+    * @return size as a sequence of exactly 2 Int5 values
+    */
+  def writeSize(size: Long) : Seq[Int5] = {
+    val output = writeUnsignedLong(size)
+    // make sure that size is encoded on 2 int5 values
+    output.length match {
+      case 0 => Seq(0.toByte, 0.toByte)
+      case 1 => 0.toByte +: output
+      case 2 => output
+      case n => throw new IllegalArgumentException("tag data length field must be encoded on 2 5-bits integers")
+    }
+  }
+
+  /**
+    * reads an unsigned long value from a sequence of Int5s
+    * @param length length of the sequence
+    * @param ints sequence of Int5s
+    * @return an unsigned long value
+    */
+  def readUnsignedLong(length: Int, ints: Seq[Int5]): Long = ints.take(length).foldLeft(0L) { case (acc, i) => acc * 32 + i }
 
   /**
     *
@@ -377,10 +470,10 @@ object PaymentRequest {
     val data1 = data0.drop(7)
 
     @tailrec
-    def loop(data: Seq[Int5], tags: Seq[Seq[Int5]] = Nil): Seq[Seq[Int5]] = if(data.isEmpty) tags else {
+    def loop(data: Seq[Int5], tags: Seq[Seq[Int5]] = Nil): Seq[Seq[Int5]] = if (data.isEmpty) tags else {
       // 104 is the size of a signature
-        val len = 1 + 2 + 32 * data(1) + data(2)
-        loop(data.drop(len), tags :+ data.take(len))
+      val len = 1 + 2 + 32 * data(1) + data(2)
+      loop(data.drop(len), tags :+ data.take(len))
     }
 
     val rawtags = loop(data1)

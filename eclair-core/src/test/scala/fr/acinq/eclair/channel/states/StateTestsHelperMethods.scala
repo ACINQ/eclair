@@ -4,10 +4,11 @@ import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle
-import fr.acinq.eclair.router.Hop
+import fr.acinq.eclair.payment.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, TestConstants}
 
@@ -30,7 +31,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                    relayer: TestProbe)
 
   def init(): Setup = {
-    Globals.feeratePerKw.set(TestConstants.feeratePerKw)
+    Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
     val alice2blockchain = TestProbe()
@@ -69,7 +70,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2alice.forward(alice)
     alice2blockchain.expectMsgType[WatchSpent]
     alice2blockchain.expectMsgType[WatchConfirmed]
-    alice2blockchain.expectMsgType[PublishAsap]
     bob2blockchain.expectMsgType[WatchSpent]
     bob2blockchain.expectMsgType[WatchConfirmed]
     alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 400000, 42)

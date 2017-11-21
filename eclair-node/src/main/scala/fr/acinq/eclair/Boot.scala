@@ -2,8 +2,6 @@ package fr.acinq.eclair
 
 import java.io.File
 
-import fr.acinq.eclair.blockchain.spv.BitcoinjKit2
-import fr.acinq.eclair.blockchain.wallet.BitcoinjWallet
 import grizzled.slf4j.Logging
 
 /**

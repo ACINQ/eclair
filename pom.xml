@@ -4,7 +4,7 @@
 
     <groupId>fr.acinq.eclair</groupId>
     <artifactId>eclair_2.11</artifactId>
-    <version>0.2-android-alpha7</version>
+    <version>0.2-android-SNAPSHOT</version>
     <packaging>pom</packaging>
 
     <modules>
@@ -32,10 +32,13 @@
 
     <developers>
         <developer>
-            <id>sstone</id>
+            <id>dpad85</id>
         </developer>
         <developer>
             <id>pm47</id>
+        </developer>
+        <developer>
+            <id>sstone</id>
         </developer>
     </developers>
 

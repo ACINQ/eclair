@@ -1,13 +1,16 @@
 package fr.acinq.eclair.router
 
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
-import fr.acinq.eclair.randomKey
-import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, MilliSatoshi}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.{Globals, randomKey, toShortId}
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PerHopPayload}
+import fr.acinq.eclair.payment._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.compat.Platform
 import scala.concurrent.Await
 import scala.concurrent.duration._
 
@@ -172,6 +175,87 @@ class RouteCalculationSpec extends FunSuite {
     val hops = Await.result(Router.findRoute(a, e, updates), 3 seconds)
 
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
+  }
+
+  test("calculate route with extra hops") {
+    // E (sender) -> D - public -> C - private -> B - private -> A (receiver)
+
+    val amount = MilliSatoshi(100000000L)
+    val paymentPreimage = BinaryData("0" * 32)
+    val paymentHash = Crypto.sha256(paymentPreimage)
+    val privateKey = PrivateKey("bb77027e3b6ef55f3b16eb6973d124f68e0c2afc16accc00a44ec6b3d1e58cc601")
+
+    // Ask router for a route from 02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8 (node C)
+    // to 0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3 (node A)
+    val hopCB = Hop(PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"),
+      PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac"),
+      ChannelUpdate("3044022075bc283539935b1bc126035ef98d0f9bcd5dd7b0832b0a6175dc14a5ee12d47102203d141a4da4f83fca9d65bddfb9ee6ea5cdfcdb364de062d1370500f511b8370701",
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 24412456671576064L, 1509366313, BinaryData("0000"), 144, 1000, 546000, 10))
+
+    val hopBA = Hop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac"),
+      PublicKey("0299439d988cbf31388d59e3d6f9e184e7a0739b8b8fcdc298957216833935f9d3"),
+      ChannelUpdate("304402205e9b28e26add5417ad97f6eb161229dd7db0d7848e146a1856a8841238bc627902203cc59996ca490375fd76a3327adfb7c5150ee3288ad1663b8c4fbe8908eb489a01",
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 23366821113626624L, 1509455356, BinaryData("0001"), 144, 1000, 546000, 10))
+
+    val reverseRoute = List(hopBA, hopCB)
+    val extraRoute = PaymentHop.buildExtra(reverseRoute, amount.amount)
+
+    assert(extraRoute === List(ExtraHop(PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"), 24412456671576064L, 547005, 144),
+      ExtraHop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac") ,23366821113626624L, 547000, 144)))
+
+    // Sender side
+
+    // Ask router for a route D -> C
+    val hopDC = Hop(PublicKey("03c1b07dbe10e178216150b49646ded556466ed15368857fa721cf1acd9d9a6f24"),
+      PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"),
+      ChannelUpdate("3044022060c1034092d4e41d75271eb619ef0a0f00d0b5a61c4245e0f14eeac91a3c823202200da9c8b8067e73c32aea41cb9eec050ce49cb944877d9abb3b08be2dea92497301",
+        "06226e46111a0b59caaf126043eb5bbf28c34f3a5e332a1fc7b2b73cf188910f", 24403660578553856L, 1509456040, BinaryData("0001"), 144, 1000, 546000, 10))
+
+    val (amt, expiry, payloads) = PaymentLifecycle.buildPayloads(amount.amount, 10, Seq(hopDC) ++ extraRoute)
+
+    assert(payloads === List(PerHopPayload(24403660578553856L, 101094005L, 298),
+      PerHopPayload(24412456671576064L, 100547000L, 154), PerHopPayload(23366821113626624L, 100000000L, 10), PerHopPayload(0L, 100000000L, 10)))
+
+    assert(amt == 101641015L)
+    assert(expiry == 442)
+  }
+
+  test("stale channels pruning") {
+    // set current block height
+    Globals.blockCount.set(500000)
+    // we only care about timestamps
+    def channelAnnouncement(shortChannelId: Long) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    def channelUpdate(shortChannelId: Long, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
+    def desc(shortChannelId: Long) = ChannelDesc(shortChannelId, randomKey.publicKey, randomKey.publicKey)
+    def daysAgoInBlocks(daysAgo: Int): Int = Globals.blockCount.get().toInt - 144 * daysAgo
+    def daysAgoInSeconds(daysAgo: Int): Long = Platform.currentTime / 1000 - daysAgo * 24 * 3600
+
+    // a is an old channel with an old channel update => PRUNED
+    val id_a = toShortId(daysAgoInBlocks(16), 0, 0)
+    val chan_a = channelAnnouncement(id_a)
+    val upd_a = channelUpdate(id_a, daysAgoInSeconds(30))
+    // b is an old channel with no channel update  => PRUNED
+    val id_b = toShortId(daysAgoInBlocks(16), 1, 0)
+    val chan_b = channelAnnouncement(id_b)
+    // c is an old channel with a recent channel update  => KEPT
+    val id_c = toShortId(daysAgoInBlocks(16), 2, 0)
+    val chan_c = channelAnnouncement(id_c)
+    val upd_c = channelUpdate(id_c, daysAgoInSeconds(2))
+    // d is a recent channel with a recent channel update  => KEPT
+    val id_d = toShortId(daysAgoInBlocks(2), 0, 0)
+    val chan_d = channelAnnouncement(id_d)
+    val upd_d = channelUpdate(id_d, daysAgoInSeconds(2))
+    // e is a recent channel with no channel update  => KEPT
+    val id_e = toShortId(daysAgoInBlocks(1), 0, 0)
+    val chan_e = channelAnnouncement(id_e)
+
+    val channels = Map(id_a -> chan_a, id_b -> chan_b, id_c -> chan_c, id_d -> chan_d, id_e -> chan_e)
+    val updates = Map(desc(id_a) -> upd_a, desc(id_c) -> upd_c, desc(id_d) -> upd_d)
+
+    val staleChannels = Router.getStaleChannels(channels, updates).toSet
+
+    assert(staleChannels === Set(id_a, id_b))
+
   }
 
 }

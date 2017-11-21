@@ -10,8 +10,9 @@ import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
+import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb}
+import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb, SqlitePreimagesDb}
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -41,6 +42,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       channelsDb: ChannelsDb,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
+                      preimagesDb: PreimagesDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
@@ -50,9 +52,14 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      spv: Boolean)
+                      watcherType: WatcherType)
 
 object NodeParams {
+
+  sealed trait WatcherType
+  object BITCOIND extends WatcherType
+  object BITCOINJ extends WatcherType
+  object ELECTRUM extends WatcherType
 
   /**
     * Order of precedence for the configuration parameters:
@@ -93,9 +100,16 @@ object NodeParams {
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
     val networkDb = new SqliteNetworkDb(sqlite)
+    val preimagesDb = new SqlitePreimagesDb(sqlite)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
+
+    val watcherType = config.getString("watcher-type") match {
+      case "bitcoinj" => BITCOINJ
+      case "electrum" => ELECTRUM
+      case _ => BITCOIND
+    }
 
     NodeParams(
       extendedPrivateKey = extendedPrivateKey,
@@ -120,6 +134,7 @@ object NodeParams {
       channelsDb = channelsDb,
       peersDb = peersDb,
       networkDb = networkDb,
+      preimagesDb = preimagesDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
@@ -129,6 +144,6 @@ object NodeParams {
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration", TimeUnit.SECONDS), TimeUnit.SECONDS),
-      spv = config.getBoolean("spv"))
+      watcherType = watcherType)
   }
 }

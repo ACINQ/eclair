@@ -5,10 +5,10 @@ import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.channel.BITCOIN_FUNDING_OTHER_CHANNEL_SPENT
+import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.Error
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Error, NodeAnnouncement}
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -43,14 +43,14 @@ class RouterSpec extends BaseRouterSpec {
     router ! chan_ax
     router ! chan_ay
     router ! chan_az
-    router ! 'tick_validate // we manually trigger a validation
+    router ! TickValidate // we manually trigger a validation
     watcher.expectMsg(ParallelGetRequest(chan_ac :: chan_ax :: chan_ay :: chan_az :: Nil))
     watcher.send(router, ParallelGetResponse(
       IndividualResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true) ::
         IndividualResult(chan_ax, None, false) ::
         IndividualResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true) ::
         IndividualResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false) :: Nil))
-    watcher.expectMsgType[WatchSpentBasic]
+    //watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 
     eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
@@ -60,19 +60,19 @@ class RouterSpec extends BaseRouterSpec {
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
-    router ! WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_ab))
+    router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(channelId_ab))
     eventListener.expectMsg(ChannelLost(channelId_ab))
     // a doesn't have any channels, b still has one with c
     eventListener.expectMsg(NodeLost(a))
     eventListener.expectNoMsg(200 milliseconds)
 
-    router ! WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_cd))
+    router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(channelId_cd))
     eventListener.expectMsg(ChannelLost(channelId_cd))
     // d doesn't have any channels, c still has one with b
     eventListener.expectMsg(NodeLost(d))
     eventListener.expectNoMsg(200 milliseconds)
 
-    router ! WatchEventSpentBasic(BITCOIN_FUNDING_OTHER_CHANNEL_SPENT(channelId_bc))
+    router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(channelId_bc))
     eventListener.expectMsg(ChannelLost(channelId_bc))
     // now b and c do not have any channels
     eventListener.expectMsgAllOf(NodeLost(b), NodeLost(c))
@@ -91,14 +91,14 @@ class RouterSpec extends BaseRouterSpec {
 
   test("handle bad signature for NodeAnnouncement") { case (router, _) =>
     val sender = TestProbe()
-    val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = 1)
+    val buggy_ann_a = ann_a.copy(signature = ann_b.signature, timestamp = ann_a.timestamp + 1)
     sender.send(router, buggy_ann_a)
     sender.expectMsgType[Error]
   }
 
   test("handle bad signature for ChannelUpdate") { case (router, _) =>
     val sender = TestProbe()
-    val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = 1)
+    val buggy_channelUpdate_ab = channelUpdate_ab.copy(signature = ann_b.signature, timestamp = channelUpdate_ab.timestamp + 1)
     sender.send(router, buggy_channelUpdate_ab)
     sender.expectMsgType[Error]
   }
@@ -175,6 +175,13 @@ class RouterSpec extends BaseRouterSpec {
     "dot -Tpng" #< input #> output !
     val img = output.toByteArray
     Files.write(img, new File("graph.png"))*/
+  }
+
+  test("send routing state") { case (router, _) =>
+    val sender = TestProbe()
+    val receiver = TestProbe()
+    sender.send(router, SendRoutingState(receiver.ref))
+    receiver.expectNoMsg(1 second)
   }
 
 }

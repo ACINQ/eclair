@@ -3,6 +3,7 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.ChannelCodecs._
 import fr.acinq.eclair.{UInt64, randomKey}
@@ -37,6 +38,7 @@ class ChannelCodecsSpec extends FunSuite {
       revocationSecret = randomKey.value,
       paymentKey = randomKey,
       delayedPaymentKey = randomKey.value,
+      htlcKey = randomKey,
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
       shaSeed = randomBytes(32),
       isFunder = Random.nextBoolean(),
@@ -60,6 +62,7 @@ class ChannelCodecsSpec extends FunSuite {
       revocationBasepoint = randomKey.publicKey.value,
       paymentBasepoint = randomKey.publicKey.value,
       delayedPaymentBasepoint = randomKey.publicKey.value,
+      htlcBasepoint = randomKey.publicKey.value,
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))
     val encoded = remoteParamsCodec.encode(o).require
@@ -68,8 +71,8 @@ class ChannelCodecsSpec extends FunSuite {
   }
 
   test("encode/decode direction") {
-    directionCodec.decodeValue(directionCodec.encode(IN).require).require == IN
-    directionCodec.decodeValue(directionCodec.encode(OUT).require).require == OUT
+    assert(directionCodec.decodeValue(directionCodec.encode(IN).require).require === IN)
+    assert(directionCodec.decodeValue(directionCodec.encode(OUT).require).require === OUT)
   }
 
   test("encode/decode htlc") {
@@ -80,10 +83,10 @@ class ChannelCodecsSpec extends FunSuite {
       expiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
-    val htlc1 = Htlc(direction = IN, add = add, previousChannelId = Some(randomBytes(32)))
-    val htlc2 = Htlc(direction = OUT, add = add, previousChannelId = None)
-    htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require == htlc1
-    htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require == htlc2
+    val htlc1 = DirectedHtlc(direction = IN, add = add)
+    val htlc2 = DirectedHtlc(direction = OUT, add = add)
+    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc1).require).require === htlc1)
+    assert(htlcCodec.decodeValue(htlcCodec.encode(htlc2).require).require === htlc2)
   }
 
   test("encode/decode commitment spec") {
@@ -101,10 +104,10 @@ class ChannelCodecsSpec extends FunSuite {
       expiry = Random.nextInt(Int.MaxValue),
       paymentHash = randomBytes(32),
       onionRoutingPacket = randomBytes(Sphinx.PacketLength))
-    val htlc1 = Htlc(direction = IN, add = add1, previousChannelId = Some(randomBytes(32)))
-    val htlc2 = Htlc(direction = OUT, add = add2, previousChannelId = None)
+    val htlc1 = DirectedHtlc(direction = IN, add = add1)
+    val htlc2 = DirectedHtlc(direction = OUT, add = add2)
     val htlcs = Set(htlc1, htlc2)
-    setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require == htlcs
+    assert(setCodec(htlcCodec).decodeValue(setCodec(htlcCodec).encode(htlcs).require).require === htlcs)
     val o = CommitmentSpec(
       htlcs = Set(htlc1, htlc2),
       feeratePerKw = Random.nextInt(Int.MaxValue),
@@ -114,7 +117,23 @@ class ChannelCodecsSpec extends FunSuite {
     val encoded = commitmentSpecCodec.encode(o).require
     val decoded = commitmentSpecCodec.decode(encoded).require
     assert(o === decoded.value)
+  }
 
+  test("encode/decode origin") {
+    assert(originCodec.decodeValue(originCodec.encode(Local(None)).require).require === Local(None))
+    val relayed = Relayed(randomBytes(32), 4324, 12000000L, 11000000L)
+    assert(originCodec.decodeValue(originCodec.encode(relayed).require).require === relayed)
+  }
+
+  test("encode/decode map of origins") {
+    val map = Map(
+      1L -> Local(None),
+      42L -> Relayed(randomBytes(32), 4324, 12000000L, 11000000L),
+      130L -> Relayed(randomBytes(32), -45, 13000000L, 12000000L),
+      1000L -> Relayed(randomBytes(32), 10, 14000000L, 13000000L),
+      -32L -> Relayed(randomBytes(32), 54, 15000000L, 14000000L),
+      -4L -> Local(None))
+    assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
   }
 
 }

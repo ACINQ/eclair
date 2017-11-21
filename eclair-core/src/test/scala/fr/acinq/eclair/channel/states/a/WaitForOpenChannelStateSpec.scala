@@ -32,7 +32,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     test((bob, alice2bob, bob2alice, bob2blockchain))
   }
 
-  test("recv OpenChannel") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv OpenChannel") { case (bob, alice2bob, _, _) =>
     within(30 seconds) {
       alice2bob.expectMsgType[OpenChannel]
       alice2bob.forward(bob)
@@ -40,26 +40,40 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     }
   }
 
-  test("recv OpenChannel (reserve too high)") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv OpenChannel (reserve too high)") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       val open = alice2bob.expectMsgType[OpenChannel]
       // 30% is huge, recommended ratio is 1%
       val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
       bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === "requirement failed: channelReserveSatoshis too high: ratio=0.3 max=0.05")
+      assert(error === Error(open.temporaryChannelId, "channelReserveSatoshis too high: reserve=300000 fundingRatio=0.3 maxFundingRatio=0.05".getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv Error") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv OpenChannel (fee too low)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      // set a very small fee
+      val tinyFee = 100
+      bob ! open.copy(feeratePerKw = tinyFee)
+      alice2bob.forward(bob)
+      val error = bob2alice.expectMsgType[Error]
+      // we check that the error uses the temporary channel id
+      assert(error === Error(open.temporaryChannelId, "local/remote feerates are too different: remoteFeeratePerKw=100 localFeeratePerKw=10000".getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv Error") { case (bob, _, _, _) =>
     within(30 seconds) {
       bob ! Error("00" * 32, "oops".getBytes())
       awaitCond(bob.stateName == CLOSED)
     }
   }
 
-  test("recv CMD_CLOSE") { case (bob, alice2bob, bob2alice, bob2blockchain) =>
+  test("recv CMD_CLOSE") { case (bob, _, _, _) =>
     within(30 seconds) {
       bob ! CMD_CLOSE(None)
       awaitCond(bob.stateName == CLOSED)

@@ -13,7 +13,7 @@ import scodec.Attempt
 
 // @formatter:off
 case class ReceivePayment(amountMsat: MilliSatoshi, description: String)
-case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, maxAttempts: Int = 5)
+case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
 
 sealed trait PaymentResult
 case class PaymentSucceeded(route: Seq[Hop], paymentPreimage: BinaryData) extends PaymentResult
@@ -54,7 +54,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId.toHexString).mkString("->")}")
       val firstHop = hops.head
-      val finalExpiry = Globals.blockCount.get().toInt + defaultHtlcExpiry
+      val finalExpiry = Globals.blockCount.get().toInt + c.minFinalCltvExpiry.toInt
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       // TODO: HACK!!!! see Router.scala (we actually store the first node id in the sig)
       if (firstHop.lastUpdate.signature.size == 32) {
@@ -132,6 +132,14 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
 
+    case Event(fail: UpdateFailMalformedHtlc, _) =>
+      log.info(s"first node in the route couldn't parse our htlc: fail=$fail")
+      // this is a corner case, that can only happen when the *first* node in the route cannot parse the onion
+      // (if this happens higher up in the route, the error would be wrapped in an UpdateFailHtlc and handled above)
+      // let's consider it a local error and treat is as such
+      self ! Status.Failure(new RuntimeException("first hop returned an UpdateFailMalformedHtlc message"))
+      stay
+
     case Event(Status.Failure(t), WaitingForComplete(s, c, _, failures, _, ignoreNodes, ignoreChannels, hops)) =>
       if (failures.size + 1 >= c.maxAttempts) {
         s ! PaymentFailed(c.paymentHash, failures :+ LocalFailure(t))
@@ -151,15 +159,6 @@ object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
 
-  /**
-    *
-    * @param baseMsat     fixed fee
-    * @param proportional proportional fee
-    * @param msat         amount in millisatoshi
-    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
-    */
-  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
-
   def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey
@@ -176,22 +175,20 @@ object PaymentLifecycle {
     *
     * @param finalAmountMsat the final htlc amount in millisatoshis
     * @param finalExpiry     the final htlc expiry in number of blocks
-    * @param hops            the hops as computed by the router
+    * @param hops            the hops as computed by the router + extra routes from payment request
     * @return a (firstAmountMsat, firstExpiry, payloads) tuple where:
     *         - firstAmountMsat is the amount for the first htlc in the route
     *         - firstExpiry is the cltv expiry for the first htlc in the route
     *         - a sequence of payloads that will be used to build the onion
     */
-  def buildPayloads(finalAmountMsat: Long, finalExpiry: Int, hops: Seq[Hop]): (Long, Int, Seq[PerHopPayload]) =
+  def buildPayloads(finalAmountMsat: Long, finalExpiry: Int, hops: Seq[PaymentHop]): (Long, Int, Seq[PerHopPayload]) =
     hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(0L, finalAmountMsat, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
-        val feeMsat = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
-        val expiryDelta = hop.lastUpdate.cltvExpiryDelta
-        (msat + feeMsat, expiry + expiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
+        (msat + hop.nextFee(msat), expiry + hop.cltvExpiryDelta, PerHopPayload(hop.shortChannelId, msat, expiry) +: payloads)
     }
 
-  // TODO: set correct initial expiry
-  val defaultHtlcExpiry = 10
+  // this is defined in BOLT 11
+  val defaultMinFinalCltvExpiry = 9
 
   def buildCommand(finalAmountMsat: Long, finalExpiry: Int, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))

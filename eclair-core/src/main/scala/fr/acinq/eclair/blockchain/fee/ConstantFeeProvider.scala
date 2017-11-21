@@ -4,7 +4,8 @@ import scala.concurrent.Future
 /**
   * Created by PM on 09/07/2017.
   */
-class ConstantFeeProvider(feeratePerKB: Long) extends FeeProvider {
+class ConstantFeeProvider(feerates: FeeratesPerByte) extends FeeProvider {
 
-  override def getFeeratePerKB: Future[Long] = Future.successful(feeratePerKB)
+  override def getFeerates: Future[FeeratesPerByte] = Future.successful(feerates)
+
 }

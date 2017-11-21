@@ -6,7 +6,7 @@ import akka.actor.{ActorRef, LoggingFSM, OneForOneStrategy, PoisonPill, Props, S
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.wallet.EclairWallet
+import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.{HandshakeCompleted, Listener}
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
@@ -96,10 +96,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
-        /* disabled for performance reasons
         if (Features.initialRoutingSync(remoteInit.localFeatures)) {
           router ! SendRoutingState(transport)
-        }*/
+        }
         // let's bring existing/requested channels online
         val channels: Map[ChannelId, ActorRef] = offlineChannels.map {
           case BrandNewChannel(c) =>
@@ -180,7 +179,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
       val (channel, localParams) = createChannel(nodeParams, transport, funder = true, c.fundingSatoshis.toLong)
       val temporaryChannelId = randomBytes(32)
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, Globals.feeratePerKw.get, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
+      val networkFeeratePerKw = Globals.feeratesPerKw.get.block_1
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, networkFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) if !channels.contains(TemporaryChannelId(msg.temporaryChannelId)) =>
@@ -279,8 +279,9 @@ object Peer {
       revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
       paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
       delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
+      htlcKey = generateKey(nodeParams, keyIndex :: 4L :: Nil),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 4L :: Nil).toBin), // TODO: check that
+      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 5L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures)

@@ -1,9 +1,8 @@
 package fr.acinq.eclair.blockchain
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, OP_PUSHDATA, OutPoint, Satoshi, Script, Transaction, TxIn, TxOut}
-import fr.acinq.eclair.blockchain.wallet.{EclairWallet, MakeFundingTxResponse}
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 import scala.util.Try
 
 /**
@@ -19,6 +18,8 @@ class TestWallet extends EclairWallet {
     Future.successful(TestWallet.makeDummyFundingTx(pubkeyScript, amount, feeRatePerKw))
 
   override def commit(tx: Transaction): Future[Boolean] = Future.successful(true)
+
+  override def rollback(tx: Transaction): Future[Boolean] = Future.successful(true)
 }
 
 object TestWallet {

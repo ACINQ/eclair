@@ -3,8 +3,8 @@ package fr.acinq.eclair.router
 import akka.actor.ActorSystem
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
-import fr.acinq.eclair.blockchain.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import fr.acinq.eclair.blockchain.wallet.BitcoinCoreWallet
+import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import fr.acinq.eclair.{randomKey, toShortId}

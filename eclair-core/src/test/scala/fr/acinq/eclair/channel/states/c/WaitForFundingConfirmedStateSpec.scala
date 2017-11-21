@@ -38,13 +38,12 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
       bob2alice.forward(alice)
       alice2blockchain.expectMsgType[WatchSpent]
       alice2blockchain.expectMsgType[WatchConfirmed]
-      alice2blockchain.expectMsgType[PublishAsap]
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_CONFIRMED)
     }
     test((alice, bob, alice2bob, bob2alice, alice2blockchain))
   }
 
-  test("recv FundingLocked") { case (alice, bob, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv FundingLocked") { case (alice, bob, _, bob2alice, _) =>
     within(30 seconds) {
       // make bob send a FundingLocked msg
       bob ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
@@ -55,7 +54,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_DEPTHOK") { case (alice, _, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_DEPTHOK") { case (alice, _, alice2bob, _, alice2blockchain) =>
     within(30 seconds) {
       alice ! WatchEventConfirmed(BITCOIN_FUNDING_DEPTHOK, 42000, 42)
       awaitCond(alice.stateName == WAIT_FOR_FUNDING_LOCKED)
@@ -64,7 +63,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_TIMEOUT") { case (alice, _, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_TIMEOUT") { case (alice, _, alice2bob, _, _) =>
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_TIMEOUT
       alice2bob.expectMsgType[Error]
@@ -72,17 +71,18 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_SPENT (remote commit)") { case (alice, bob, _, _, alice2blockchain) =>
     within(30 seconds) {
       // bob publishes his commitment tx
       val tx = bob.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, tx)
+      alice2blockchain.expectMsgType[PublishAsap]
       alice2blockchain.expectMsgType[WatchConfirmed]
       awaitCond(alice.stateName == CLOSING)
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, _, alice2blockchain) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
@@ -92,23 +92,25 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
-  test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv Error") { case (alice, _, _, _, alice2blockchain) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error("00" * 32, "oops".getBytes)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
+      alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv CMD_CLOSE") { case (alice, _, _, _, alice2blockchain) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! CMD_CLOSE(None)
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_LOCALCOMMIT_DONE)
+      alice2blockchain.expectMsgType[PublishAsap] // claim-main-delayed
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(tx))
     }
   }
 
