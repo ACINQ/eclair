@@ -16,8 +16,8 @@ import scala.concurrent.Await
 class EarnDotComFeeProviderSpec extends FunSuite {
 
   import EarnDotComFeeProvider._
-
   import org.json4s.jackson.JsonMethods.parse
+
   implicit val formats = DefaultFormats
 
   val sample_response =
@@ -53,8 +53,8 @@ class EarnDotComFeeProviderSpec extends FunSuite {
   }
 
   test("make sure API hasn't changed") {
-    import scala.concurrent.duration._
     import scala.concurrent.ExecutionContext.Implicits.global
+    import scala.concurrent.duration._
     implicit val system = ActorSystem()
     implicit val timeout = Timeout(30 seconds)
     val provider = new EarnDotComFeeProvider()

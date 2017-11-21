@@ -61,7 +61,7 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
     if (contextMenu != null) contextMenu.hide
   }
 
-  def updateRemoteNodeAlias (alias: String) {
+  def updateRemoteNodeAlias(alias: String) {
     Option(nodeId).map((n: TextField) => n.setText(s"$theirNodeIdValue ($alias)"))
   }
 }

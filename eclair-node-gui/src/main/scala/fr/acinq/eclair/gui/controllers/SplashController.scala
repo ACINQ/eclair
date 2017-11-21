@@ -5,7 +5,7 @@ import javafx.application.HostServices
 import javafx.fxml.FXML
 import javafx.scene.control.{Button, Label}
 import javafx.scene.image.ImageView
-import javafx.scene.layout.{HBox, Pane, VBox}
+import javafx.scene.layout.{Pane, VBox}
 import javafx.util.Duration
 
 import grizzled.slf4j.Logging
@@ -46,6 +46,7 @@ class SplashController(hostServices: HostServices) extends Logging {
     l.setWrapText(true)
     logBox.getChildren.add(l)
   }
+
   def addError(message: String) = {
     val l = new Label
     l.setText(message)

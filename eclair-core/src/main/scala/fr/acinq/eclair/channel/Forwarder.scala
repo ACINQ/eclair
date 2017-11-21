@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import akka.actor.{Actor, ActorLogging, ActorRef}
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.wire.{Error, LightningMessage}
+import fr.acinq.eclair.wire.LightningMessage
 
 /**
   * Created by fabrice on 27/02/17.

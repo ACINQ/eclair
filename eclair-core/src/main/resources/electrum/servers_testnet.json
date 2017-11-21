@@ -1,5 +1,14 @@
 {
-        "testnetnode.arihanc.com": {"t":"51001", "s":"51002"},
-        "testnet.hsmiths.com": {"t":"53011", "s":"53012"},
-        "electrum.akinbo.org": {"t":"51001", "s":"51002"}
+  "testnetnode.arihanc.com": {
+    "t": "51001",
+    "s": "51002"
+  },
+  "testnet.hsmiths.com": {
+    "t": "53011",
+    "s": "53012"
+  },
+  "electrum.akinbo.org": {
+    "t": "51001",
+    "s": "51002"
+  }
 }

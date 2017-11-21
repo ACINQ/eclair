@@ -12,7 +12,9 @@ import fr.acinq.eclair.gui.controllers.SplashController
 import grizzled.slf4j.Logging
 
 sealed trait AppNotificationType
+
 case object SuccessAppNotification extends AppNotificationType
+
 case object InfoAppNotification extends AppNotificationType
 
 case class AppNotification(notificationType: AppNotificationType, message: String) extends PreloaderNotification

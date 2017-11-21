@@ -2,7 +2,7 @@ package fr.acinq.eclair
 
 import java.nio.ByteOrder
 
-import fr.acinq.bitcoin.{BinaryData, Protocol}
+import fr.acinq.bitcoin.Protocol
 import fr.acinq.eclair.Features._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite

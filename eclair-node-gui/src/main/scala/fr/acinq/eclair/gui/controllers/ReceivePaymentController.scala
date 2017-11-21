@@ -13,7 +13,6 @@ import com.google.zxing.qrcode.QRCodeWriter
 import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, GUIValidators}
 import fr.acinq.eclair.payment.PaymentRequest

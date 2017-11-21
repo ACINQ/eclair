@@ -15,7 +15,7 @@ import scala.concurrent.{ExecutionContext, Future, Promise}
 
 /**
   * Due to bitcoin-core wallet not fully supporting segwit txes yet, our current scheme is:
-  *   utxos <- parent-tx <- funding-tx
+  * utxos <- parent-tx <- funding-tx
   *
   * With:
   *   - utxos may be non-segwit
@@ -200,6 +200,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient, watcher: ActorRef)(impl
   /**
     * We currently only put a lock on the parent tx inputs, and we publish the parent tx immediately so there is nothing
     * to do here.
+    *
     * @param tx
     * @return
     */

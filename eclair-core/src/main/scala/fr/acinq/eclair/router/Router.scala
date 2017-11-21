@@ -11,18 +11,18 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.payment.Hop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.payment.Hop
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
-import scala.concurrent.duration._
 
 // @formatter:off
 

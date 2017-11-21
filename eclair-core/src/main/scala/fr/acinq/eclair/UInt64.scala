@@ -31,4 +31,5 @@ object UInt64 {
 
     implicit def longToUint64(l: Long) = UInt64(l)
   }
+
 }

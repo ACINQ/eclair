@@ -1,7 +1,6 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.channel.HasCommitments
 
 /**
   * This database stores the preimages that we have received from downstream

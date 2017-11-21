@@ -13,8 +13,10 @@ import scala.concurrent.duration.{FiniteDuration, _}
   */
 class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: Int, delay: FiniteDuration) extends Actor with ActorLogging {
 
-  import scala.concurrent.ExecutionContext.Implicits.global
   import ThrottleForwarder.Tick
+
+  import scala.concurrent.ExecutionContext.Implicits.global
+
   val clock = context.system.scheduler.schedule(0 second, delay, self, Tick)
 
   log.debug(s"sending messages=${messages.size} with chunkSize=$chunkSize and delay=$delay")

@@ -20,6 +20,7 @@ class NotificationPaneController {
   @FXML def handleMouseEnter(event: MouseEvent) = {
     rootPane.setOpacity(1)
   }
+
   @FXML def handleMouseExit(event: MouseEvent) = {
     rootPane.setOpacity(0.95)
   }

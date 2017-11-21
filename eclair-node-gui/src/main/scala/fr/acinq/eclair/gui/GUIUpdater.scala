@@ -12,7 +12,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, ElectrumDisconnected}
-import fr.acinq.eclair.blockchain.electrum.ElectrumWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.gui.utils.CoinFormat

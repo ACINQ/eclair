@@ -57,8 +57,11 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
 object NodeParams {
 
   sealed trait WatcherType
+
   object BITCOIND extends WatcherType
+
   object BITCOINJ extends WatcherType
+
   object ELECTRUM extends WatcherType
 
   /**

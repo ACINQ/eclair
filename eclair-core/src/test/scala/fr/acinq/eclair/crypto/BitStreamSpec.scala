@@ -10,6 +10,7 @@ import org.spongycastle.util.encoders.Hex
   */
 @RunWith(classOf[JUnitRunner])
 class BitStreamSpec extends FunSuite {
+
   import BitStream._
 
   test("add bits") {

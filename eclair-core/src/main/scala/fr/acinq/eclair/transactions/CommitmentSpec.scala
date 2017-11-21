@@ -1,6 +1,5 @@
 package fr.acinq.eclair.transactions
 
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.wire._
 
 /**

@@ -32,9 +32,9 @@ case class Ping(pongLength: Int, data: BinaryData) extends SetupMessage
 case class Pong(data: BinaryData) extends SetupMessage
 
 case class ChannelReestablish(
-                             channelId: BinaryData,
-                             nextLocalCommitmentNumber: Long,
-                             nextRemoteRevocationNumber: Long) extends ChannelMessage with HasChannelId
+                               channelId: BinaryData,
+                               nextLocalCommitmentNumber: Long,
+                               nextRemoteRevocationNumber: Long) extends ChannelMessage with HasChannelId
 
 case class OpenChannel(chainHash: BinaryData,
                        temporaryChannelId: BinaryData,

@@ -210,7 +210,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv CMD_ADD_HTLC (while waiting for a revocation)") { case (alice, _, alice2bob, _, _, _, relayer) =>
     within(30 seconds) {
       val sender = TestProbe()
-      val add1 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2/3 * 1000, "11" * 32, 400144)
+      val add1 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, "11" * 32, 400144)
       sender.send(alice, add1)
       sender.expectMsg("ok")
       alice2bob.expectMsgType[UpdateAddHtlc]
@@ -218,7 +218,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg("ok")
       alice2bob.expectMsgType[CommitSig]
       // this is over channel-capacity
-      val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2/3 * 1000, "22" * 32, 400144)
+      val add2 = CMD_ADD_HTLC(TestConstants.fundingSatoshis * 2 / 3 * 1000, "22" * 32, 400144)
       sender.send(alice, add2)
       //sender.expectMsgType[Failure]
       relayer.expectMsgType[ForwardLocalFail]

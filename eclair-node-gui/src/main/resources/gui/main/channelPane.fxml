@@ -9,9 +9,9 @@
         <GridPane styleClass="grid" prefWidth="400.0">
             <columnConstraints>
                 <ColumnConstraints hgrow="SOMETIMES" minWidth="140.0" prefWidth="150.0" maxWidth="180.0"/>
-                <ColumnConstraints hgrow="ALWAYS" minWidth="30.0" prefWidth="30.0" />
+                <ColumnConstraints hgrow="ALWAYS" minWidth="30.0" prefWidth="30.0"/>
                 <ColumnConstraints hgrow="SOMETIMES" minWidth="40.0" prefWidth="60.0" maxWidth="60.0"/>
-                <ColumnConstraints hgrow="ALWAYS" minWidth="30.0" prefWidth="40.0" />
+                <ColumnConstraints hgrow="ALWAYS" minWidth="30.0" prefWidth="40.0"/>
             </columnConstraints>
             <rowConstraints>
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
@@ -24,8 +24,9 @@
                 <HBox GridPane.columnSpan="4" GridPane.columnIndex="0" alignment="CENTER" spacing="10.0">
                     <children>
                         <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
-                                   HBox.hgrow="ALWAYS" focusTraversable="false" />
-                        <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT" alignment="CENTER_RIGHT" HBox.hgrow="NEVER" spacing="5.0">
+                                   HBox.hgrow="ALWAYS" focusTraversable="false"/>
+                        <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT" alignment="CENTER_RIGHT"
+                              HBox.hgrow="NEVER" spacing="5.0">
                             <children>
                                 <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"/>
                             </children>
@@ -42,11 +43,13 @@
                            GridPane.columnIndex="1" GridPane.columnSpan="3" GridPane.rowIndex="2"/>
 
                 <Label styleClass="text-muted" text="Your balance (milliBTC)" GridPane.rowIndex="3"/>
-                <TextField fx:id="amountUs" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                <TextField fx:id="amountUs" text="N/A" focusTraversable="false" editable="false"
+                           styleClass="noteditable"
                            GridPane.columnIndex="1" GridPane.rowIndex="3"/>
 
                 <Label styleClass="text-muted" text="Capacity (milliBTC)" GridPane.rowIndex="4"/>
-                <TextField fx:id="capacity" text="N/A" focusTraversable="false" editable="false" styleClass="noteditable"
+                <TextField fx:id="capacity" text="N/A" focusTraversable="false" editable="false"
+                           styleClass="noteditable"
                            GridPane.columnIndex="1" GridPane.rowIndex="4"/>
 
                 <Label styleClass="text-muted" text="Funder" GridPane.columnIndex="2" GridPane.rowIndex="3"/>

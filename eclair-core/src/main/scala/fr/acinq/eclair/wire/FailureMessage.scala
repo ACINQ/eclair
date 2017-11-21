@@ -1,7 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.wire.LightningMessageCodecs.{binarydata, uint64, channelUpdateCodec}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{binarydata, channelUpdateCodec, uint64}
 import scodec.Codec
 import scodec.codecs._
 

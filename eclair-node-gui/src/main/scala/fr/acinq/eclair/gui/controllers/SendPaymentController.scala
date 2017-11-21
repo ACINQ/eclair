@@ -8,9 +8,6 @@ import javafx.scene.input.KeyCode.{ENTER, TAB}
 import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
 
-import fr.acinq.bitcoin.BinaryData
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.payment.PaymentRequest

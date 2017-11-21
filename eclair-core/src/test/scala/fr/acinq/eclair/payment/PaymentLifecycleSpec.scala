@@ -1,7 +1,6 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
-import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals
@@ -12,7 +11,6 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import org.scalatest.matchers.FailureMessage
 
 /**
   * Created by PM on 29/08/2016.

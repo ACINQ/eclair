@@ -5,7 +5,7 @@ import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
-import fr.acinq.eclair.wire.{ChannelUpdate, FailureMessage, FailureMessageCodecs, LightningMessageCodecs}
+import fr.acinq.eclair.wire.{FailureMessage, FailureMessageCodecs}
 import grizzled.slf4j.Logging
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.macs.HMac
@@ -32,7 +32,7 @@ object Sphinx extends Logging {
 
   // onion packet length
   val PacketLength = 1 + 33 + MacLength + MaxHops * (PayloadLength + MacLength)
-  
+
   // last packet (all zeroes except for the version byte)
   val LAST_PACKET = Packet(Version, zeroes(33), zeroes(MacLength), zeroes(MaxHops * (PayloadLength + MacLength)))
 

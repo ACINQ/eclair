@@ -11,7 +11,8 @@ object GUIValidators {
   val hostRegex = """([a-fA-F0-9]{66})@([a-zA-Z0-9:\.\-_]+):([0-9]+)""".r
   val amountRegex = """\d+""".r
   val amountDecRegex = """(\d+)|(\d+\.[\d]{1,3})""".r // accepts 3 decimals at most
-  val paymentRequestRegex = """([a-zA-Z0-9]+):([a-zA-Z0-9]+):([a-zA-Z0-9]+)""".r
+  val paymentRequestRegex =
+    """([a-zA-Z0-9]+):([a-zA-Z0-9]+):([a-zA-Z0-9]+)""".r
   val hexRegex = """[0-9a-fA-F]+""".r
 
   /**
@@ -22,7 +23,7 @@ object GUIValidators {
     * @param validatorMessage Message displayed if the field is invalid. It should describe the cause of
     *                         the validation failure
     * @param regex            Scala regex that the field must match
-    * @return                 true if field is valid, false otherwise
+    * @return true if field is valid, false otherwise
     */
   def validate(field: String, validatorLabel: Label, validatorMessage: String, regex: Regex): Boolean = {
     return field match {
@@ -34,12 +35,12 @@ object GUIValidators {
   /**
     * Displays a label with an error message.
     *
-    * @param errorLabel       JFX label containing an error messsage
-    * @param validCondition   if true the label is hidden, else it is shown
-    * @return                 true if field is valid, false otherwise
+    * @param errorLabel     JFX label containing an error messsage
+    * @param validCondition if true the label is hidden, else it is shown
+    * @return true if field is valid, false otherwise
     */
   def validate(errorLabel: Label, errorMessage: String, validCondition: Boolean): Boolean = {
-    errorLabel.setOpacity( if (validCondition) 0 else 1 )
+    errorLabel.setOpacity(if (validCondition) 0 else 1)
     errorLabel.setText(errorMessage)
     validCondition
   }

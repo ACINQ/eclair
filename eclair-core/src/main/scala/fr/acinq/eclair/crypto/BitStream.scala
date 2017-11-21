@@ -1,15 +1,15 @@
 package fr.acinq.eclair.crypto
 
-import fr.acinq.bitcoin.BinaryData
 import org.spongycastle.util.encoders.Hex
 
 import scala.annotation.tailrec
 
 /**
   * Bit stream that can be written to and read at both ends (i.e. you can read from the end or the beginning of the stream)
-  * @param bytes bits packed as bytes, the last byte is padded with 0s
+  *
+  * @param bytes    bits packed as bytes, the last byte is padded with 0s
   * @param offstart offset at which the first bit is in the first byte
-  * @param offend offset at which the last bit is in the last byte
+  * @param offend   offset at which the last bit is in the last byte
   */
 case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
 
@@ -20,6 +20,7 @@ case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
   def bitCount = 8 * bytes.length - offstart - offend
 
   def isEmpty = bitCount == 0
+
   /**
     * append a byte to a bitstream
     *
@@ -97,16 +98,17 @@ case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
       BitStream(bytes.dropRight(2) :+ a1.toByte, offstart, offend) -> byte.toByte
   }
 
-  def popBytes(n: Int) : (BitStream, Seq[Byte]) = {
+  def popBytes(n: Int): (BitStream, Seq[Byte]) = {
     @tailrec
-    def loop(stream: BitStream, acc: Seq[Byte]) : (BitStream, Seq[Byte]) =
+    def loop(stream: BitStream, acc: Seq[Byte]): (BitStream, Seq[Byte]) =
       if (acc.length == n) (stream, acc) else {
-      val (stream1, value) = stream.popByte
-      loop(stream1, acc :+ value)
-    }
+        val (stream1, value) = stream.popByte
+        loop(stream1, acc :+ value)
+      }
 
     loop(this, Nil)
   }
+
   /**
     * read the first bit from a bitstream
     *
@@ -117,7 +119,7 @@ case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
     case _ => BitStream(bytes, offstart + 1, offend) -> firstBit
   }
 
-  def readBits(count: Int) : (BitStream, Seq[Bit]) = {
+  def readBits(count: Int): (BitStream, Seq[Bit]) = {
     @tailrec
     def loop(stream: BitStream, acc: Seq[Bit]): (BitStream, Seq[Bit]) = if (acc.length == count) (stream, acc) else {
       val (stream1, bit) = stream.readBit
@@ -126,14 +128,15 @@ case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
 
     loop(this, Nil)
   }
+
   /**
     * read the first byte from a bitstream
     *
     * @return
     */
   def readByte: (BitStream, Byte) = {
-      val byte = ((bytes(0) << offstart) | (bytes(1) >>> (7 - offstart))) & 0xff
-      BitStream(bytes.tail, offstart, offend) -> byte.toByte
+    val byte = ((bytes(0) << offstart) | (bytes(1) >>> (7 - offstart))) & 0xff
+    BitStream(bytes.tail, offstart, offend) -> byte.toByte
   }
 
   def isSet(pos: Int): Boolean = {

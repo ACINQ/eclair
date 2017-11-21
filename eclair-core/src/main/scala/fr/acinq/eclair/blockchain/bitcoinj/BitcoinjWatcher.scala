@@ -16,7 +16,6 @@ import org.bitcoinj.script.Script
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 final case class NewConfidenceLevel(tx: Transaction, blockHeight: Int, confirmations: Int) extends BlockchainEvent
@@ -130,6 +129,7 @@ class BitcoinjWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Exe
 
   /**
     * Bitcoinj needs hints to be able to detect transactions
+    *
     * @param pubkeyScript
     * @return
     */
@@ -177,6 +177,7 @@ class Broadcaster(kit: WalletAppKit) extends Actor with ActorLogging {
   }
 
   case class BroadcastResult(tx: Transaction, result: Try[Boolean])
+
   def broadcast(tx: Transaction) = {
     Context.propagate(kit.wallet().getContext)
     val bitcoinjTx = new org.bitcoinj.core.Transaction(kit.wallet().getParams, Transaction.write(tx))
@@ -187,7 +188,6 @@ class Broadcaster(kit: WalletAppKit) extends Actor with ActorLogging {
       override def onSuccess(v: BitcoinjTransaction): Unit = self ! BroadcastResult(tx, Success(true))
     }, context.dispatcher)
   }
-
 
 
 }

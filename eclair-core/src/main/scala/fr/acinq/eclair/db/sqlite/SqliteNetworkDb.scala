@@ -1,14 +1,12 @@
 package fr.acinq.eclair.db.sqlite
 
-import java.sql.{Connection, ResultSet}
+import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import scodec.Codec
-import scodec.bits.BitVector
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 

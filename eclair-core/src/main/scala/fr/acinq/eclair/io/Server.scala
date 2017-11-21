@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, SupervisorStrategy}
 import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.eclair.NodeParams
