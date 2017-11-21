@@ -287,7 +287,7 @@ object Commitments extends Logging {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
 
-    val localFeeratePerKw = Globals.feeratePerKw.get()
+    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
     if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
     }

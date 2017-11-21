@@ -4,6 +4,7 @@ import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
@@ -28,7 +29,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val sender = TestProbe()
       // alice initiates a closing
-      if (test.tags.contains("fee2")) Globals.feeratePerKw.set(4319) else Globals.feeratePerKw.set(10000)
+      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4319)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
       sender.send(alice, CMD_CLOSE(None))
       alice2bob.expectMsgType[Shutdown]
       alice2bob.forward(bob)
@@ -36,7 +37,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // NB: at this point, bob has already computed and sent the first ClosingSigned message
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
-      if (test.tags.contains("fee2")) Globals.feeratePerKw.set(4316) else Globals.feeratePerKw.set(20000)
+      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(20000))
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
       awaitCond(bob.stateName == NEGOTIATING)

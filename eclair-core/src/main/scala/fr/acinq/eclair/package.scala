@@ -56,12 +56,12 @@ package object eclair {
   }
 
   /**
-    * Converts fee-rate-per-kB to fee-rate-per-kw, *based on a standard commit tx*
+    * Converts feerate in satoshi-per-bytes to feerate in satoshi-per-kw
     *
-    * @param feeratePerKb
-    * @return
+    * @param feeratePerByte feerate in satoshi-per-bytes
+    * @return feerate in satoshi-per-kw
     */
-  def feerateKb2Kw(feeratePerKb: Long): Long = feeratePerKb / 2
+  def feerateByte2Kw(feeratePerByte: Long): Long = feeratePerByte * 1024 / 4
 
 
 }
