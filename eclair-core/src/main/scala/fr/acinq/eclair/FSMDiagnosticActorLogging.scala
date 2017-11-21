@@ -8,8 +8,11 @@ import akka.event.{DiagnosticLoggingAdapter, LoggingAdapter}
   * See https://groups.google.com/forum/#!topic/akka-user/0CxR8CImr4Q
   */
 trait FSMDiagnosticActorLogging[S, D] extends FSM[S, D] {
+
   import akka.event.Logging._
+
   val diagLog: DiagnosticLoggingAdapter = akka.event.Logging(this)
+
   def mdc(currentMessage: Any): MDC = emptyMDC
 
   override def log: LoggingAdapter = diagLog

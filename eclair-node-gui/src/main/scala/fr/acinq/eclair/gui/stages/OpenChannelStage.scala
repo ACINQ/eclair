@@ -5,7 +5,6 @@ import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Modality, Stage, StageStyle}
 
-import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.controllers.OpenChannelController
 

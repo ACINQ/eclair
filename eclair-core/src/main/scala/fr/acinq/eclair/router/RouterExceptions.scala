@@ -7,4 +7,5 @@ package fr.acinq.eclair.router
 class RouterException(message: String) extends RuntimeException(message)
 
 object RouteNotFound extends RouterException("Route not found")
+
 object CannotRouteToSelf extends RouterException("Cannot route to self")

@@ -28,6 +28,7 @@ object FeeratesPerKw {
 
   /**
     * Used in tests
+    *
     * @param feeratePerKw
     * @return
     */

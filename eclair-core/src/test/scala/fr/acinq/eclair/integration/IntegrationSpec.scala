@@ -364,6 +364,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   /**
     * We currently use p2pkh script Helpers.getFinalScriptPubKey
+    *
     * @param scriptPubKey
     * @return
     */

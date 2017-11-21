@@ -1,13 +1,11 @@
 package fr.acinq.eclair.blockchain.electrum
 
-import fr.acinq.bitcoin._
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
+import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
+import fr.acinq.bitcoin._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
-
-import scala.util.Try
 
 @RunWith(classOf[JUnitRunner])
 class ElectrumWalletBasicSpec extends FunSuite {

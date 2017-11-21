@@ -1,6 +1,5 @@
 package fr.acinq.eclair.channel.states.a
 
-import akka.actor.ActorRef
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods

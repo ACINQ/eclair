@@ -23,7 +23,9 @@ object TestConstants {
     val seed = BinaryData("01" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
+
     def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -58,7 +60,9 @@ object TestConstants {
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND)
+
     def id = nodeParams.privateKey.publicKey
+
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(4), compressed = true).publicKey)),
@@ -72,7 +76,9 @@ object TestConstants {
     val seed = BinaryData("02" * 32)
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
+
     def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -107,7 +113,9 @@ object TestConstants {
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND)
+
     def id = nodeParams.privateKey.publicKey
+
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(5), compressed = true).publicKey)),

@@ -10,7 +10,7 @@ import grizzled.slf4j.Logging
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout)  extends EclairWallet with Logging {
+class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet with Logging {
 
   override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
 
@@ -45,7 +45,7 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
       case CancelTransactionResponse(_) => false
     }
 
-  def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long) : Future[String] = {
+  def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long): Future[String] = {
     val publicKeyScript = Base58Check.decode(address) match {
       case (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) => Script.pay2pkh(pubKeyHash)
       case (Base58.Prefix.ScriptAddressTestnet, scriptHash) => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil

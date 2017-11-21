@@ -3,8 +3,8 @@ package fr.acinq.eclair.crypto
 import java.math.BigInteger
 import java.nio.ByteOrder
 
-import fr.acinq.eclair.randomBytes
 import fr.acinq.bitcoin.{BinaryData, Crypto, Protocol}
+import fr.acinq.eclair.randomBytes
 import grizzled.slf4j.Logging
 import org.spongycastle.crypto.digests.SHA256Digest
 import org.spongycastle.crypto.macs.HMac

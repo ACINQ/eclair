@@ -18,7 +18,7 @@ object PaymentHop {
   /**
     *
     * @param reversePath sequence of Hops from recipient to a start of assisted path
-    * @param msat an amount to send to a payment recipient
+    * @param msat        an amount to send to a payment recipient
     * @return a sequence of extra hops with a pre-calculated fee for a given msat amount
     */
   def buildExtra(reversePath: Seq[Hop], msat: Long): Seq[ExtraHop] = (List.empty[ExtraHop] /: reversePath) {
@@ -29,13 +29,18 @@ object PaymentHop {
 
 trait PaymentHop {
   def nextFee(msat: Long): Long
+
   def shortChannelId: Long
+
   def cltvExpiryDelta: Int
+
   def nodeId: PublicKey
 }
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends PaymentHop {
   def nextFee(msat: Long): Long = PaymentHop.nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, msat)
+
   def cltvExpiryDelta: Int = lastUpdate.cltvExpiryDelta
+
   def shortChannelId: Long = lastUpdate.shortChannelId
 }

@@ -93,7 +93,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
       val addresses = ElectrumClient.readServerAddresses(stream)
-      val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 
@@ -190,10 +190,13 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
 }
 
+
+// @formatter:off
 sealed trait Bitcoin
 case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
 case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+// @formatter:on
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,

@@ -4,8 +4,8 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
-import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
@@ -15,6 +15,7 @@ class FallbackFeeProviderSpec extends FunSuite {
 
   /**
     * This provider returns a constant value, but fails after ttl tries
+    *
     * @param ttl
     * @param feeratesPerByte
     */
@@ -25,7 +26,7 @@ class FallbackFeeProviderSpec extends FunSuite {
       if (i < ttl) {
         i = i + 1
         Future.successful(feeratesPerByte)
-      }  else Future.failed(new RuntimeException())
+      } else Future.failed(new RuntimeException())
   }
 
   def dummyFeerates = FeeratesPerByte(Random.nextInt(10000), Random.nextInt(10000), Random.nextInt(10000), Random.nextInt(10000), Random.nextInt(10000), Random.nextInt(10000))
@@ -39,7 +40,7 @@ class FallbackFeeProviderSpec extends FunSuite {
     val provider5 = new FailingFeeProvider(5, dummyFeerates) // fails after 5 tries
     val provider7 = new FailingFeeProvider(Int.MaxValue, dummyFeerates) // "never" fails
 
-   val fallbackFeeProvider = new FallbackFeeProvider(provider0 :: provider1 :: provider3 :: provider5 :: provider7 :: Nil)
+    val fallbackFeeProvider = new FallbackFeeProvider(provider0 :: provider1 :: provider3 :: provider5 :: provider7 :: Nil)
 
     assert(await(fallbackFeeProvider.getFeerates) === provider1.feeratesPerByte)
 
@@ -56,7 +57,6 @@ class FallbackFeeProviderSpec extends FunSuite {
     assert(await(fallbackFeeProvider.getFeerates) === provider7.feeratesPerByte)
 
   }
-
 
 
 }

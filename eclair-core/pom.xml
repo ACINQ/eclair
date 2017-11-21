@@ -83,9 +83,9 @@
         <profile>
             <id>Mac</id>
             <activation>
-              <os>
-                <family>mac</family>
-              </os>
+                <os>
+                    <family>mac</family>
+                </os>
             </activation>
             <properties>
                 <bitcoind.url>https://bitcoin.org/bin/bitcoin-core-0.14.0/bitcoin-0.14.0-osx64.tar.gz

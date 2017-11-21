@@ -3,9 +3,9 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto, MilliSatoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.{Globals, randomKey, toShortId}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PerHopPayload}
 import fr.acinq.eclair.payment._
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PerHopPayload}
+import fr.acinq.eclair.{Globals, randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -49,7 +49,7 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(5L, d, e)
     )
 
-    val routes = for(i <- 0 until 10) yield Router.findRouteDijkstra(a, e, channels)
+    val routes = for (i <- 0 until 10) yield Router.findRouteDijkstra(a, e, channels)
     assert(routes.exists(_ != routes.head))
 
   }
@@ -201,7 +201,7 @@ class RouteCalculationSpec extends FunSuite {
     val extraRoute = PaymentHop.buildExtra(reverseRoute, amount.amount)
 
     assert(extraRoute === List(ExtraHop(PublicKey("02f0b230e53723ccc331db140edc518be1ee5ab29a508104a4be2f5be922c928e8"), 24412456671576064L, 547005, 144),
-      ExtraHop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac") ,23366821113626624L, 547000, 144)))
+      ExtraHop(PublicKey("032b4af42b5e8089a7a06005ead9ac4667527390ee39c998b7b0307f0d81d7f4ac"), 23366821113626624L, 547000, 144)))
 
     // Sender side
 
@@ -223,11 +223,16 @@ class RouteCalculationSpec extends FunSuite {
   test("stale channels pruning") {
     // set current block height
     Globals.blockCount.set(500000)
+
     // we only care about timestamps
     def channelAnnouncement(shortChannelId: Long) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+
     def channelUpdate(shortChannelId: Long, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
+
     def desc(shortChannelId: Long) = ChannelDesc(shortChannelId, randomKey.publicKey, randomKey.publicKey)
+
     def daysAgoInBlocks(daysAgo: Int): Int = Globals.blockCount.get().toInt - 144 * daysAgo
+
     def daysAgoInSeconds(daysAgo: Int): Long = Platform.currentTime / 1000 - daysAgo * 24 * 3600
 
     // a is an old channel with an old channel update => PRUNED

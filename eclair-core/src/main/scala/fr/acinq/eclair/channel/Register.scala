@@ -57,6 +57,7 @@ class Register extends Actor with ActorLogging {
 }
 
 object Register {
+
   // @formatter:off
   case class Forward[T](channelId: BinaryData, message: T)
   case class ForwardShortId[T](shortChannelId: Long, message: T)

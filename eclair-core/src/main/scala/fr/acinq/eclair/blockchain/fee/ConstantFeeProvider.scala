@@ -1,4 +1,5 @@
 package fr.acinq.eclair.blockchain.fee
+
 import scala.concurrent.Future
 
 /**

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.api
 
-import fr.acinq.bitcoin.{BinaryData, Script, ScriptElt, Transaction}
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo

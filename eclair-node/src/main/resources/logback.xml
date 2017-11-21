@@ -29,7 +29,7 @@
                 </encoder>
             </appender>
             <root>
-                <appender-ref ref="CONSOLE" />
+                <appender-ref ref="CONSOLE"/>
             </root>
         </then>
     </if>

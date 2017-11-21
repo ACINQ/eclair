@@ -1,13 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.net.URL?>
 <?import javafx.scene.layout.VBox?>
-
+<?import java.net.URL?>
 <VBox fx:id="notifsVBox" spacing="10.0"
       style="-fx-background-color: transparent" styleClass="notifications-box"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
-   <stylesheets>
-      <URL value="@../commons/globals.css" />
-      <URL value="@main.css" />
-   </stylesheets>
+    <stylesheets>
+        <URL value="@../commons/globals.css"/>
+        <URL value="@main.css"/>
+    </stylesheets>
 </VBox>

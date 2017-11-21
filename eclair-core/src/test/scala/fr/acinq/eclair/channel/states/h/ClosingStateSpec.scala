@@ -7,7 +7,6 @@ import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.HtlcGenerationSpec.paymentPreimage
 import fr.acinq.eclair.payment.{AckFulfillCmd, ForwardAdd, ForwardFulfill}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._

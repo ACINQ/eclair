@@ -12,9 +12,13 @@ import javafx.util.Duration
 import grizzled.slf4j.Logging
 
 sealed trait NotificationType
+
 case object NOTIFICATION_NONE extends NotificationType
+
 case object NOTIFICATION_SUCCESS extends NotificationType
+
 case object NOTIFICATION_ERROR extends NotificationType
+
 case object NOTIFICATION_INFO extends NotificationType
 
 /**
@@ -30,11 +34,11 @@ class NotificationsController extends Logging {
   /**
     * Adds a notification panel to the notifications stage
     *
-    * @param title Title of the notification, should not be too long
-    * @param message Main message of the notification
+    * @param title            Title of the notification, should not be too long
+    * @param message          Main message of the notification
     * @param notificationType type of the notification (error, warning, success, info...)
     */
-  def addNotification (title: String, message: String, notificationType: NotificationType) = {
+  def addNotification(title: String, message: String, notificationType: NotificationType) = {
 
     val loader = new FXMLLoader(getClass.getResource("/gui/main/notificationPane.fxml"))
     val notifPaneController = new NotificationPaneController

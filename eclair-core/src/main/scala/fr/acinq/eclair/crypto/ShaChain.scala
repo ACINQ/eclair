@@ -97,7 +97,7 @@ object ShaChain {
   }
 
 
-  val shaChainCodec: Codec[ShaChain] =  {
+  val shaChainCodec: Codec[ShaChain] = {
     import scodec.Codec
     import scodec.bits.BitVector
     import scodec.codecs._
@@ -106,7 +106,7 @@ object ShaChain {
     val entryCodec = vectorOfN(uint16, bool) ~ LightningMessageCodecs.varsizebinarydata
 
     // codec for a Map[Vector[Boolean], BinaryData]: write all k ->v pairs using the codec defined above
-    val mapCodec: Codec[Map[Vector[Boolean], BinaryData]] = Codec[Map[Vector[Boolean], BinaryData]] (
+    val mapCodec: Codec[Map[Vector[Boolean], BinaryData]] = Codec[Map[Vector[Boolean], BinaryData]](
       (m: Map[Vector[Boolean], BinaryData]) => vectorOfN(uint16, entryCodec).encode(m.toVector),
       (b: BitVector) => vectorOfN(uint16, entryCodec).decode(b).map(_.map(_.toMap))
     )

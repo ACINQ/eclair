@@ -27,13 +27,13 @@ import java.util.Arrays;
 
 /**
  * Implementation of the Curve25519 elliptic curve algorithm.
- *
+ * <p>
  * This implementation is based on that from arduinolibs:
  * https://github.com/rweather/arduinolibs
- *
+ * <p>
  * Differences in this version are due to using 26-bit limbs for the
  * representation instead of the 8/16/32-bit limbs in the original.
- *
+ * <p>
  * References: http://cr.yp.to/ecdh.html, RFC 7748
  */
 public final class Curve25519 {
@@ -61,25 +61,24 @@ public final class Curve25519 {
     /**
      * Constructs the temporary state holder for Curve25519 evaluation.
      */
-    private Curve25519()
-    {
+    private Curve25519() {
         // Allocate memory for all of the temporary variables we will need.
-        x_1 = new int [NUM_LIMBS_255BIT];
-        x_2 = new int [NUM_LIMBS_255BIT];
-        x_3 = new int [NUM_LIMBS_255BIT];
-        z_2 = new int [NUM_LIMBS_255BIT];
-        z_3 = new int [NUM_LIMBS_255BIT];
-        A = new int [NUM_LIMBS_255BIT];
-        B = new int [NUM_LIMBS_255BIT];
-        C = new int [NUM_LIMBS_255BIT];
-        D = new int [NUM_LIMBS_255BIT];
-        E = new int [NUM_LIMBS_255BIT];
-        AA = new int [NUM_LIMBS_255BIT];
-        BB = new int [NUM_LIMBS_255BIT];
-        DA = new int [NUM_LIMBS_255BIT];
-        CB = new int [NUM_LIMBS_255BIT];
-        t1 = new long [NUM_LIMBS_510BIT];
-        t2 = new int [NUM_LIMBS_510BIT];
+        x_1 = new int[NUM_LIMBS_255BIT];
+        x_2 = new int[NUM_LIMBS_255BIT];
+        x_3 = new int[NUM_LIMBS_255BIT];
+        z_2 = new int[NUM_LIMBS_255BIT];
+        z_3 = new int[NUM_LIMBS_255BIT];
+        A = new int[NUM_LIMBS_255BIT];
+        B = new int[NUM_LIMBS_255BIT];
+        C = new int[NUM_LIMBS_255BIT];
+        D = new int[NUM_LIMBS_255BIT];
+        E = new int[NUM_LIMBS_255BIT];
+        AA = new int[NUM_LIMBS_255BIT];
+        BB = new int[NUM_LIMBS_255BIT];
+        DA = new int[NUM_LIMBS_255BIT];
+        CB = new int[NUM_LIMBS_255BIT];
+        t1 = new long[NUM_LIMBS_510BIT];
+        t2 = new int[NUM_LIMBS_510BIT];
     }
 
 
@@ -102,8 +101,8 @@ public final class Curve25519 {
         Arrays.fill(BB, 0);
         Arrays.fill(DA, 0);
         Arrays.fill(CB, 0);
-        Arrays.fill(t1,  0L);
-        Arrays.fill(t2,  0);
+        Arrays.fill(t1, 0L);
+        Arrays.fill(t2, 0);
     }
 
     /**
@@ -112,8 +111,7 @@ public final class Curve25519 {
      *
      * @param x The number to reduce, and the result.
      */
-    private void reduceQuick(int[] x)
-    {
+    private void reduceQuick(int[] x) {
         int index, carry;
 
         // Perform a trial subtraction of (2^255 - 19) from "x" which is
@@ -142,12 +140,11 @@ public final class Curve25519 {
      * Reduce a number modulo 2^255 - 19.
      *
      * @param result The result.
-     * @param x The value to be reduced.  This array will be
-     * modified during the reduction.
-     * @param size The number of limbs in the high order half of x.
+     * @param x      The value to be reduced.  This array will be
+     *               modified during the reduction.
+     * @param size   The number of limbs in the high order half of x.
      */
-    private void reduce(int[] result, int[] x, int size)
-    {
+    private void reduce(int[] result, int[] x, int size) {
         int index, limb, carry;
 
         // Calculate (x mod 2^255) + ((x / 2^255) * 19) which will
@@ -198,11 +195,10 @@ public final class Curve25519 {
      * Multiplies two numbers modulo 2^255 - 19.
      *
      * @param result The result.
-     * @param x The first number to multiply.
-     * @param y The second number to multiply.
+     * @param x      The first number to multiply.
+     * @param y      The second number to multiply.
      */
-    private void mul(int[] result, int[] x, int[] y)
-    {
+    private void mul(int[] result, int[] x, int[] y) {
         int i, j;
 
         // Multiply the two numbers to create the intermediate result.
@@ -220,10 +216,10 @@ public final class Curve25519 {
 
         // Propagate carries and convert back into 26-bit words.
         v = t1[0];
-        t2[0] = ((int)v) & 0x03FFFFFF;
+        t2[0] = ((int) v) & 0x03FFFFFF;
         for (i = 1; i < NUM_LIMBS_510BIT; ++i) {
             v = (v >> 26) + t1[i];
-            t2[i] = ((int)v) & 0x03FFFFFF;
+            t2[i] = ((int) v) & 0x03FFFFFF;
         }
 
         // Reduce the result modulo 2^255 - 19.
@@ -234,10 +230,9 @@ public final class Curve25519 {
      * Squares a number modulo 2^255 - 19.
      *
      * @param result The result.
-     * @param x The number to square.
+     * @param x      The number to square.
      */
-    private void square(int[] result, int[] x)
-    {
+    private void square(int[] result, int[] x) {
         mul(result, x, x);
     }
 
@@ -245,19 +240,18 @@ public final class Curve25519 {
      * Multiplies a number by the a24 constant, modulo 2^255 - 19.
      *
      * @param result The result.
-     * @param x The number to multiply by a24.
+     * @param x      The number to multiply by a24.
      */
-    private void mulA24(int[] result, int[] x)
-    {
+    private void mulA24(int[] result, int[] x) {
         long a24 = 121665;
         long carry = 0;
         int index;
         for (index = 0; index < NUM_LIMBS_255BIT; ++index) {
             carry += a24 * x[index];
-            t2[index] = ((int)carry) & 0x03FFFFFF;
+            t2[index] = ((int) carry) & 0x03FFFFFF;
             carry >>= 26;
         }
-        t2[NUM_LIMBS_255BIT] = ((int)carry) & 0x03FFFFFF;
+        t2[NUM_LIMBS_255BIT] = ((int) carry) & 0x03FFFFFF;
         reduce(result, t2, 1);
     }
 
@@ -265,11 +259,10 @@ public final class Curve25519 {
      * Adds two numbers modulo 2^255 - 19.
      *
      * @param result The result.
-     * @param x The first number to add.
-     * @param y The second number to add.
+     * @param x      The first number to add.
+     * @param y      The second number to add.
      */
-    private void add(int[] result, int[] x, int[] y)
-    {
+    private void add(int[] result, int[] x, int[] y) {
         int index, carry;
         carry = x[0] + y[0];
         result[0] = carry & 0x03FFFFFF;
@@ -284,11 +277,10 @@ public final class Curve25519 {
      * Subtracts two numbers modulo 2^255 - 19.
      *
      * @param result The result.
-     * @param x The first number to subtract.
-     * @param y The second number to subtract.
+     * @param x      The first number to subtract.
+     * @param y      The second number to subtract.
      */
-    private void sub(int[] result, int[] x, int[] y)
-    {
+    private void sub(int[] result, int[] x, int[] y) {
         int index, borrow;
 
         // Subtract y from x to generate the intermediate result.
@@ -316,11 +308,10 @@ public final class Curve25519 {
      * Conditional swap of two values.
      *
      * @param select Set to 1 to swap, 0 to leave as-is.
-     * @param x The first value.
-     * @param y The second value.
+     * @param x      The first value.
+     * @param y      The second value.
      */
-    private static void cswap(int select, int[] x, int[] y)
-    {
+    private static void cswap(int select, int[] x, int[] y) {
         int dummy;
         select = -select;
         for (int index = 0; index < NUM_LIMBS_255BIT; ++index) {
@@ -334,10 +325,9 @@ public final class Curve25519 {
      * Raise x to the power of (2^250 - 1).
      *
      * @param result The result.  Must not overlap with x.
-     * @param x The argument.
+     * @param x      The argument.
      */
-    private void pow250(int[] result, int[] x)
-    {
+    private void pow250(int[] result, int[] x) {
         int i, j;
 
         // The big-endian hexadecimal expansion of (2^250 - 1) is:
@@ -375,10 +365,9 @@ public final class Curve25519 {
      * Computes the reciprocal of a number modulo 2^255 - 19.
      *
      * @param result The result.  Must not overlap with x.
-     * @param x The argument.
+     * @param x      The argument.
      */
-    private void recip(int[] result, int[] x)
-    {
+    private void recip(int[] result, int[] x) {
         // The reciprocal is the same as x ^ (p - 2) where p = 2^255 - 19.
         // The big-endian hexadecimal expansion of (p - 2) is:
         // 7FFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFFF FFFFFFEB
@@ -401,8 +390,7 @@ public final class Curve25519 {
      *
      * @param s The 32-byte secret key.
      */
-    private void evalCurve(byte[] s)
-    {
+    private void evalCurve(byte[] s) {
         int sposn = 31;
         int sbit = 6;
         int svalue = s[sposn] | 0x40;
@@ -411,7 +399,7 @@ public final class Curve25519 {
 
         // Iterate over all 255 bits of "s" from the highest to the lowest.
         // We ignore the high bit of the 256-bit representation of "s".
-        for (;;) {
+        for (; ; ) {
             // Conditional swaps on entry to this bit but only if we
             // didn't swap on the previous bit.
             select = (svalue >> sbit) & 0x01;
@@ -464,14 +452,13 @@ public final class Curve25519 {
     /**
      * Evaluates the Curve25519 curve.
      *
-     * @param result Buffer to place the result of the evaluation into.
-     * @param offset Offset into the result buffer.
+     * @param result     Buffer to place the result of the evaluation into.
+     * @param offset     Offset into the result buffer.
      * @param privateKey The private key to use in the evaluation.
-     * @param publicKey The public key to use in the evaluation, or null
-     * if the base point of the curve should be used.
+     * @param publicKey  The public key to use in the evaluation, or null
+     *                   if the base point of the curve should be used.
      */
-    public static void eval(byte[] result, int offset, byte[] privateKey, byte[] publicKey)
-    {
+    public static void eval(byte[] result, int offset, byte[] privateKey, byte[] publicKey) {
         Curve25519 state = new Curve25519();
         try {
             // Unpack the public key value.  If null, use 9 as the base point.
@@ -501,11 +488,11 @@ public final class Curve25519 {
             }
 
             // Initialize the other temporary variables.
-            Arrays.fill(state.x_2, 0);			// x_2 = 1
+            Arrays.fill(state.x_2, 0);            // x_2 = 1
             state.x_2[0] = 1;
-            Arrays.fill(state.z_2, 0);			// z_2 = 0
+            Arrays.fill(state.z_2, 0);            // z_2 = 0
             System.arraycopy(state.x_1, 0, state.x_3, 0, state.x_1.length);  // x_3 = x_1
-            Arrays.fill(state.z_3, 0);			// z_3 = 1
+            Arrays.fill(state.z_3, 0);            // z_3 = 1
             state.z_3[0] = 1;
 
             // Evaluate the curve for every bit of the private key.
@@ -520,9 +507,9 @@ public final class Curve25519 {
                 int bit = (index * 8) % 26;
                 int word = (index * 8) / 26;
                 if (bit <= (26 - 8))
-                    result[offset + index] = (byte)(state.x_2[word] >> bit);
+                    result[offset + index] = (byte) (state.x_2[word] >> bit);
                 else
-                    result[offset + index] = (byte)((state.x_2[word] >> bit) | (state.x_2[word + 1] << (26 - bit)));
+                    result[offset + index] = (byte) ((state.x_2[word] >> bit) | (state.x_2[word + 1] << (26 - bit)));
             }
         } finally {
             // Clean up all temporary state before we exit.

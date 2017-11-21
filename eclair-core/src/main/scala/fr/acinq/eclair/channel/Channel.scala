@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.Crypto.{PublicKey, ripemd160, sha256}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.NodeParams.BITCOINJ
 import fr.acinq.eclair._
-import fr.acinq.eclair.blockchain.WatchConfirmed.extractPublicKeyScript
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}

@@ -3,47 +3,53 @@
 <?import javafx.scene.control.Button?>
 <?import javafx.scene.control.Label?>
 <?import javafx.scene.effect.BoxBlur?>
-<?import javafx.scene.image.*?>
+<?import javafx.scene.effect.DropShadow?>
+<?import javafx.scene.image.Image?>
+<?import javafx.scene.image.ImageView?>
 <?import javafx.scene.layout.*?>
 <?import java.net.URL?>
-<?import javafx.scene.effect.DropShadow?>
 <Pane fx:id="splash" maxHeight="-Infinity" maxWidth="-Infinity" minHeight="-Infinity" minWidth="-Infinity"
       prefHeight="457.0" prefWidth="760.0" style="-fx-background-color: transparent"
       xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <children>
-        <ImageView fx:id="imgBlurred" fitHeight="0" fitWidth="300.0" layoutX="176.0" layoutY="115.0" pickOnBounds="true" preserveRatio="true">
+        <ImageView fx:id="imgBlurred" fitHeight="0" fitWidth="300.0" layoutX="176.0" layoutY="115.0" pickOnBounds="true"
+                   preserveRatio="true">
             <image>
-                <Image url="@../commons/images/eclair-fit.png" />
+                <Image url="@../commons/images/eclair-fit.png"/>
             </image>
             <effect>
-                <BoxBlur height="114.75" width="92.44" />
+                <BoxBlur height="114.75" width="92.44"/>
             </effect>
         </ImageView>
-        <ImageView fx:id="img" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="114.0" opacity="0.0" pickOnBounds="true" preserveRatio="true">
+        <ImageView fx:id="img" fitHeight="0" fitWidth="409.0" layoutX="176.0" layoutY="114.0" opacity="0.0"
+                   pickOnBounds="true" preserveRatio="true">
             <image>
-                <Image url="@../commons/images/eclair-fit.png" />
+                <Image url="@../commons/images/eclair-fit.png"/>
             </image>
         </ImageView>
         <VBox fx:id="errorBox" opacity="0.0" alignment="CENTER" layoutX="196.0" prefWidth="370.0" prefHeight="457.0">
             <children>
                 <VBox prefWidth="370.0" styleClass="error-box" spacing="10">
                     <effect>
-                        <DropShadow offsetX="5.0" offsetY="5.0" radius="25.0" color="rgba(0,0,0,.4)" blurType="GAUSSIAN"/>
+                        <DropShadow offsetX="5.0" offsetY="5.0" radius="25.0" color="rgba(0,0,0,.4)"
+                                    blurType="GAUSSIAN"/>
                     </effect>
                     <children>
                         <VBox fx:id="logBox" VBox.vgrow="ALWAYS" styleClass="log-box">
                             <children>
                             </children>
                         </VBox>
-                        <Label onMouseClicked="#openGithubPage" VBox.vgrow="NEVER" styleClass="link" text="Consult our readme to get started." />
-                        <Button fx:id="closeButton" VBox.vgrow="NEVER" mnemonicParsing="false" onAction="#closeAndKill" text="Close" cancelButton="true" />
+                        <Label onMouseClicked="#openGithubPage" VBox.vgrow="NEVER" styleClass="link"
+                               text="Consult our readme to get started."/>
+                        <Button fx:id="closeButton" VBox.vgrow="NEVER" mnemonicParsing="false" onAction="#closeAndKill"
+                                text="Close" cancelButton="true"/>
                     </children>
                 </VBox>
             </children>
         </VBox>
     </children>
     <stylesheets>
-        <URL value="@../commons/globals.css" />
-        <URL value="@splash.css" />
+        <URL value="@../commons/globals.css"/>
+        <URL value="@splash.css"/>
     </stylesheets>
 </Pane>

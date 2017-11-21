@@ -27,9 +27,9 @@ object ContextMenuUtils {
     * @param actions list of copy action (label + value)
     * @return javafx context menu
     */
-  def buildCopyContext (actions: List[CopyAction]): ContextMenu = {
+  def buildCopyContext(actions: List[CopyAction]): ContextMenu = {
     val context = new ContextMenu()
-    for (action <- actions ) {
+    for (action <- actions) {
       val copyItem = new MenuItem(action.label)
       copyItem.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent) = copyToClipboard(action.value)
@@ -39,7 +39,7 @@ object ContextMenuUtils {
     context
   }
 
-  def copyToClipboard (value: String) = {
+  def copyToClipboard(value: String) = {
     val clipContent = new ClipboardContent
     clipContent.putString(value)
     clip.setContent(clipContent)
