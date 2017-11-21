@@ -190,13 +190,13 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
 }
 
+
+// @formatter:off
 sealed trait Bitcoin
-
 case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
-
 case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
-
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+// @formatter:on
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,
