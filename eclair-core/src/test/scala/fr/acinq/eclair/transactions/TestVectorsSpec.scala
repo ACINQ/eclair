@@ -60,11 +60,9 @@ class TestVectorsSpec extends FunSuite {
     val funding_pubkey = funding_privkey.publicKey
 
     val per_commitment_point = Point(BinaryData("025f7117a78150fe2ef97db7cfc83bd57b2e2c0d0dd25eaf467a4a1c2a45ce1486"))
-    val private_key = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
-    val public_key = private_key.publicKey
-    val delayed_private_key = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
-    val delayed_key = delayed_private_key.publicKey
-    val revocation_key = PublicKey(BinaryData("0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19"))
+    val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, per_commitment_point)
+    val delayed_payment_privkey = Generators.derivePrivKey(delayed_payment_basepoint_secret, per_commitment_point)
+    val revocation_pubkey = PublicKey(BinaryData("0212a140cd0c6539d07cd08dfe09984dec3251ea808b892efeac3ede9402bf2b19"))
     val feerate_per_kw = 15000
   }
 
@@ -100,8 +98,7 @@ class TestVectorsSpec extends FunSuite {
     val revocation_basepoint = revocation_basepoint_secret.toPoint
     val funding_privkey = PrivateKey(BinaryData("1552dfba4f6cf29a62a0af13c8d6981d36d0ef8d61ba10fb0fe90da7634d7e1301"))
     val funding_pubkey = funding_privkey.publicKey
-    val private_key = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
-    val public_key = private_key.publicKey
+    val payment_privkey = Generators.derivePrivKey(payment_basepoint_secret, Local.per_commitment_point)
     val per_commitment_point = Point(BinaryData("022c76692fd70814a8d1ed9dedc833318afaaed8188db4d14727e2e99bc619d325"))
   }
 
@@ -123,11 +120,11 @@ class TestVectorsSpec extends FunSuite {
   println(s"local_funding_pubkey: ${Local.funding_pubkey}")
   println(s"remote_funding_privkey: ${Remote.funding_privkey}")
   println(s"remote_funding_pubkey: ${Remote.funding_pubkey}")
-  println(s"local_secretkey: ${Local.private_key}")
-  println(s"localkey: ${Local.public_key}")
-  println(s"remotekey: ${Remote.public_key}")
-  println(s"local_delayedkey: ${Local.delayed_key}")
-  println(s"local_revocation_key: ${Local.revocation_key}")
+  println(s"local_secretkey: ${Local.payment_privkey}")
+  println(s"localkey: ${Local.payment_privkey.publicKey}")
+  println(s"remotekey: ${Remote.payment_privkey.publicKey}")
+  println(s"local_delayedkey: ${Local.delayed_payment_privkey.publicKey}")
+  println(s"local_revocation_key: ${Local.revocation_pubkey}")
   println(s"# funding wscript = ${commitmentInput.redeemScript}")
   assert(commitmentInput.redeemScript == BinaryData("5221023da092f6980e58d2c037173180e9a465476026ee50f96695963e8efe436f54eb21030e9f7b623d2ccc7c9bd44d66d5ce21ce504c0acf6385a132cec6d3c39fa711c152ae"))
 
@@ -147,8 +144,8 @@ class TestVectorsSpec extends FunSuite {
     DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, BinaryData("")))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
-    case OUT => Scripts.htlcOffered(Local.public_key, Remote.public_key, Local.revocation_key, Crypto.ripemd160(htlc.add.paymentHash))
-    case IN => Scripts.htlcReceived(Local.public_key, Remote.public_key, Local.revocation_key, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.expiry)
+    case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
+    case IN => Scripts.htlcReceived(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash), htlc.add.expiry)
   })
 
   def dir2string(dir: Direction) = dir match {
@@ -174,8 +171,9 @@ class TestVectorsSpec extends FunSuite {
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
-        Local.public_key, Local.revocation_key, Local.toSelfDelay, Local.delayed_key,
-        Remote.public_key,
+        Local.revocation_pubkey, Local.toSelfDelay,
+        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+        Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         spec)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
@@ -190,10 +188,10 @@ class TestVectorsSpec extends FunSuite {
     println(s"# actual commitment transaction fee = ${actualFee.toLong}")
     commitTx.tx.txOut.map(txOut => {
       txOut.publicKeyScript.length match {
-        case 22 => println(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.public_key})")
+        case 22 => println(s"# to-remote amount ${txOut.amount.toLong} P2WPKH(${Remote.payment_privkey.publicKey})")
         case 34 =>
           val index = htlcScripts.indexWhere(s => Script.write(Script.pay2wsh(s)) == txOut.publicKeyScript)
-          if (index == -1) println(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_key, Local.toSelfDelay, Local.delayed_key))}")
+          if (index == -1) println(s"# to-local amount ${txOut.amount.toLong} wscript ${Script.write(Scripts.toLocalDelayed(Local.revocation_pubkey, Local.toSelfDelay, Local.delayed_payment_privkey.publicKey))}")
           else println(s"# HTLC ${if (htlcs(index).direction == OUT) "offered" else "received"} amount ${txOut.amount.toLong} wscript ${Script.write(htlcScripts(index))}")
       }
     })
@@ -203,8 +201,9 @@ class TestVectorsSpec extends FunSuite {
         commitmentInput,
         Local.commitTxNumber, Local.payment_basepoint, Remote.payment_basepoint,
         true, Local.dustLimit,
-        Local.public_key, Local.revocation_key, Local.toSelfDelay, Local.delayed_key,
-        Remote.public_key,
+        Local.revocation_pubkey, Local.toSelfDelay,
+        Local.delayed_payment_privkey.publicKey, Remote.payment_privkey.publicKey,
+        Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
         spec)
 
       val local_sig = Transactions.sign(tx, Local.funding_privkey)
@@ -220,9 +219,9 @@ class TestVectorsSpec extends FunSuite {
     val (unsignedHtlcTimeoutTxs, unsignedHtlcSuccessTxs) = Transactions.makeHtlcTxs(
       commitTx.tx,
       Satoshi(Local.dustLimit.toLong),
-      Local.revocation_key,
-      Local.toSelfDelay, Local.public_key, Local.delayed_key,
-      Remote.public_key,
+      Local.revocation_pubkey,
+      Local.toSelfDelay, Local.delayed_payment_privkey.publicKey,
+      Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, // note: we have payment_key = htlc_key
       spec)
 
     println(s"num_htlcs: ${(unsignedHtlcTimeoutTxs ++ unsignedHtlcSuccessTxs).length}")
@@ -231,12 +230,12 @@ class TestVectorsSpec extends FunSuite {
 
     htlcTxs.collect {
       case tx: HtlcSuccessTx =>
-        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         println(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
       case tx: HtlcTimeoutTx =>
-        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val htlcIndex = htlcScripts.indexOf(Script.parse(tx.input.redeemScript))
         println(s"# signature for output ${tx.input.outPoint.index} (htlc $htlcIndex)")
         println(s"remote_htlc_signature: ${toHexString(remoteSig.dropRight(1))}")
@@ -245,8 +244,8 @@ class TestVectorsSpec extends FunSuite {
     val signedTxs = htlcTxs collect {
       case tx: HtlcSuccessTx =>
         //val tx = tx0.copy(tx = tx0.tx.copy(txOut = tx0.tx.txOut(0).copy(amount = Satoshi(545)) :: Nil))
-        val localSig = Transactions.sign(tx, Local.private_key)
-        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val localSig = Transactions.sign(tx, Local.payment_privkey)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val preimage = paymentPreimages.find(p => Crypto.sha256(p) == tx.paymentHash).get
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig, preimage)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
@@ -255,8 +254,8 @@ class TestVectorsSpec extends FunSuite {
         println(s"output htlc_success_tx ${htlcIndex}: ${Transaction.write(tx1.tx)}")
         tx1
       case tx: HtlcTimeoutTx =>
-        val localSig = Transactions.sign(tx, Local.private_key)
-        val remoteSig = Transactions.sign(tx, Remote.private_key)
+        val localSig = Transactions.sign(tx, Local.payment_privkey)
+        val remoteSig = Transactions.sign(tx, Remote.payment_privkey)
         val tx1 = Transactions.addSigs(tx, localSig, remoteSig)
         Transaction.correctlySpends(tx1.tx, Seq(commitTx.tx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
         println(s"# local_signature = ${toHexString(localSig.dropRight(1))}")

@@ -44,6 +44,7 @@ object ChannelStateSpec {
     revocationSecret = Scalar(BinaryData("02" * 32)),
     paymentKey = PrivateKey(BinaryData("03" * 32) :+ 1.toByte),
     delayedPaymentKey = Scalar(BinaryData("04" * 32)),
+    htlcKey = PrivateKey(BinaryData("06" * 32) :+ 1.toByte),
     defaultFinalScriptPubKey = Nil,
     shaSeed = BinaryData("05" * 32),
     isFunder = true,
@@ -62,6 +63,7 @@ object ChannelStateSpec {
     revocationBasepoint = Scalar(BinaryData("02" * 32)).toPoint,
     paymentBasepoint = Scalar(BinaryData("03" * 32)).toPoint,
     delayedPaymentBasepoint = Scalar(BinaryData("04" * 32)).toPoint,
+    htlcBasepoint = Scalar(BinaryData("06" * 32)).toPoint,
     globalFeatures = "foo".getBytes(),
     localFeatures = "bar".getBytes())
 
