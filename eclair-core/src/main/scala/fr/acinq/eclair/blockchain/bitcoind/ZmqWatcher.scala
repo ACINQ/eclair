@@ -24,10 +24,12 @@ import scala.util.Try
   */
 class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) extends Actor with ActorLogging {
 
+  import ZmqWatcher.TickNewBlock
+
   context.system.eventStream.subscribe(self, classOf[BlockchainEvent])
 
   // this is to initialize block count
-  self ! 'tick
+  self ! TickNewBlock
 
   case class TriggerEvent(w: Watch, e: WatchEvent)
 
@@ -47,13 +49,13 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
       log.debug(s"received blockid=${Try(block.blockId).getOrElse(BinaryData(""))}")
-      nextTick.map(_.cancel()) // this may fail or succeed, worse case scenario we will have two 'ticks in a row (no big deal)
+      nextTick.map(_.cancel()) // this may fail or succeed, worse case scenario we will have two ticks in a row (no big deal)
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row
-      val task = context.system.scheduler.scheduleOnce(2 seconds, self, 'tick)
+      val task = context.system.scheduler.scheduleOnce(2 seconds, self, TickNewBlock)
       context become watching(watches, block2tx, Some(task))
 
-    case 'tick =>
+    case TickNewBlock =>
       client.getBlockCount.map {
         case count =>
           log.debug(s"setting blockCount=$count")
@@ -171,7 +173,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
             }
         }
 
-      case w: WatchConfirmed => self ! 'tick
+      case w: WatchConfirmed => self ! TickNewBlock
 
       case w => log.warning(s"ignoring $w (not implemented)")
     }
@@ -201,5 +203,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 object ZmqWatcher {
 
   def props(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = ExecutionContext.global) = Props(new ZmqWatcher(client)(ec))
+
+  case object TickNewBlock
 
 }
