@@ -97,7 +97,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = InvalidPaymentHash(channelId(alice))
       //sender.expectMsg(Failure(InvalidPaymentHash(channelId(alice))))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -109,7 +109,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = ExpiryCannotBeInThePast(channelId(alice), 300000, 400000)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -121,7 +121,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = HtlcValueTooSmall(channelId(alice), 1000, 50)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -133,7 +133,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = InsufficientFunds(channelId(alice), amountMsat = Int.MaxValue, missingSatoshis = 1376443, reserveSatoshis = 20000, feesSatoshis = 8960)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -154,7 +154,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = InsufficientFunds(channelId(alice), amountMsat = 1000000, missingSatoshis = 1000, reserveSatoshis = 20000, feesSatoshis = 12400)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -172,7 +172,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = InsufficientFunds(channelId(alice), amountMsat = 500000000, missingSatoshis = 332400, reserveSatoshis = 20000, feesSatoshis = 12400)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -184,7 +184,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(bob, add)
       val error = HtlcValueTooHighInFlight(channelId(bob), maximum = 150000000, actual = 151000000)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       bob2alice.expectNoMsg(200 millis)
     }
   }
@@ -202,7 +202,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = TooManyAcceptedHtlcs(channelId(alice), maximum = 30)
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -239,7 +239,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = ClosingInProgress(channelId(alice))
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
@@ -264,7 +264,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add2)
       val error = ClosingInProgress(channelId(alice))
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
     }
   }
 

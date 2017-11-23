@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
+import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -213,6 +213,78 @@ class RelayerSpec extends TestkitBaseClass {
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(FinalIncorrectCltvExpiry(add_ab.expiry)))
+
+    register.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
+  }
+
+  test("fail to relay an htlc-add when next channel's balance is too low") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    val (cmd, _) = buildCommand(finalAmountMsat, Globals.blockCount.get().toInt + 10, paymentHash, hops)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    relayer ! channelUpdate_bc
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd.message.upstream_opt === Some(add_ab))
+
+    sender.send(relayer, ForwardLocalFail(new InsufficientFunds(channelId_bc, cmd.amountMsat, 100, 0, 0), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc.shortChannelId)))
+
+    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(fail.id === add_ab.id)
+    assert(fail.reason == Right(TemporaryChannelFailure(channelUpdate_bc)))
+
+    register.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
+  }
+
+  test("fail to relay an htlc-add when next channel has too many inflight htlcs") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    val (cmd, _) = buildCommand(finalAmountMsat, Globals.blockCount.get().toInt + 10, paymentHash, hops)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    relayer ! channelUpdate_bc
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd.message.upstream_opt === Some(add_ab))
+
+    sender.send(relayer, ForwardLocalFail(new TooManyAcceptedHtlcs(channelId_bc, 30), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc.shortChannelId)))
+
+    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(fail.id === add_ab.id)
+    assert(fail.reason == Right(TemporaryChannelFailure(channelUpdate_bc)))
+
+    register.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
+  }
+
+  test("fail to relay an htlc-add when next channel has a timed out htlc (and is thus closing)") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    val (cmd, _) = buildCommand(finalAmountMsat, Globals.blockCount.get().toInt + 10, paymentHash, hops)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    relayer ! channelUpdate_bc
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd.message.upstream_opt === Some(add_ab))
+
+    sender.send(relayer, ForwardLocalFail(new HtlcTimedout(channelId_bc), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc.shortChannelId)))
+
+    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
+    assert(fail.id === add_ab.id)
+    assert(fail.reason == Right(PermanentChannelFailure))
 
     register.expectNoMsg(500 millis)
     paymentHandler.expectNoMsg(500 millis)

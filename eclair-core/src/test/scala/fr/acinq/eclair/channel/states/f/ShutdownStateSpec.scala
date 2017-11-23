@@ -85,7 +85,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.send(alice, add)
       val error = ChannelUnavailable(channelId(alice))
       //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref)), None))
       alice2bob.expectNoMsg(200 millis)
     }
   }
