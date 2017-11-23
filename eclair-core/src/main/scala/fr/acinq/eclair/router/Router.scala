@@ -1,7 +1,5 @@
 package fr.acinq.eclair.router
 
-import java.io.StringWriter
-
 import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
@@ -11,19 +9,17 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.payment.Hop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
-import fr.acinq.eclair.payment.Hop
-import org.jgrapht.ext._
-import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
+import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
-import scala.concurrent.duration._
 
 // @formatter:off
 
@@ -348,7 +344,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
 object Router {
 
-  val MAX_PARALLEL_JSONRPC_REQUESTS = 1000
+  val MAX_PARALLEL_JSONRPC_REQUESTS = 50
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 

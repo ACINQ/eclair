@@ -17,6 +17,7 @@ trait NetworkDb {
 
   /**
     * This method removes 1 channel announcement and 2 channel updates (at both ends of the same channel)
+    *
     * @param shortChannelId
     * @return
     */

@@ -30,6 +30,7 @@ trait EclairWallet {
 
   /**
     * Cancels this transaction: this probably translates to "release locks on utxos".
+    *
     * @param tx
     * @return
     */

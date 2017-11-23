@@ -62,7 +62,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
         }
         val stream = classOf[Setup].getResourceAsStream(addressesFile)
         val addresses = ElectrumClient.readServerAddresses(stream)
-        val electrumClient =  system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+        val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
         Electrum(electrumClient)
       case _ => ???
     }
@@ -133,7 +133,9 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 }
 
 sealed trait Bitcoin
+
 case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
+
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 
 case class Kit(nodeParams: NodeParams,

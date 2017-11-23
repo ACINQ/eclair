@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
-import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._

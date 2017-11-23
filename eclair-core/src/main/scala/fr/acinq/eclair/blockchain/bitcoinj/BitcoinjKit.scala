@@ -7,11 +7,11 @@ import akka.actor.ActorSystem
 import com.google.common.util.concurrent.{FutureCallback, Futures}
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.Globals
-import fr.acinq.eclair.blockchain.bitcoinj.BitcoinjKit._
 import fr.acinq.eclair.blockchain.CurrentBlockCount
+import fr.acinq.eclair.blockchain.bitcoinj.BitcoinjKit._
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.TransactionConfidence.ConfidenceType
-import org.bitcoinj.core.listeners.{NewBestBlockListener, PeerConnectedEventListener, TransactionConfidenceEventListener, _}
+import org.bitcoinj.core.listeners._
 import org.bitcoinj.core.{Block, Context, FilteredBlock, NetworkParameters, Peer, PeerAddress, StoredBlock, VersionMessage, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.params.{RegTestParams, TestNet3Params}
@@ -21,7 +21,6 @@ import org.bitcoinj.wallet.Wallet
 import scala.collection.JavaConversions._
 import scala.concurrent.Promise
 import scala.util.Try
-
 
 /**
   * Created by PM on 09/07/2017.
@@ -42,8 +41,8 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
   val atCurrentHeight = atCurrentHeightPromise.future
 
   // tells us when we are at current block height
-//  private val syncedPromise = Promise[Boolean]()
-//  val synced = syncedPromise.future
+  //  private val syncedPromise = Promise[Boolean]()
+  //  val synced = syncedPromise.future
 
   private def updateBlockCount(blockCount: Int) = {
     // when synchronizing we don't want to advertise previous blocks
@@ -62,13 +61,13 @@ class BitcoinjKit(chain: String, datadir: File, staticPeers: List[InetSocketAddr
     peerGroup().setMinRequiredProtocolVersion(70015) // bitcoin core 0.13
     wallet().watchMode = true
 
-//    setDownloadListener(new DownloadProgressTracker {
-//      override def doneDownload(): Unit = {
-//        super.doneDownload()
-//        // may be called multiple times
-//        syncedPromise.trySuccess(true)
-//      }
-//    })
+    //    setDownloadListener(new DownloadProgressTracker {
+    //      override def doneDownload(): Unit = {
+    //        super.doneDownload()
+    //        // may be called multiple times
+    //        syncedPromise.trySuccess(true)
+    //      }
+    //    })
 
     // we set the blockcount to the previous stored block height
     updateBlockCount(chain().getBestChainHeight)

@@ -21,7 +21,7 @@ import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Bitcoinj, Globals, Kit, Setup}
+import fr.acinq.eclair.{Globals, Kit, Setup}
 import grizzled.slf4j.Logging
 import org.bitcoinj.core.Transaction
 import org.json4s.DefaultFormats

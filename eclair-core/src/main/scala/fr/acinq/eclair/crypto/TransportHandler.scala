@@ -35,6 +35,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   connection ! akka.io.Tcp.Register(self)
 
   val out = context.actorOf(Props(new WriteAckSender(connection)))
+
   def buf(message: BinaryData): ByteString = ByteString.fromArray(message)
 
   // it means we initiate the dialog

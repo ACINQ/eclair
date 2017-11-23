@@ -350,6 +350,7 @@ object ElectrumWallet {
 
   /**
     * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
+    *
     * @param master master key
     * @return the BIP49 account key for this master key: m/49'/1'/0'/0
     */
@@ -357,6 +358,7 @@ object ElectrumWallet {
 
   /**
     * use BIP49 (and not BIP44) since we use p2sh-of-p2wpkh
+    *
     * @param master master key
     * @return the BIP49 change key for this master key: m/49'/1'/0'/1
     */

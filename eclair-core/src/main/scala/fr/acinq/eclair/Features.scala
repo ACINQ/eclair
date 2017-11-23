@@ -1,8 +1,6 @@
 package fr.acinq.eclair
 
-
 import java.util.BitSet
-import java.util.function.IntPredicate
 
 import fr.acinq.bitcoin.BinaryData
 
@@ -20,14 +18,14 @@ object Features {
     * @param features feature bits
     * @return true if an initial dump of the routing table is requested
     */
-  def initialRoutingSync(features: BitSet) : Boolean = features.get(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+  def initialRoutingSync(features: BitSet): Boolean = features.get(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
 
   /**
     *
     * @param features feature bits
     * @return true if an initial dump of the routing table is requested
     */
-  def initialRoutingSync(features: BinaryData) : Boolean = initialRoutingSync(BitSet.valueOf(features.reverse.toArray))
+  def initialRoutingSync(features: BinaryData): Boolean = initialRoutingSync(BitSet.valueOf(features.reverse.toArray))
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
@@ -35,7 +33,7 @@ object Features {
     */
   def areSupported(bitset: BitSet): Boolean = {
     // for now there is no mandatory feature bit, so we don't support features with any even bit set
-    for(i <- 0 until bitset.length() by 2) {
+    for (i <- 0 until bitset.length() by 2) {
       if (bitset.get(i)) return false
     }
     return true

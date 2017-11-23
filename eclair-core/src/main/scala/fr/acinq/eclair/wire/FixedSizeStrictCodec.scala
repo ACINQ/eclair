@@ -47,9 +47,13 @@ object FixedSizeStrictCodec {
     */
   def bytesStrict(size: Int): Codec[ByteVector] = new Codec[ByteVector] {
     private val codec = new FixedSizeStrictCodec(size * 8L, codecs.bits).xmap[ByteVector](_.toByteVector, _.toBitVector)
+
     def sizeBound = codec.sizeBound
+
     def encode(b: ByteVector) = codec.encode(b)
+
     def decode(b: BitVector) = codec.decode(b)
+
     override def toString = s"bytesStrict($size)"
   }
 }

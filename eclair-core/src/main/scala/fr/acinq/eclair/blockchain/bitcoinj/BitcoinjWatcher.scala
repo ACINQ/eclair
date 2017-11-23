@@ -7,16 +7,15 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{BinaryData, Satoshi, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain._
-import fr.acinq.eclair.{Globals, fromShortId}
 import fr.acinq.eclair.channel.BITCOIN_PARENT_TX_CONFIRMED
 import fr.acinq.eclair.transactions.Scripts
+import fr.acinq.eclair.{Globals, fromShortId}
 import org.bitcoinj.core.{Context, Transaction => BitcoinjTransaction}
 import org.bitcoinj.kits.WalletAppKit
 import org.bitcoinj.script.Script
 
 import scala.collection.SortedMap
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 
 final case class NewConfidenceLevel(tx: Transaction, blockHeight: Int, confirmations: Int) extends BlockchainEvent
@@ -130,6 +129,7 @@ class BitcoinjWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Exe
 
   /**
     * Bitcoinj needs hints to be able to detect transactions
+    *
     * @param pubkeyScript
     * @return
     */
@@ -188,5 +188,6 @@ class Broadcaster(kit: WalletAppKit) extends Actor with ActorLogging {
       override def onSuccess(v: BitcoinjTransaction): Unit = self ! BroadcastResult(tx, Success(true))
     }, context.dispatcher)
   }
+
 
 }

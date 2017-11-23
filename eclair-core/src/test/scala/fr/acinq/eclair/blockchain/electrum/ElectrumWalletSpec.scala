@@ -9,7 +9,8 @@ import org.json4s.JsonAST._
 import scala.concurrent.duration._
 import scala.sys.process._
 
-class ElectrumWalletSpec extends IntegrationSpec{
+class ElectrumWalletSpec extends IntegrationSpec {
+
   import ElectrumWallet._
 
   val entropy = BinaryData("01" * 32)
@@ -107,7 +108,7 @@ class ElectrumWalletSpec extends IntegrationSpec{
 
     awaitCond({
       val msg = listener.receiveOne(5 seconds)
-      msg == TransactionConfidenceChanged(BinaryData(txid),1)
+      msg == TransactionConfidenceChanged(BinaryData(txid), 1)
     }, max = 30 seconds, interval = 1 second)
   }
 

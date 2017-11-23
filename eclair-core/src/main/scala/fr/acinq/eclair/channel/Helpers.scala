@@ -490,6 +490,7 @@ object Helpers {
       * A local commit is considered done when:
       * - all commitment tx outputs that we can spend have been spent and confirmed (even if the spending tx was not ours)
       * - all 3rd stage txes (txes spending htlc txes) have been confirmed
+      *
       * @param localCommitPublished
       * @return
       */
@@ -509,6 +510,7 @@ object Helpers {
     /**
       * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
       * (even if the spending tx was not ours).
+      *
       * @param remoteCommitPublished
       * @return
       */
@@ -524,6 +526,7 @@ object Helpers {
     /**
       * A remote commit is considered done when all commitment tx outputs that we can spend have been spent and confirmed
       * (even if the spending tx was not ours).
+      *
       * @param revokedCommitPublished
       * @return
       */

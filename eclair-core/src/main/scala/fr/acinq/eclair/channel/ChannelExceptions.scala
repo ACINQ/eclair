@@ -7,10 +7,8 @@ import fr.acinq.eclair.UInt64
   * Created by PM on 11/04/2017.
   */
 
-class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message) {
-  def getChannelId = channelId
-}
-
+class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message)
+// @formatter:off
 case class DebugTriggeredException             (channelId: BinaryData) extends ChannelException(channelId, "debug-mode triggered failure")
 case class ChannelReserveTooHigh               (channelId: BinaryData, channelReserveSatoshis: Long, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserveSatoshis too high: reserve=$channelReserveSatoshis fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
 case class ClosingInProgress                   (channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
@@ -42,3 +40,4 @@ case class InvalidRevocation                   (channelId: BinaryData) extends C
 case class CommitmentSyncError                 (channelId: BinaryData) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError                 (channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
+// @formatter:on
