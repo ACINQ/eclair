@@ -70,12 +70,17 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         progress = (json \ "verificationprogress").extract[Double]
         chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
         bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-      } yield (progress, chainHash, bitcoinVersion)
+        unspentAddresses <- bitcoinClient.listUnspentAddresses
+      } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
       // blocking sanity checks
-      val (progress, chainHash, bitcoinVersion) = Await.result(future, 10 seconds)
+      val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 10 seconds)
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
+      if (chainHash == Block.TestnetGenesisBlock.hash) {
+        assert(unspentAddresses.forall(isSegwitAddress), "In testnet mode, make sure that all your UTXOs are p2sh-of-p2wpkh (check out our README for more details)")
+      }
       assert(progress > 0.99, "bitcoind should be synchronized")
       // TODO: add a check on bitcoin version?
+
       Bitcoind(bitcoinClient)
     case BITCOINJ =>
       logger.warn("EXPERIMENTAL BITCOINJ MODE ENABLED!!!")

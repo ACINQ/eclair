@@ -63,7 +63,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("stop"))
     sender.expectMsgType[JValue]
-    //bitcoind.destroy()
+    bitcoind.exitValue()
     //    logger.warn(s"starting bitcoin-qt")
     //    val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt").toPath
     //    bitcoind = s"$PATH_BITCOINQT -datadir=$PATH_BITCOIND_DATADIR".run()
