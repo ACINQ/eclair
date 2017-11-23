@@ -78,8 +78,9 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           val channelUpdate_opt = channelUpdates.get(perHopPayload.channel_id)
           channelUpdate_opt match {
             case None =>
-              // TODO: clarify what we're supposed to do in the specs
-              sender ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true)
+              // if we don't (yet?) have a channel_update for the next channel, we consider the channel doesn't exist
+              // TODO: use a different channel to the same peer instead?
+              sender ! CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
             case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
               sender ! CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true)
             case Some(channelUpdate) if add.amountMsat < channelUpdate.htlcMinimumMsat =>

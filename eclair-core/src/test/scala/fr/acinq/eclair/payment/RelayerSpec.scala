@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -64,7 +65,7 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(500 millis)
   }
 
-  test("fail to relay an htlc-add when there is no available upstream channel") { case (relayer, register, paymentHandler) =>
+  test("fail to relay an htlc-add when we have no channel_update for the next channel") { case (relayer, register, paymentHandler) =>
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -76,15 +77,33 @@ class RelayerSpec extends TestkitBaseClass {
 
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
     assert(fail.id === add_ab.id)
+    assert(fail.reason == Right(UnknownNextPeer))
 
     register.expectNoMsg(500 millis)
     paymentHandler.expectNoMsg(500 millis)
+  }
 
+  test("fail to relay an htlc-add when the requested channel is disabled") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    // we use this to build a valid onion
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    val channelUpdate_bc_disabled = channelUpdate_bc.copy(flags = Announcements.makeFlags(Announcements.isNode1(channelUpdate_bc.flags), enable = false))
+    relayer ! channelUpdate_bc_disabled
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    assert(fail.id === add_ab.id)
+    assert(fail.reason == Right(ChannelDisabled(channelUpdate_bc_disabled.flags, channelUpdate_bc_disabled)))
+
+    register.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
   }
 
   test("fail to relay an htlc-add when the onion is malformed") { case (relayer, register, paymentHandler) =>
-
-    // TODO: we should use the new update_fail_malformed_htlc message (see BOLT 2)
     val sender = TestProbe()
 
     // we use this to build a valid onion
@@ -107,7 +126,7 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
 
     // we use this to build a valid onion
-    val (cmd, secrets) = buildCommand(channelUpdate_bc.htlcMinimumMsat - 1, finalExpiry, paymentHash, hops.map(hop => hop.copy(lastUpdate = hop.lastUpdate.copy(feeBaseMsat = 0, feeProportionalMillionths = 0))))
+    val (cmd, _) = buildCommand(channelUpdate_bc.htlcMinimumMsat - 1, finalExpiry, paymentHash, hops.map(hop => hop.copy(lastUpdate = hop.lastUpdate.copy(feeBaseMsat = 0, feeProportionalMillionths = 0))))
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
     relayer ! channelUpdate_bc
@@ -126,7 +145,7 @@ class RelayerSpec extends TestkitBaseClass {
     val sender = TestProbe()
 
     val hops1 = hops.updated(1, hops(1).copy(lastUpdate = hops(1).lastUpdate.copy(cltvExpiryDelta = 0)))
-    val (cmd, secrets) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
     relayer ! channelUpdate_bc
@@ -144,7 +163,7 @@ class RelayerSpec extends TestkitBaseClass {
   test("fail to relay an htlc-add when expiry is too soon") { case (relayer, register, paymentHandler) =>
     val sender = TestProbe()
 
-    val (cmd, secrets) = buildCommand(finalAmountMsat, 0, paymentHash, hops)
+    val (cmd, _) = buildCommand(finalAmountMsat, 0, paymentHash, hops)
     // and then manually build an htlc
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
     relayer ! channelUpdate_bc
@@ -164,7 +183,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     // to simulate this we use a zero-hop route A->B where A is the 'attacker'
     val hops1 = hops.head :: Nil
-    val (cmd, secrets) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
     // and then manually build an htlc with a wrong expiry
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat - 1, cmd.paymentHash, cmd.expiry, cmd.onion)
     relayer ! channelUpdate_bc
@@ -184,7 +203,7 @@ class RelayerSpec extends TestkitBaseClass {
 
     // to simulate this we use a zero-hop route A->B where A is the 'attacker'
     val hops1 = hops.head :: Nil
-    val (cmd, secrets) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops1)
     // and then manually build an htlc with a wrong expiry
     val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry - 1, cmd.onion)
     relayer ! channelUpdate_bc
