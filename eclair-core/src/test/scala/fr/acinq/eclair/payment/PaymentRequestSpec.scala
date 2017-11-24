@@ -3,8 +3,8 @@ package fr.acinq.eclair.payment
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
-import fr.acinq.eclair.payment.PaymentRequest.{Amount, ExtraHop, RoutingInfoTag}
+import fr.acinq.bitcoin.{Bech32, BinaryData, Block, Btc, Crypto, MilliBtc, MilliSatoshi, Protocol, Satoshi}
+import fr.acinq.eclair.payment.PaymentRequest._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -179,5 +179,31 @@ class PaymentRequestSpec extends FunSuite {
     val serialized = PaymentRequest write pr
     val pr1 = PaymentRequest read serialized
     assert(pr.expiry === Some(21600))
+  }
+
+  test("ignore unknown tags") {
+    // create a new tag that we don't know about
+    class MyExpiryTag(override val seconds: Long) extends ExpiryTag(seconds) {
+      // replace the tag with 'j'  which is not used yet
+      override def toInt5s = super.toInt5s.updated(0, Bech32.map('j'))
+    }
+
+    val pr = PaymentRequest(
+      prefix = "lntb",
+      amount = Some(MilliSatoshi(100000L)),
+      timestamp = System.currentTimeMillis() / 1000L,
+      nodeId = nodeId,
+      tags = List(
+        PaymentHashTag(BinaryData("01" * 32)),
+        DescriptionTag("description"),
+        new MyExpiryTag(42L)
+      ),
+      signature = BinaryData.empty).sign(priv)
+
+    val serialized = PaymentRequest write pr
+    val pr1 = PaymentRequest read serialized
+    val Some(unknownTag) = pr1.tags.collectFirst { case u: UnknownTag => u }
+    assert(unknownTag.tag == Bech32.map('j'))
+    assert(unknownTag.toInt5s == (new MyExpiryTag(42L)).toInt5s)
   }
 }
