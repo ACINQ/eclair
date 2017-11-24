@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PublicKey, ripemd160, sha256}
+import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar, ripemd160, sha256}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.NodeParams.BITCOINJ
 import fr.acinq.eclair._
@@ -1098,10 +1098,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   when(OFFLINE)(handleExceptions {
     case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
       forwarder ! r
+
+      val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx.zeroes(32))
+      val myCurrentPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, d.commitments.localCommit.index)
+
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
-        nextRemoteRevocationNumber = d.commitments.remoteCommit.index
+        nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
+        Some(Scalar(yourLastPerCommitmentSecret)),
+        Some(myCurrentPerCommitmentPoint)
       )
       goto(SYNCING) sending channelReestablish
 
