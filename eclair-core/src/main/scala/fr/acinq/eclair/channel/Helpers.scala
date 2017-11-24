@@ -252,14 +252,14 @@ object Helpers {
       }.flatten
 
       // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
-      val htlcDelayedTxes = htlcTxes.map {
-        case txinfo: TransactionWithInputInfo => generateTx("claim-delayed-output")(Try {
+      val htlcDelayedTxes = htlcTxes.flatMap {
+        txinfo: TransactionWithInputInfo => generateTx("claim-delayed-output")(Try {
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
           val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
         })
-      }.flatten
+      }
 
       // OPTIONAL: let's check transactions are actually spendable
       //val txes = mainDelayedTx +: (htlcTxes ++ htlcDelayedTxes)
@@ -284,27 +284,15 @@ object Helpers {
     def claimRemoteCommitTxOutputs(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction): RemoteCommitPublished = {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
-      val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
+      val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
-      val localPaymentPrivkey = Generators.derivePrivKey(localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
       val localHtlcPrivkey = Generators.derivePrivKey(localParams.htlcKey, remoteCommit.remotePerCommitmentPoint)
       val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val localPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, commitments.localCommit.index.toInt)
-      val localRevocationPubKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
       val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationBasepoint, remoteCommit.remotePerCommitmentPoint)
 
-      // no need to use a high fee rate for our main output (we are the only one who can spend it)
-      val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
       // we need to use a rather high fee for htlc-claim because we compete with the counterparty
       val feeratePerKwHtlc = Globals.feeratesPerKw.get.block_1
-
-      // first we will claim our main output right away
-      val mainTx = generateTx("claim-p2wpkh-output")(Try {
-        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPaymentPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = Transactions.sign(claimMain, localPaymentPrivkey)
-        Transactions.addSigs(claimMain, localPaymentPrivkey.publicKey, sig)
-      })
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
@@ -332,14 +320,10 @@ object Helpers {
       // OPTIONAL: let's check transactions are actually spendable
       //require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      RemoteCommitPublished(
-        commitTx = tx,
-        claimMainOutputTx = mainTx.map(_.tx),
+      claimRemoteCommitMainOutput(commitments, tx).copy(
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
-        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx },
-        spent = Map.empty
+        claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
       )
-
     }
 
     /**
@@ -350,7 +334,7 @@ object Helpers {
       *                    updated with `myCurrentPerCommitmentPoint` taken from their `ChannelReestablish`
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteLostCommitMainOutput(commitments: Commitments, tx: Transaction) = {
+    def claimRemoteCommitMainOutput(commitments: Commitments, tx: Transaction) = {
       val localPaymentPrivkey = Generators.derivePrivKey(commitments.localParams.paymentKey,
         commitments.remoteCommit.remotePerCommitmentPoint)
 
