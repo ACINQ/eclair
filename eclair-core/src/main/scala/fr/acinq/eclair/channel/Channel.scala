@@ -1486,6 +1486,23 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       } else throw RevocationSyncError(d.channelId)
     }
 
+    channelReestablish match {
+      case ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint))
+        // if next_remote_revocation_number is greater than expected above
+        if commitments1.localCommit.index < nextRemoteRevocationNumber =>
+
+        // AND your_last_per_commitment_secret is correct for that next_remote_revocation_number minus 1
+        if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
+          // TODO: MUST NOT broadcast its commitment transaction.
+          // TODO: SHOULD fail the channel.
+          // TODO: SHOULD store my_current_per_commitment_point to retrieve funds should the sending node broadcast its commitment transaction onchain
+        } else {
+          // TODO: SHOULD fail the channel
+        }
+
+      case _ => // Fine so far...
+    }
+
     // re-sending sig/rev (in the right order)
     val htlcsIn = commitments1.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
