@@ -7,7 +7,7 @@ import fr.acinq.eclair.UInt64
   * Created by PM on 11/04/2017.
   */
 
-class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message)
+class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message) { def getChannelId() = channelId }
 // @formatter:off
 case class DebugTriggeredException             (channelId: BinaryData) extends ChannelException(channelId, "debug-mode triggered failure")
 case class ChannelReserveTooHigh               (channelId: BinaryData, channelReserveSatoshis: Long, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserveSatoshis too high: reserve=$channelReserveSatoshis fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
