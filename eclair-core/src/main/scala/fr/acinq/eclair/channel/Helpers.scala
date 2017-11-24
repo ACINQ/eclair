@@ -343,6 +343,37 @@ object Helpers {
     }
 
     /**
+      *
+      * Claim our Main output only
+      *
+      * @param commitments our outdated commitment data with `.remoteCommit.remotePerCommitmentPoint`
+      *                    updated with `myCurrentPerCommitmentPoint` taken from their `ChannelReestablish`
+      * @return a list of transactions (one per HTLC that we can claim)
+      */
+    def claimRemoteLostCommitMainOutput(commitments: Commitments, tx: Transaction) = {
+      val localPaymentPrivkey = Generators.derivePrivKey(commitments.localParams.paymentKey,
+        commitments.remoteCommit.remotePerCommitmentPoint)
+
+      // no need to use a high fee rate for our main output (we are the only one who can spend it)
+      val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
+
+      val mainTx = generateTx("claim-p2wpkh-output")(Try {
+        val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(commitments.localParams.dustLimitSatoshis),
+          localPaymentPrivkey.publicKey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
+        val sig = Transactions.sign(claimMain, localPaymentPrivkey)
+        Transactions.addSigs(claimMain, localPaymentPrivkey.publicKey, sig)
+      })
+
+      RemoteCommitPublished(
+        commitTx = tx,
+        claimMainOutputTx = mainTx.map(_.tx),
+        claimHtlcSuccessTxs = Nil,
+        claimHtlcTimeoutTxs = Nil,
+        spent = Map.empty
+      )
+    }
+
+    /**
       * When an unexpected transaction spending the funding tx is detected:
       * 1) we find out if the published transaction is one of remote's revoked txs
       * 2) and then:
