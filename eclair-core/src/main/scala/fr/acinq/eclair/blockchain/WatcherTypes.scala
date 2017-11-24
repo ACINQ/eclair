@@ -23,7 +23,7 @@ final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, publicKeySc
 object WatchConfirmed {
   // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript
   // we support both p2pkh and p2wpkh scripts
-  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.head.publicKeyScript, minDepth, event)
+  def apply(channel: ActorRef, tx: Transaction, minDepth: Long, event: BitcoinEvent): WatchConfirmed = WatchConfirmed(channel, tx.txid, tx.txOut.map(_.publicKeyScript).headOption.getOrElse(""), minDepth, event)
 
   def extractPublicKeyScript(witness: ScriptWitness): BinaryData = Try(PublicKey(witness.stack.last)) match {
     case Success(pubKey) =>
