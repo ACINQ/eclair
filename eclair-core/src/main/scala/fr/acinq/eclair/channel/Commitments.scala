@@ -450,7 +450,6 @@ object Commitments extends Logging {
   }
 
   def makeLocalTxs(commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, localPerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
-    val localPaymentPubkey = Generators.derivePubKey(localParams.paymentBasepoint, localPerCommitmentPoint)
     val localDelayedPaymentPubkey = Generators.derivePubKey(localParams.delayedPaymentBasepoint, localPerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(localParams.htlcBasepoint, localPerCommitmentPoint)
     val remotePaymentPubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, localPerCommitmentPoint)
@@ -464,7 +463,6 @@ object Commitments extends Logging {
   def makeRemoteTxs(commitTxNumber: Long, localParams: LocalParams, remoteParams: RemoteParams, commitmentInput: InputInfo, remotePerCommitmentPoint: Point, spec: CommitmentSpec): (CommitTx, Seq[HtlcTimeoutTx], Seq[HtlcSuccessTx]) = {
     val localPaymentPubkey = Generators.derivePubKey(localParams.paymentBasepoint, remotePerCommitmentPoint)
     val localHtlcPubkey = Generators.derivePubKey(localParams.htlcBasepoint, remotePerCommitmentPoint)
-    val remotePaymentPubkey = Generators.derivePubKey(remoteParams.paymentBasepoint, remotePerCommitmentPoint)
     val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
     val remoteRevocationPubkey = Generators.revocationPubKey(localParams.revocationBasepoint, remotePerCommitmentPoint)

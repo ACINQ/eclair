@@ -1106,8 +1106,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
-        Some(Scalar(yourLastPerCommitmentSecret)),
-        Some(myCurrentPerCommitmentPoint)
+        yourLastPerCommitmentSecret = Some(Scalar(yourLastPerCommitmentSecret)),
+        myCurrentPerCommitmentPoint = Some(myCurrentPerCommitmentPoint)
       )
       goto(SYNCING) sending channelReestablish
 
