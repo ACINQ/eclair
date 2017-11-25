@@ -320,7 +320,7 @@ object Helpers {
       // OPTIONAL: let's check transactions are actually spendable
       //require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      claimRemoteCommitMainOutput(commitments, tx).copy(
+      claimRemoteCommitMainOutput(commitments, remoteCommit, tx).copy(
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
         claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
       )
@@ -330,13 +330,17 @@ object Helpers {
       *
       * Claim our Main output only
       *
-      * @param commitments our outdated commitment data with `.remoteCommit.remotePerCommitmentPoint`
-      *                    updated with `myCurrentPerCommitmentPoint` taken from their `ChannelReestablish`
+      * @param commitments  either our current commitment data in case of usual remote uncooperative closing
+      *                     or our outdated commitment data in case of data loss protection procedure
+      *
+      * @param remoteCommit either our current remoteCommit/remoteNextCommit in case of usual remote uncooperative closing
+      *                     or our outdated remoteCommit with `.remotePerCommitmentPoint` updated to `myCurrentPerCommitmentPoint`
+      *                     taken from their `ChannelReestablish`
+      *
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitMainOutput(commitments: Commitments, tx: Transaction) = {
-      val localPaymentPrivkey = Generators.derivePrivKey(commitments.localParams.paymentKey,
-        commitments.remoteCommit.remotePerCommitmentPoint)
+    def claimRemoteCommitMainOutput(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction) = {
+      val localPaymentPrivkey = Generators.derivePrivKey(commitments.localParams.paymentKey, remoteCommit.remotePerCommitmentPoint)
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
