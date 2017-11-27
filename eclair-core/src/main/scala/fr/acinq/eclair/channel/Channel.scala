@@ -1139,10 +1139,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
+    case Event(ChannelReestablish(channelId, nextLocalCommitmentNumber, _, Some(_), Some(myCurrentPerCommitmentPoint)), d: DATA_REFUNDING) =>
 
-    case Event(ChannelReestablish(channelId, _, _, Some(_), Some(myCurrentPerCommitmentPoint)), d: DATA_REFUNDING) =>
-      val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
-      goto(REFUNDING) using d.copy(commitments = commitments1) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+      if (nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
+        val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
+        val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
+        goto(WAIT_FOR_FUNDING_LOCKED) using DATA_WAIT_FOR_FUNDING_LOCKED(d.commitments, fundingLocked) sending fundingLocked
+      } else {
+        val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
+        goto(REFUNDING) using d.copy(commitments = commitments1) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+      }
 
     case Event(ChannelReestablish(channelId, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
       // if next_remote_revocation_number is greater than expected above
