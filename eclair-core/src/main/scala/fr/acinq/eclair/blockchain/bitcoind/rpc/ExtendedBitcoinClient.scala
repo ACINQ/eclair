@@ -173,23 +173,18 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       })
       unspent <- rpcClient.invoke(txids.zipWithIndex.map(txid => ("gettxout", txid._1 :: coordinates(txid._2)._1.outputIndex :: true :: Nil))).map(_.map(_ != JNull))
     } yield ParallelGetResponse(awaiting.zip(txs.zip(unspent)).map(x => IndividualResult(x._1, x._2._1, x._2._2)))
+  }
 
+  /**
+    *
+    * @return the list of bitcoin addresses for which the wallet has UTXOs
+    */
+  def listUnspentAddresses: Future[Seq[String]] = {
+    import ExecutionContext.Implicits.global
+    implicit val formats = org.json4s.DefaultFormats
+
+    rpcClient.invoke("listunspent").collect {
+      case JArray(values) => values.map(value => (value \ "address").extract[String])
+    }
   }
 }
-
-
-/*object Test extends App {
-
-  import scala.concurrent.duration._
-  import ExecutionContext.Implicits.global
-  implicit val system = ActorSystem()
-  implicit val timeout = Timeout(30 seconds)
-
-  val bitcoin_client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
-    user = "foo",
-    password = "bar",
-    host = "localhost",
-    port = 28332))
-
-  println(Await.result(bitcoin_client.getTxBlockHash("dcb0abfa822402ce379fedd7bbbb2c824e53ef300313594c39282da1efd35f17"), 10 seconds))
-}*/
