@@ -28,13 +28,16 @@ case $1 in
         eval curl "$CURL_OPTS -d '{ \"method\": \"close\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL"
         ;;
 "receive")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"receive\", \"params\" : [${2?"missing amount"}, \"something\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
+        eval curl "$CURL_OPTS -d '{ \"method\": \"receive\", \"params\" : [${2?"missing amount"}, \"${3?"missing description"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
         ;;
 "send")
         eval curl "$CURL_OPTS -d '{ \"method\": \"send\", \"params\" : [\"${2?"missing request"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
         ;;
-"network")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"network\", \"params\" : [] }' $URL" | jq ".result"
+"allnodes")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"allnodes\", \"params\" : [] }' $URL" | jq ".result"
+        ;;
+"allchannels")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"allchannels\", \"params\" : [] }' $URL" | jq ".result"
         ;;
 "peers")
         eval curl "$CURL_OPTS -d '{ \"method\": \"peers\", \"params\" : [] }' $URL" | jq ".result"
