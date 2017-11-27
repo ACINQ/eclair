@@ -23,7 +23,7 @@
             <children>
                 <VBox alignment="TOP_RIGHT" GridPane.rowIndex="0">
                     <children>
-                        <Label styleClass="text-strong" text="Option amount to receive"/>
+                        <Label styleClass="text-strong" text="Optional amount to receive"/>
                         <Label styleClass="label-description" wrapText="true" textAlignment="RIGHT"
                                text="Maximum of ~0.042 BTC"/>
                     </children>
