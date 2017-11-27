@@ -1092,7 +1092,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       wallet.rollback(fundingTx)
       stay
 
-    case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymoer
+    case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymore
   })
 
   when(OFFLINE)(handleExceptions {
@@ -1138,6 +1138,23 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
+
+
+    case Event(ChannelReestablish(channelId, _, _, Some(_), Some(myCurrentPerCommitmentPoint)), d: DATA_REFUNDING) =>
+      val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
+      goto(REFUNDING) using d.copy(commitments = commitments1) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+
+    case Event(ChannelReestablish(channelId, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
+      // if next_remote_revocation_number is greater than expected above
+      if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
+
+      // AND your_last_per_commitment_secret is correct for that next_remote_revocation_number minus 1
+      if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
+        val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
+        goto(REFUNDING) using DATA_REFUNDING(commitments1, System.currentTimeMillis) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+      } else {
+        throw CommitmentSyncError(d.channelId)
+      }
 
     case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
 
@@ -1201,6 +1218,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(e: Error, d: HasCommitments) => handleRemoteError(e, d)
   })
 
+  when(REFUNDING)(handleExceptions {
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_REFUNDING) => handleRemoteSpentCurrentLost(tx, d)
+  })
+
   def errorStateHandler: StateFunction = {
     case Event('nevermatches, _) => stay // we can't define a state with no event handler, so we put a dummy one here
   }
@@ -1253,7 +1274,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   onTransition {
-    case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => {} // called at channel initialization
+    case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => // called at channel initialization
     case WAIT_FOR_INIT_INTERNAL -> OFFLINE =>
       context.system.eventStream.publish(ChannelStateChanged(self, context.parent, remoteNodeId, WAIT_FOR_INIT_INTERNAL, OFFLINE, nextStateData))
     case state -> nextState if nextState != state =>
@@ -1389,6 +1410,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     goto(CLOSING) using store(nextData)
   }
 
+  def handleRemoteSpentCurrentLost(commitTx: Transaction, d: DATA_REFUNDING) = {
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(d.commitments, d.commitments.remoteCommit, commitTx)
+    val nextData = DATA_CLOSING(d.commitments, remoteCommitPublished = Some(remoteCommitPublished))
+
+    doPublish(remoteCommitPublished)
+    goto(CLOSING) using store(nextData)
+  }
+
   def doPublish(remoteCommitPublished: RemoteCommitPublished) = {
     remoteCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     remoteCommitPublished.claimHtlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))
@@ -1486,25 +1515,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       } else throw RevocationSyncError(d.channelId)
     }
 
-    channelReestablish match {
-      case ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint))
-        // if next_remote_revocation_number is greater than expected above
-        if commitments1.localCommit.index < nextRemoteRevocationNumber =>
-
-        // AND your_last_per_commitment_secret is correct for that next_remote_revocation_number minus 1
-        if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
-          // TODO: MUST NOT broadcast its commitment transaction.
-          // TODO: SHOULD fail the channel.
-          // TODO: SHOULD store my_current_per_commitment_point to retrieve funds should the sending node broadcast its commitment transaction onchain
-        } else {
-          // TODO: SHOULD fail the channel
-        }
-
-      case _ => // Fine so far...
-    }
-
     // re-sending sig/rev (in the right order)
-    val htlcsIn = commitments1.remoteNextCommitInfo match {
+    commitments1.remoteNextCommitInfo match {
       case Left(waitingForRevocation) if waitingForRevocation.nextRemoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
         // we had sent a new sig and were waiting for their revocation
         // they had received the new sig but their revocation was lost during the disconnection
@@ -1533,13 +1545,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     // let's now fail all pending htlc for which we are the final payee
     val htlcsToFail = commitments1.remoteCommit.spec.htlcs.collect {
-      case DirectedHtlc(OUT, add) => add
-    }.filter {
-      case add =>
-        Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
-          .map(_.nextPacket.isLastPacket)
-          .getOrElse(true) // we also fail htlcs which onion we can't decode (message won't be precise)
+      case DirectedHtlc(OUT, add) if Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
+        .map(_.nextPacket.isLastPacket).getOrElse(true) => add // we also fail htlcs which onion we can't decode (message won't be precise)
     }
+
     log.debug(s"failing htlcs=${htlcsToFail.map(Commitments.msg2String(_)).mkString(",")}")
     htlcsToFail.foreach(add => self ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true))
 
@@ -1560,6 +1569,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         s(event)
       } catch {
         case t: Throwable => event.stateData match {
+          case d: DATA_REFUNDING =>
+            log.error(t, "not going to CLOSED and not spending a local commit")
+            val error = Error(d.channelId, t.getMessage.getBytes)
+            stay sending error
           case d: HasCommitments => handleLocalError(t, d)
           case d: Data =>
             log.error(t, "")
