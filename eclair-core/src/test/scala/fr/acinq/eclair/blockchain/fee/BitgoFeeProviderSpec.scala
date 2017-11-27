@@ -57,7 +57,7 @@ class BitgoFeeProviderSpec extends FunSuite {
     import scala.concurrent.duration._
     implicit val system = ActorSystem()
     implicit val timeout = Timeout(30 seconds)
-    val provider = new EarnDotComFeeProvider()
+    val provider = new BitgoFeeProvider()
     Await.result(provider.getFeerates, 10 seconds)
   }
 
