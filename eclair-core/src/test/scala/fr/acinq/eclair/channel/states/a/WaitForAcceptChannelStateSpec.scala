@@ -42,6 +42,30 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
+  test("recv AcceptChannel (invalid max accepted htlcs)") { case (alice, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val accept = bob2alice.expectMsgType[AcceptChannel]
+      // spec says max = 483
+      val invalidMaxAcceptedHtlcs = 484
+      alice ! accept.copy(maxAcceptedHtlcs = invalidMaxAcceptedHtlcs)
+      val error = alice2bob.expectMsgType[Error]
+      assert(error === Error(accept.temporaryChannelId, new InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, invalidMaxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS).getMessage.getBytes("UTF-8")))
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
+  test("recv AcceptChannel (invalid dust limit)") { case (alice, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val accept = bob2alice.expectMsgType[AcceptChannel]
+      // we don't want their dust limit to be below 546
+      val lowDustLimitSatoshis = 545
+      alice ! accept.copy(dustLimitSatoshis = lowDustLimitSatoshis)
+      val error = alice2bob.expectMsgType[Error]
+      assert(error === Error(accept.temporaryChannelId, new InvalidDustLimit(accept.temporaryChannelId, lowDustLimitSatoshis, Channel.MIN_DUSTLIMIT).getMessage.getBytes("UTF-8")))
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
   test("recv AcceptChannel (reserve too high)") { case (alice, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       val accept = bob2alice.expectMsgType[AcceptChannel]
@@ -49,7 +73,7 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
       val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
       alice ! accept.copy(channelReserveSatoshis = reserveTooHigh)
       val error = alice2bob.expectMsgType[Error]
-      assert(new String(error.data) === "channelReserveSatoshis too high: reserve=300000 fundingRatio=0.3 maxFundingRatio=0.05")
+      assert(error === Error(accept.temporaryChannelId, new ChannelReserveTooHigh(accept.temporaryChannelId, reserveTooHigh, 0.3,  0.05).getMessage.getBytes("UTF-8")))
       awaitCond(alice.stateName == CLOSED)
     }
   }

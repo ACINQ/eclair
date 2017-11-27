@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
-import fr.acinq.eclair.channel.HasCommitments
+import fr.acinq.eclair.channel.{Channel, HasCommitments}
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.router.Rebroadcast
 
@@ -101,7 +101,10 @@ object Switchboard {
   def props(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, watcher, router, relayer, wallet))
 
   // @formatter:off
-  case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte])
+  case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte]) {
+    require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
+    require(pushMsat.amount < 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
+  }
   case class NewConnection(remoteNodeId: PublicKey, address: InetSocketAddress, newChannel_opt: Option[NewChannel])
   // @formatter:on
 
