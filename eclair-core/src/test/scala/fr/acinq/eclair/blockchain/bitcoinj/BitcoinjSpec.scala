@@ -18,6 +18,7 @@ import grizzled.slf4j.Logging
 import org.bitcoinj.script.{Script => BitcoinjScript}
 import org.json4s.DefaultFormats
 import org.json4s.JsonAST.JValue
+import org.junit.Ignore
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
@@ -28,6 +29,7 @@ import scala.concurrent.{Await, Future}
 import scala.sys.process.{Process, _}
 import scala.util.Random
 
+@Ignore
 @RunWith(classOf[JUnitRunner])
 class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
 
@@ -84,7 +86,7 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     sender.expectMsgType[JValue](30 seconds)
   }
 
-  ignore("bitcoinj wallet commit") {
+  test("bitcoinj wallet commit") {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-bitcoinj")
     val bitcoinjKit = new BitcoinjKit("regtest", datadir, staticPeers = new InetSocketAddress("localhost", 28333) :: Nil)
     bitcoinjKit.startAsync()
@@ -133,7 +135,7 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     wallet.maybeCommitTx(tx2) // returns true! how come?
   }*/
 
-  ignore("manual publish/watch") {
+  test("manual publish/watch") {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-bitcoinj")
     val bitcoinjKit = new BitcoinjKit("regtest", datadir, staticPeers = new InetSocketAddress("localhost", 28333) :: Nil)
     bitcoinjKit.startAsync()
@@ -166,7 +168,7 @@ class BitcoinjSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with B
     assert(event.event === BITCOIN_FUNDING_DEPTHOK)
   }
 
-  ignore("multiple publish/watch") {
+  test("multiple publish/watch") {
     val datadir = new File(INTEGRATION_TMP_DIR, s"datadir-bitcoinj")
     val bitcoinjKit = new BitcoinjKit("regtest", datadir, staticPeers = new InetSocketAddress("localhost", 28333) :: Nil)
     bitcoinjKit.startAsync()

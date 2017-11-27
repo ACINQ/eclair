@@ -131,7 +131,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     }
 
     val wallet = bitcoin match {
-      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient, watcher)
+      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
       case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
       case Electrum(electrumClient) =>
         val electrumSeedPath = new File(datadir, "electrum_seed.dat")
