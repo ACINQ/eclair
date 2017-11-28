@@ -2,6 +2,8 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.wire.ChannelUpdate
 
 /**
   * Created by PM on 11/04/2017.
@@ -41,3 +43,5 @@ case class CommitmentSyncError                 (override val channelId: BinaryDa
 case class RevocationSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
 // @formatter:on
+
+case class AddHtlcFailed(t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate]) extends RuntimeException(t)

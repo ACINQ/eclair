@@ -19,8 +19,8 @@ case class Local(sender: Option[ActorRef]) extends Origin // we don't persist re
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 case class ForwardAdd(add: UpdateAddHtlc)
+case class ForwardLocalFail(error: Throwable, to: Origin, channelUpdate: Option[ChannelUpdate]) // happens when the failure happened in a local channel (and not in some downstream channel)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
-case class ForwardLocalFail(error: Throwable, to: Origin, shortChannelId_opt: Option[Long]) // happens when the failure happened in a local channel (and not in some downstream channel)
 case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
 
@@ -90,7 +90,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               sender ! CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true)
             case _ =>
               log.info(s"forwarding htlc #${add.id} to shortChannelId=${perHopPayload.channel_id}")
-              register forward Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
+              register ! Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
           }
         case Success((Attempt.Failure(cause), _, _)) =>
           log.error(s"couldn't parse payload: $cause")
@@ -122,9 +122,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardLocalFail(error, Local(Some(sender)), _) =>
       sender ! Status.Failure(error)
 
-    case ForwardLocalFail(error, Relayed(originChannelId, originHtlcId, _, _), shortChannelId_opt) =>
-      // at this point we should have the channel_update, except if we are relaying to a private channel
-      val channelUpdate_opt = shortChannelId_opt.flatMap(channelUpdates.get(_))
+    case ForwardLocalFail(error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
       val failure = (error, channelUpdate_opt) match {
         case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
         case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
