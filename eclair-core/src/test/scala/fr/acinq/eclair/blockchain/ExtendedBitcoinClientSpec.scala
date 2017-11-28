@@ -1,47 +1,104 @@
 package fr.acinq.eclair.blockchain
 
-import akka.actor.ActorSystem
+import java.io.File
+import java.nio.file.Files
+import java.util.UUID
+
+import akka.actor.{Actor, ActorRef, ActorSystem, Props}
+import akka.pattern.pipe
+import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
+import fr.acinq.bitcoin._
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.eclair.Kit
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
-import org.scalatest.FunSuite
+import fr.acinq.eclair.integration.IntegrationSpec
+import grizzled.slf4j.Logging
+import org.json4s.DefaultFormats
+import org.json4s.JsonAST.JValue
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
+import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext}
+import ExecutionContext.Implicits.global
+import scala.sys.process._
 
-// this test is not run automatically
-class ExtendedBitcoinClientSpec extends FunSuite {
+@RunWith(classOf[JUnitRunner])
+class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with BeforeAndAfterAll with Logging {
 
-  implicit lazy val system = ActorSystem()
+  val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/integration-${UUID.randomUUID().toString}"
+  logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val config = ConfigFactory.load()
-  val client = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
-    user = config.getString("eclair.bitcoind.rpcuser"),
-    password = config.getString("eclair.bitcoind.rpcpassword"),
-    host = config.getString("eclair.bitcoind.host"),
-    port = 18332))
+  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoind")
+  val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
-  implicit val formats = org.json4s.DefaultFormats
-  implicit val ec = ExecutionContext.Implicits.global
-  val (chain, blockCount) = Await.result(client.rpcClient.invoke("getblockchaininfo").map(json => ((json \ "chain").extract[String], (json \ "blocks").extract[Long])), 10 seconds)
-  assert(chain == "test", "you should be on testnet")
+  var bitcoind: Process = null
+  var bitcoinrpcclient: BitcoinJsonRPCClient = null
+  var bitcoincli: ActorRef = null
+  var client: ExtendedBitcoinClient = _
 
-  test("get transaction short id") {
-    val txid = "7b2184f8539af648d51cc11d2a83630dd10fdf2a40a1824777d7f8da8e0d4b9e"
-    val conf = Await.result(client.getTxConfirmations(txid), 5 seconds)
-    val (height, index) = Await.result(client.getTransactionShortId(txid), 5 seconds)
-    assert(height == 150002)
-    assert(index == 7)
+  implicit val formats = DefaultFormats
+
+  case class BitcoinReq(method: String, params: Any*)
+
+  override def beforeAll(): Unit = {
+    Files.createDirectories(PATH_BITCOIND_DATADIR.toPath)
+    Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
+
+    bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
+    bitcoinrpcclient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
+    bitcoincli = system.actorOf(Props(new Actor {
+      override def receive: Receive = {
+        case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
+        case BitcoinReq(method, params) => bitcoinrpcclient.invoke(method, params) pipeTo sender
+      }
+    }))
+    client = new ExtendedBitcoinClient(bitcoinrpcclient)
   }
 
-  test("get transaction by short id") {
-    val tx = Await.result(client.getTransaction(150002, 7), 5 seconds)
-    assert(tx.txid.toString() == "7b2184f8539af648d51cc11d2a83630dd10fdf2a40a1824777d7f8da8e0d4b9e")
+  override def afterAll(): Unit = {
+    // gracefully stopping bitcoin will make it store its state cleanly to disk, which is good for later debugging
+    logger.info(s"stopping bitcoind")
+    val sender = TestProbe()
+    sender.send(bitcoincli, BitcoinReq("stop"))
+    sender.expectMsgType[JValue]
+    bitcoind.exitValue()
   }
 
-  test("is tx output spendable") {
-    val result = Await.result(client.isTransactionOuputSpendable("48ebfd0c0fe043b76eee09fcd8ea1e9248ffe1553fa30040fb7f7112ba3a202f", 0, true), 5 seconds)
-    assert(result)
-    val result1 = Await.result(client.isTransactionOuputSpendable("48ebfd0c0fe043b76eee09fcd8ea1e9248ffe1553fa30040fb7f7112ba3a202f", 5, true), 5 seconds)
-    assert(!result1)
+  test("list unspent addresss") {
+    val sender = TestProbe()
+    logger.info(s"waiting for bitcoind to initialize...")
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("getnetworkinfo"))
+      sender.receiveOne(5 second).isInstanceOf[JValue]
+    }, max = 30 seconds, interval = 500 millis)
+    logger.info(s"generating initial blocks...")
+    sender.send(bitcoincli, BitcoinReq("generate", 500))
+    sender.expectMsgType[JValue](10 seconds)
+
+    val future = for {
+      count <- client.getBlockCount
+      _ = assert(count == 500)
+      unspentAddresses <- client.listUnspentAddresses
+      // coinbase txs need 100 confirmations to be spendable
+      _ = assert(unspentAddresses.length == 500 - 100)
+      // generate and import a new private key
+      priv = PrivateKey("01" * 32)
+      wif = Base58Check.encode(Base58.Prefix.SecretKeyTestnet, priv.toBin)
+      _ = sender.send(bitcoincli, BitcoinReq("importprivkey", wif))
+      _ = sender.expectMsgType[JValue](10 seconds)
+      // send money to our private key
+      address = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160)
+      _ = client.sendFromAccount("", address, 1.0)
+      _ = sender.send(bitcoincli, BitcoinReq("generate", 1))
+      _ = sender.expectMsgType[JValue](10 seconds)
+      // and check that we find a utxo four our private key
+      unspentAddresses1 <- client.listUnspentAddresses
+      _ = assert(unspentAddresses1 contains address)
+    } yield ()
+
+    Await.result(future, 10 seconds)
   }
 }

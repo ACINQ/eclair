@@ -279,6 +279,10 @@ object PaymentRequest {
     }
   }
 
+  case class UnknownTag(tag: Int5, int5s: Seq[Int5]) extends Tag {
+    override def toInt5s = tag +: (writeSize(int5s.size) ++ int5s)
+  }
+
   object Amount {
 
     /**
@@ -313,7 +317,7 @@ object PaymentRequest {
   }
 
   object Tag {
-    def parse(input: Seq[Byte]): Tag = {
+    def parse(input: Seq[Int5]): Tag = {
       val tag = input(0)
       val len = input(1) * 32 + input(2)
       tag match {
@@ -345,6 +349,8 @@ object PaymentRequest {
         case c if c == Bech32.map('c') =>
           val expiry = readUnsignedLong(len, input.drop(3).take(len))
           MinFinalCltvExpiryTag(expiry)
+        case _ =>
+          UnknownTag(tag, input.drop(3).take(len))
       }
     }
   }
