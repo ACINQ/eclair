@@ -7,7 +7,7 @@ import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
-import fr.acinq.eclair.channel.ChannelFlags
+import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.{CoinUtils, GUIValidators}
 import fr.acinq.eclair.io.Switchboard.NewChannel
@@ -19,15 +19,6 @@ import scala.util.{Failure, Success, Try}
   * Created by DPA on 23/09/2016.
   */
 class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Logging {
-
-  /**
-    * Funding must be less than {@code 2^24} satoshi.
-    * PushMsat must not be greater than 1000 * Max funding
-    *
-    * https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-    */
-  val maxFunding = 16777216L
-  val maxPushMsat = 1000L * maxFunding
 
   @FXML var host: TextField = _
   @FXML var hostError: Label = _
@@ -65,8 +56,8 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
             Try(CoinUtils.convertStringAmountToSat(fundingSatoshis.getText, unit.getValue)) match {
               case Success(capacitySat) if capacitySat.amount < 0 =>
                 fundingSatoshisError.setText("Capacity must be greater than 0")
-              case Success(capacitySat) if capacitySat.amount >= maxFunding =>
-                fundingSatoshisError.setText(f"Capacity must be less than $maxFunding%,d sat")
+              case Success(capacitySat) if capacitySat.amount >= Channel.MAX_FUNDING_SATOSHIS =>
+                fundingSatoshisError.setText(f"Capacity must be less than ${Channel.MAX_FUNDING_SATOSHIS}%,d sat")
               case Success(capacitySat) =>
                 pushMsatField.getText match {
                   case "" =>

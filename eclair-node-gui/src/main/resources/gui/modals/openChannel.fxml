@@ -71,7 +71,7 @@
         </VBox>
         <TextField fx:id="pushMsatField" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
         <Label fx:id="pushMsatError" styleClass="text-error, text-error-downward"
-               GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+               GridPane.columnIndex="1" GridPane.rowIndex="4" GridPane.columnSpan="2"/>
         <CheckBox fx:id="publicChannel" mnemonicParsing="true" selected="true" styleClass="text-sm"
                   text="Public Channel"
                   GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="5"/>
