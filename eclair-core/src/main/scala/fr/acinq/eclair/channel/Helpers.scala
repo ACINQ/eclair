@@ -9,7 +9,7 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, UpdateAddHtlc, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams}
 import grizzled.slf4j.Logging
 
@@ -38,21 +38,27 @@ object Helpers {
     case d: HasCommitments => d.channelId
   }
 
-  def validateParamsFunder(temporaryChannelId: BinaryData, nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long): Unit = {
-    val reserveToFundingRatio = channelReserveSatoshis.toDouble / fundingSatoshis
-    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) {
-      throw new ChannelReserveTooHigh(temporaryChannelId, channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
-    }
+  /**
+    * Called by the fundee
+    */
+  def validateParamsFundee(nodeParams: NodeParams, open: OpenChannel): Unit = {
+    if (nodeParams.chainHash != open.chainHash) throw new InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
+    if (open.fundingSatoshis < Channel.MIN_FUNDING_SATOSHIS || open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS) throw new InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS)
+    if (open.pushMsat > 1000 * open.fundingSatoshis) throw new InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
+    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
+    if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw new FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+    val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
+    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw new ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
 
-  def validateParamsFundee(temporaryChannelId: BinaryData, nodeParams: NodeParams, channelReserveSatoshis: Long, fundingSatoshis: Long, chainHash: BinaryData, initialFeeratePerKw: Long): Unit = {
-    require(nodeParams.chainHash == chainHash, s"invalid chain hash $chainHash (we are on ${nodeParams.chainHash})")
-    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
-    // we are fundee => initialFeeratePerKw has been set by remote
-    if (isFeeDiffTooHigh(initialFeeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) {
-      throw new FeerateTooDifferent(temporaryChannelId, localFeeratePerKw, initialFeeratePerKw)
-    }
-    validateParamsFunder(temporaryChannelId, nodeParams, channelReserveSatoshis, fundingSatoshis)
+  /**
+    * Called by the funder
+    */
+  def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Unit = {
+    if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw new InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
+    if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+    val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
+    if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw new ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
 
   /**

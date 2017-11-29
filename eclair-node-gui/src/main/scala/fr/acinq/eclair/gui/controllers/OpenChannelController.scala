@@ -8,7 +8,7 @@ import javafx.scene.control._
 import javafx.stage.Stage
 
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
-import fr.acinq.eclair.channel.ChannelFlags
+import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.GUIValidators
 import fr.acinq.eclair.io.Switchboard.NewChannel
@@ -18,15 +18,6 @@ import grizzled.slf4j.Logging
   * Created by DPA on 23/09/2016.
   */
 class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Logging {
-
-  /**
-    * Funding must be less than {@code 2^24} satoshi.
-    * PushMsat must not be greater than 1000 * Max funding
-    *
-    * https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-    */
-  val maxFunding = 16777216L
-  val maxPushMsat = 1000L * maxFunding
 
   @FXML var host: TextField = _
   @FXML var hostError: Label = _
@@ -65,11 +56,12 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
             case "Satoshi" => Satoshi(rawFunding)
             case "milliSatoshi" => Satoshi(rawFunding / 1000L)
           }
-          if (GUIValidators.validate(fundingSatoshisError, "Funding must be 16 777 216 satoshis (~0.167 BTC) or less", smartFunding.toLong < maxFunding)) {
+          if (GUIValidators.validate(fundingSatoshisError, f"Capacity must be less than ${Channel.MAX_FUNDING_SATOSHIS}%d satoshis", smartFunding.toLong < Channel.MAX_FUNDING_SATOSHIS)) {
             if (!pushMsat.getText.isEmpty) {
               // pushMsat is optional, so we validate field only if it isn't empty
+              import fr.acinq.bitcoin._
               if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push msat must be numeric", GUIValidators.amountRegex)
-                && GUIValidators.validate(pushMsatError, "Push msat must be 16 777 216 000 msat (~0.167 BTC) or less", pushMsat.getText.toLong <= maxPushMsat)) {
+                && GUIValidators.validate(pushMsatError, "Push msat must be less or equal to capacity", pushMsat.getText.toLong <= satoshi2millisatoshi(smartFunding).amount)) {
                 val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
                 handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong), Some(channelFlags))))
                 stage.close
