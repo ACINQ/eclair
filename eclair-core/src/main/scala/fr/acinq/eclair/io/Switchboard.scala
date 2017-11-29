@@ -103,7 +103,7 @@ object Switchboard {
   // @formatter:off
   case class NewChannel(fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
-    require(pushMsat.amount < 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
+    require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
   }
   case class NewConnection(remoteNodeId: PublicKey, address: InetSocketAddress, newChannel_opt: Option[NewChannel])
   // @formatter:on
