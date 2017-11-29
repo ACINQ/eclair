@@ -7,12 +7,13 @@ import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
-import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel.ChannelFlags
 import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.GUIValidators
+import fr.acinq.eclair.gui.utils.{CoinUtils, GUIValidators}
 import fr.acinq.eclair.io.Switchboard.NewChannel
 import grizzled.slf4j.Logging
+
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by DPA on 23/09/2016.
@@ -33,7 +34,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var simpleConnection: CheckBox = _
   @FXML var fundingSatoshis: TextField = _
   @FXML var fundingSatoshisError: Label = _
-  @FXML var pushMsat: TextField = _
+  @FXML var pushMsatField: TextField = _
   @FXML var pushMsatError: Label = _
   @FXML var publicChannel: CheckBox = _
   @FXML var unit: ComboBox[String] = _
@@ -45,43 +46,60 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
       override def changed(observable: ObservableValue[_ <: Boolean], oldValue: Boolean, newValue: Boolean) = {
         fundingSatoshis.setDisable(newValue)
-        pushMsat.setDisable(newValue)
+        pushMsatField.setDisable(newValue)
         unit.setDisable(newValue)
       }
     })
   }
 
   @FXML def handleOpen(event: ActionEvent) = {
+    clearErrors()
     if (GUIValidators.validate(host.getText, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)) {
       if (simpleConnection.isSelected) {
         handlers.open(host.getText, None)
         stage.close
       } else {
-        if (GUIValidators.validate(fundingSatoshis.getText, fundingSatoshisError, "Funding must be numeric", GUIValidators.amountRegex)
-          && GUIValidators.validate(fundingSatoshisError, "Funding must be greater than 0", fundingSatoshis.getText.toLong > 0)) {
-          val rawFunding = fundingSatoshis.getText.toLong
-          val smartFunding = unit.getValue match {
-            case "milliBTC" => Satoshi(rawFunding * 100000L)
-            case "Satoshi" => Satoshi(rawFunding)
-            case "milliSatoshi" => Satoshi(rawFunding / 1000L)
-          }
-          if (GUIValidators.validate(fundingSatoshisError, "Funding must be 16 777 216 satoshis (~0.167 BTC) or less", smartFunding.toLong < maxFunding)) {
-            if (!pushMsat.getText.isEmpty) {
-              // pushMsat is optional, so we validate field only if it isn't empty
-              if (GUIValidators.validate(pushMsat.getText, pushMsatError, "Push msat must be numeric", GUIValidators.amountRegex)
-                && GUIValidators.validate(pushMsatError, "Push msat must be 16 777 216 000 msat (~0.167 BTC) or less", pushMsat.getText.toLong <= maxPushMsat)) {
-                val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-                handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(pushMsat.getText.toLong), Some(channelFlags))))
-                stage.close
-              }
-            } else {
-              handlers.open(host.getText, Some(NewChannel(smartFunding, MilliSatoshi(0), None)))
-              stage.close
+        import fr.acinq.bitcoin._
+        fundingSatoshis.getText match {
+          case GUIValidators.amountDecRegex(_*) =>
+            Try(CoinUtils.convertStringAmountToSat(fundingSatoshis.getText, unit.getValue)) match {
+              case Success(capacitySat) if capacitySat.amount < 0 =>
+                fundingSatoshisError.setText("Capacity must be greater than 0")
+              case Success(capacitySat) if capacitySat.amount >= maxFunding =>
+                fundingSatoshisError.setText(f"Capacity must be less than $maxFunding%,d sat")
+              case Success(capacitySat) =>
+                pushMsatField.getText match {
+                  case "" =>
+                    handlers.open(host.getText, Some(NewChannel(capacitySat, MilliSatoshi(0), None)))
+                    stage close()
+                  case GUIValidators.amountRegex(_*) =>
+                    Try(MilliSatoshi(pushMsatField.getText.toLong)) match {
+                      case Success(pushMsat) if pushMsat.amount > satoshi2millisatoshi(capacitySat).amount =>
+                        pushMsatError.setText("Push must be less or equal to capacity")
+                      case Success(pushMsat) =>
+                        val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
+                        handlers.open(host.getText, Some(NewChannel(capacitySat, pushMsat, Some(channelFlags))))
+                        stage close()
+                      case Failure(t) =>
+                        logger.error("Could not parse push amount", t)
+                        pushMsatError.setText("Push amount is not valid")
+                    }
+                  case _ => pushMsatError.setText("Push amount is not valid")
+                }
+              case Failure(t) =>
+                logger.error("Could not parse capacity amount", t)
+                fundingSatoshisError.setText("Capacity is not valid")
             }
-          }
+          case _ => fundingSatoshisError.setText("Capacity is not valid")
         }
       }
     }
+  }
+
+  private def clearErrors() = {
+    hostError.setText("")
+    fundingSatoshisError.setText("")
+    pushMsatError.setText("")
   }
 
   @FXML def handleClose(event: ActionEvent) = stage.close

@@ -14,7 +14,7 @@ import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
 import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, GUIValidators}
+import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, GUIValidators}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
@@ -55,7 +55,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
     amount.getText match {
       case "" => createPaymentRequest(None)
       case GUIValidators.amountDecRegex(_*) =>
-        Try(convertStringAmountToMsat(amount.getText, unit.getValue)) match {
+        Try(CoinUtils.convertStringAmountToMsat(amount.getText, unit.getValue)) match {
           case Success(amountMsat) if amountMsat.amount < 0 =>
             handleError("Amount must be greater than 0")
           case Success(amountMsat) if amountMsat.amount >= PaymentRequest.MAX_AMOUNT.amount =>
@@ -65,26 +65,6 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
           case Success(amountMsat) => createPaymentRequest(Some(amountMsat))
         }
       case _ => handleError("Amount must be a number")
-    }
-  }
-
-  /**
-    * Converts a string amount denominated in a bitcoin unit to a Millisatoshi amount.
-    *
-    * @param amount numeric String, can be decimal.
-    * @param unit   bitcoin unit, can be milliSatoshi, Satoshi or milliBTC.
-    * @return amount as a MilliSatoshi object.
-    * @throws NumberFormatException    if the amount parameter is not numeric.
-    * @throws IllegalArgumentException if the unit is not equals to milliSatoshi, Satoshi or milliBTC.
-    */
-  private def convertStringAmountToMsat(amount: String, unit: String): MilliSatoshi = {
-    val amountDecimal = BigDecimal(amount)
-    logger.debug(s"amount=$amountDecimal with unit=$unit")
-    unit match {
-      case "milliSatoshi" => MilliSatoshi(amountDecimal.longValue())
-      case "Satoshi" => MilliSatoshi((amountDecimal * 1000).longValue())
-      case "milliBTC" => MilliSatoshi((amountDecimal * 1000 * 100000).longValue())
-      case _ => throw new IllegalArgumentException("unknown unit")
     }
   }
 
@@ -112,7 +92,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
     * @param amount_opt optional amount of the payment request, in millisatoshi
     */
   private def createPaymentRequest(amount_opt: Option[MilliSatoshi]) = {
-    logger.debug(s"generate payment request for amount_opt=$amount_opt description=${description.getText()}")
+    logger.debug(s"generate payment request for amount_opt=${amount_opt.getOrElse("N/A")} description=${description.getText()}")
     handlers.receive(amount_opt, description.getText) onComplete {
       case Success(s) =>
         Try(createQRCode(s)) match {
