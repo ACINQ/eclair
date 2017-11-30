@@ -1,6 +1,6 @@
 package fr.acinq.eclair.channel
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
 
 /**
@@ -24,7 +24,9 @@ case class InvalidFinalScript                  (channelId: BinaryData) extends C
 case class HtlcTimedout                        (channelId: BinaryData) extends ChannelException(channelId, s"one or more htlcs timed out")
 case class FeerateTooDifferent                 (channelId: BinaryData, localFeeratePerKw: Long, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
 case class InvalidCloseSignature               (channelId: BinaryData) extends ChannelException(channelId, "cannot verify their close signature")
-case class InvalidCommitmentSignature          (channelId: BinaryData) extends ChannelException(channelId, "invalid commitment signature")
+case class InvalidCommitmentSignature          (channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid commitment signature: tx=${Transaction.write(tx)}")
+case class InvalidHtlcSignature                (channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid htlc signature: tx=${Transaction.write(tx)}")
+case class HtlcSigCountMismatch                (channelId: BinaryData, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual: $actual")
 case class ForcedLocalCommit                   (channelId: BinaryData, reason: String) extends ChannelException(channelId, s"forced local commit: reason")
 case class UnexpectedHtlcId                    (channelId: BinaryData, expected: Long, actual: Long) extends ChannelException(channelId, s"unexpected htlc id: expected=$expected actual=$actual")
 case class InvalidPaymentHash                  (channelId: BinaryData) extends ChannelException(channelId, "invalid payment hash")

@@ -383,22 +383,28 @@ object Commitments extends Logging {
     // no need to compute htlc sigs if commit sig doesn't check out
     val signedCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, sig, commit.signature)
     if (Transactions.checkSpendable(signedCommitTx).isFailure) {
-      throw InvalidCommitmentSignature(commitments.channelId)
+      throw InvalidCommitmentSignature(commitments.channelId, signedCommitTx.tx)
     }
 
     val sortedHtlcTxs: Seq[TransactionWithInputInfo] = (htlcTimeoutTxs ++ htlcSuccessTxs).sortBy(_.input.outPoint.index)
-    require(commit.htlcSignatures.size == sortedHtlcTxs.size, s"htlc sig count mismatch (received=${commit.htlcSignatures.size}, expected=${sortedHtlcTxs.size})")
+    if (commit.htlcSignatures.size != sortedHtlcTxs.size) {
+      throw new HtlcSigCountMismatch(commitments.channelId, sortedHtlcTxs.size, commit.htlcSignatures.size)
+    }
     val localHtlcKey = Generators.derivePrivKey(localParams.htlcKey, localPerCommitmentPoint)
     val htlcSigs = sortedHtlcTxs.map(Transactions.sign(_, localHtlcKey))
     val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, localPerCommitmentPoint)
     // combine the sigs to make signed txes
     val htlcTxsAndSigs = (sortedHtlcTxs, htlcSigs, commit.htlcSignatures).zipped.toList.collect {
       case (htlcTx: HtlcTimeoutTx, localSig, remoteSig) =>
-        require(Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isSuccess, "bad sig")
+        if (Transactions.checkSpendable(Transactions.addSigs(htlcTx, localSig, remoteSig)).isFailure) {
+          throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
+        }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
       case (htlcTx: HtlcSuccessTx, localSig, remoteSig) =>
         // we can't check that htlc-success tx are spendable because we need the payment preimage; thus we only check the remote sig
-        require(Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey), "bad sig")
+        if (Transactions.checkSig(htlcTx, remoteSig, remoteHtlcPubkey) == false) {
+          throw new InvalidHtlcSignature(commitments.channelId, htlcTx.tx)
+        }
         HtlcTxAndSigs(htlcTx, localSig, remoteSig)
     }
 

@@ -283,7 +283,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingCreated message contains an invalid signature")
-          val error = Error(temporaryChannelId, cause.getMessage.getBytes)
+          val exc = InvalidCommitmentSignature(temporaryChannelId, signedLocalCommitTx.tx)
+          val error = Error(temporaryChannelId, exc.getMessage.getBytes)
           // we haven't anything at stake yet, we can just stop
           goto(CLOSED) sending error
         case Success(_) =>
@@ -323,11 +324,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // we make sure that their sig checks out and that our first commit tx is spendable
       val localSigOfLocalTx = Transactions.sign(localCommitTx, localParams.fundingPrivKey)
       val signedLocalCommitTx = Transactions.addSigs(localCommitTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localSigOfLocalTx, remoteSig)
-      Transactions.checkSpendable(fundingTx, signedLocalCommitTx.tx)
-        .flatMap(_ => Transactions.checkSpendable(signedLocalCommitTx)) match {
+      Transactions.checkSpendable(signedLocalCommitTx) match {
         case Failure(cause) =>
           log.error(cause, "their FundingSigned message contains an invalid signature")
-          val error = Error(channelId, cause.getMessage.getBytes)
+          val exc = InvalidCommitmentSignature(channelId, signedLocalCommitTx.tx)
+          val error = Error(channelId, exc.getMessage.getBytes)
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
           // we haven't published anything yet, we can just stop

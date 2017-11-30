@@ -424,7 +424,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (no changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv CMD_SIGN (no changes)") { case (alice, _, _, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       sender.send(alice, CMD_SIGN)
@@ -433,7 +433,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv CMD_SIGN (while waiting for RevokeAndAck (no pending changes)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -452,7 +452,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
+  test("recv CMD_SIGN (while waiting for RevokeAndAck (with pending changes)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r1, htlc1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -606,15 +606,60 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
       // actual test begins
       sender.send(bob, CommitSig("00" * 32, "00" * 64, Nil))
-      bob2alice.expectMsgType[Error]
-      awaitCond(bob.stateName == CLOSING)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data).startsWith("invalid commitment signature"))
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[PublishAsap]
       bob2blockchain.expectMsgType[WatchConfirmed]
     }
   }
 
-  test("recv RevokeAndAck (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv CommitSig (bad htlc sig count)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      val commitSig = alice2bob.expectMsgType[CommitSig]
+
+      // actual test begins
+      val badCommitSig = commitSig.copy(htlcSignatures = commitSig.htlcSignatures ::: commitSig.htlcSignatures)
+      sender.send(bob, badCommitSig)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === HtlcSigCountMismatch(channelId(bob), expected = 1, actual = 2).getMessage)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv CommitSig (invalid htlc sig)") { case (alice, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+      val commitSig = alice2bob.expectMsgType[CommitSig]
+
+      // actual test begins
+      val badCommitSig = commitSig.copy(htlcSignatures = commitSig.signature :: Nil)
+      sender.send(bob, badCommitSig)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data).startsWith("invalid htlc signature"))
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+
+  test("recv RevokeAndAck (one htlc sent)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val (r, htlc) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
