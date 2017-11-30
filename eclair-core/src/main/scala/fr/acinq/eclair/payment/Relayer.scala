@@ -19,7 +19,7 @@ case class Local(sender: Option[ActorRef]) extends Origin // we don't persist re
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 case class ForwardAdd(add: UpdateAddHtlc)
-case class ForwardLocalFail(error: Throwable, to: Origin, channelUpdate: Option[ChannelUpdate]) // happens when the failure happened in a local channel (and not in some downstream channel)
+//case class ForwardLocalFail(error: Throwable, to: Origin, channelUpdate: Option[ChannelUpdate]) // happens when the failure happened in a local channel (and not in some downstream channel)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
 case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
@@ -105,6 +105,20 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       register ! Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
+    case AddHtlcFailed(error, Local(Some(sender)), _) =>
+      sender ! Status.Failure(error)
+
+    case AddHtlcFailed(error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
+      val failure = (error, channelUpdate_opt) match {
+        case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
+        case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+        case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+        case (_: HtlcTimedout, _) => PermanentChannelFailure
+        case _ => TemporaryNodeFailure
+      }
+      val cmd = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
+      register ! Register.Forward(originChannelId, cmd)
+
     case ForwardFulfill(fulfill, Local(Some(sender))) =>
       sender ! fulfill
 
@@ -118,20 +132,6 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case AckFulfillCmd(channelId, htlcId) =>
       log.debug(s"fulfill acked for channelId=$channelId htlcId=$htlcId")
       preimagesDb.removePreimage(channelId, htlcId)
-
-    case ForwardLocalFail(error, Local(Some(sender)), _) =>
-      sender ! Status.Failure(error)
-
-    case ForwardLocalFail(error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
-      val failure = (error, channelUpdate_opt) match {
-        case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
-        case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-        case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
-        case (_: HtlcTimedout, _) => PermanentChannelFailure
-        case _ => TemporaryNodeFailure
-      }
-      val cmd = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
-      register ! Register.Forward(originChannelId, cmd)
 
     case ForwardFail(fail, Local(Some(sender))) =>
       sender ! fail

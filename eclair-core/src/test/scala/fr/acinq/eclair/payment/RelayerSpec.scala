@@ -232,7 +232,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream_opt === Some(add_ab))
 
-    sender.send(relayer, ForwardLocalFail(new InsufficientFunds(channelId_bc, cmd.amountMsat, 100, 0, 0), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
+    sender.send(relayer, AddHtlcFailed(new InsufficientFunds(channelId_bc, cmd.amountMsat, 100, 0, 0), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -256,7 +256,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream_opt === Some(add_ab))
 
-    sender.send(relayer, ForwardLocalFail(new TooManyAcceptedHtlcs(channelId_bc, 30), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
+    sender.send(relayer, AddHtlcFailed(new TooManyAcceptedHtlcs(channelId_bc, 30), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -280,7 +280,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream_opt === Some(add_ab))
 
-    sender.send(relayer, ForwardLocalFail(new HtlcTimedout(channelId_bc), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
+    sender.send(relayer, AddHtlcFailed(new HtlcTimedout(channelId_bc), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)

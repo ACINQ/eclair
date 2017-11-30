@@ -139,15 +139,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // no need to go OFFLINE, we can directly switch to CLOSING
           goto(CLOSING) using closing
 
-        case d: HasCommitments =>
-          d match {
-            case DATA_NORMAL(_, _, ann, _, _, _) =>
-              context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, ann.shortChannelId))
-              //val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, ann.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
-              //drelayer ! channelUpdate
-            case _ => ()
-          }
-          goto(OFFLINE) using d
+        case normal: DATA_NORMAL =>
+          context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId))
+          goto(OFFLINE) using normal
+
+        case _ => goto(OFFLINE) using data
       }
   })
 
@@ -743,7 +739,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks, nodeParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
       router ! channelUpdate
       d.commitments.localChanges.proposed.collect {
-        case add: UpdateAddHtlc => relayer ! ForwardLocalFail(ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate))
+        case add: UpdateAddHtlc => relayer ! AddHtlcFailed(ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate))
       }
       goto(OFFLINE) using d.copy(channelUpdate = channelUpdate)
 
@@ -1043,7 +1039,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case add if ripemd160(add.paymentHash) == extracted =>
           val origin = d.commitments.originChannels(add.id)
           log.warning(s"found a match between paymentHash160=$extracted and origin=$origin: htlc timed out")
-          relayer ! ForwardLocalFail(HtlcTimedout(d.channelId), origin, None)
+          relayer ! AddHtlcFailed(HtlcTimedout(d.channelId), origin, None)
       }
       // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
       // TODO: we do not handle the case where htlcs transactions end up being unconfirmed this can happen if an htlc-success tx is published right before a htlc timed out
@@ -1239,8 +1235,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case _ =>
           handleCommandError(AddHtlcFailed(error, origin(c), None))
       }
-
-
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
     case Event(CurrentBlockCount(_), _) => stay
