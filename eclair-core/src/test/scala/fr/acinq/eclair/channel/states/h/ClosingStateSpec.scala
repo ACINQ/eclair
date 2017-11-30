@@ -104,7 +104,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_TX_CONFIRMED (mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-      val mutualCloseTx = alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.get
+      val mutualCloseTx = alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last
 
       // actual test starts here
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(mutualCloseTx), 0, 0)
@@ -112,7 +112,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (our commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
+  test("recv BITCOIN_FUNDING_SPENT (our commit)") { case (alice, _, _, _, alice2blockchain, _, _, _) =>
     within(30 seconds) {
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx

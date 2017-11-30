@@ -2,8 +2,10 @@ package fr.acinq.eclair.channel.states.g
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
+import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
@@ -13,6 +15,7 @@ import org.scalatest.Tag
 import org.scalatest.junit.JUnitRunner
 
 import scala.concurrent.duration._
+import scala.util.Success
 
 /**
   * Created by PM on 05/07/2016.
@@ -56,7 +59,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
       // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
       assert(aliceCloseSig2.feeSatoshis > aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis < bobCloseSig.feeSatoshis)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(localClosingSigned = aliceCloseSig2))
+      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(localClosingSigned = initialState.localClosingSigned :+ aliceCloseSig2))
     }
   }
 
@@ -111,9 +114,29 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTx))
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
       alice2blockchain.expectNoMsg(1 second)
-      assert(alice.stateName == NEGOTIATING)
+      assert(alice.stateName == CLOSING)
     }
   }
+
+  test("recv BITCOIN_FUNDING_SPENT (an older mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      val aliceClose1 = alice2bob.expectMsgType[ClosingSigned]
+      alice2bob.forward(bob)
+      val bobClose1 = bob2alice.expectMsgType[ClosingSigned]
+      bob2alice.forward(alice)
+      val aliceClose2 = alice2bob.expectMsgType[ClosingSigned]
+      assert(aliceClose2.feeSatoshis != bobClose1.feeSatoshis)
+      // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
+      val d = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
+      implicit val log = bob.underlyingActor.implicitLog
+      val Success(bobClosingTx) = Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(aliceClose1.feeSatoshis), aliceClose1.signature)
+
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
+      alice2blockchain.expectNoMsg(1 second)
+      assert(alice.stateName == CLOSING)
+    }
+  }
+
 
   test("recv CMD_CLOSE") { case (alice, _, _, _, _, _) =>
     within(30 seconds) {
