@@ -47,6 +47,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   import Channel._
 
+  // we pass these to helpers classes so that they have the logging context
+  implicit def implicitLog = log
+
   val forwarder = context.actorOf(Props(new Forwarder(nodeParams)), "forwarder")
 
   // this will be used to detect htlc timeouts

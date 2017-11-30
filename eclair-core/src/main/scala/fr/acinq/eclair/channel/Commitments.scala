@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel
 
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
 import fr.acinq.eclair.crypto.{Generators, ShaChain, Sphinx}
@@ -8,7 +9,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
-import grizzled.slf4j.Logging
 
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
@@ -54,7 +54,7 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
   def announceChannel: Boolean = (channelFlags & 0x01) != 0
 }
 
-object Commitments extends Logging {
+object Commitments {
   /**
     * add a change to our proposed change list
     *
@@ -355,7 +355,7 @@ object Commitments extends Logging {
     }
   }
 
-  def receiveCommit(commitments: Commitments, commit: CommitSig): (Commitments, RevokeAndAck) = {
+  def receiveCommit(commitments: Commitments, commit: CommitSig)(implicit log: LoggingAdapter): (Commitments, RevokeAndAck) = {
     import commitments._
     // they sent us a signature for *their* view of *our* next commit tx
     // so in terms of rev.hashes and indexes we have:
@@ -430,7 +430,7 @@ object Commitments extends Logging {
     val originChannels1 = commitments.originChannels -- completedOutgoingHtlcs
     val commitments1 = commitments.copy(localCommit = localCommit1, localChanges = ourChanges1, remoteChanges = theirChanges1, originChannels = originChannels1)
 
-    logger.debug(s"current commit: index=${localCommit1.index} htlc_in=${localCommit1.spec.htlcs.filter(_.direction == IN).size} htlc_out=${localCommit1.spec.htlcs.filter(_.direction == OUT).size} txid=${localCommit1.publishableTxs.commitTx.tx.txid} tx=${Transaction.write(localCommit1.publishableTxs.commitTx.tx)}")
+    log.debug(s"current commit: index=${localCommit1.index} htlc_in=${localCommit1.spec.htlcs.filter(_.direction == IN).size} htlc_out=${localCommit1.spec.htlcs.filter(_.direction == OUT).size} txid=${localCommit1.publishableTxs.commitTx.tx.txid} tx=${Transaction.write(localCommit1.publishableTxs.commitTx.tx)}")
 
     (commitments1, revocation)
   }
