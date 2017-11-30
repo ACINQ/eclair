@@ -47,6 +47,10 @@ object Helpers {
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw new InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
     val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw new FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
+    // only enfore dust limit check on mainnet
+    if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
+      if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+    }
     val reserveToFundingRatio = open.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw new ChannelReserveTooHigh(open.temporaryChannelId, open.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }
