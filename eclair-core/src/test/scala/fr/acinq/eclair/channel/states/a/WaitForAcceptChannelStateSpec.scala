@@ -22,7 +22,11 @@ class WaitForAcceptChannelStateSpec extends TestkitBaseClass with StateTestsHelp
   type FixtureParam = Tuple4[TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe]
 
   override def withFixture(test: OneArgTest) = {
-    val setup = if (test.tags.contains("mainnet")) init(Some(Block.LivenetGenesisBlock.hash)) else init()
+    val setup = if (test.tags.contains("mainnet")) {
+      init(TestConstants.Alice.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash), TestConstants.Bob.nodeParams.copy(chainHash = Block.LivenetGenesisBlock.hash))
+    } else {
+      init()
+    }
     import setup._
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)

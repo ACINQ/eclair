@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Hop, PaymentLifecycle}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, TestConstants}
+import fr.acinq.eclair.{Globals, NodeParams, TestConstants}
 
 import scala.util.Random
 
@@ -29,7 +29,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                    router: TestProbe,
                    relayer: TestProbe)
 
-  def init(chainHash_opt: Option[BinaryData] = None): Setup = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams): Setup = {
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -37,14 +37,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
-    val nodeParamsA = chainHash_opt match {
-      case Some(value) => TestConstants.Alice.nodeParams.copy(chainHash = value)
-      case None => TestConstants.Alice.nodeParams
-    }
-    val nodeParamsB = chainHash_opt match {
-      case Some(value) => TestConstants.Bob.nodeParams.copy(chainHash = value)
-      case None => TestConstants.Bob.nodeParams
-    }
     val wallet = new TestWallet
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
