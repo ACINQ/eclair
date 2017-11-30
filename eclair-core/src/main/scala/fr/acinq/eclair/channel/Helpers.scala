@@ -56,7 +56,10 @@ object Helpers {
     */
   def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Unit = {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw new InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
-    if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+    // only enfore dust limit check on mainnet
+    if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
+      if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
+    }
     val reserveToFundingRatio = accept.channelReserveSatoshis.toDouble / Math.max(open.fundingSatoshis, 1)
     if (reserveToFundingRatio > nodeParams.maxReserveToFundingRatio) throw new ChannelReserveTooHigh(open.temporaryChannelId, accept.channelReserveSatoshis, reserveToFundingRatio, nodeParams.maxReserveToFundingRatio)
   }

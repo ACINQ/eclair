@@ -29,7 +29,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                    router: TestProbe,
                    relayer: TestProbe)
 
-  def init(): Setup = {
+  def init(chainHash_opt: Option[BinaryData] = None): Setup = {
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -37,8 +37,14 @@ trait StateTestsHelperMethods extends TestKitBase {
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
-    val nodeParamsA = TestConstants.Alice.nodeParams
-    val nodeParamsB = TestConstants.Bob.nodeParams
+    val nodeParamsA = chainHash_opt match {
+      case Some(value) => TestConstants.Alice.nodeParams.copy(chainHash = value)
+      case None => TestConstants.Alice.nodeParams
+    }
+    val nodeParamsB = chainHash_opt match {
+      case Some(value) => TestConstants.Bob.nodeParams.copy(chainHash = value)
+      case None => TestConstants.Bob.nodeParams
+    }
     val wallet = new TestWallet
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
