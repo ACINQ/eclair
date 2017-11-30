@@ -30,8 +30,7 @@
         </VBox>
         <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port"
                    GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="0"/>
-        <Label fx:id="hostError" opacity="0.0" styleClass="text-error, text-error-downward" text="Generic Invalid URI"
-               mouseTransparent="true"
+        <Label fx:id="hostError" styleClass="text-error, text-error-downward" mouseTransparent="true"
                GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2"/>
 
         <CheckBox fx:id="simpleConnection" mnemonicParsing="false" text="Simple connection (no channel)"
@@ -55,8 +54,7 @@
                 </FXCollections>
             </items>
         </ComboBox>
-        <Label fx:id="fundingSatoshisError" opacity="0.0" styleClass="text-error, text-error-downward"
-               text="Generic Invalid Funding"
+        <Label fx:id="fundingSatoshisError" styleClass="text-error, text-error-downward"
                GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2"/>
 
         <Label styleClass="text-muted" text="Optional Parameters" wrapText="true" GridPane.columnIndex="0"
@@ -71,10 +69,9 @@
                        wrapText="true"/>
             </children>
         </VBox>
-        <TextField fx:id="pushMsat" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
-        <Label fx:id="pushMsatError" opacity="0.0" styleClass="text-error, text-error-downward"
-               text="Generic Invalid Push" GridPane.columnSpan="2"
-               GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+        <TextField fx:id="pushMsatField" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+        <Label fx:id="pushMsatError" styleClass="text-error, text-error-downward"
+               GridPane.columnIndex="1" GridPane.rowIndex="4" GridPane.columnSpan="2"/>
         <CheckBox fx:id="publicChannel" mnemonicParsing="true" selected="true" styleClass="text-sm"
                   text="Public Channel"
                   GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="5"/>

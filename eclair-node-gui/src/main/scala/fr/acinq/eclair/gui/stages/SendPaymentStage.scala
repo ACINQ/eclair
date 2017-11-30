@@ -19,8 +19,8 @@ class SendPaymentStage(handlers: Handlers) extends Stage() with Logging {
   setTitle("Send a Payment Request")
   setMinWidth(450)
   setWidth(450)
-  setMinHeight(450)
-  setHeight(450)
+  setMinHeight(550)
+  setHeight(550)
 
   // get fxml/controller
   val receivePayment = new FXMLLoader(getClass.getResource("/gui/modals/sendPayment.fxml"))

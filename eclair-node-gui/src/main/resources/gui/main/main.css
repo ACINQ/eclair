@@ -208,3 +208,11 @@
 .button.copy-clipboard:pressed {
     -fx-background-color: rgb(220,222,225);
 }
+
+/* --------- send modal ---------- */
+
+.text-field.description-text, .text-area.description-text {
+    -fx-background-color: rgb(235,235,235);
+    -fx-text-fill: rgb(100,100,100);
+    -fx-padding: 4px;
+}

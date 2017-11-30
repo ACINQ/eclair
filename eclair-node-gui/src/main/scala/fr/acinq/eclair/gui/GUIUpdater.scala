@@ -14,7 +14,7 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDiscon
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, ElectrumDisconnected}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
-import fr.acinq.eclair.gui.utils.CoinFormat
+import fr.acinq.eclair.gui.utils.CoinUtils
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.NodeAnnouncement
@@ -52,8 +52,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
   def updateBalance(channelPaneController: ChannelPaneController, commitments: Commitments) = {
     val spec = commitments.localCommit.spec
-    channelPaneController.capacity.setText(s"${CoinFormat.MILLI_BTC_FORMAT.format(millisatoshi2millibtc(MilliSatoshi(spec.totalFunds)).amount)}")
-    channelPaneController.amountUs.setText(s"${CoinFormat.MILLI_BTC_FORMAT.format(millisatoshi2millibtc(MilliSatoshi(spec.toLocalMsat)).amount)}")
+    channelPaneController.capacity.setText(s"${CoinUtils.MILLI_BTC_FORMAT.format(millisatoshi2millibtc(MilliSatoshi(spec.totalFunds)).amount)}")
+    channelPaneController.amountUs.setText(s"${CoinUtils.MILLI_BTC_FORMAT.format(millisatoshi2millibtc(MilliSatoshi(spec.toLocalMsat)).amount)}")
     channelPaneController.balanceBar.setProgress(spec.toLocalMsat.toDouble / spec.totalFunds)
   }
 
