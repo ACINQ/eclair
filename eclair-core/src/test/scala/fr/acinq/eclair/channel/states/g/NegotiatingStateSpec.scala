@@ -37,7 +37,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // NB: at this point, bob has already computed and sent the first ClosingSigned message
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
-      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(20000))
+      if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(5000))
       bob2alice.forward(alice)
       awaitCond(alice.stateName == NEGOTIATING)
       awaitCond(bob.stateName == NEGOTIATING)
@@ -45,17 +45,17 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, _, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
       val aliceCloseSig1 = alice2bob.expectMsgType[ClosingSigned]
       val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
-      assert(aliceCloseSig1.feeSatoshis == 2 * bobCloseSig.feeSatoshis)
+      assert(bobCloseSig.feeSatoshis == 2 * aliceCloseSig1.feeSatoshis)
       // actual test starts here
       val initialState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
       bob2alice.forward(alice)
       val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
       // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
-      assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig.feeSatoshis)
+      assert(aliceCloseSig2.feeSatoshis > aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis < bobCloseSig.feeSatoshis)
       awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(localClosingSigned = aliceCloseSig2))
     }
   }
