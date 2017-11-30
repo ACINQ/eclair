@@ -8,7 +8,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.wire.{ClosingSigned, Error, Shutdown}
+import fr.acinq.eclair.wire.{ClosingSigned, CommitSig, Error, Shutdown}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.Tag
@@ -93,6 +93,20 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
 
   test("recv ClosingSigned (theirCloseFee == ourCloseFee) (fee 2)", Tag("fee2")) { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     testFeeConverge(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+  }
+
+  test("recv ClosingSigned (invalid sig)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      bob2alice.expectMsgType[ClosingSigned]
+      val sender = TestProbe()
+      val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
+      sender.send(bob, ClosingSigned("00" * 32, 20000, "00" * 64))
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data).startsWith("invalid close signature"))
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
   }
 
   test("recv BITCOIN_FUNDING_SPENT (counterparty's mutual close)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>

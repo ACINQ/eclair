@@ -927,7 +927,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(NEGOTIATING)(handleExceptions {
-    case Event(ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
+    case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
         case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.last.feeSatoshis =>
           doPublish(signedClosingTx)
@@ -941,9 +941,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           } else {
             stay using store(d.copy(localClosingSigned = d.localClosingSigned :+ closingSigned)) sending closingSigned
           }
-        case Failure(cause) =>
-          log.error(cause, "cannot verify their close signature")
-          throw InvalidCloseSignature(d.channelId)
+        case Failure(cause) => handleLocalError(cause, d, Some(c))
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_NEGOTIATING) if d.localClosingSigned.exists(closingSigned => tx.txIn.head.witness.stack.contains(closingSigned.signature)) =>
