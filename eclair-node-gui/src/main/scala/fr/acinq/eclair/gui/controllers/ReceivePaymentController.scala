@@ -3,7 +3,7 @@ package fr.acinq.eclair.gui.controllers
 import javafx.application.Platform
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
-import javafx.scene.control.{ComboBox, Label, TextArea, TextField}
+import javafx.scene.control._
 import javafx.scene.image.{ImageView, WritableImage}
 import javafx.scene.layout.GridPane
 import javafx.scene.paint.Color
@@ -30,6 +30,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML var amountError: Label = _
   @FXML var unit: ComboBox[String] = _
   @FXML var description: TextArea = _
+  @FXML var prependPrefixCheckbox: CheckBox = _
 
   @FXML var resultBox: GridPane = _
   // the content of this field is generated and readonly
@@ -95,9 +96,10 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
     logger.debug(s"generate payment request for amount_opt=${amount_opt.getOrElse("N/A")} description=${description.getText()}")
     handlers.receive(amount_opt, description.getText) onComplete {
       case Success(s) =>
-        Try(createQRCode(s)) match {
-          case Success(wImage) => displayPaymentRequestQR(s, Some(wImage))
-          case Failure(t) => displayPaymentRequestQR(s, None)
+        val pr = if (prependPrefixCheckbox.isSelected) s"lightning:$s" else s
+        Try(createQRCode(pr)) match {
+          case Success(wImage) => displayPaymentRequestQR(pr, Some(wImage))
+          case Failure(t) => displayPaymentRequestQR(pr, None)
         }
       case Failure(t) =>
         logger.error("Could not generate payment request", t)

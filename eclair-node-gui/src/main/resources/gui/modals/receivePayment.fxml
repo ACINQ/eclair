@@ -19,6 +19,7 @@
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
                 <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+                <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
             </rowConstraints>
             <children>
                 <VBox alignment="TOP_RIGHT" GridPane.rowIndex="0">
@@ -52,11 +53,18 @@
                 <TextArea fx:id="description" GridPane.columnIndex="1" GridPane.rowIndex="1" GridPane.columnSpan="2"
                           wrapText="true" prefHeight="50.0"/>
 
+                <VBox alignment="TOP_RIGHT" GridPane.rowIndex="2" GridPane.columnIndex="0">
+                    <children>
+                        <Label styleClass="text-strong" text="Add the lightning: prefix"/>
+                    </children>
+                </VBox>
+                <CheckBox fx:id="prependPrefixCheckbox" selected="false" GridPane.rowIndex="2" GridPane.columnIndex="1"/>
+
                 <Button defaultButton="true" mnemonicParsing="false" onAction="#handleGenerate" prefHeight="29.0"
-                        prefWidth="95.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+                        prefWidth="95.0" text="Generate" GridPane.columnIndex="1" GridPane.rowIndex="3"/>
                 <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel"
                         text="Close"
-                        GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="2" opacity="0"
+                        GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="3" opacity="0"
                         focusTraversable="false"/>
 
             </children>
