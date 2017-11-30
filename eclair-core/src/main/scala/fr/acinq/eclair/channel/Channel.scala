@@ -31,6 +31,14 @@ object Channel {
   // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   val ANNOUNCEMENTS_MINCONF = 6
 
+  // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
+  val MAX_FUNDING_SATOSHIS = 16777216 // = 2^24
+  val MIN_FUNDING_SATOSHIS = 1000
+  val MAX_ACCEPTED_HTLCS = 483
+
+  // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
+  val MIN_DUSTLIMIT = 546
+
   case object TickRefreshChannelUpdate
 
 }
@@ -145,7 +153,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
     case Event(open: OpenChannel, DATA_WAIT_FOR_OPEN_CHANNEL(INPUT_INIT_FUNDEE(temporaryChannelId, localParams, _, remoteInit))) =>
-      Try(Helpers.validateParamsFundee(temporaryChannelId, nodeParams, open.channelReserveSatoshis, open.fundingSatoshis, open.chainHash, open.feeratePerKw)) match {
+      Try(Helpers.validateParamsFundee(nodeParams, open)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(open.temporaryChannelId, t.getMessage.getBytes)
@@ -197,7 +205,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
     case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit, _), open)) =>
-      Try(Helpers.validateParamsFunder(temporaryChannelId, nodeParams, accept.channelReserveSatoshis, fundingSatoshis)) match {
+      Try(Helpers.validateParamsFunder(nodeParams, open, accept)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(temporaryChannelId, t.getMessage.getBytes)

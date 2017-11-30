@@ -4,7 +4,7 @@
 <?import javafx.scene.layout.*?>
 <?import java.lang.String?>
 <?import java.net.URL?>
-<GridPane fx:id="nodeId" prefWidth="450.0" prefHeight="450.0" xmlns="http://javafx.com/javafx/8"
+<GridPane fx:id="nodeId" prefWidth="550.0" prefHeight="550.0" xmlns="http://javafx.com/javafx/8"
           xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints halignment="LEFT" hgrow="SOMETIMES" minWidth="10.0" prefWidth="110.0"/>
@@ -19,33 +19,47 @@
         <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
         <RowConstraints minHeight="1.0" vgrow="SOMETIMES"/>
         <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
+        <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
     </rowConstraints>
     <children>
         <Label styleClass="text-strong" text="Enter a Payment Request below" GridPane.columnSpan="2"
                GridPane.valignment="TOP"/>
         <TextArea fx:id="paymentRequest" minHeight="150.0" prefHeight="150.0" styleClass="ta" wrapText="true"
                   GridPane.columnSpan="2" GridPane.rowIndex="1" GridPane.vgrow="ALWAYS"/>
-        <Label fx:id="paymentRequestError" opacity="0.0" text="Generic Invalid Payment Request" mouseTransparent="true"
-               styleClass="text-error" GridPane.columnSpan="2" GridPane.rowIndex="2"/>
 
-        <Label styleClass="text-muted" text="Amount (msat)" GridPane.halignment="RIGHT" GridPane.rowIndex="3"/>
-        <TextField fx:id="amountField" focusTraversable="false" editable="false" styleClass="noteditable" text="0"
+        <Label fx:id="paymentRequestError" mouseTransparent="true" styleClass="text-error" GridPane.columnSpan="2"
+               GridPane.rowIndex="2"/>
+
+        <Label text="Node Id" GridPane.halignment="RIGHT" GridPane.rowIndex="3"/>
+        <TextField fx:id="nodeIdField" focusTraversable="false" editable="false" styleClass="description-text"
+                   text="N/A"
                    GridPane.columnIndex="1" GridPane.rowIndex="3"/>
 
-        <Label styleClass="text-muted" text="Node Id" GridPane.halignment="RIGHT" GridPane.rowIndex="4"/>
-        <TextField fx:id="nodeIdField" focusTraversable="false" editable="false" styleClass="noteditable" text="N/A"
+        <Label text="Payment Hash" GridPane.halignment="RIGHT" GridPane.rowIndex="4"/>
+        <TextField fx:id="paymentHashField" focusTraversable="false" editable="false" styleClass="description-text"
+                   text="N/A"
                    GridPane.columnIndex="1" GridPane.rowIndex="4"/>
 
-        <Label styleClass="text-muted" text="hash" GridPane.halignment="RIGHT" GridPane.rowIndex="5"/>
-        <TextField fx:id="hashField" focusTraversable="false" editable="false" styleClass="noteditable" text="N/A"
-                   GridPane.columnIndex="1" GridPane.rowIndex="5"/>
+        <Label fx:id="descriptionLabel" text="Description" GridPane.halignment="RIGHT" GridPane.valignment="BASELINE"
+               GridPane.rowIndex="5"/>
+        <TextArea fx:id="descriptionField" focusTraversable="false" editable="false"
+                  styleClass="noteditable, description-text" text="N/A"
+                  prefHeight="80.0" maxHeight="80.0" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
 
-        <Separator GridPane.columnSpan="2" GridPane.rowIndex="6"/>
+        <Label text="Amount (msat)" GridPane.halignment="RIGHT" GridPane.valignment="BASELINE" GridPane.rowIndex="6"/>
+        <VBox GridPane.columnIndex="1" GridPane.rowIndex="6">
+            <children>
+                <TextField fx:id="amountField"/>
+                <Label fx:id="amountFieldError" mouseTransparent="true" styleClass="text-error"/>
+            </children>
+        </VBox>
+
+        <Separator GridPane.columnSpan="2" GridPane.rowIndex="7"/>
 
         <Button fx:id="sendButton" defaultButton="true" mnemonicParsing="false" onAction="#handleSend" text="Send"
-                GridPane.rowIndex="7"/>
+                GridPane.rowIndex="8"/>
         <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
-                GridPane.columnIndex="1" GridPane.halignment="RIGHT" GridPane.rowIndex="7"/>
+                GridPane.columnIndex="1" GridPane.halignment="RIGHT" GridPane.rowIndex="8"/>
     </children>
     <styleClass>
         <String fx:value="grid"/>
@@ -53,5 +67,6 @@
     </styleClass>
     <stylesheets>
         <URL value="@../commons/globals.css"/>
+        <URL value="@../main/main.css"/>
     </stylesheets>
 </GridPane>

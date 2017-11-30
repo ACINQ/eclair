@@ -26,7 +26,7 @@ import scala.util.Try
   */
 case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestamp: Long, nodeId: PublicKey, tags: List[PaymentRequest.Tag], signature: BinaryData) {
 
-  amount.map(a => require(a > MilliSatoshi(0) && a <= PaymentRequest.maxAmount, s"amount is not valid"))
+  amount.map(a => require(a.amount > 0 && a.amount <= PaymentRequest.MAX_AMOUNT.amount, s"amount is not valid"))
   require(tags.collect { case _: PaymentRequest.PaymentHashTag => {} }.size == 1, "there must be exactly one payment hash tag")
   require(tags.collect { case PaymentRequest.DescriptionTag(_) | PaymentRequest.DescriptionHashTag(_) => {} }.size == 1, "there must be exactly one description tag or one description hash tag")
 
@@ -102,7 +102,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 object PaymentRequest {
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#adding-an-htlc-update_add_htlc
-  val maxAmount = MilliSatoshi(4294967296L)
+  val MAX_AMOUNT = MilliSatoshi(4294967296L)
 
   def apply(chainHash: BinaryData, amount: Option[MilliSatoshi], paymentHash: BinaryData, privateKey: PrivateKey,
             description: String, fallbackAddress: Option[String] = None, expirySeconds: Option[Long] = None,

@@ -12,7 +12,7 @@ import fr.acinq.eclair.wire._
 import scodec.Attempt
 
 // @formatter:off
-case class ReceivePayment(amountMsat: MilliSatoshi, description: String)
+case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String)
 case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
 
 sealed trait PaymentResult
