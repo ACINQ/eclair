@@ -9,7 +9,7 @@ import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, MilliSatoshi, OP_CHECKSIG, OP_DUP, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, MilliSatoshi, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
@@ -75,7 +75,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("stop"))
     sender.expectMsgType[JValue]
-    //bitcoind.destroy()
+    bitcoind.exitValue()
     nodes.foreach {
       case (name, setup) =>
         logger.info(s"stopping node $name")
@@ -132,30 +132,24 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   }
 
   def connect(node1: Kit, node2: Kit, fundingSatoshis: Long, pushMsat: Long) = {
-    val eventListener1 = TestProbe()
-    val eventListener2 = TestProbe()
-    node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
-    node2.system.eventStream.subscribe(eventListener2.ref, classOf[ChannelStateChanged])
     val sender = TestProbe()
     sender.send(node1.switchboard, NewConnection(
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
       address = node2.nodeParams.publicAddresses.head,
       newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat), None))))
     sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
-    // funder transitions
-    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_ACCEPT_CHANNEL)
-    assert(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_INTERNAL)
-    // fundee transitions
-    assert(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_OPEN_CHANNEL)
-    assert(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CREATED)
   }
 
   test("connect nodes") {
     //
     // A ---- B ---- C ---- D
     //        |     / \
-    //        --E--'   F{1,2,3,4}
+    //        --E--'   F{1,2,3,4,5}
     //
+
+    val sender = TestProbe()
+    val eventListener = TestProbe()
+    nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
 
     connect(nodes("A"), nodes("B"), 10000000, 0)
     connect(nodes("B"), nodes("C"), 2000000, 0)
@@ -168,50 +162,18 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     connect(nodes("C"), nodes("F4"), 5000000, 0)
     connect(nodes("C"), nodes("F5"), 5000000, 0)
 
-    val sender = TestProbe()
-    val eventListener = TestProbe()
-    nodes.values.foreach(_.system.eventStream.subscribe(eventListener.ref, classOf[ChannelStateChanged]))
+    val numberOfChannels = 10
+    val channelEndpointsCount = 2 * numberOfChannels
 
-    // a channel has two endpoints
-    val channelEndpointsCount = nodes.values.foldLeft(0) {
-      case (sum, setup) =>
-        sender.send(setup.register, 'channels)
-        val channels = sender.expectMsgType[Map[BinaryData, ActorRef]]
-        sum + channels.size
-    }
-
-    // each funder sets up a WatchConfirmed on the parent tx, we need to make sure it has been received by the watcher
-    var watches1 = Set.empty[Watch]
+     // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({
-      watches1 = nodes.values.foldLeft(Set.empty[Watch]) {
+      val watches = nodes.values.foldLeft(Set.empty[Watch]) {
         case (watches, setup) =>
           sender.send(setup.watcher, 'watches)
           watches ++ sender.expectMsgType[Set[Watch]]
       }
-      watches1.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount / 2
+      watches.count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
     }, max = 10 seconds, interval = 1 second)
-
-    // confirming the parent tx of the funding
-    sender.send(bitcoincli, BitcoinReq("generate", 1))
-    sender.expectMsgType[JValue](10 seconds)
-
-    within(30 seconds) {
-      var count = 0
-      while (count < channelEndpointsCount) {
-        if (eventListener.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED) count = count + 1
-      }
-    }
-
-    // we make sure all channels have set up their WatchConfirmed for the funding tx
-    awaitCond({
-      val watches2 = nodes.values.foldLeft(Set.empty[Watch]) {
-        case (watches, setup) =>
-          sender.send(setup.watcher, 'watches)
-          watches ++ sender.expectMsgType[Set[Watch]]
-      }
-      (watches2 -- watches1).count(_.isInstanceOf[WatchConfirmed]) == channelEndpointsCount
-    }, max = 10 seconds, interval = 1 second)
-
 
     // confirming the funding tx
     sender.send(bitcoincli, BitcoinReq("generate", 2))
@@ -256,7 +218,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     val amountMsat = MilliSatoshi(4200000)
     // first we retrieve a payment hash from D
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
     sender.send(nodes("A").paymentInitiator,
@@ -274,7 +236,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(nodes("C").relayer, channelUpdateCD)
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the actual payment
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
@@ -293,7 +255,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(300000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     // then we make the payment (C-D has a smaller capacity than A-B and B-C)
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
@@ -318,7 +280,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of only 1 mBTC
@@ -336,7 +298,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of 6 mBTC
@@ -354,7 +316,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sender = TestProbe()
     // first we retrieve a payment hash from D for 2 mBTC
     val amountMsat = MilliSatoshi(200000000L)
-    sender.send(nodes("D").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
 
     // A send payment of 3 mBTC, more than asked but it should still be accepted
@@ -372,6 +334,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
   def scriptPubKeyToAddress(scriptPubKey: BinaryData) = Script.parse(scriptPubKey) match {
     case OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubKeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil =>
       Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, pubKeyHash)
+    case OP_HASH160 :: OP_PUSHDATA(scriptHash, _) :: OP_EQUAL :: Nil =>
+      Base58Check.encode(Base58.Prefix.ScriptAddressTestnet, scriptHash)
     case _ => ???
   }
 
@@ -611,7 +575,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     awaitCond(Globals.blockCount.get() == currentBlockCount, max = 20 seconds, interval = 1 second)
     // first we send 3 mBTC to F so that it has a balance
     val amountMsat = MilliSatoshi(300000000L)
-    sender.send(nodes("F5").paymentHandler, ReceivePayment(amountMsat, "1 coffee"))
+    sender.send(nodes("F5").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
     val sendReq = SendPayment(300000000L, pr.paymentHash, nodes("F5").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, sendReq)
@@ -629,7 +593,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val localCommitTxF = sender.expectMsgType[DATA_NORMAL].commitments.localCommit.publishableTxs
     // we now send some more money to F so that it creates a new commitment tx
     val amountMsat1 = MilliSatoshi(100000000L)
-    sender.send(nodes("F5").paymentHandler, ReceivePayment(amountMsat1, "1 coffee"))
+    sender.send(nodes("F5").paymentHandler, ReceivePayment(Some(amountMsat1), "1 coffee"))
     val pr1 = sender.expectMsgType[PaymentRequest]
     val sendReq1 = SendPayment(100000000L, pr1.paymentHash, nodes("F5").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, sendReq1)

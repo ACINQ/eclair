@@ -10,6 +10,11 @@ import fr.acinq.eclair.UInt64
 class ChannelException(channelId: BinaryData, message: String) extends RuntimeException(message) { def getChannelId() = channelId }
 // @formatter:off
 case class DebugTriggeredException             (channelId: BinaryData) extends ChannelException(channelId, "debug-mode triggered failure")
+case class InvalidChainHash                    (channelId: BinaryData, local: BinaryData, remote: BinaryData) extends ChannelException(channelId, s"invalid chain_hash (local=$local remote=$remote)")
+case class InvalidFundingAmount                (channelId: BinaryData, fundingSatoshis: Long, min: Long, max: Long) extends ChannelException(channelId, s"invalid funding_satoshis=$fundingSatoshis (min=$min max=$max)")
+case class InvalidPushAmount                   (channelId: BinaryData, pushMsat: Long, max: Long) extends ChannelException(channelId, s"invalid push_msat=$pushMsat (max=$max)")
+case class InvalidMaxAcceptedHtlcs             (channelId: BinaryData, maxAcceptedHtlcs: Int, max: Int) extends ChannelException(channelId, s"invalid max_accepted_htlcs=$maxAcceptedHtlcs (max=$max)")
+case class InvalidDustLimit                    (channelId: BinaryData, dustLimitSatoshis: Long, min: Long) extends ChannelException(channelId, s"invalid dust_limit_satoshis=$dustLimitSatoshis (min=$min)")
 case class ChannelReserveTooHigh               (channelId: BinaryData, channelReserveSatoshis: Long, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserveSatoshis too high: reserve=$channelReserveSatoshis fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
 case class ClosingInProgress                   (channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress            (channelId: BinaryData) extends ChannelException(channelId, "closing already in progress")

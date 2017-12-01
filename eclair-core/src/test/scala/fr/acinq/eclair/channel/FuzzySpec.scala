@@ -83,7 +83,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       if (stopping) {
         context stop self
       } else {
-        paymentHandler ! ReceivePayment(MilliSatoshi(requiredAmount), "One coffee")
+        paymentHandler ! ReceivePayment(Some(MilliSatoshi(requiredAmount)), "One coffee")
         context become waitingForPaymentRequest
       }
 

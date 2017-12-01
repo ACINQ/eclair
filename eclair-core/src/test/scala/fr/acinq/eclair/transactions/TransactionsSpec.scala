@@ -65,7 +65,7 @@ class TransactionsSpec extends FunSuite {
     val remoteHtlcPriv = PrivateKey(BinaryData("eb" * 32), compressed = true)
     val localFinalPriv = PrivateKey(BinaryData("ff" * 32), compressed = true)
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("fe" * 32), compressed = true).publicKey))
-    val localDustLimit = Satoshi(542)
+    val localDustLimit = Satoshi(546)
     val toLocalDelay = 144
     val feeratePerKw = 1000
 
@@ -141,7 +141,7 @@ class TransactionsSpec extends FunSuite {
     val finalPubKeyScript = Script.write(Script.pay2wpkh(PrivateKey(BinaryData("a9" * 32), true).publicKey))
     val commitInput = Funding.makeFundingInputInfo(BinaryData("a0" * 32), 0, Btc(1), localFundingPriv.publicKey, remoteFundingPriv.publicKey)
     val toLocalDelay = 144
-    val localDustLimit = Satoshi(542)
+    val localDustLimit = Satoshi(546)
     val feeratePerKw = 22000
 
 

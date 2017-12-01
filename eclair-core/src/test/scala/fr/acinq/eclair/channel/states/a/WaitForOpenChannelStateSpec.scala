@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states.a
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -40,6 +41,51 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
     }
   }
 
+  test("recv OpenChannel (invalid chain)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      // using livenet genesis block
+      val livenetChainHash = Block.LivenetGenesisBlock.hash
+      bob ! open.copy(chainHash = livenetChainHash)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, new InvalidChainHash(open.temporaryChannelId, Block.RegtestGenesisBlock.hash, livenetChainHash).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (funding too low)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val lowFundingMsat = 100
+      bob ! open.copy(fundingSatoshis = lowFundingMsat)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, lowFundingMsat, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (funding too high)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val highFundingMsat = 100000000
+      bob ! open.copy(fundingSatoshis = highFundingMsat)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, new InvalidFundingAmount(open.temporaryChannelId, highFundingMsat, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (invalid push_msat)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val invalidPushMsat = 100000000000L
+      bob ! open.copy(pushMsat = invalidPushMsat)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, new InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, 1000 * open.fundingSatoshis).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
   test("recv OpenChannel (reserve too high)") { case (bob, alice2bob, bob2alice, _) =>
     within(30 seconds) {
       val open = alice2bob.expectMsgType[OpenChannel]
@@ -47,7 +93,7 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       val reserveTooHigh = (0.3 * TestConstants.fundingSatoshis).toLong
       bob ! open.copy(channelReserveSatoshis = reserveTooHigh)
       val error = bob2alice.expectMsgType[Error]
-      assert(error === Error(open.temporaryChannelId, "channelReserveSatoshis too high: reserve=300000 fundingRatio=0.3 maxFundingRatio=0.05".getBytes("UTF-8")))
+      assert(error === Error(open.temporaryChannelId, new ChannelReserveTooHigh(open.temporaryChannelId, reserveTooHigh, 0.3,  0.05).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }

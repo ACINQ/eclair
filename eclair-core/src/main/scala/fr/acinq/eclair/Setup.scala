@@ -73,7 +73,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
     val feeProvider = (chain, bitcoin) match {
       case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
-      case _ => new FallbackFeeProvider(new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
+      case _ => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>

@@ -129,9 +129,16 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       manualTransition(data1)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
-    case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, history), data) =>
-      log.debug(s"scriptHash=$scriptHash has history=$history")
-      val (heights1, pendingTransactionRequests1) = history.foldLeft((data.heights, data.pendingTransactionRequests)) {
+    case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items), data) =>
+      log.debug(s"scriptHash=$scriptHash has history=$items")
+      val shadow_items = data.history.get(scriptHash) match {
+        case Some(existing_items) => existing_items.filterNot(item => items.exists(_.tx_hash == item.tx_hash))
+        case None => Nil
+      }
+      shadow_items.foreach(item => log.warning(s"keeping shadow item for txid=${item.tx_hash}"))
+      val items0 = items ++ shadow_items
+
+      val (heights1, pendingTransactionRequests1) = items0.foldLeft((data.heights, data.pendingTransactionRequests)) {
         case ((heights, hashes), item) if !data.transactions.contains(item.tx_hash) && !data.pendingTransactionRequests.contains(item.tx_hash) =>
           // we retrieve the tx if we don't have it and haven't yet requested it
           client ! GetTransaction(item.tx_hash)
@@ -158,7 +165,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
             // no reorg, nothing to do
           }
       }
-      val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> history), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
+      val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> items0), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
       manualTransition(data1)
       goto(stateName) using data1 // goto instead of stay because we want to fire transitions
 
@@ -418,6 +425,9 @@ object ElectrumWallet {
     * @param heights      transactions heights
     * @param history      script hash -> history
     * @param locks        transactions which lock some of our utxos.
+    * @param pendingHistoryRequests       requests pending a response from the electrum server
+    * @param pendingTransactionRequests   requests pending a response from the electrum server
+    * @param pendingTransactions          transactions received but not yet connected to their parents
     */
   case class Data(tip: ElectrumClient.Header,
                   accountKeys: Vector[ExtendedPrivateKey],

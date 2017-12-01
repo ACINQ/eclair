@@ -17,14 +17,14 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
 
   def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
-    case ReceivePayment(amount, desc) =>
+    case ReceivePayment(amount_opt, desc) =>
       Try {
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
-        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, Some(amount), paymentHash, nodeParams.privateKey, desc))
+        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc))
       } match {
         case Success((r, h, pr)) =>
-          log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount")
+          log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount_opt")
           sender ! pr
           context.become(run(h2r + (h -> (r, pr))))
         case Failure(t) =>

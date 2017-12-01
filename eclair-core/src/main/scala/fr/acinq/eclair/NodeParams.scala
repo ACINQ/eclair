@@ -11,6 +11,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
 import fr.acinq.eclair.NodeParams.WatcherType
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb, SqlitePreimagesDb}
 
@@ -114,6 +115,14 @@ object NodeParams {
       case _ => BITCOIND
     }
 
+    val dustLimitSatoshis = config.getLong("dust-limit-satoshis")
+    if (chainHash == Block.LivenetGenesisBlock.hash) {
+      require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
+    }
+
+    val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
+    require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
+
     NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
@@ -122,9 +131,9 @@ object NodeParams {
       publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),
-      dustLimitSatoshis = config.getLong("dust-limit-satoshis"),
+      dustLimitSatoshis = dustLimitSatoshis,
       maxHtlcValueInFlightMsat = UInt64(config.getLong("max-htlc-value-in-flight-msat")),
-      maxAcceptedHtlcs = config.getInt("max-accepted-htlcs"),
+      maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
       delayBlocks = config.getInt("delay-blocks"),
