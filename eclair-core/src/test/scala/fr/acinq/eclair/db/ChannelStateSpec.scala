@@ -99,5 +99,5 @@ object ChannelStateSpec {
 
   val channelUpdate = Announcements.makeChannelUpdate("11" * 32, randomKey, randomKey.publicKey, 142553, 42, 15, 575, 53)
 
-  val normal = DATA_NORMAL(commitments, None, channelUpdate, None, None, None)
+  val normal = DATA_NORMAL(commitments, 42, None, channelUpdate, None, None, None)
 }

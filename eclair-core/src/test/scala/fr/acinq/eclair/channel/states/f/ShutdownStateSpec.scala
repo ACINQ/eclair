@@ -9,7 +9,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.{ForwardAdd, Local, PaymentLifecycle, _}
-import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{ChannelUpdate, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -29,6 +29,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import setup._
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      relayer.expectMsgType[ChannelUpdate]
+      relayer.expectMsgType[ChannelUpdate]
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32

@@ -41,7 +41,7 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   stash: Seq[RoutingMessage],
                   awaiting: Seq[ChannelAnnouncement],
                   origins: Map[RoutingMessage, ActorRef],
-                  localChannels: Map[BinaryData, PublicKey],
+                  localUpdates: Map[BinaryData, (ChannelDesc, ChannelUpdate)],
                   excludedChannels: Set[ChannelDesc]) // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
 
 sealed trait State
@@ -107,7 +107,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   when(WAITING_FOR_VALIDATION) {
     case Event(ParallelGetResponse(results), d) =>
-      val validated = results.map {
+      val validated = results.flatMap {
         case IndividualResult(c, Some(tx), true) =>
           // TODO: blacklisting
           val (_, _, outputIndex) = fromShortId(c.shortChannelId)
@@ -137,7 +137,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           // TODO: blacklist?
           log.warning(s"could not retrieve tx for shortChannelId=${c.shortChannelId}")
           None
-      }.flatten
+      }
       // we reprocess node and channel-update announcements that may have been validated
       val (resend, stash1) = d.stash.partition {
         case n: NodeAnnouncement => results.exists(r => isRelatedTo(r.c, n.nodeId))
@@ -150,10 +150,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   whenUnhandled {
     case Event(ChannelStateChanged(_, _, _, _, channel.NORMAL, d: DATA_NORMAL), d1) =>
-      stay using d1.copy(localChannels = d1.localChannels + (d.commitments.channelId -> d.commitments.remoteParams.nodeId))
+      val channelDesc = ChannelDesc(d.channelUpdate.shortChannelId, d.commitments.localParams.nodeId, d.commitments.remoteParams.nodeId)
+      stay using d1.copy(localUpdates = d1.localUpdates + (d.channelId -> (channelDesc, d.channelUpdate)))
 
-    case Event(ChannelStateChanged(_, _, _, channel.NORMAL, _, d: DATA_NEGOTIATING), d1) =>
-      stay using d1.copy(localChannels = d1.localChannels - d.commitments.channelId)
+    case Event(ChannelStateChanged(_, _, _, channel.NORMAL, _, d: HasCommitments), d1) =>
+      stay using d1.copy(localUpdates = d1.localUpdates - d.channelId)
 
     case Event(_: ChannelStateChanged, _) => stay
 
@@ -316,18 +317,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay
 
     case Event(RouteRequest(start, end, ignoreNodes, ignoreChannels), d) =>
-      val localNodeId = nodeParams.privateKey.publicKey
-      // TODO: HACK!!!!! the following is a workaround to make our routing work with private/not-yet-announced channels, that do not have a channelUpdate
-      val fakeUpdates = d.localChannels.map { case (channelId, remoteNodeId) =>
-        // note that this id is deterministic, otherwise filterUpdates would not work
-        val fakeShortId = BigInt(channelId.take(7).toArray).toLong
-        val channelDesc = ChannelDesc(fakeShortId, localNodeId, remoteNodeId)
-        // note that we store the channelId in the sig, other values are not used because if it is selected this will be the first channel in the route
-        val channelUpdate = ChannelUpdate(signature = channelId, chainHash = nodeParams.chainHash, fakeShortId, 0, "0000", 0, 0, 0, 0)
-        (channelDesc -> channelUpdate)
-      }
-      // we replace local channelUpdates (we have them for regular public already-announced channels) by the ones we just generated
-      val updates1 = d.updates.filterKeys(_.a != localNodeId) ++ fakeUpdates
+      // we start with channel_updates of local channels
+      val updates0 = d.localUpdates.values.toMap
+      // we add them to the publicly-announced updates (channel_updates for announced channels will be deduped)
+      val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
       val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
       // we also filter out  excluded channels

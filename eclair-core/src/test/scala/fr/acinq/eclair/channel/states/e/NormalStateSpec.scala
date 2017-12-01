@@ -13,7 +13,7 @@ import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.{IN, OUT}
-import fr.acinq.eclair.wire.{AnnouncementSignatures, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.wire.{AnnouncementSignatures, ChannelUpdate, ClosingSigned, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.Tag
@@ -34,6 +34,8 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import setup._
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, test.tags)
+      relayer.expectMsgType[ChannelUpdate]
+      relayer.expectMsgType[ChannelUpdate]
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
     }
@@ -1648,7 +1650,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val sender = TestProbe()
       sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
       val annSigs = alice2bob.expectMsgType[AnnouncementSignatures]
-      assert(alice.stateData.asInstanceOf[DATA_NORMAL] === initialState.copy(localAnnouncementSignatures = Some(annSigs)))
+      assert(alice.stateData.asInstanceOf[DATA_NORMAL] === initialState.copy(shortChannelId = annSigs.shortChannelId, localAnnouncementSignatures = Some(annSigs)))
     }
   }
 
@@ -1666,7 +1668,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val channelUpdate = Announcements.makeChannelUpdate(Alice.nodeParams.chainHash, Alice.nodeParams.privateKey, remoteParams.nodeId, annSigsA.shortChannelId, Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth)
       // actual test starts here
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate, localAnnouncementSignatures = Some(annSigsA)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = annSigsA.shortChannelId, channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate, localAnnouncementSignatures = Some(annSigsA)))
     }
   }
 
@@ -1683,7 +1685,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
       val channelUpdate = Announcements.makeChannelUpdate(Alice.nodeParams.chainHash, Alice.nodeParams.privateKey, remoteParams.nodeId, annSigsA.shortChannelId, Alice.nodeParams.expiryDeltaBlocks, Alice.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth)
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate, localAnnouncementSignatures = Some(annSigsA)))
+      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = annSigsA.shortChannelId, channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate, localAnnouncementSignatures = Some(annSigsA)))
 
       // actual test starts here
       // simulate bob re-sending its sigs
