@@ -93,6 +93,7 @@
                     <args>
                         <arg>-deprecation</arg>
                         <arg>-feature</arg>
+                        <arg>-no-link-warnings</arg>
                         <arg>-language:postfixOps</arg>
                         <arg>-language:implicitConversions</arg>
                     </args>
