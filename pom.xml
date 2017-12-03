@@ -90,33 +90,33 @@
                 <artifactId>scala-maven-plugin</artifactId>
                 <version>3.3.1</version>
                 <configuration>
-                    <args>
+                    <args combine.children="append">
                         <arg>-deprecation</arg>
                         <arg>-feature</arg>
                         <arg>-language:postfixOps</arg>
                         <arg>-language:implicitConversions</arg>
+                        <arg>-Xfatal-warnings</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>process-resources</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                    <execution>
+                        <id>scalac</id>
                         <goals>
                             <goal>compile</goal>
                             <goal>testCompile</goal>
                         </goals>
                     </execution>
                     <execution>
-                        <id>attach-javadocs</id>
+                        <id>scaladoc</id>
                         <goals>
                             <goal>doc-jar</goal>
                         </goals>
+                        <configuration>
+                            <args>
+                                <arg>-no-link-warnings</arg>
+                            </args>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
