@@ -386,6 +386,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // as soon as it reaches NORMAL state, and before it is announced on the network
       // (this id might be updated when the funding tx gets deeply buried, if there was a reorg in the meantime)
       val shortChannelId = toShortId(blockHeight, txIndex, commitments.commitInput.outPoint.index.toInt)
+      context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId))
       goto(WAIT_FOR_FUNDING_LOCKED) using store(DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, fundingLocked)) sending fundingLocked
 
     case Event(BITCOIN_FUNDING_PUBLISH_FAILED, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
