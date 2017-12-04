@@ -323,10 +323,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
       val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
-      // we also filter out  excluded channels
-      val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
+      // we also filter out disabled channels
+      val updates3 = updates2.filter { case (_, u) => Announcements.isEnabled(u.flags) }
+      // we also filter out excluded channels
+      val updates4 = filterUpdates(updates3, ignoreNodes, ignoreChannels)
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.map(_.toHexString).mkString(",")}")
-      findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
+      findRoute(start, end, updates4).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
   }
 
