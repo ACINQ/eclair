@@ -31,6 +31,8 @@ object CoinUtils extends Logging {
     * @throws NumberFormatException    if the amount parameter is not numeric.
     * @throws IllegalArgumentException if the unit is not equals to milliSatoshi, Satoshi or milliBTC.
     */
+  @throws(classOf[NumberFormatException])
+  @throws(classOf[IllegalArgumentException])
   def convertStringAmountToMsat(amount: String, unit: String): MilliSatoshi = {
     val amountDecimal = BigDecimal(amount)
     logger.debug(s"amount=$amountDecimal with unit=$unit")
