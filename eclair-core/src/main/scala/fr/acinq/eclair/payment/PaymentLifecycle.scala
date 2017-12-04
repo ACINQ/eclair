@@ -181,16 +181,16 @@ object PaymentLifecycle {
     *         - firstExpiry is the cltv expiry for the first htlc in the route
     *         - a sequence of payloads that will be used to build the onion
     */
-  def buildPayloads(finalAmountMsat: Long, finalExpiry: Int, hops: Seq[PaymentHop]): (Long, Int, Seq[PerHopPayload]) =
+  def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[PaymentHop]): (Long, Long, Seq[PerHopPayload]) =
     hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(0L, finalAmountMsat, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
         (msat + hop.nextFee(msat), expiry + hop.cltvExpiryDelta, PerHopPayload(hop.shortChannelId, msat, expiry) +: payloads)
     }
 
   // this is defined in BOLT 11
-  val defaultMinFinalCltvExpiry = 9
+  val defaultMinFinalCltvExpiry:Long = 9L
 
-  def buildCommand(finalAmountMsat: Long, finalExpiry: Int, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
+  def buildCommand(finalAmountMsat: Long, finalExpiry: Long, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))
     val nodes = hops.map(_.nextNodeId)
     // BOLT 2 requires that associatedData == paymentHash
