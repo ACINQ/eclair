@@ -19,7 +19,6 @@ case class Local(sender: Option[ActorRef]) extends Origin // we don't persist re
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 case class ForwardAdd(add: UpdateAddHtlc)
-//case class ForwardLocalFail(error: Throwable, to: Origin, channelUpdate: Option[ChannelUpdate]) // happens when the failure happened in a local channel (and not in some downstream channel)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
 case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
