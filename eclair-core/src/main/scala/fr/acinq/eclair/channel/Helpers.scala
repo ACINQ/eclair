@@ -171,10 +171,11 @@ object Helpers {
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
         // no need to use a very high fee here, so we target 6 blocks; also, we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
         val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
-        log.info(s"using feeratePerKw=$feeratePerKw for closing tx")
+        log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
         Transactions.weight2fee(feeratePerKw, closingWeight)
       }
       val (_, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      log.info(s"proposing closingFeeSatoshis=${closingSigned.feeSatoshis}")
       closingSigned
     }
 

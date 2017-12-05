@@ -932,6 +932,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   when(NEGOTIATING)(handleExceptions {
     case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
+      log.info(s"received closingFeeSatoshis=$remoteClosingFee")
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
         case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.last.feeSatoshis =>
           doPublish(signedClosingTx)
@@ -939,6 +940,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.last.feeSatoshis), Satoshi(remoteClosingFee))
           val (_, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
+          log.info(s"proposing closingFeeSatoshis=${closingSigned.feeSatoshis}")
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
             doPublish(signedClosingTx)
             handleMutualClose(signedClosingTx, Left(store(d))) sending closingSigned
