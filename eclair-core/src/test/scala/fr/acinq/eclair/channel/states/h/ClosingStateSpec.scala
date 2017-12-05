@@ -264,7 +264,6 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   test("recv BITCOIN_TX_CONFIRMED (one revoked tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, bobCommitTxes) =>
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-      val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes one of his revoked txes
       val bobRevokedTx = bobCommitTxes.head
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
@@ -281,6 +280,17 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(mainPenaltyTx), 0, 0)
       awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
+  test("recv ChannelReestablish") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
+    within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
+      val sender = TestProbe()
+      sender.send(alice, ChannelReestablish(channelId(bob), 42, 42))
+      val error = alice2bob.expectMsgType[Error]
+      assert(new String(error.data) === FundingTxSpent(channelId(alice), initialState.spendingTxes.head).getMessage)
     }
   }
 

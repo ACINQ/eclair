@@ -17,7 +17,7 @@ case class InvalidMaxAcceptedHtlcs             (channelId: BinaryData, maxAccept
 case class InvalidDustLimit                    (channelId: BinaryData, dustLimitSatoshis: Long, min: Long) extends ChannelException(channelId, s"invalid dust_limit_satoshis=$dustLimitSatoshis (min=$min)")
 case class ChannelReserveTooHigh               (channelId: BinaryData, channelReserveSatoshis: Long, reserveToFundingRatio: Double, maxReserveToFundingRatio: Double) extends ChannelException(channelId, s"channelReserveSatoshis too high: reserve=$channelReserveSatoshis fundingRatio=$reserveToFundingRatio maxFundingRatio=$maxReserveToFundingRatio")
 case class ChannelFundingError                 (channelId: BinaryData) extends ChannelException(channelId, "channel funding error")
-case class ClosingInProgress                   (channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
+case class NoMoreHtlcsClosingInProgress        (channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress            (channelId: BinaryData) extends ChannelException(channelId, "closing already in progress")
 case class CannotCloseWithUnsignedOutgoingHtlcs(channelId: BinaryData) extends ChannelException(channelId, "cannot close when there are unsigned outgoing htlcs")
 case class ChannelUnavailable                  (channelId: BinaryData) extends ChannelException(channelId, "channel is unavailable (offline or closing)")

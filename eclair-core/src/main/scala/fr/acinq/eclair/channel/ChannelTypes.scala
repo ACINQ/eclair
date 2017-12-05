@@ -150,7 +150,8 @@ final case class DATA_CLOSING(commitments: Commitments,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  require(mutualClosePublished.size > 0 || localCommitPublished.isDefined || remoteCommitPublished.isDefined || nextRemoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
+  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  require(spendingTxes.size > 0, "there must be at least one tx published in this state")
 }
 
 final case class LocalParams(nodeId: PublicKey,

@@ -237,7 +237,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // actual test starts here
       val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 400144)
       sender.send(alice, add)
-      val error = ClosingInProgress(channelId(alice))
+      val error = NoMoreHtlcsClosingInProgress(channelId(alice))
       //sender.expectMsg(Failure(error))
       relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
       alice2bob.expectNoMsg(200 millis)
@@ -262,7 +262,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.expectMsgType[Shutdown]
       bob2alice.forward(alice)
       sender.send(alice, add2)
-      val error = ClosingInProgress(channelId(alice))
+      val error = NoMoreHtlcsClosingInProgress(channelId(alice))
       //sender.expectMsg(Failure(error))
       relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
     }

@@ -458,7 +458,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) if d.localShutdown.isDefined || d.remoteShutdown.isDefined =>
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
-      val error = ClosingInProgress(d.channelId)
+      val error = NoMoreHtlcsClosingInProgress(d.channelId)
       handleCommandAddError(error, origin(c))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
@@ -1083,6 +1083,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       } else {
         stay using d1
       }
+
+    case Event(_: ChannelReestablish, d: DATA_CLOSING) =>
+      // they haven't detected that we were closing and are trying to reestablish a connection
+      // we give them one of the published txes as a hint
+      val exc = FundingTxSpent(d.channelId, d.spendingTxes.head) // spendingTx != Nil that's a requirement of DATA_CLOSING)
+      val error = Error(d.channelId, exc.getMessage.getBytes)
+      stay sending error
 
     case Event(CMD_CLOSE(_), d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
 
