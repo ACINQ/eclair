@@ -45,5 +45,12 @@ FROM openjdk:8u151-jre-slim
 WORKDIR /app
 # Eclair only needs the eclair-node-*.jar to run
 COPY --from=BUILD /usr/src/eclair-node/target/eclair-node-*.jar .
-RUN ln `ls` eclair-node
-ENTRYPOINT [ "java", "-jar", "eclair-node" ]
+RUN ln `ls` eclair-node.jar
+
+ENV ECLAIR_DATADIR=/data
+ENV JAVA_OPTS=
+
+RUN mkdir -p "$ECLAIR_DATADIR"
+VOLUME [ "/data" ]
+
+ENTRYPOINT java $JAVA_OPTS -Declair.datadir=$ECLAIR_DATADIR -jar eclair-node.jar
