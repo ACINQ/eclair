@@ -53,7 +53,9 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      watcherType: WatcherType)
+                      watcherType: WatcherType) {
+  val nodeId = privateKey.publicKey
+}
 
 object NodeParams {
 

@@ -79,10 +79,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   db.listChannels().map(self ! _)
   db.listNodes().map(self ! _)
   db.listChannelUpdates().map(self ! _)
-  if (db.listChannels().size > 0) {
-    val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
-    self ! nodeAnn
-  }
   log.info(s"starting state machine")
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
@@ -138,7 +134,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           log.warning(s"could not retrieve tx for shortChannelId=${c.shortChannelId}")
           None
       }
-      // we reprocess node and channel-update announcements that may have been validated
+
+      // in case we just validated our first local channel, we announce the local node
+      // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
+      // even if we had stored a previous announcement, it would be overriden by this more recent one
+      if (!d.nodes.contains(nodeParams.nodeId) && validated.exists(isRelatedTo(_, nodeParams.nodeId))) {
+        log.info(s"first local channel validated, announcing local node")
+        val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
+        self ! nodeAnn
+      }
+
+      // we also reprocess node and channel_update announcements related to channels that were processed
       val (resend, stash1) = d.stash.partition {
         case n: NodeAnnouncement => results.exists(r => isRelatedTo(r.c, n.nodeId))
         case u: ChannelUpdate => results.exists(r => r.c.shortChannelId == u.shortChannelId)

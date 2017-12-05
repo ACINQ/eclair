@@ -715,10 +715,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
           import d.commitments.{localParams, remoteParams}
           val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
-          val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
           router ! channelAnn
-          router ! nodeAnn
           router ! channelUpdate
           relayer ! channelUpdate
           stay using store(d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate)) // note: we don't clear our announcement sigs because we may need to re-send them
@@ -1173,17 +1171,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
           blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
         case (None, None) if nodeParams.watcherType == BITCOINJ =>
-          // NB: in BITCOINJ mode we currently can't get the tx index in block (which is used to calculate the short id)
-          // instead, we rely on a hack by trusting the index the counterparty sends us)
+        // NB: in BITCOINJ mode we currently can't get the tx index in block (which is used to calculate the short id)
+        // instead, we rely on a hack by trusting the index the counterparty sends us)
         case (Some(localAnnSigs), None) =>
           // BOLT 7: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
           forwarder ! localAnnSigs
         case (_, Some(channelAnn)) =>
           // we might have been down for a long time (more than 2 weeks) and other nodes in the network might have forgotten the channel
           log.info(s"re-announcing channelId=${d.channelId} on the network with shortId=${channelAnn.shortChannelId}")
-          val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
           router ! channelAnn
-          router ! nodeAnn
           router ! channelUpdate
       }
       relayer ! channelUpdate
