@@ -95,12 +95,26 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     testFeeConverge(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
   }
 
-  test("recv ClosingSigned (invalid sig)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  test("recv ClosingSigned (fee too high)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
     within(30 seconds) {
-      bob2alice.expectMsgType[ClosingSigned]
+      val closingSigned = bob2alice.expectMsgType[ClosingSigned]
       val sender = TestProbe()
       val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-      sender.send(bob, ClosingSigned("00" * 32, 20000, "00" * 64))
+      sender.send(bob, closingSigned.copy(feeSatoshis = 99000)) // sig doesn't matter, it is checked later
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data).startsWith("invalid close fee: fee_satoshis=99000"))
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv ClosingSigned (invalid sig)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+    within(30 seconds) {
+      val closingSigned = bob2alice.expectMsgType[ClosingSigned]
+      val sender = TestProbe()
+      val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
+      sender.send(bob, closingSigned.copy(signature = "00" * 64))
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data).startsWith("invalid close signature"))
       bob2blockchain.expectMsg(PublishAsap(tx))

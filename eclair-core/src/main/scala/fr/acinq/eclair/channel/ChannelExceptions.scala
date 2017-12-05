@@ -29,6 +29,7 @@ case class FeerateTooDifferent                 (channelId: BinaryData, localFeer
 case class InvalidCommitmentSignature          (channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid commitment signature: tx=${Transaction.write(tx)}")
 case class InvalidHtlcSignature                (channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid htlc signature: tx=${Transaction.write(tx)}")
 case class InvalidCloseSignature               (channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid close signature: tx=${Transaction.write(tx)}")
+case class InvalidCloseFee                     (channelId: BinaryData, feeSatoshi: Long) extends ChannelException(channelId, s"invalid close fee: fee_satoshis=$feeSatoshi")
 case class HtlcSigCountMismatch                (channelId: BinaryData, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual: $actual")
 case class ForcedLocalCommit                   (channelId: BinaryData, reason: String) extends ChannelException(channelId, s"forced local commit: reason")
 case class UnexpectedHtlcId                    (channelId: BinaryData, expected: Long, actual: Long) extends ChannelException(channelId, s"unexpected htlc id: expected=$expected actual=$actual")

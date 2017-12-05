@@ -72,4 +72,11 @@ package object eclair {
     *         way to tell what the script is.
     */
   def isSegwitAddress(address: String) : Boolean = address.startsWith("2") || address.startsWith("3")
+
+  /**
+    * Tests whether the binary data is composed solely of printable ASCII characters (see BOLT 1)
+    *
+    * @param data to check
+    */
+  def isAsciiPrintable(data: BinaryData): Boolean = data.data.forall(ch => ch >= 32 && ch < 127)
 }

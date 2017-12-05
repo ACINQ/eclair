@@ -1,5 +1,7 @@
 package fr.acinq.eclair.channel
 
+import java.nio.charset.StandardCharsets
+
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
@@ -201,7 +203,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+    case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
@@ -240,7 +242,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+    case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
@@ -271,7 +273,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
@@ -318,7 +320,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(CMD_CLOSE(_), _) => goto(CLOSED)
 
-    case Event(e: Error, _) => handleRemoteErrorNoCommitments(e)
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
   })
@@ -369,7 +371,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
-      handleRemoteErrorNoCommitments(e)
+      handleRemoteError(e, d)
   })
 
   when(WAIT_FOR_FUNDING_CONFIRMED)(handleExceptions {
@@ -1090,12 +1092,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // they haven't detected that we were closing and are trying to reestablish a connection
       // we give them one of the published txes as a hint
       val exc = FundingTxSpent(d.channelId, d.spendingTxes.head) // spendingTx != Nil that's a requirement of DATA_CLOSING)
-      val error = Error(d.channelId, exc.getMessage.getBytes)
+    val error = Error(d.channelId, exc.getMessage.getBytes)
       stay sending error
 
     case Event(CMD_CLOSE(_), d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
 
-    case Event(e: Error, d: DATA_CLOSING) => stay // nothing to do, there is already a spending tx published
+    case Event(e: Error, d: DATA_CLOSING) => handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED | INPUT_RECONNECTED(_), _) => stay // we don't really care at this point
   })
@@ -1320,15 +1322,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     spendLocalCurrent(d) sending error
   }
 
-  def handleRemoteErrorNoCommitments(e: Error) = {
-    // when there is no commitment yet, we just go to CLOSED state in case an error occurs
-    log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-    goto(CLOSED)
-  }
-
-  def handleRemoteError(e: Error, d: HasCommitments) = {
-    log.error(s"peer sent $e, closing connection") // see bolt #2: A node MUST fail the connection if it receives an err message
-    spendLocalCurrent(d)
+  def handleRemoteError(e: Error, d: Data) = {
+    // see BOLT 1: only print out data verbatim if is composed of printable ASCII characters
+    log.error(s"peer sent error: ascii='${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else "n/a"}' bin=${e.data}")
+    d match {
+      case _: DATA_CLOSING => stay // nothing to do, there is already a spending tx published
+      //case negotiating: DATA_NEGOTIATING => stay TODO: (nitpick) would be nice to publish a closing tx instead if we have already received one of their sigs
+      case hasCommitments: HasCommitments => spendLocalCurrent(hasCommitments)
+      case _ => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
+    }
   }
 
   def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
