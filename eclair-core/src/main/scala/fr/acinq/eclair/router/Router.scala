@@ -151,9 +151,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   whenUnhandled {
     case Event(ChannelStateChanged(_, _, _, _, channel.NORMAL, d: DATA_NORMAL), d1) =>
       val channelDesc = ChannelDesc(d.channelUpdate.shortChannelId, d.commitments.localParams.nodeId, d.commitments.remoteParams.nodeId)
+      log.debug(s"added local channel_update for channelId=${d.channelId} update=${d.channelUpdate}")
       stay using d1.copy(localUpdates = d1.localUpdates + (d.channelId -> (channelDesc, d.channelUpdate)))
 
     case Event(ChannelStateChanged(_, _, _, channel.NORMAL, _, d: HasCommitments), d1) =>
+      log.debug(s"removed local channel_update for channelId=${d.channelId}")
       stay using d1.copy(localUpdates = d1.localUpdates - d.channelId)
 
     case Event(_: ChannelStateChanged, _) => stay
