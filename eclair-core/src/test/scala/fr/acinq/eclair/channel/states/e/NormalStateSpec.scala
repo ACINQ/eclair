@@ -560,6 +560,25 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CommitSig (only fee update)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+
+      sender.send(alice, CMD_UPDATE_FEE(TestConstants.feeratePerKw + 1000, commit = false))
+      sender.expectMsg("ok")
+      sender.send(alice, CMD_SIGN)
+      sender.expectMsg("ok")
+
+      // actual test begins (note that channel sends a CMD_SIGN to itself when it receives RevokeAndAck and there are changes)
+      alice2bob.expectMsgType[UpdateFee]
+      alice2bob.forward(bob)
+      alice2bob.expectMsgType[CommitSig]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[RevokeAndAck]
+      bob2alice.forward(alice)
+    }
+  }
+
   // TODO: maybe should be illegal?
   ignore("recv CommitSig (two htlcs received with same r)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
