@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states.c
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -71,10 +72,10 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, bob2alice, alice2blockchain, router) =>
+  test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, Transaction(0, Nil, Nil, 0))
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[PublishAsap]
@@ -82,7 +83,7 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv Error") { case (alice, _, alice2bob, bob2alice, alice2blockchain, router) =>
+  test("recv Error") { case (alice, _, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
       alice ! Error("00" * 32, "oops".getBytes)
