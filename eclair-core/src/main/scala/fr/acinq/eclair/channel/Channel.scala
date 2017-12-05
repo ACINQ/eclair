@@ -462,15 +462,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
       val error = ClosingInProgress(d.channelId)
-      handleCommandError(AddHtlcFailed(error, origin(c), Some(d.channelUpdate)))
+      handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(d.channelUpdate)))
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       Try(Commitments.sendAdd(d.commitments, c, origin(c))) match {
         case Success(Right((commitments1, add))) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending add
-        case Success(Left(error)) => handleCommandError(AddHtlcFailed(error, origin(c), Some(d.channelUpdate)))
-        case Failure(cause) => handleCommandError(AddHtlcFailed(cause, origin(c), Some(d.channelUpdate)))
+        case Success(Left(error)) => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(d.channelUpdate)))
+        case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, cause, origin(c), Some(d.channelUpdate)))
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
@@ -755,7 +755,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
       relayer ! channelUpdate
       d.commitments.localChanges.proposed.collect {
-        case add: UpdateAddHtlc => relayer ! AddHtlcFailed(ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate))
+        case add: UpdateAddHtlc => relayer ! AddHtlcFailed(d.channelId, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate))
       }
       goto(OFFLINE) using d.copy(channelUpdate = channelUpdate)
 
@@ -1055,7 +1055,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case add if ripemd160(add.paymentHash) == extracted =>
           val origin = d.commitments.originChannels(add.id)
           log.warning(s"found a match between paymentHash160=$extracted and origin=$origin: htlc timed out")
-          relayer ! AddHtlcFailed(HtlcTimedout(d.channelId), origin, None)
+          relayer ! AddHtlcFailed(d.channelId, HtlcTimedout(d.channelId), origin, None)
       }
       // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
       // TODO: we do not handle the case where htlcs transactions end up being unconfirmed this can happen if an htlc-success tx is published right before a htlc timed out
@@ -1250,8 +1250,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
       d match {
-        case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(error, origin(c), Some(normal.channelUpdate))) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
-        case _ => handleCommandError(AddHtlcFailed(error, origin(c), None))
+        case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(normal.channelUpdate))) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
+        case _ => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), None))
       }
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
@@ -1297,7 +1297,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def handleCommandError(cause: Throwable) = {
     cause match {
       case _: ChannelException => log.error(s"$cause")
-      case e: AddHtlcFailed => log.error(s"${e.t}")
       case _ => log.error(cause, "")
     }
     stay replying Status.Failure(cause)

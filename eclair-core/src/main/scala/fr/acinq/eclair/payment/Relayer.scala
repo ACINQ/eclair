@@ -105,10 +105,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       register ! Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
-    case AddHtlcFailed(error, Local(Some(sender)), _) =>
+    case AddHtlcFailed(_, error, Local(Some(sender)), _) =>
       sender ! Status.Failure(error)
 
-    case AddHtlcFailed(error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
+    case AddHtlcFailed(_, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
       val failure = (error, channelUpdate_opt) match {
         case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
         case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)

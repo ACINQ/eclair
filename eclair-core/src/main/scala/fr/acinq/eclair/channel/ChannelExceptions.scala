@@ -47,6 +47,5 @@ case class InvalidRevocation                   (override val channelId: BinaryDa
 case class CommitmentSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
+case class AddHtlcFailed                       (override val channelId: BinaryData, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate]) extends ChannelException(channelId, s"cannot add htlc with origin=$origin reason=${t.getMessage}")
 // @formatter:on
-
-case class AddHtlcFailed(t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate]) extends RuntimeException(t)
