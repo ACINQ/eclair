@@ -377,9 +377,6 @@ object Transactions {
     closingTx.copy(tx = closingTx.tx.updateWitness(0, witness))
   }
 
-  def checkSpendable(parent: Transaction, child: Transaction): Try[Unit] =
-    Try(Transaction.correctlySpends(child, parent :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
-
   def checkSpendable(txinfo: TransactionWithInputInfo): Try[Unit] =
     Try(Transaction.correctlySpends(txinfo.tx, Map(txinfo.tx.txIn(0).outPoint -> txinfo.input.txOut), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 

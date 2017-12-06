@@ -1,6 +1,7 @@
 package fr.acinq.eclair.channel.states.c
 
 import akka.testkit.{TestFSMRef, TestProbe}
+import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
@@ -85,7 +86,7 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
   test("recv BITCOIN_FUNDING_SPENT (other commit)") { case (alice, _, alice2bob, _, alice2blockchain) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_CONFIRMED].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, null)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, Transaction(0, Nil, Nil, 0))
       alice2bob.expectMsgType[Error]
       alice2blockchain.expectMsg(PublishAsap(tx))
       awaitCond(alice.stateName == ERR_INFORMATION_LEAK)

@@ -7,7 +7,7 @@ import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{AcceptChannel, AnnouncementSignatures, ChannelAnnouncement, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
 
 /**
@@ -133,23 +133,27 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, 
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, lastSent: FundingLocked) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: Long, lastSent: FundingLocked) extends Data with HasCommitments
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortChannelId: Option[Long],
+                             shortChannelId: Long,
+                             channelAnnouncement: Option[ChannelAnnouncement],
+                             channelUpdate: ChannelUpdate,
                              localAnnouncementSignatures: Option[AnnouncementSignatures],
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: ClosingSigned) extends Data with HasCommitments
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
-                              mutualClosePublished: Option[Transaction] = None,
+                              localClosingSigned: List[ClosingSigned],
+                              mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  require(mutualClosePublished.isDefined || localCommitPublished.isDefined || remoteCommitPublished.isDefined || nextRemoteCommitPublished.isDefined || revokedCommitPublished.size > 0, "there should be at least one tx published in this state")
+  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  require(spendingTxes.size > 0, "there must be at least one tx published in this state")
 }
 
 final case class LocalParams(nodeId: PublicKey,

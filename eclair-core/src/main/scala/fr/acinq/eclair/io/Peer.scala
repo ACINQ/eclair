@@ -140,7 +140,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       }
       stay
 
-    case Event(Pong(data), ConnectedData(transport, _, _)) =>
+    case Event(Pong(data), ConnectedData(_, _, _)) =>
       // TODO: compute latency for remote peer ?
       log.debug(s"received pong with ${data.length} bytes")
       stay
@@ -151,29 +151,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       transport ! PoisonPill
       stay
 
-    case Event(msg: Error, ConnectedData(_, _, channels)) =>
+    case Event(msg: Error, ConnectedData(transport, _, channels)) =>
       // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
-      channels.get(TemporaryChannelId(msg.channelId)).orElse(channels.get(FinalChannelId(msg.channelId))) match {
+      channels.get(FinalChannelId(msg.channelId)).orElse(channels.get(TemporaryChannelId(msg.channelId))) match {
         case Some(channel) => channel forward msg
-        case None => log.warning(s"couldn't resolve channel for $msg")
+        case None => transport ! Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
       }
       stay
-
-    case Event(msg: HasTemporaryChannelId, ConnectedData(_, _, channels)) if channels.contains(TemporaryChannelId(msg.temporaryChannelId)) =>
-      val channel = channels(TemporaryChannelId(msg.temporaryChannelId))
-      channel forward msg
-      stay
-
-    case Event(msg: HasChannelId, ConnectedData(_, _, channels)) if channels.contains(FinalChannelId(msg.channelId)) =>
-      val channel = channels(FinalChannelId(msg.channelId))
-      channel forward msg
-      stay
-
-    case Event(ChannelIdAssigned(channel, temporaryChannelId, channelId), d@ConnectedData(_, _, channels)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
-      log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
-      // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
-      // we won't clean it up, but we won't remember the temporary id on channel termination
-      stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
     case Event(c: NewChannel, d@ConnectedData(transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
@@ -183,13 +167,39 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, networkFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
-    case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) if !channels.contains(TemporaryChannelId(msg.temporaryChannelId)) =>
-      log.info(s"accepting a new channel to $remoteNodeId")
-      val (channel, localParams) = createChannel(nodeParams, transport, funder = false, fundingSatoshis = msg.fundingSatoshis)
-      val temporaryChannelId = msg.temporaryChannelId
-      channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, transport, remoteInit)
-      channel ! msg
-      stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+    case Event(msg: OpenChannel, d@ConnectedData(transport, remoteInit, channels)) =>
+      channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
+        case None =>
+          log.info(s"accepting a new channel to $remoteNodeId")
+          val (channel, localParams) = createChannel(nodeParams, transport, funder = false, fundingSatoshis = msg.fundingSatoshis)
+          val temporaryChannelId = msg.temporaryChannelId
+          channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, transport, remoteInit)
+          channel ! msg
+          stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
+        case Some(_) =>
+          log.warning(s"ignoring open_channel with duplicate temporaryChannelId=${msg.temporaryChannelId}")
+          stay
+      }
+
+    case Event(msg: HasChannelId, ConnectedData(transport, _, channels)) =>
+      channels.get(FinalChannelId(msg.channelId)) match {
+        case Some(channel) => channel forward msg
+        case None => transport ! Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
+      }
+      stay
+
+    case Event(msg: HasTemporaryChannelId, ConnectedData(transport, _, channels)) =>
+      channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
+        case Some(channel) => channel forward msg
+        case None => transport ! Error(msg.temporaryChannelId, UNKNOWN_CHANNEL_MESSAGE)
+      }
+      stay
+
+    case Event(ChannelIdAssigned(channel, temporaryChannelId, channelId), d@ConnectedData(_, _, channels)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
+      log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
+      // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
+      // we won't clean it up, but we won't remember the temporary id on channel termination
+      stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
     case Event(Rebroadcast(announcements, origins), ConnectedData(transport, _, _)) =>
       // we filter out announcements that we received from this node
@@ -258,6 +268,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
 object Peer {
 
   val CHANNELID_ZERO = BinaryData("00" * 32)
+
+  val UNKNOWN_CHANNEL_MESSAGE = "unknown channel".getBytes()
 
   def props(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, storedChannels: Set[HasCommitments]) = Props(new Peer(nodeParams, remoteNodeId, address_opt, watcher, router, relayer, wallet: EclairWallet, storedChannels))
 

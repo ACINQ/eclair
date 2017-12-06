@@ -77,6 +77,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
+    alice2blockchain.expectMsgType[WatchConfirmed] // deeply buried
+    bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
   }

@@ -1,5 +1,6 @@
 package fr.acinq.eclair.channel
 
+import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
@@ -11,7 +12,6 @@ import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams}
-import grizzled.slf4j.Logging
 
 import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
@@ -157,7 +157,7 @@ object Helpers {
 
   }
 
-  object Closing extends Logging {
+  object Closing {
 
     def isValidFinalScriptPubkey(scriptPubKey: BinaryData): Boolean = {
       Try(Script.parse(scriptPubKey)) match {
@@ -169,23 +169,24 @@ object Helpers {
       }
     }
 
-    def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData): ClosingSigned = {
-      logger.debug(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
+    def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): ClosingSigned = {
+      log.debug(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
       import commitments._
       val closingFee = {
         // this is just to estimate the weight, it depends on size of the pubkey scripts
         val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
         val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
-        // no need to use a very high fee here
-        val feeratePerKw = Globals.feeratesPerKw.get.blocks_6
-        logger.info(s"using feeratePerKw=$feeratePerKw for closing tx")
+        // no need to use a very high fee here, so we target 6 blocks; also, we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
+        val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
+        log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
         Transactions.weight2fee(feeratePerKw, closingWeight)
       }
       val (_, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
+      log.info(s"proposing closingFeeSatoshis=${closingSigned.feeSatoshis}")
       closingSigned
     }
 
-    def makeClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi): (ClosingTx, ClosingSigned) = {
+    def makeClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
       import commitments._
       require(isValidFinalScriptPubkey(localScriptPubkey), "invalid localScriptPubkey")
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
@@ -194,26 +195,31 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
-      logger.debug(s"closingTx=${Transaction.write(closingTx.tx)}")
+      log.debug(s"closingTx=${Transaction.write(closingTx.tx)}")
       (closingTx, closingSigned)
     }
 
-    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, remoteClosingFee: Satoshi, remoteClosingSig: BinaryData): Try[Transaction] = {
+    def checkClosingSignature(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, remoteClosingFee: Satoshi, remoteClosingSig: BinaryData)(implicit log: LoggingAdapter): Try[Transaction] = {
       import commitments._
+      val lastCommitFeeSatoshi = commitments.commitInput.txOut.amount.amount - commitments.localCommit.publishableTxs.commitTx.tx.txOut.map(_.amount.amount).sum
+      if (remoteClosingFee.amount > lastCommitFeeSatoshi) {
+        log.error(s"remote proposed a commit fee higher than the last commitment fee: remoteClosingFeeSatoshi=${remoteClosingFee.amount} lastCommitFeeSatoshi=$lastCommitFeeSatoshi")
+        throw new InvalidCloseFee(commitments.channelId, remoteClosingFee.amount)
+      }
       val (closingTx, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
       val signedClosingTx = Transactions.addSigs(closingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
-      Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx)
+      Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx).recover { case _ => throw InvalidCloseSignature(commitments.channelId, signedClosingTx.tx) }
     }
 
     def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
-    def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo]): Option[TransactionWithInputInfo] = {
+    def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo])(implicit log: LoggingAdapter): Option[TransactionWithInputInfo] = {
       attempt match {
         case Success(txinfo) =>
-          logger.warn(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${Transaction.write(txinfo.tx)}")
+          log.warning(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${Transaction.write(txinfo.tx)}")
           Some(txinfo)
         case Failure(t) =>
-          logger.warn(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
+          log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
           None
       }
     }
@@ -226,7 +232,7 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimCurrentLocalCommitTxOutputs(commitments: Commitments, tx: Transaction): LocalCommitPublished = {
+    def claimCurrentLocalCommitTxOutputs(commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter): LocalCommitPublished = {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
 
@@ -294,7 +300,7 @@ object Helpers {
       * @param commitments our commitment data, which include payment preimages
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitTxOutputs(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction): RemoteCommitPublished = {
+    def claimRemoteCommitTxOutputs(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
       import commitments.{commitInput, localParams, remoteParams}
       require(remoteCommit.txid == tx.txid, "txid mismatch, provided tx is not the current remote commit tx")
       val (remoteCommitTx, htlcTimeoutTxs, htlcSuccessTxs) = Commitments.makeRemoteTxs(remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
@@ -364,14 +370,14 @@ object Helpers {
       *
       * @return a [[RevokedCommitPublished]] object containing penalty transactions if the tx is a revoked commitment
       */
-    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction): Option[RevokedCommitPublished] = {
+    def claimRevokedRemoteCommitTxOutputs(commitments: Commitments, tx: Transaction)(implicit log: LoggingAdapter): Option[RevokedCommitPublished] = {
       import commitments._
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
       // this tx has been published by remote, so we need to invert local/remote params
       val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, localParams.paymentBasepoint)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
-      logger.warn(s"counterparty has published revoked commit txnumber=$txnumber")
+      log.warning(s"counterparty has published revoked commit txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
       remotePerCommitmentSecrets.getHash(0xFFFFFFFFFFFFL - txnumber)
         .map(d => Scalar(d))
