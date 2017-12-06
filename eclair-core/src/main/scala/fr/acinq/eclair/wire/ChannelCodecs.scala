@@ -217,11 +217,12 @@ object ChannelCodecs {
     ("commitments" | commitmentsCodec) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
-      ("localClosingSigned" | closingSignedCodec)).as[DATA_NEGOTIATING]
+      ("localClosingSigned" | listOfN(uint16, closingSignedCodec))).as[DATA_NEGOTIATING]
 
   val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
     ("commitments" | commitmentsCodec) ::
-      ("mutualClosePublished" | optional(bool, txCodec)) ::
+      ("localClosingSigned" | listOfN(uint16, closingSignedCodec)) ::
+      ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
