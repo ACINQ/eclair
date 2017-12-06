@@ -53,7 +53,9 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      watcherType: WatcherType)
+                      watcherType: WatcherType) {
+  val nodeId = privateKey.publicKey
+}
 
 object NodeParams {
 
@@ -140,7 +142,7 @@ object NodeParams {
       minDepthBlocks = config.getInt("mindepth-blocks"),
       smartfeeNBlocks = 3,
       feeBaseMsat = config.getInt("fee-base-msat"),
-      feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
+      feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       channelsDb = channelsDb,

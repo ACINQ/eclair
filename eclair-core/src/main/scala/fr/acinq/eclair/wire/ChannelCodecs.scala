@@ -196,11 +196,14 @@ object ChannelCodecs {
 
   val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentsCodec) ::
+      ("shortChannelId" | uint64) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
-      ("shortChannelId" | optional(bool, uint64)) ::
+      ("shortChannelId" | uint64) ::
+      ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
+      ("channelUpdate" | channelUpdateCodec) ::
       ("localAnnouncementSignatures" | optional(bool, announcementSignaturesCodec)) ::
       ("localShutdown" | optional(bool, shutdownCodec)) ::
       ("remoteShutdown" | optional(bool, shutdownCodec))).as[DATA_NORMAL]

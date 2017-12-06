@@ -56,12 +56,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val firstHop = hops.head
       val finalExpiry = Globals.blockCount.get().toInt + c.minFinalCltvExpiry.toInt
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
-      // TODO: HACK!!!! see Router.scala (we actually store the first node id in the sig)
-      if (firstHop.lastUpdate.signature.size == 32) {
-        register ! Register.Forward(firstHop.lastUpdate.signature, cmd)
-      } else {
-        register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-      }
+      register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
