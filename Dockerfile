@@ -36,8 +36,8 @@ RUN mvn install -pl eclair-node -am clean
 # Only then do we copy the sources
 COPY . .
 
-# And this time we can build in offline mode
-RUN mvn package -pl eclair-node -am -DskipTests -o
+# And this time we can build in offline mode, specifying 'notag' instead of git commit
+RUN mvn package -pl eclair-node -am -DskipTests -Dgit.commit.id=notag -Dgit.commit.id.abbrev=notag -o
 # It might be good idea to run the tests here, so that the docker build fail if the code is bugged
 
 # We currently use a debian image for runtime because of some jni-related issue with sqlite
