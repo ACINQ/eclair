@@ -198,7 +198,6 @@ class LightningMessageCodecsSpec extends FunSuite {
 
     msgs.foreach {
       case msg => {
-        println(msg)
         val encoded = lightningMessageCodec.encode(msg).require
         val decoded = lightningMessageCodec.decode(encoded).require
         assert(msg === decoded.value)

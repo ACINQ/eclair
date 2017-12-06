@@ -6,9 +6,10 @@ import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
 import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ChannelCodecs, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{ChannelCodecs, ChannelUpdate, UpdateAddHtlc}
 import fr.acinq.eclair.{UInt64, randomKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -96,5 +97,7 @@ object ChannelStateSpec {
     remoteNextCommitInfo = Right(randomKey.publicKey),
     commitInput = commitmentInput, remotePerCommitmentSecrets = ShaChain.init, channelId = "00" * 32)
 
-  val normal = DATA_NORMAL(commitments, Some(42), None, None, None)
+  val channelUpdate = Announcements.makeChannelUpdate("11" * 32, randomKey, randomKey.publicKey, 142553, 42, 15, 575, 53)
+
+  val normal = DATA_NORMAL(commitments, 42, None, channelUpdate, None, None, None)
 }

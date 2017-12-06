@@ -53,7 +53,9 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      watcherType: WatcherType)
+                      watcherType: WatcherType) {
+  val nodeId = privateKey.publicKey
+}
 
 object NodeParams {
 
@@ -116,7 +118,9 @@ object NodeParams {
     }
 
     val dustLimitSatoshis = config.getLong("dust-limit-satoshis")
-    require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
+    if (chainHash == Block.LivenetGenesisBlock.hash) {
+      require(dustLimitSatoshis >= Channel.MIN_DUSTLIMIT, s"dust limit must be greater than ${Channel.MIN_DUSTLIMIT}")
+    }
 
     val maxAcceptedHtlcs = config.getInt("max-accepted-htlcs")
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
@@ -138,7 +142,7 @@ object NodeParams {
       minDepthBlocks = config.getInt("mindepth-blocks"),
       smartfeeNBlocks = 3,
       feeBaseMsat = config.getInt("fee-base-msat"),
-      feeProportionalMillionth = config.getInt("fee-proportional-millionth"),
+      feeProportionalMillionth = config.getInt("fee-proportional-millionths"),
       reserveToFundingRatio = config.getDouble("reserve-to-funding-ratio"),
       maxReserveToFundingRatio = config.getDouble("max-reserve-to-funding-ratio"),
       channelsDb = channelsDb,

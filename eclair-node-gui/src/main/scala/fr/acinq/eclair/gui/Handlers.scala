@@ -86,9 +86,9 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
       }
   }
 
-  def receive(amountMsat: MilliSatoshi, description: String): Future[String] = for {
+  def receive(amountMsat_opt: Option[MilliSatoshi], description: String): Future[String] = for {
     kit <- fKit
-    res <- (kit.paymentHandler ? ReceivePayment(amountMsat, description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+    res <- (kit.paymentHandler ? ReceivePayment(amountMsat_opt, description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
   } yield res
 
 

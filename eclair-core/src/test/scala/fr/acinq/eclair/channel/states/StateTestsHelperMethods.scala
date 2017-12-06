@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Hop, PaymentLifecycle}
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, TestConstants}
+import fr.acinq.eclair.{Globals, NodeParams, TestConstants}
 
 import scala.util.Random
 
@@ -29,7 +29,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                    router: TestProbe,
                    relayer: TestProbe)
 
-  def init(): Setup = {
+  def init(nodeParamsA: NodeParams = TestConstants.Alice.nodeParams, nodeParamsB: NodeParams = TestConstants.Bob.nodeParams): Setup = {
     Globals.feeratesPerKw.set(FeeratesPerKw.single(TestConstants.feeratePerKw))
     val alice2bob = TestProbe()
     val bob2alice = TestProbe()
@@ -37,8 +37,6 @@ trait StateTestsHelperMethods extends TestKitBase {
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
     val router = TestProbe()
-    val nodeParamsA = TestConstants.Alice.nodeParams
-    val nodeParamsB = TestConstants.Bob.nodeParams
     val wallet = new TestWallet
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
     val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
@@ -79,6 +77,8 @@ trait StateTestsHelperMethods extends TestKitBase {
     alice2bob.forward(bob)
     bob2alice.expectMsgType[FundingLocked]
     bob2alice.forward(alice)
+    alice2blockchain.expectMsgType[WatchConfirmed] // deeply buried
+    bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
   }

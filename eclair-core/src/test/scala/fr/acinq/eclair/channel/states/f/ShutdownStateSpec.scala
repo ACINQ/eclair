@@ -8,8 +8,8 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{ForwardAdd, ForwardLocalFail, Local, PaymentLifecycle, _}
-import fr.acinq.eclair.wire.{CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
+import fr.acinq.eclair.payment.{ForwardAdd, Local, PaymentLifecycle, _}
+import fr.acinq.eclair.wire.{ChannelUpdate, CommitSig, Error, FailureMessageCodecs, PermanentChannelFailure, RevokeAndAck, Shutdown, UpdateAddHtlc, UpdateFailHtlc, UpdateFailMalformedHtlc, UpdateFee, UpdateFulfillHtlc}
 import fr.acinq.eclair.{Globals, TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -29,6 +29,8 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import setup._
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      relayer.expectMsgType[ChannelUpdate]
+      relayer.expectMsgType[ChannelUpdate]
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32
@@ -78,14 +80,13 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _, relayer) =>
+  test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
       sender.send(alice, add)
       val error = ChannelUnavailable(channelId(alice))
-      //sender.expectMsg(Failure(error))
-      relayer.expectMsg(ForwardLocalFail(error, Local(Some(sender.ref))))
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), error, Local(Some(sender.ref)), None)))
       alice2bob.expectNoMsg(200 millis)
     }
   }

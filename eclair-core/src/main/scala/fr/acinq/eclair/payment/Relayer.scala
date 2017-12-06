@@ -20,7 +20,6 @@ case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn
 
 case class ForwardAdd(add: UpdateAddHtlc)
 case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
-case class ForwardLocalFail(error: Throwable, to: Origin) // happens when the failure happened in a local channel (and not in some downstream channel)
 case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
 
@@ -45,7 +44,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ChannelStateChanged(channel, _, _, _, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
       import d.channelId
       preimagesDb.listPreimages(channelId) match {
-        case Nil => {}
+        case Nil => ()
         case preimages =>
           log.info(s"re-sending ${preimages.size} unacked fulfills to channel $channelId")
           preimages.map(p => CMD_FULFILL_HTLC(p._2, p._3, commit = false)).foreach(channel ! _)
@@ -75,11 +74,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               paymentHandler forward add
           }
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) =>
-          val channelUpdate_opt = channelUpdates.get(perHopPayload.channel_id)
-          channelUpdate_opt match {
+          channelUpdates.get(perHopPayload.channel_id) match {
             case None =>
-              // TODO: clarify what we're supposed to do in the specs
-              sender ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true)
+              // if we don't (yet?) have a channel_update for the next channel, we consider the channel doesn't exist
+              // TODO: use a different channel to the same peer instead?
+              sender ! CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
             case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
               sender ! CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true)
             case Some(channelUpdate) if add.amountMsat < channelUpdate.htlcMinimumMsat =>
@@ -90,7 +89,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
               sender ! CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true)
             case _ =>
               log.info(s"forwarding htlc #${add.id} to shortChannelId=${perHopPayload.channel_id}")
-              register forward Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
+              register ! Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
           }
         case Success((Attempt.Failure(cause), _, _)) =>
           log.error(s"couldn't parse payload: $cause")
@@ -105,6 +104,20 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       register ! Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
+    case AddHtlcFailed(_, error, Local(Some(sender)), _) =>
+      sender ! Status.Failure(error)
+
+    case AddHtlcFailed(_, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
+      val failure = (error, channelUpdate_opt) match {
+        case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
+        case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+        case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+        case (_: HtlcTimedout, _) => PermanentChannelFailure
+        case _ => TemporaryNodeFailure
+      }
+      val cmd = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
+      register ! Register.Forward(originChannelId, cmd)
+
     case ForwardFulfill(fulfill, Local(Some(sender))) =>
       sender ! fulfill
 
@@ -118,18 +131,6 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case AckFulfillCmd(channelId, htlcId) =>
       log.debug(s"fulfill acked for channelId=$channelId htlcId=$htlcId")
       preimagesDb.removePreimage(channelId, htlcId)
-
-    case ForwardLocalFail(error, Local(Some(sender))) =>
-      sender ! Status.Failure(error)
-
-    case ForwardLocalFail(error, Relayed(originChannelId, originHtlcId, _, _)) =>
-      // TODO: clarify what we're supposed to do in the specs depending on the error
-      val failure = error match {
-        case HtlcTimedout(_) => PermanentChannelFailure
-        case _ => TemporaryNodeFailure
-      }
-      val cmd = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
-      register ! Register.Forward(originChannelId, cmd)
 
     case ForwardFail(fail, Local(Some(sender))) =>
       sender ! fail

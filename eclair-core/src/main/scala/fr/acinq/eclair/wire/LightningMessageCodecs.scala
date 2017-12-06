@@ -294,7 +294,7 @@ object LightningMessageCodecs {
     ("realm" | constant(ByteVector.fromByte(0))) ::
       ("channel_id" | uint64) ::
       ("amt_to_forward" | uint64) ::
-      ("outgoing_cltv_value" | int32) :: // we use a signed int32, it is enough to store cltv for 40 000 years
+      ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]
 
 }

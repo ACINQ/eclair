@@ -47,6 +47,9 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
+        <!-- default tag used when building without git -->
+        <git.commit.id>notag</git.commit.id>
+        <git.commit.id.abbrev>notag</git.commit.id.abbrev>
         <scala.version>2.11.11</scala.version>
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.4.18</akka.version>
@@ -59,13 +62,18 @@
             <plugins>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-dependency-plugin</artifactId>
+                    <version>3.0.2</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
                     <version>3.0.2</version>
                 </plugin>
                 <plugin>
                     <groupId>pl.project13.maven</groupId>
                     <artifactId>git-commit-id-plugin</artifactId>
-                    <version>2.2.2</version>
+                    <version>2.2.3</version>
                 </plugin>
                 <plugin>
                     <groupId>com.github.chrisdchristo</groupId>
@@ -81,37 +89,52 @@
                 <version>2.3</version>
             </plugin>
             <plugin>
+                <groupId>pl.project13.maven</groupId>
+                <artifactId>git-commit-id-plugin</artifactId>
+                <version>2.2.2</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>revision</goal>
+                        </goals>
+                        <configuration>
+                            <failOnNoGitDirectory>false</failOnNoGitDirectory>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>net.alchim31.maven</groupId>
                 <artifactId>scala-maven-plugin</artifactId>
                 <version>3.3.1</version>
                 <configuration>
-                    <args>
+                    <args combine.children="append">
                         <arg>-deprecation</arg>
                         <arg>-feature</arg>
                         <arg>-language:postfixOps</arg>
                         <arg>-language:implicitConversions</arg>
+                        <arg>-Xfatal-warnings</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>process-resources</id>
-                        <phase>process-resources</phase>
-                        <goals>
-                            <goal>compile</goal>
-                        </goals>
-                    </execution>
-                    <execution>
+                        <id>scalac</id>
                         <goals>
                             <goal>compile</goal>
                             <goal>testCompile</goal>
                         </goals>
                     </execution>
                     <execution>
-                        <id>attach-javadocs</id>
+                        <id>scaladoc</id>
                         <goals>
                             <goal>doc-jar</goal>
                         </goals>
+                        <configuration>
+                            <args>
+                                <arg>-no-link-warnings</arg>
+                            </args>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
