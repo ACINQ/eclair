@@ -45,15 +45,7 @@
             </children>
         </VBox>
         <TextField fx:id="fundingSatoshis" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-        <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="2">
-            <items>
-                <FXCollections fx:factory="observableArrayList">
-                    <String fx:id="milliBTC" fx:value="milliBTC"/>
-                    <String fx:id="Satoshi" fx:value="Satoshi"/>
-                    <String fx:id="milliSatoshi" fx:value="milliSatoshi"/>
-                </FXCollections>
-            </items>
-        </ComboBox>
+        <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="2" />
         <Label fx:id="fundingSatoshisError" styleClass="text-error, text-error-downward"
                GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2"/>
 

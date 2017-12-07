@@ -1,6 +1,7 @@
 package fr.acinq.eclair.gui.controllers
 
 import javafx.application.Platform
+import javafx.collections.FXCollections
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
@@ -38,6 +39,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML var paymentRequestQRCode: ImageView = _
 
   @FXML def initialize = {
+    unit.setItems(FXCollections.observableArrayList(CoinUtils.MILLI_SATOSHI_LABEL, CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL))
     unit.setValue(unit.getItems.get(0))
     resultBox.managedProperty().bind(resultBox.visibleProperty())
     stage.sizeToScene()

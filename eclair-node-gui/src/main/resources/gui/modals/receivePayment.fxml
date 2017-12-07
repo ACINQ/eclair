@@ -30,15 +30,7 @@
                     </children>
                 </VBox>
                 <TextField fx:id="amount" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
-                <ComboBox fx:id="unit" GridPane.columnIndex="2" GridPane.rowIndex="0" GridPane.halignment="RIGHT">
-                    <items>
-                        <FXCollections fx:factory="observableArrayList">
-                            <String fx:id="milliBTC" fx:value="milliBTC"/>
-                            <String fx:id="Satoshi" fx:value="Satoshi"/>
-                            <String fx:id="milliSatoshi" fx:value="milliSatoshi"/>
-                        </FXCollections>
-                    </items>
-                </ComboBox>
+                <ComboBox fx:id="unit" GridPane.columnIndex="2" GridPane.rowIndex="0" GridPane.halignment="RIGHT" />
                 <Label fx:id="amountError" opacity="0.0" styleClass="text-error, text-error-downward"
                        text="Generic Invalid Amount"
                        mouseTransparent="true" GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2"/>

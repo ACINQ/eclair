@@ -2,6 +2,7 @@ package fr.acinq.eclair.gui.controllers
 
 import java.lang.Boolean
 import javafx.beans.value.{ChangeListener, ObservableValue}
+import javafx.collections.FXCollections
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
@@ -32,6 +33,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var button: Button = _
 
   @FXML def initialize = {
+    unit.setItems(FXCollections.observableArrayList(CoinUtils.MILLI_SATOSHI_LABEL, CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL))
     unit.setValue(unit.getItems.get(0))
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
