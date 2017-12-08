@@ -40,7 +40,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
 
   @FXML def initialize = {
     unit.setItems(FXCollections.observableArrayList(CoinUtils.MILLI_SATOSHI_LABEL, CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL))
-    unit.setValue(unit.getItems.get(0))
+    unit.setValue(unit.getItems.get(2))
     resultBox.managedProperty().bind(resultBox.visibleProperty())
     stage.sizeToScene()
   }
