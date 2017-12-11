@@ -33,16 +33,20 @@ The generated installer will be located in `eclair-node-gui/target/jfx/installer
 
 ## Docker
 
-A [Dockerfile](Dockerfile) images are built on each commit on [Docker Hub](https://hub.docker.com/r/acinq/eclair) for running a dockerized eclair-node.
+A [Dockerfile](Dockerfile) is available to run a dockerized eclair-node.
 
-You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
-
-```
-$ docker run -ti --rm -e "JAVA_OPTS=-Xmx512m -Declair.api.binding-ip=0.0.0.0 -Declair.node-alias=node-pm -Declair.printToConsole" acinq\eclair
-```
-
-If you want to persist the data directory, you can make the volume to your host with the `-v` argument, as the following example:
+#### Build a local image
 
 ```
-$ docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq\eclair
+$ docker build .
 ```
+
+:warning: if the build fails with `ERROR: unsatisfiable constraints:`, please try again.
+
+#### DockerHub image
+
+An image is built on [Docker Hub](https://hub.docker.com/r/acinq/eclair) for each commit on `Master`.
+
+#### Run the docker image
+
+Please check [these instructions](https://github.com/ACINQ/eclair/wiki/Run#Docker).

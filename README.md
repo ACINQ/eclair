@@ -10,7 +10,7 @@
 
 - [X] Compliant with the Lightning Network specifications (BOLTS)
 - [X] Works with Bitcoin Core 0.14+
-- [X] [Docker Build](https://github.com/ACINQ/eclair/blob/master/BUILD.md#docker)
+- [X] Docker builds on [Docker Hub](https://hub.docker.com/r/acinq/eclair/builds/)
 - [X] Optional GUI (see [screenshot](.readme/screen-1.png))
 - [X] JSON-RPC API
 - [X] Available on [Android](https://play.google.com/store/apps/details?id=fr.acinq.eclair.wallet)
