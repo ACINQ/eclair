@@ -40,6 +40,10 @@ class CoinUtilsSpec  extends FunSuite {
     intercept[NumberFormatException](CoinUtils.convertStringAmountToMsat("1.abcd", CoinUtils.MILLI_BTC_LABEL))
   }
 
+  test("Convert string amount with an empty amount") {
+    intercept[NumberFormatException](CoinUtils.convertStringAmountToMsat("", CoinUtils.MILLI_BTC_LABEL))
+  }
+
   test("Convert string amount with a invalid numerical amount") {
     intercept[NumberFormatException](CoinUtils.convertStringAmountToMsat("1.23.45", CoinUtils.MILLI_BTC_LABEL))
   }
