@@ -46,6 +46,10 @@ Yes, please check [BUILD.md](https://github.com/ACINQ/eclair/blob/master/BUILD.m
 * Testnet Demonstration coffee shop at [https://starblocks.acinq.co](https://starblocks.acinq.co)
 * Testnet Lightning Network explorer at [https://explorer.acinq.co](https://explorer.acinq.co)
 
+### Developers
+
+Build instructions are available in [BUILD.md](BUILD.md).
+
 ### Resources
 
 - [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
