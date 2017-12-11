@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-rose.svg)](https://gitter.im/ACINQ/eclair)
 
-**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [lightning-c], [lit], and [lnd].
+**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning], [lit], and [lnd].
 
 ### Status
 
@@ -26,10 +26,10 @@
 
 ### Get Started
 
-1. [Installation instructions]()
-2. [Run eclair]()
-3. [Configuration options]()
-4. [API reference]()
+1. [Installation instructions](https://github.com/ACINQ/eclair/wiki/Install)
+2. [Run eclair](https://github.com/ACINQ/eclair/wiki/Run)
+3. [Configuration options](https://github.com/ACINQ/eclair/wiki/Configure)
+4. [API reference](https://github.com/ACINQ/eclair/wiki/API)
 
 ### FAQ
 
@@ -48,13 +48,5 @@ Yes, please check [BUILD.md](https://github.com/ACINQ/eclair/blob/master/BUILD.m
 
 ### Resources
 
-- [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
-
-- [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
-
-[Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
-[lightning-c]: https://github.com/ElementsProject/lightning
-[lnd]: https://github.com/LightningNetwork/lnd
-[lit]: https://github.com/mit-dci/lit
-[Thunder]: https://github.com/blockchain/thunder
-
+- [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
+- [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
