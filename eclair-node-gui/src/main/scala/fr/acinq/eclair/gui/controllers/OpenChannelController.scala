@@ -33,8 +33,8 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var button: Button = _
 
   @FXML def initialize = {
-    unit.setItems(FXCollections.observableArrayList(CoinUtils.MILLI_SATOSHI_LABEL, CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL))
-    unit.setValue(unit.getItems.get(2))
+    unit.setItems(FXCollections.observableArrayList(CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL, CoinUtils.BTC_LABEL))
+    unit.setValue(CoinUtils.MILLI_BTC_LABEL)
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
       override def changed(observable: ObservableValue[_ <: Boolean], oldValue: Boolean, newValue: Boolean) = {

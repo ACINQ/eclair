@@ -106,5 +106,18 @@
             <artifactId>core</artifactId>
             <version>3.3.0</version>
         </dependency>
+        <!-- TESTS -->
+        <dependency>
+            <groupId>com.typesafe.akka</groupId>
+            <artifactId>akka-testkit_${scala.version.short}</artifactId>
+            <version>${akka.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
+            <!--<scope>test</scope>-->
+        </dependency>
     </dependencies>
 </project>
