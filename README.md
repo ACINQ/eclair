@@ -4,7 +4,7 @@
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 [![Gitter chat](https://img.shields.io/badge/chat-on%20gitter-rose.svg)](https://gitter.im/ACINQ/eclair)
 
-**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning], [lit], and [lnd].
+**Eclair** (french for Lightning) is a scala implementation of the Lightning Network. This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning), [lit](https://github.com/mit-dci/lit), and [lnd](https://github.com/LightningNetwork/lnd).
 
 ### Status
 
