@@ -700,7 +700,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex), d: DATA_NORMAL) if d.channelAnnouncement.isEmpty =>
       val shortChannelId = toShortId(blockHeight, txIndex, d.commitments.commitInput.outPoint.index.toInt)
-      log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=$shortChannelId")
+      log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=${shortChannelId.toHexString}")
       // we re-announce this shortChannelId, because it might be different from the one we were using before if there was a reorg
       context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
       val annSignatures_opt = if (d.commitments.announceChannel) Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId)) else None
@@ -721,8 +721,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           }
           stay
         case (Some(localAnnSigs), None) =>
-          require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId} remote=${remoteAnnSigs.shortChannelId}")
-          log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId}")
+          require(localAnnSigs.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${localAnnSigs.shortChannelId.toHexString} remote=${remoteAnnSigs.shortChannelId.toHexString}")
+          log.info(s"announcing channelId=${d.channelId} on the network with shortId=${localAnnSigs.shortChannelId.toHexString}")
           import d.commitments.{localParams, remoteParams}
           val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
@@ -1197,7 +1197,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           forwarder ! localAnnSigs
         case (_, Some(channelAnn)) =>
           // we might have been down for a long time (more than 2 weeks) and other nodes in the network might have forgotten the channel
-          log.info(s"re-announcing channelId=${d.channelId} on the network with shortId=${channelAnn.shortChannelId}")
+          log.info(s"re-announcing channelId=${d.channelId} on the network with shortId=${channelAnn.shortChannelId.toHexString}")
           router ! channelAnn
           router ! channelUpdate
       }

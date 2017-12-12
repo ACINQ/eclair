@@ -110,28 +110,28 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
           val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
           if (tx.txOut.size < outputIndex + 1) {
-            log.error(s"invalid script for shortChannelId=${c.shortChannelId}: txid=${tx.txid} does not have outputIndex=$outputIndex ann=$c")
+            log.error(s"invalid script for shortChannelId=${c.shortChannelId.toHexString}: txid=${tx.txid} does not have outputIndex=$outputIndex ann=$c")
             None
           } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error(s"invalid script for shortChannelId=${c.shortChannelId} txid=${tx.txid} ann=$c")
+            log.error(s"invalid script for shortChannelId=${c.shortChannelId.toHexString} txid=${tx.txid} ann=$c")
             None
           } else {
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
-            log.debug(s"added channel channelId=${c.shortChannelId}")
+            log.debug(s"added channel channelId=${c.shortChannelId.toHexString}")
             context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
             db.addChannel(c)
             Some(c)
           }
         case IndividualResult(c, Some(tx), false) =>
           // TODO: vulnerability if they flood us with spent funding tx?
-          log.warning(s"ignoring shortChannelId=${c.shortChannelId} tx=${tx.txid} (funding tx not found in utxo)")
+          log.warning(s"ignoring shortChannelId=${c.shortChannelId.toHexString} tx=${tx.txid} (funding tx not found in utxo)")
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
           None
         case IndividualResult(c, None, _) =>
           // TODO: blacklist?
-          log.warning(s"could not retrieve tx for shortChannelId=${c.shortChannelId}")
+          log.warning(s"could not retrieve tx for shortChannelId=${c.shortChannelId.toHexString}")
           None
       }
 
@@ -173,7 +173,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay
 
     case Event(c: ChannelAnnouncement, d) =>
-      log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2}")
+      log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId.toHexString} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2}")
       if (d.channels.containsKey(c.shortChannelId) || d.awaiting.exists(_.shortChannelId == c.shortChannelId) || d.stash.contains(c)) {
         log.debug(s"ignoring $c (duplicate)")
         stay
