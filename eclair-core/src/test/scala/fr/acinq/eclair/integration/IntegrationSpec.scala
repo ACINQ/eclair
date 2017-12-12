@@ -141,7 +141,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("connect nodes") {
     //
-    // A ---- B ---- C ---- D
+    // A ---- B ---- C ==== D
     //        |     / \
     //        --E--'   F{1,2,3,4,5}
     //
@@ -153,15 +153,16 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     connect(nodes("A"), nodes("B"), 10000000, 0)
     connect(nodes("B"), nodes("C"), 2000000, 0)
     connect(nodes("C"), nodes("D"), 5000000, 0)
-    connect(nodes("B"), nodes("E"), 5000000, 0)
-    connect(nodes("E"), nodes("C"), 5000000, 0)
+    connect(nodes("C"), nodes("D"), 5000000, 0)
+    connect(nodes("B"), nodes("E"), 10000000, 0)
+    connect(nodes("E"), nodes("C"), 10000000, 0)
     connect(nodes("C"), nodes("F1"), 5000000, 0)
     connect(nodes("C"), nodes("F2"), 5000000, 0)
     connect(nodes("C"), nodes("F3"), 5000000, 0)
     connect(nodes("C"), nodes("F4"), 5000000, 0)
     connect(nodes("C"), nodes("F5"), 5000000, 0)
 
-    val numberOfChannels = 10
+    val numberOfChannels = 11
     val channelEndpointsCount = 2 * numberOfChannels
 
      // we make sure all channels have set up their WatchConfirmed for the funding tx
@@ -210,7 +211,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // generating more blocks so that all funding txes are buried under at least 6 blocks
     sender.send(bitcoincli, BitcoinReq("generate", 4))
     sender.expectMsgType[JValue]
-    awaitAnnouncements(nodes, 10, 10, 20)
+    awaitAnnouncements(nodes, 10, 11, 22)
   }
 
   test("send an HTLC A->D") {
@@ -225,14 +226,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.expectMsgType[PaymentSucceeded]
   }
 
-  test("send an HTLC A->D with an invalid expiry delta for C") {
+  // TODO: reenable this test when we support route hints
+  ignore("send an HTLC A->D with an invalid expiry delta for B") {
     val sender = TestProbe()
-    // to simulate this, we will update C's relay params
-    // first we find out the short channel id for channel C-D, easiest way is to ask D's register which has only one channel
-    sender.send(nodes("D").register, 'shortIds)
-    val shortIdCD = sender.expectMsgType[Map[Long, BinaryData]].keys.head
-    val channelUpdateCD = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("C").nodeParams.privateKey, nodes("D").nodeParams.privateKey.publicKey, shortIdCD, nodes("D").nodeParams.expiryDeltaBlocks + 1, nodes("D").nodeParams.htlcMinimumMsat, nodes("D").nodeParams.feeBaseMsat, nodes("D").nodeParams.feeProportionalMillionth)
-    sender.send(nodes("C").relayer, channelUpdateCD)
+    // to simulate this, we will update B's relay params
+    // first we find out the short channel id for channel B-C
+    sender.send(nodes("B").router, 'channels)
+    val shortIdBC = sender.expectMsgType[Iterable[ChannelAnnouncement]].find(c => Set(c.nodeId1, c.nodeId2) == Set(nodes("B").nodeParams.privateKey.publicKey, nodes("C").nodeParams.privateKey.publicKey)).get.shortChannelId
+    val channelUpdateBC = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, nodes("B").nodeParams.privateKey, nodes("C").nodeParams.privateKey.publicKey, shortIdBC, nodes("B").nodeParams.expiryDeltaBlocks + 1, nodes("C").nodeParams.htlcMinimumMsat, nodes("B").nodeParams.feeBaseMsat, nodes("B").nodeParams.feeProportionalMillionth)
+    sender.send(nodes("B").relayer, channelUpdateBC)
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(4200000)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
@@ -240,23 +242,22 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // then we make the actual payment
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, sendReq)
-    // A will receive an error from C that include the updated channel update, then will retry the payment
+    // A will receive an error from B that include the updated channel update, then will retry the payment
     sender.expectMsgType[PaymentSucceeded](5 seconds)
     // in the meantime, the router will have updated its state
     awaitCond({
       sender.send(nodes("A").router, 'updates)
-      sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateCD)
+      sender.expectMsgType[Iterable[ChannelUpdate]].toSeq.contains(channelUpdateBC)
     }, max = 20 seconds, interval = 1 second)
-    // finally we retry the same payment, this time successfully
   }
 
-  test("send an HTLC A->D with an amount greater than capacity of C-D") {
+  test("send an HTLC A->D with an amount greater than capacity of B-C") {
     val sender = TestProbe()
     // first we retrieve a payment hash from D
     val amountMsat = MilliSatoshi(300000000L)
     sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    // then we make the payment (C-D has a smaller capacity than A-B and B-C)
+    // then we make the payment (B-C has a smaller capacity than A-B and C-D)
     val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, sendReq)
     // A will first receive an error from C, then retry and route around C: A->B->E->C->D
@@ -268,7 +269,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val pr = SendPayment(100000000L, "42" * 32, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, pr)
 
-    // A will first receive an error from C, then retry and route around C: A->B->E->C->D
+    // A will receive an error from D and won't retry
     val failed = sender.expectMsgType[PaymentFailed]
     assert(failed.paymentHash === pr.paymentHash)
     assert(failed.failures.size === 1)
@@ -322,6 +323,22 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sendReq = SendPayment(300000000L, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[PaymentSucceeded]
+  }
+
+  test("send multiple HTLCs A->D with a failover when a channel gets exhausted") {
+    val sender = TestProbe()
+    // there are two C-D channels with 5000000 sat, so we should be able to make 7 payments worth 1000000 sat each
+    for (i <- 0 until 7) {
+      // first we retrieve a payment hash from D for 2 mBTC
+      val amountMsat = MilliSatoshi(1000000000L)
+      sender.send(nodes("D").paymentHandler, ReceivePayment(Some(amountMsat), "1 payment"))
+      val pr = sender.expectMsgType[PaymentRequest]
+
+      // A send payment of 3 mBTC, more than asked but it should still be accepted
+      val sendReq = SendPayment(amountMsat.amount, pr.paymentHash, nodes("D").nodeParams.privateKey.publicKey)
+      sender.send(nodes("A").paymentInitiator, sendReq)
+      sender.expectMsgType[PaymentSucceeded]
+    }
   }
 
   /**
@@ -404,7 +421,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
-    awaitAnnouncements(nodes.filter(_._1 == "A"), 9, 9, 18)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 9, 10, 20)
   }
 
   test("propagate a fulfill upstream when a downstream htlc is redeemed on-chain (remote commit)") {
@@ -469,7 +486,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 1
     }, max = 30 seconds, interval = 1 second)
-    awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 8, 16)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 8, 9, 18)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (local commit)") {
@@ -515,7 +532,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
-    awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 7, 14)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 7, 8, 16)
   }
 
   test("propagate a failure upstream when a downstream htlc times out (remote commit)") {
@@ -563,7 +580,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
-    awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 6, 12)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 6, 7, 14)
   }
 
   test("punish a node that has published a revoked commit tx") {
@@ -615,7 +632,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       (receivedByC diff previouslyReceivedByC).size == 2
     }, max = 30 seconds, interval = 1 second)
     // this will remove the channel
-    awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 5, 10)
+    awaitAnnouncements(nodes.filter(_._1 == "A"), 5, 6, 12)
   }
 
   test("generate and validate lots of channels") {
@@ -639,7 +656,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     announcements.foreach(ann => nodes("A").router ! ann)
     awaitCond({
       sender.send(nodes("D").router, 'channels)
-      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-F4} have disappeared
+      sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 6 // 6 remaining channels because  D->F{1-F4} have disappeared
     }, max = 120 seconds, interval = 1 second)
   }
 
