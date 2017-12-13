@@ -15,7 +15,7 @@ import scala.util.Try
 
 /**
   * Lightning Payment Request
-  * see https://github.com/lightningnetwork/lightning-rfc/pull/183
+  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
   *
   * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
   * @param amount    amount to pay (empty string means no amount is specified)
