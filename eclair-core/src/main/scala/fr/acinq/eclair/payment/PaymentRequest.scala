@@ -15,7 +15,7 @@ import scala.util.Try
 
 /**
   * Lightning Payment Request
-  * see https://github.com/lightningnetwork/lightning-rfc/pull/183
+  * see https://github.com/lightningnetwork/lightning-rfc/blob/master/11-payment-encoding.md
   *
   * @param prefix    currency prefix; lnbc for bitcoin, lntb for bitcoin testnet
   * @param amount    amount to pay (empty string means no amount is specified)
@@ -217,15 +217,16 @@ object PaymentRequest {
     *
     * @param nodeId          node id
     * @param shortChannelId  channel id
-    * @param fee             node fee
+    * @param feeBaseMast   node fixed fee
+    * @param feeProportionalMillionths  node proportional fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, fee: Long, cltvExpiryDelta: Int) extends PaymentHop {
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, feeBaseMast: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int) extends PaymentHop {
     def pack: Seq[Byte] = nodeId.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
-      Protocol.writeUInt64(fee, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
+      Protocol.writeUInt32(feeBaseMast, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt32(feeProportionalMillionths, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
 
     // Fee is already pre-calculated for extra hops
-    def nextFee(msat: Long): Long = fee
+    def nextFee(msat: Long): Long = PaymentHop.nodeFee(feeBaseMast, feeProportionalMillionths, msat)
   }
 
   /**
@@ -244,15 +245,16 @@ object PaymentRequest {
     def parse(data: Seq[Byte]) = {
       val pubkey = data.slice(0, 33)
       val shortChannelId = Protocol.uint64(data.slice(33, 33 + 8), ByteOrder.BIG_ENDIAN)
-      val fee = Protocol.uint64(data.slice(33 + 8, 33 + 8 + 8), ByteOrder.BIG_ENDIAN)
+      val fee_base_msat = Protocol.uint32(data.slice(33 + 8, 33 + 8 + 4), ByteOrder.BIG_ENDIAN)
+      val fee_proportional_millionths = Protocol.uint32(data.slice(33 + 8 + 4, 33 + 8 + 8), ByteOrder.BIG_ENDIAN)
       val cltv = Protocol.uint16(data.slice(33 + 8 + 8, chunkLength), ByteOrder.BIG_ENDIAN)
-      ExtraHop(PublicKey(pubkey), shortChannelId, fee, cltv)
+      ExtraHop(PublicKey(pubkey), shortChannelId, fee_base_msat, fee_proportional_millionths, cltv)
     }
 
     def parseAll(data: Seq[Byte]): Seq[ExtraHop] =
       data.grouped(chunkLength).map(parse).toList
 
-    val chunkLength: Int = 33 + 8 + 8 + 2
+    val chunkLength: Int = 33 + 8 + 4 + 4 + 2
   }
 
   /**
