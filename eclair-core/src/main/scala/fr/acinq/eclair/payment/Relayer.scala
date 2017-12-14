@@ -88,7 +88,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
             case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 => // TODO: hardcoded value
               sender ! CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true)
             case _ =>
-              log.info(s"forwarding htlc #${add.id} to shortChannelId=${perHopPayload.channel_id.toHexString}")
+              log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to shortChannelId=${perHopPayload.channel_id.toHexString}")
               register ! Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
           }
         case Success((Attempt.Failure(cause), _, _)) =>
