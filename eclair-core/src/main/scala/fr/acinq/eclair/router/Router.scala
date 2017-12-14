@@ -11,7 +11,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment.Hop
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
@@ -27,7 +27,8 @@ import scala.util.{Random, Success, Try}
 // @formatter:off
 
 case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
-case class RouteRequest(source: PublicKey, target: PublicKey, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
+case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
+case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]], ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
@@ -324,15 +325,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       graph2dot(d.nodes, d.channels) pipeTo sender
       stay
 
-    case Event(RouteRequest(start, end, ignoreNodes, ignoreChannels), d) =>
+    case Event(RouteRequest(start, end, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
+      val assistedUpdates: Seq[(ChannelDesc, ChannelUpdate)] = assistedRoutes.flatMap(getFakeUpdates(_, end))
+
       // we start with channel_updates of local channels
-      val updates0 = d.localUpdates.values.toMap
+      val updates0 = (d.localUpdates.values ++ assistedUpdates).toMap
       // we add them to the publicly-announced updates (channel_updates for announced channels will be deduped)
       val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
       val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
       // we also filter out disabled channels, and channels/nodes that are blacklisted for this particular request
-      val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
+      val updates3: Map[ChannelDesc, ChannelUpdate] = filterUpdates(updates2, ignoreNodes, ignoreChannels)
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.map(_.toHexString).mkString(",")}")
       findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
@@ -351,6 +354,17 @@ object Router {
   val MAX_PARALLEL_JSONRPC_REQUESTS = 50
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
+
+  def getFakeUpdates(extraRoute: Seq[ExtraHop], end: PublicKey): Seq[(ChannelDesc, ChannelUpdate)] = {
+    val nodeIds = extraRoute.map(_.nodeId)
+
+    nodeIds.zip(nodeIds.drop(1) :+ end).zip(extraRoute).map {
+      case ((from, to), ExtraHop(_, shortChannelId, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta)) =>
+        ChannelDesc(shortChannelId, from, to) -> ChannelUpdate(signature = null, chainHash = null, shortChannelId,
+          Platform.currentTime / 1000, flags = BinaryData("0000"), cltvExpiryDelta, htlcMinimumMsat = 0L,
+          feeBaseMsat, feeProportionalMillionths)
+    }
+  }
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
     require(u.flags.data.size == 2, s"invalid flags length ${u.flags.data.size} != 2")
