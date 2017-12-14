@@ -29,8 +29,6 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     import setup._
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-      relayer.expectMsgType[ChannelUpdate]
-      relayer.expectMsgType[ChannelUpdate]
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32
