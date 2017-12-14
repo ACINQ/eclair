@@ -63,6 +63,6 @@ object Register {
   case class ForwardShortId[T](shortChannelId: Long, message: T)
 
   case class ForwardFailure[T](fwd: Forward[T]) extends RuntimeException(s"channel ${fwd.channelId} not found")
-  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId} not found")
+  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId.toHexString} not found")
   // @formatter:on
 }
