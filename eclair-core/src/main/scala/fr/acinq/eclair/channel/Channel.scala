@@ -128,7 +128,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       goto(WAIT_FOR_OPEN_CHANNEL) using DATA_WAIT_FOR_OPEN_CHANNEL(inputFundee)
 
     case Event(INPUT_RESTORED(data), _) =>
-      log.info(s"restoring channel $data")
+      log.info(s"restoring channelId=${data.channelId} to remoteNodeId=${data.commitments.remoteParams.nodeId}")
       context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data))
       // TODO: should we wait for an acknowledgment from the watcher?
       blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
