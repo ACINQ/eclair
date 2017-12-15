@@ -249,12 +249,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d)
       if d.channels.containsKey(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
-      log.info(s"funding tx of channelId=$shortChannelId has been spent")
+      log.info(s"funding tx of channelId=${shortChannelId.toHexString} has been spent")
       // we need to remove nodes that aren't tied to any channels anymore
       val channels1 = d.channels - lostChannel.shortChannelId
       val lostNodes = Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values))
       // let's clean the db and send the events
-      log.info(s"pruning shortChannelId=$shortChannelId (spent)")
+      log.info(s"pruning shortChannelId=${shortChannelId.toHexString} (spent)")
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
@@ -287,7 +287,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // let's clean the db and send the events
       staleChannels.foreach {
         case shortChannelId =>
-          log.info(s"pruning shortChannelId=$shortChannelId (stale)")
+          log.info(s"pruning shortChannelId=${shortChannelId.toHexString} (stale)")
           db.removeChannel(shortChannelId) // NB: this also removes channel updates
           context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
@@ -301,12 +301,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
-      log.info(s"excluding shortChannelId=$shortChannelId from nodeId=$nodeId for duration=$banDuration")
+      log.info(s"excluding shortChannelId=${shortChannelId.toHexString} from nodeId=$nodeId for duration=$banDuration")
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
       stay using d.copy(excludedChannels = d.excludedChannels + desc)
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      log.info(s"reinstating shortChannelId=$shortChannelId from nodeId=$nodeId")
+      log.info(s"reinstating shortChannelId=${shortChannelId.toHexString} from nodeId=$nodeId")
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
     case Event('nodes, d) =>

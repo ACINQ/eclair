@@ -1,9 +1,10 @@
 package fr.acinq.eclair.payment
 
-import akka.actor.ActorRef
+import akka.actor.{ActorRef, Status}
 import akka.testkit.TestProbe
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
+import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
@@ -37,12 +38,8 @@ class RelayerSpec extends TestkitBaseClass {
     }
   }
 
-  // node c is the next node in the route
-  val nodeId_a = PublicKey(a)
-  val nodeId_c = PublicKey(c)
-  val channelId_ab: BinaryData = "65514354" * 8
-  val channelId_bc: BinaryData = "64864544" * 8
-  val channel_flags = 0x00.toByte
+  val channelId_ab: BinaryData = randomBytes(32)
+  val channelId_bc: BinaryData = randomBytes(32)
 
   def makeCommitments(channelId: BinaryData) = Commitments(null, null, 0.toByte, null, null, null, null, 0, 0, Map.empty, null, null, null, channelId)
 
@@ -78,6 +75,32 @@ class RelayerSpec extends TestkitBaseClass {
     val fail = sender.expectMsgType[CMD_FAIL_HTLC]
     assert(fail.id === add_ab.id)
     assert(fail.reason == Right(UnknownNextPeer))
+
+    register.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
+  }
+
+  test("fail to relay an htlc-add when register returns an error") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    // we use this to build a valid onion
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
+    // and then manually build an htlc
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    relayer ! channelUpdate_bc
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fwd1 = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd1.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd1.message.upstream_opt === Some(add_ab))
+
+    sender.send(relayer, Status.Failure(Register.ForwardShortIdFailure(fwd1)))
+
+    val fwd2 = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]]
+    assert(fwd2.channelId === channelId_ab)
+    assert(fwd2.message.id === add_ab.id)
+    assert(fwd2.message.reason === Right(UnknownNextPeer))
 
     register.expectNoMsg(500 millis)
     paymentHandler.expectNoMsg(500 millis)
@@ -232,7 +255,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream_opt === Some(add_ab))
 
-    sender.send(relayer, AddHtlcFailed(channelId_bc, new InsufficientFunds(channelId_bc, cmd.amountMsat, 100, 0, 0), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, new InsufficientFunds(channelId_bc, cmd.amountMsat, 100, 0, 0), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc))))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -256,7 +279,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream_opt === Some(add_ab))
 
-    sender.send(relayer, AddHtlcFailed(channelId_bc, new TooManyAcceptedHtlcs(channelId_bc, 30), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, new TooManyAcceptedHtlcs(channelId_bc, 30), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc))))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)
@@ -280,7 +303,7 @@ class RelayerSpec extends TestkitBaseClass {
     assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
     assert(fwd.message.upstream_opt === Some(add_ab))
 
-    sender.send(relayer, AddHtlcFailed(channelId_bc, new HtlcTimedout(channelId_bc), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc)))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, new HtlcTimedout(channelId_bc), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc))))
 
     val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
     assert(fail.id === add_ab.id)

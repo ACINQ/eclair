@@ -266,8 +266,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         signature = localSigOfRemoteTx
       )
       val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
-      context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
-      context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
+      context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+      context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
       goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), open.channelFlags, fundingCreated) sending fundingCreated
 
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
@@ -314,8 +314,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             originChannels = Map.empty,
             remoteNextCommitInfo = Right(randomKey.publicKey), // we will receive their next per-commitment point in the next message, so we temporarily put a random byte array,
             commitInput, ShaChain.init, channelId = channelId)
-          context.parent ! ChannelIdAssigned(self, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
-          context.system.eventStream.publish(ChannelIdAssigned(self, temporaryChannelId, channelId))
+          context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
+          context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
           log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
@@ -764,7 +764,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
       relayer ! channelUpdate
       d.commitments.localChanges.proposed.collect {
-        case add: UpdateAddHtlc => relayer ! AddHtlcFailed(d.channelId, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate))
+        case add: UpdateAddHtlc => relayer ! Status.Failure(AddHtlcFailed(d.channelId, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate)))
       }
       goto(OFFLINE) using d.copy(channelUpdate = channelUpdate)
 
@@ -1066,7 +1066,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case add if ripemd160(add.paymentHash) == extracted =>
           val origin = d.commitments.originChannels(add.id)
           log.warning(s"found a match between paymentHash160=$extracted and origin=$origin: htlc timed out")
-          relayer ! AddHtlcFailed(d.channelId, HtlcTimedout(d.channelId), origin, None)
+          relayer ! Status.Failure(AddHtlcFailed(d.channelId, HtlcTimedout(d.channelId), origin, None))
       }
       // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
       // TODO: we do not handle the case where htlcs transactions end up being unconfirmed this can happen if an htlc-success tx is published right before a htlc timed out

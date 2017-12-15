@@ -140,6 +140,23 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
   help        |                                               | display available methods
 
+## Docker
+
+A [Dockerfile](Dockerfile) images are built on each commit on [docker hub](https://hub.docker.com/r/ACINQ/eclair) for running a dockerized eclair-node.
+
+You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
+
+```
+docker run -ti --rm -e "JAVA_OPTS=-Xmx512m -Declair.api.binding-ip=0.0.0.0 -Declair.node-alias=node-pm -Declair.printToConsole" acinq\eclair
+```
+
+If you want to persist the data directory, you can make the volume to your host with the `-v` argument, as the following example:
+
+```
+docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq\eclair
+```
+
+
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell

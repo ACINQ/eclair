@@ -88,7 +88,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
             case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 => // TODO: hardcoded value
               sender ! CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true)
             case _ =>
-              log.info(s"forwarding htlc #${add.id} to shortChannelId=${perHopPayload.channel_id}")
+              log.info(s"forwarding htlc #${add.id} to shortChannelId=${perHopPayload.channel_id.toHexString}")
               register ! Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
           }
         case Success((Attempt.Failure(cause), _, _)) =>
@@ -100,14 +100,14 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           sender ! CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessageCodecs.BADONION, commit = true)
       }
 
-    case Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _))) =>
+    case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _)))) =>
       log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       register ! Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
-    case AddHtlcFailed(_, error, Local(Some(sender)), _) =>
+    case Status.Failure(AddHtlcFailed(_, error, Local(Some(sender)), _)) =>
       sender ! Status.Failure(error)
 
-    case AddHtlcFailed(_, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt) =>
+    case Status.Failure(AddHtlcFailed(_, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt)) =>
       val failure = (error, channelUpdate_opt) match {
         case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
         case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
@@ -145,6 +145,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
       val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
       register ! Register.Forward(originChannelId, cmd)
+
+    case "ok" => () // ignoring responses from channels
   }
 
 }
