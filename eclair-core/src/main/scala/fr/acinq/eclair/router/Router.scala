@@ -69,7 +69,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
-  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 minute, repeat = true)
+  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 day, repeat = true)
 
   val db = nodeParams.networkDb
 
@@ -386,9 +386,8 @@ object Router {
     // (1) is older than 2 weeks (2*7*144 = 2016 blocks)
     //  AND
     // (2) didn't have an update during the last 2 weeks
-    // NOTE: RADICAL PRUNING WE FORGET ABOUT CHANNELS OLDER THAN 3 DAYS WITH NO UPDATE
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 259200
-    val staleThresholdBlocks = Globals.blockCount.get() - 432
+    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
       .filterKeys(shortChannelId => fromShortId(shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
       .filterKeys(shortChannelId => !updates.values.exists(u => u.shortChannelId == shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
