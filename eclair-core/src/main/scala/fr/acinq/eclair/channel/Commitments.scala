@@ -222,7 +222,7 @@ object Commitments {
             val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
             val commitments1 = addLocalProposal(commitments, fail)
             (commitments1, fail)
-          case Failure(_) => throw new CantExtractSharedSecret(commitments.channelId, htlc)
+          case Failure(_) => throw new CannotExtractSharedSecret(commitments.channelId, htlc)
         }
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
