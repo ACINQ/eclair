@@ -211,8 +211,8 @@ class RouteCalculationSpec extends FunSuite {
     val id_e = toShortId(daysAgoInBlocks(1), 0, 0)
     val chan_e = channelAnnouncement(id_e)
 
-    val channels = Map(id_a -> chan_a, id_b -> chan_b, id_c -> chan_c, id_d -> chan_d, id_e -> chan_e)
-    val updates = Map(desc(id_a) -> upd_a, desc(id_c) -> upd_c, desc(id_d) -> upd_d)
+    val channels = Set(chan_a, chan_b, chan_c, chan_d, chan_e)
+    val updates = Set(upd_a, upd_c, upd_d)
 
     val staleChannels = Router.getStaleChannels(channels, updates).toSet
 

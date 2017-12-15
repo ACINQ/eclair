@@ -69,7 +69,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
-  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 day, repeat = true)
+  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 minutes, repeat = true)
 
   val db = nodeParams.networkDb
 
@@ -85,21 +85,30 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
   when(NORMAL) {
+    case Event(TickValidate, d) if d.stash.isEmpty => stay
+
     case Event(TickValidate, d) =>
       require(d.awaiting.size == 0)
-      var i = 0
+      // first we partition the announcements
+      val newChannels = d.stash.collect { case c: ChannelAnnouncement => c }
+      val newNodes = d.stash.collect { case c: NodeAnnouncement => c }
+      val newUpdates = d.stash.collect { case c: ChannelUpdate => c }
+      // then we drop stale channels without even validating them
+      // there is a risk that we drop an 'old' channel if we don't have yet received a channel_update, so we
+      // only filter out channels for which we have received a channel_update
+      val staleChannels = getStaleChannels(newChannels.filter(shortChannelId => newUpdates.exists(_.shortChannelId == shortChannelId)), newUpdates)
+      log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
+      val remainingChannels = newChannels.filterNot(c => staleChannels.contains(c.shortChannelId))
+      val remainingUpdates = newUpdates.filterNot(c => staleChannels.contains(c.shortChannelId))
       // we extract a batch of channel announcements from the stash
-      val (channelAnns: Seq[ChannelAnnouncement]@unchecked, otherAnns) = d.stash.partition {
-        case _: ChannelAnnouncement =>
-          i = i + 1
-          i <= MAX_PARALLEL_JSONRPC_REQUESTS
-        case _ => false
-      }
-      if (channelAnns.size > 0) {
-        log.info(s"validating a batch of ${channelAnns.size} channels")
-        watcher ! ParallelGetRequest(channelAnns)
-        goto(WAITING_FOR_VALIDATION) using d.copy(stash = otherAnns, awaiting = channelAnns)
-      } else stay
+      val batch = remainingChannels.take(MAX_PARALLEL_JSONRPC_REQUESTS)
+      // we clean up the stash (nodes will be filtered afterwards)
+      val stash1 = (remainingChannels diff batch) ++ newNodes ++ remainingUpdates
+      if (batch.size > 0) {
+        log.info(s"validating a batch of ${batch.size} channels")
+        watcher ! ParallelGetRequest(batch)
+        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash1, awaiting = batch)
+      } else stay using d.copy(stash = stash1)
   }
 
   when(WAITING_FOR_VALIDATION) {
@@ -278,7 +287,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels, d.updates)
+      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
       // then we clean up the related channel updates
       val staleUpdates = d.updates.keys.filter(desc => staleChannels.contains(desc.id))
       // finally we remove nodes that aren't tied to any channels anymore
@@ -379,7 +388,7 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
-  def getStaleChannels(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
+  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate]): Iterable[Long] = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
     // so we consider stale a channel that:
@@ -389,9 +398,9 @@ object Router {
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
-      .filterKeys(shortChannelId => fromShortId(shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filterKeys(shortChannelId => !updates.values.exists(u => u.shortChannelId == shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
-    staleChannels.keys
+      .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
+      .filter(c => !updates.exists(u => u.shortChannelId == c.shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
+    staleChannels.map(_.shortChannelId)
   }
 
   /**
