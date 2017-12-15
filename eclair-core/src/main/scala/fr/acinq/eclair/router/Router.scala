@@ -78,11 +78,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
   log.info(s"loading network announcements from db...")
   db.listChannels().map(self ! _)
-  println(db.listChannels().size)
   db.listNodes().map(self ! _)
-  println(db.listNodes().size)
   db.listChannelUpdates().map(self ! _)
-  println(db.listChannelUpdates().size)
   log.info(s"starting state machine")
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
