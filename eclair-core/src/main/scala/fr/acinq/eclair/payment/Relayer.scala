@@ -57,10 +57,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
 
     case ForwardAdd(add) =>
-      Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
-        .map {
-          case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextPacket, sharedSecret)
-        } match {
+      Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
+          .map(parsedPacket => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(parsedPacket.payload.data)), parsedPacket.nextPacket, parsedPacket.sharedSecret)) match {
         case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) if nextPacket.isLastPacket =>
           log.info(s"looks like we are the final recipient of htlc #${add.id}")
           perHopPayload match {
