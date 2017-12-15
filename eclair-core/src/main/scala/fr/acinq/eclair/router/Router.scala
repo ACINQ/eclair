@@ -78,8 +78,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
   log.info(s"loading network announcements from db...")
   db.listChannels().map(self ! _)
+  println(db.listChannels().size)
   db.listNodes().map(self ! _)
+  println(db.listNodes().size)
   db.listChannelUpdates().map(self ! _)
+  println(db.listChannelUpdates().size)
   log.info(s"starting state machine")
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
@@ -93,15 +96,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val newChannels = d.stash.collect { case c: ChannelAnnouncement => c }
       val newNodes = d.stash.collect { case c: NodeAnnouncement => c }
       val newUpdates = d.stash.collect { case c: ChannelUpdate => c }
-      // then we drop stale channels without even validating them
-      // there is a risk that we drop an 'old' channel if we don't have yet received a channel_update, so we
-      // only filter out channels for which we have received a channel_update
-      val staleChannels = getStaleChannels(newChannels.filter(shortChannelId => newUpdates.exists(_.shortChannelId == shortChannelId)), newUpdates)
-      log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
+      // we only consider channel_announcement for which we have a channel_update
+      // because we don't want to drop an 'old' channel if its channel_update is recent and we might not yet have it
+      val newChannelsWithUpdate = newChannels.filter(c => newUpdates.exists(_.shortChannelId == c.shortChannelId))
+      val staleChannels = getStaleChannels(newChannelsWithUpdate, newUpdates)
+      if (staleChannels.size > 0) {
+        log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
+      }
+      // we keep channels that didn't have a channel_update
       val remainingChannels = newChannels.filterNot(c => staleChannels.contains(c.shortChannelId))
       val remainingUpdates = newUpdates.filterNot(c => staleChannels.contains(c.shortChannelId))
-      // we extract a batch of channel announcements from the stash
-      val batch = remainingChannels.take(MAX_PARALLEL_JSONRPC_REQUESTS)
+      // we verify non-stale channels that had a channel_update
+      val batch = remainingChannels.filter(c => newUpdates.exists(_.shortChannelId == c.shortChannelId)).take(MAX_PARALLEL_JSONRPC_REQUESTS)
       // we clean up the stash (nodes will be filtered afterwards)
       val stash1 = (remainingChannels diff batch) ++ newNodes ++ remainingUpdates
       if (batch.size > 0) {
