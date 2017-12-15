@@ -343,15 +343,18 @@ object Sphinx extends Logging {
     * @param sharedSecrets nodes shared secrets
     * @return Success(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, Failure otherwise
     */
-  // TODO: make this tail-recursive
   def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Try[ErrorPacket] = Try {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
-    sharedSecrets match {
+
+    @tailrec
+    def loop(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): ErrorPacket = sharedSecrets match {
       case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
       case (secret, pubkey) :: tail =>
         val packet1 = forwardErrorPacket(packet, secret)
-        if (checkMac(secret, packet1)) ErrorPacket(pubkey, extractFailureMessage(packet1)) else parseErrorPacket(packet1, tail).get
+        if (checkMac(secret, packet1)) ErrorPacket(pubkey, extractFailureMessage(packet1)) else loop(packet1, tail)
     }
+
+    loop(packet, sharedSecrets)
   }
 }
 
