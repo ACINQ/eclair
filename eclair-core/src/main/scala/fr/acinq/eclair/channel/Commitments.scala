@@ -10,6 +10,8 @@ import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, UInt64}
 
+import scala.util.{Failure, Success}
+
 // @formatter:off
 case class LocalChanges(proposed: List[UpdateMessage], signed: List[UpdateMessage], acked: List[UpdateMessage]) {
   def all: List[UpdateMessage] = proposed ++ signed ++ acked
@@ -211,14 +213,17 @@ object Commitments {
         throw UnknownHtlcId(commitments.channelId, cmd.id)
       case Some(htlc) =>
         // we need the shared secret to build the error packet
-        val sharedSecret = Sphinx.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).sharedSecret
-        val reason = cmd.reason match {
-          case Left(forwarded) => Sphinx.forwardErrorPacket(forwarded, sharedSecret)
-          case Right(failure) => Sphinx.createErrorPacket(sharedSecret, failure)
+        Sphinx.parsePacket(nodeSecret, htlc.paymentHash, htlc.onionRoutingPacket).map(_.sharedSecret) match {
+          case Success(sharedSecret) =>
+            val reason = cmd.reason match {
+              case Left(forwarded) => Sphinx.forwardErrorPacket(forwarded, sharedSecret)
+              case Right(failure) => Sphinx.createErrorPacket(sharedSecret, failure)
+            }
+            val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
+            val commitments1 = addLocalProposal(commitments, fail)
+            (commitments1, fail)
+          case Failure(_) => throw new CantExtractSharedSecret(commitments.channelId, htlc)
         }
-        val fail = UpdateFailHtlc(commitments.channelId, cmd.id, reason)
-        val commitments1 = addLocalProposal(commitments, fail)
-        (commitments1, fail)
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
 

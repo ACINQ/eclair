@@ -13,6 +13,7 @@ import org.spongycastle.crypto.params.KeyParameter
 import scodec.bits.BitVector
 
 import scala.annotation.tailrec
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by fabrice on 13/01/17.
@@ -163,7 +164,7 @@ object Sphinx extends Logging {
     *         - shared secret is the secret we share with the node that sent the packet. We need it to propagate failure
     *         messages upstream.
     */
-  def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, rawPacket: BinaryData): ParsedPacket = {
+  def parsePacket(privateKey: PrivateKey, associatedData: BinaryData, rawPacket: BinaryData): Try[ParsedPacket] = Try {
     require(rawPacket.length == PacketLength, s"onion packet length is ${rawPacket.length}, it should be ${PacketLength}")
     val packet = Packet.read(rawPacket)
     val sharedSecret = computeSharedSecret(PublicKey(packet.publicKey), privateKey)
@@ -183,10 +184,11 @@ object Sphinx extends Logging {
   }
 
   @tailrec
-  def extractSharedSecrets(packet: BinaryData, privateKey: PrivateKey, associatedData: BinaryData, acc: Seq[BinaryData] = Nil): Seq[BinaryData] = {
+  private def extractSharedSecrets(packet: BinaryData, privateKey: PrivateKey, associatedData: BinaryData, acc: Seq[BinaryData] = Nil): Try[Seq[BinaryData]] = {
     parsePacket(privateKey, associatedData, packet) match {
-      case ParsedPacket(_, nextPacket, sharedSecret) if nextPacket.isLastPacket => acc :+ sharedSecret
-      case ParsedPacket(_, nextPacket, sharedSecret) => extractSharedSecrets(nextPacket.serialize, privateKey, associatedData, acc :+ sharedSecret)
+      case Success(ParsedPacket(_, nextPacket, sharedSecret)) if nextPacket.isLastPacket => Success(acc :+ sharedSecret)
+      case Success(ParsedPacket(_, nextPacket, sharedSecret)) => extractSharedSecrets(nextPacket.serialize, privateKey, associatedData, acc :+ sharedSecret)
+      case Failure(t) => Failure(t)
     }
   }
 
@@ -205,7 +207,7 @@ object Sphinx extends Logging {
     * @param routingInfoFiller   optional routing info filler, needed only when you're constructing the last packet
     * @return the next packet
     */
-  def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
+  private def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
     require(payload.length == PayloadLength)
 
     val nextRoutingInfo = {
@@ -298,7 +300,7 @@ object Sphinx extends Logging {
     * @param packet error packet
     * @return the failure message that is embedded in the error packet
     */
-  def extractFailureMessage(packet: BinaryData): FailureMessage = {
+  private def extractFailureMessage(packet: BinaryData): FailureMessage = {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
     val len = Protocol.uint16(payload, ByteOrder.BIG_ENDIAN)
@@ -327,7 +329,7 @@ object Sphinx extends Logging {
     * @param packet       error packet
     * @return true if the packet's mac is valid, which means that it has been properly de-obfuscated
     */
-  def checkMac(sharedSecret: BinaryData, packet: BinaryData): Boolean = {
+  private def checkMac(sharedSecret: BinaryData, packet: BinaryData): Boolean = {
     val (mac, payload) = packet.splitAt(Sphinx.MacLength)
     val um = Sphinx.generateKey("um", sharedSecret)
     BinaryData(mac) == Sphinx.mac(um, payload)
@@ -339,16 +341,16 @@ object Sphinx extends Logging {
     *
     * @param packet        error packet
     * @param sharedSecrets nodes shared secrets
-    * @return Some(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, none otherwise
+    * @return Success(secret, failure message) if the origin of the packet could be identified and the packet de-obfuscated, Failure otherwise
     */
-  @tailrec
-  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Option[ErrorPacket] = {
+  // TODO: make this tail-recursive
+  def parseErrorPacket(packet: BinaryData, sharedSecrets: Seq[(BinaryData, PublicKey)]): Try[ErrorPacket] = Try {
     require(packet.length == ErrorPacketLength, s"invalid error packet length ${packet.length}, must be $ErrorPacketLength")
     sharedSecrets match {
-      case Nil => None
+      case Nil => throw new RuntimeException(s"couldn't parse error packet=$packet with sharedSecrets=$sharedSecrets")
       case (secret, pubkey) :: tail =>
         val packet1 = forwardErrorPacket(packet, secret)
-        if (checkMac(secret, packet1)) Some(ErrorPacket(pubkey, extractFailureMessage(packet1))) else parseErrorPacket(packet1, tail)
+        if (checkMac(secret, packet1)) ErrorPacket(pubkey, extractFailureMessage(packet1)) else parseErrorPacket(packet1, tail).get
     }
   }
 }
