@@ -72,7 +72,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       }
 
     case Event(HandshakeCompleted(transport, _), DisconnectedData(offlineChannels, _)) =>
-      log.info(s"registering as a listener to $transport")
+      log.debug(s"registering as a listener to $transport")
       transport ! Listener(self)
       context watch transport
       transport ! Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
