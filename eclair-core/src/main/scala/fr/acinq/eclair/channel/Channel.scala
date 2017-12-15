@@ -1557,7 +1557,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       case DirectedHtlc(OUT, add) => add
     }.filter {
       case add =>
-        Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
+        Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
           .map(_.nextPacket.isLastPacket)
           .getOrElse(true) // we also fail htlcs which onion we can't decode (message won't be precise)
     }
