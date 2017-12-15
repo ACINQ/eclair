@@ -57,7 +57,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
 
     case ForwardAdd(add) =>
-      log.info(s"received forwarding request for htlc #${add.channelId} paymentHash=${add.paymentHash} from channelId=${add.id} ")
+      log.info(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} ")
       val result = Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
         .map {
           case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)), nextPacket, sharedSecret)
@@ -104,10 +104,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       }
       result match {
         case Left(cmd: CMD_FAIL_HTLC) =>
-          log.info(s"couldn't forward htlc #${add.channelId} paymentHash=${add.paymentHash} from channelId=${add.id} reason=${cmd.reason}")
+          log.info(s"couldn't forward htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=${cmd.reason}")
           sender ! cmd
         case Left(cmd: CMD_FAIL_MALFORMED_HTLC) =>
-          log.info(s"couldn't forward htlc #${add.channelId} paymentHash=${add.paymentHash} from channelId=${add.id} reason=malformed onionHash=${cmd.onionHash} failureCode=${cmd.failureCode}")
+          log.info(s"couldn't forward htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmd.onionHash} failureCode=${cmd.failureCode}")
           sender ! cmd
         case Right(_) => ()
       }
