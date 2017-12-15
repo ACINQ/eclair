@@ -26,7 +26,7 @@ import org.json4s.{JValue, jackson}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /**
   * Created by PM on 25/01/2016.
@@ -62,10 +62,19 @@ trait Service extends Logging {
     `Cache-Control`(public, `no-store`, `max-age`(0)) ::
     `Access-Control-Allow-Headers`("x-requested-with") :: Nil
 
-  def getChannel(channelId: String): Future[ActorRef] =
+  /**
+    * Sends a request to a channel and expects a response
+    * @param channelIdentifier can be a shortChannelId (8-byte hex encoded) or a channelId (32-byte hex encoded)
+    * @param request
+    * @return
+    */
+  def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
     for {
-      channels <- (appKit.register ? 'channels).mapTo[Map[BinaryData, ActorRef]]
-    } yield channels.get(BinaryData(channelId)).getOrElse(throw new RuntimeException("unknown channel"))
+      fwdReq <- Future(Register.ForwardShortId(java.lang.Long.parseLong(channelIdentifier, 16), request))
+          .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
+          .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
+      res <- appKit.register ? fwdReq
+    } yield res
 
   val route =
     respondWithDefaultHeaders(customHeaders) {
@@ -89,8 +98,11 @@ trait Service extends Logging {
                   (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin))
                 case JsonRPCBody(_, _, "channels", _) =>
                   (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys)
-                case JsonRPCBody(_, _, "channel", JString(channelId) :: Nil) =>
-                  getChannel(channelId).flatMap(_ ? CMD_GETINFO).mapTo[RES_GETINFO]
+                case JsonRPCBody(_, _, "channelsto", JString(remoteNodeId) :: Nil) =>
+                  val remotePubKey = Try(PublicKey(remoteNodeId)).getOrElse(throw new RuntimeException(s"invalid remote node id '$remoteNodeId'"))
+                  (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == remotePubKey).keys)
+                case JsonRPCBody(_, _, "channel", JString(identifier) :: Nil) =>
+                  sendToChannel(identifier, CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "allnodes", _) =>
                   (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId))
                 case JsonRPCBody(_, _, "allchannels", _) =>
@@ -116,16 +128,17 @@ trait Service extends Logging {
                     }
                     res <- (paymentInitiator ? sendPayment).mapTo[PaymentResult]
                   } yield res
-                case JsonRPCBody(_, _, "close", JString(channelId) :: JString(scriptPubKey) :: Nil) =>
-                  getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
-                case JsonRPCBody(_, _, "close", JString(channelId) :: Nil) =>
-                  getChannel(channelId).flatMap(_ ? CMD_CLOSE(scriptPubKey = None)).mapTo[String]
+                case JsonRPCBody(_, _, "close", JString(identifier) :: JString(scriptPubKey) :: Nil) =>
+                  sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
+                case JsonRPCBody(_, _, "close", JString(identifier) :: Nil) =>
+                  sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "connect (nodeId, host, port): connect to another lightning node through a secure connection",
                     "open (nodeId, host, port, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
                     "peers: list existing local peers",
                     "channels: list existing local channels",
+                    "channelsto (nodeId): list existing local channels to a particular nodeId",
                     "channel (channelId): retrieve detailed information about a given channel",
                     "allnodes: list all known nodes",
                     "allchannels: list all known channels",
