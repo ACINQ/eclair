@@ -336,6 +336,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.map(_.toHexString).mkString(",")}")
       findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
+      // On Android, we don't monitor channels to see if their funding is spent because it is too expensive
+      // if the node that created this channel tells us it is unusable (only permanent channel failure) we forget about it
+      // note that if the channel is in fact still alive, we will get it again via network announcements anyway
+      ignoreChannels.foreach(shortChannelId => self ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)))
       stay
   }
 
