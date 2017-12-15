@@ -3,7 +3,8 @@ package fr.acinq.eclair.channel
 import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.channel.Register.{Forward, ForwardFailure, ForwardShortId, ForwardShortIdFailure}
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.channel.Register._
 
 /**
   * Created by PM on 26/01/2016.
@@ -16,31 +17,33 @@ class Register extends Actor with ActorLogging {
   context.system.eventStream.subscribe(self, classOf[ChannelIdAssigned])
   context.system.eventStream.subscribe(self, classOf[ShortChannelIdAssigned])
 
-  override def receive: Receive = main(Map.empty, Map.empty)
+  override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
-  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[Long, BinaryData]): Receive = {
-    case ChannelCreated(channel, _, _, _, temporaryChannelId) =>
+  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[Long, BinaryData], channelsTo: Map[BinaryData, PublicKey]): Receive = {
+    case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
       context.watch(channel)
-      context become main(channels + (temporaryChannelId -> channel), shortIds)
+      context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
 
-    case ChannelRestored(channel, _, _, _, channelId, _) =>
+    case ChannelRestored(channel, _, remoteNodeId, _, channelId, _) =>
       context.watch(channel)
-      context become main(channels + (channelId -> channel), shortIds)
+      context become main(channels + (channelId -> channel), shortIds, channelsTo + (channelId -> remoteNodeId))
 
-    case ChannelIdAssigned(channel, temporaryChannelId, channelId) =>
-      context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds)
+    case ChannelIdAssigned(channel, remoteNodeId, temporaryChannelId, channelId) =>
+      context become main(channels + (channelId -> channel) - temporaryChannelId, shortIds, channelsTo + (channelId -> remoteNodeId) - temporaryChannelId)
 
-    case ShortChannelIdAssigned(channel, channelId, shortChannelId) =>
-      context become main(channels, shortIds + (shortChannelId -> channelId))
+    case ShortChannelIdAssigned(_, channelId, shortChannelId) =>
+      context become main(channels, shortIds + (shortChannelId -> channelId), channelsTo)
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1
       val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(0L)
-      context become main(channels - channelId, shortIds - shortChannelId)
+      context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId)
 
     case 'channels => sender ! channels
 
     case 'shortIds => sender ! shortIds
+
+    case 'channelsTo => sender ! channelsTo
 
     case fwd@Forward(channelId, msg) =>
       channels.get(channelId) match {

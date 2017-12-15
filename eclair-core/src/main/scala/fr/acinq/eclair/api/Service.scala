@@ -16,7 +16,6 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Kit
-import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
@@ -73,7 +72,7 @@ trait Service extends Logging {
     for {
       fwdReq <- Future(Register.ForwardShortId(java.lang.Long.parseLong(channelIdentifier, 16), request))
           .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
-          .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier")) }
+          .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
       res <- appKit.register ? fwdReq
     } yield res
 
@@ -99,6 +98,9 @@ trait Service extends Logging {
                   (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin))
                 case JsonRPCBody(_, _, "channels", _) =>
                   (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys)
+                case JsonRPCBody(_, _, "channelsto", JString(remoteNodeId) :: Nil) =>
+                  val remotePubKey = Try(PublicKey(remoteNodeId)).getOrElse(throw new RuntimeException(s"invalid remote node id '$remoteNodeId'"))
+                  (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == remotePubKey).keys)
                 case JsonRPCBody(_, _, "channel", JString(identifier) :: Nil) =>
                   sendToChannel(identifier, CMD_GETINFO).mapTo[RES_GETINFO]
                 case JsonRPCBody(_, _, "allnodes", _) =>
@@ -136,6 +138,7 @@ trait Service extends Logging {
                     "open (nodeId, host, port, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
                     "peers: list existing local peers",
                     "channels: list existing local channels",
+                    "channelsto (nodeId): list existing local channels to a particular nodeId",
                     "channel (channelId): retrieve detailed information about a given channel",
                     "allnodes: list all known nodes",
                     "allchannels: list all known channels",
