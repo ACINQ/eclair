@@ -45,7 +45,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
     case NewConnection(remoteNodeId, address, newChannel_opt) =>
       val connection = connections.get(remoteNodeId) match {
         case Some(connection) =>
-          log.info(s"already connected to nodeId=$remoteNodeId")
+          log.debug(s"already connected to nodeId=$remoteNodeId")
           sender ! s"already connected to nodeId=$remoteNodeId"
           connection
         case None =>
@@ -59,12 +59,12 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       context become main(peers + (remoteNodeId -> peer), connections + (remoteNodeId -> connection))
 
     case Terminated(actor) if connections.values.toSet.contains(actor) =>
-      log.info(s"$actor is dead, removing from connections")
+      log.debug(s"$actor is dead, removing from connections")
       val remoteNodeId = connections.find(_._2 == actor).get._1
       context become main(peers, connections - remoteNodeId)
 
     case Terminated(actor) if peers.values.toSet.contains(actor) =>
-      log.info(s"$actor is dead, removing from peers/connections/db")
+      log.debug(s"$actor is dead, removing from peers/connections/db")
       val remoteNodeId = peers.find(_._2 == actor).get._1
       nodeParams.peersDb.removePeer(remoteNodeId)
       context become main(peers - remoteNodeId, connections - remoteNodeId)
