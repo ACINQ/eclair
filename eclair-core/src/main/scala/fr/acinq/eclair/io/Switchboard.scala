@@ -21,7 +21,7 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
 
   // we load peers and channels from database
   val initialPeers = {
-    val channels = nodeParams.channelsDb.listChannels().toList.groupBy(_.commitments.remoteParams.nodeId)
+    val channels = nodeParams.channelsDb.listChannels().groupBy(_.commitments.remoteParams.nodeId)
     val peers = nodeParams.peersDb.listPeers().toMap
     channels
       .map {
@@ -46,7 +46,10 @@ class Switchboard(nodeParams: NodeParams, watcher: ActorRef, router: ActorRef, r
       val connection = connections.get(remoteNodeId) match {
         case Some(connection) =>
           log.debug(s"already connected to nodeId=$remoteNodeId")
-          sender ! s"already connected to nodeId=$remoteNodeId"
+          // reconnection can be automated so we only answer if sender is real
+          if (sender != context.system.deadLetters) {
+            sender ! s"already connected to nodeId=$remoteNodeId"
+          }
           connection
         case None =>
           log.info(s"connecting to $remoteNodeId @ $address on behalf of $sender")
