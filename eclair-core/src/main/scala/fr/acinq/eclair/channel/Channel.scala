@@ -1035,41 +1035,45 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=${Transaction.write(tx)}")
       require(tx.txIn.size == 1, s"htlc tx should only have 1 input")
       val witness = tx.txIn(0).witness
-      val extracted = witness match {
+      val extracted_opt = witness match {
         case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
           log.warning(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (claim-htlc-success)")
-          paymentPreimage
+          Some(paymentPreimage)
         case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcReceivedScript)) if paymentPreimage.size == 32 =>
           log.warning(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (htlc-success)")
-          paymentPreimage
+          Some(paymentPreimage)
         case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, BinaryData.empty, htlcOfferedScript)) =>
           val paymentHash160 = BinaryData(htlcOfferedScript.slice(109, 109 + 20))
           log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (htlc-timeout)")
-          paymentHash160
+          Some(paymentHash160)
         case ScriptWitness(Seq(remoteSig, BinaryData.empty, htlcReceivedScript)) =>
           val paymentHash160 = BinaryData(htlcReceivedScript.slice(69, 69 + 20))
           log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (claim-htlc-timeout)")
-          paymentHash160
+          Some(paymentHash160)
+        case _ =>
+          // this is not an htlc witness (we don't watch only htlc outputs)
+          None
       }
-      // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment
-      // if an outgoing htlc is in the remote commitment, then:
-      // - either it is in the local commitment (it was never fulfilled)
-      // - or we have already received the fulfill and forwarded it upstream
-      val outgoingHtlcs = d.commitments.localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
-      outgoingHtlcs.collect {
-        case add if add.paymentHash == sha256(extracted) =>
-          val origin = d.commitments.originChannels(add.id)
-          log.warning(s"found a match between preimage=$extracted and origin=$origin: htlc was fulfilled")
-          // let's just pretend we received the preimage from the counterparty
-          relayer ! ForwardFulfill(UpdateFulfillHtlc(add.channelId, add.id, extracted), origin)
-        case add if ripemd160(add.paymentHash) == extracted =>
-          val origin = d.commitments.originChannels(add.id)
-          log.warning(s"found a match between paymentHash160=$extracted and origin=$origin: htlc timed out")
-          relayer ! Status.Failure(AddHtlcFailed(d.channelId, HtlcTimedout(d.channelId), origin, None))
+      extracted_opt map { extracted =>
+        // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment
+        // if an outgoing htlc is in the remote commitment, then:
+        // - either it is in the local commitment (it was never fulfilled)
+        // - or we have already received the fulfill and forwarded it upstream
+        val outgoingHtlcs = d.commitments.localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+        outgoingHtlcs.collect {
+          case add if add.paymentHash == sha256(extracted) =>
+            val origin = d.commitments.originChannels(add.id)
+            log.warning(s"found a match between preimage=$extracted and origin=$origin: htlc was fulfilled")
+            // let's just pretend we received the preimage from the counterparty
+            relayer ! ForwardFulfill(UpdateFulfillHtlc(add.channelId, add.id, extracted), origin)
+          case add if ripemd160(add.paymentHash) == extracted =>
+            val origin = d.commitments.originChannels(add.id)
+            log.warning(s"found a match between paymentHash160=$extracted and origin=$origin: htlc timed out")
+            relayer ! Status.Failure(AddHtlcFailed(d.channelId, HtlcTimedout(d.channelId), origin, None))
+        }
+        // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
+        // TODO: we do not handle the case where htlcs transactions end up being unconfirmed this can happen if an htlc-success tx is published right before a htlc timed out
       }
-      // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
-      // TODO: we do not handle the case where htlcs transactions end up being unconfirmed this can happen if an htlc-success tx is published right before a htlc timed out
-
       stay
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
