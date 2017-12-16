@@ -1321,7 +1321,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def handleLocalError(cause: Throwable, d: HasCommitments, msg: Option[Any]) = {
-    log.error(cause, s"error while processing msg=${msg.getOrElse("n/a")} in state=$stateData ")
+    cause match {
+      case _: ChannelException => log.error(cause, s"error while processing msg=${msg.getOrElse("n/a")}")
+      case _ => log.error(cause, s"error while processing msg=${msg.getOrElse("n/a")} in state=$stateData ")
+    }
     val error = Error(d.channelId, cause.getMessage.getBytes)
     spendLocalCurrent(d) sending error
   }
