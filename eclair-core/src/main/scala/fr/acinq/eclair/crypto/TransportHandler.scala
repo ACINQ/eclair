@@ -131,16 +131,15 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   whenUnhandled {
     case Event(ErrorClosed(cause), _) =>
-      // we transform connection closed events into application error so that it triggers a uniclose
-      log.warning(s"tcp connection error: $cause")
+      log.info(s"tcp connection error: $cause")
       stop(FSM.Normal)
 
     case Event(PeerClosed, _) =>
-      log.warning(s"connection closed")
+      log.info(s"connection closed")
       stop(FSM.Normal)
 
     case Event(Terminated(actor), _) if actor == connection =>
-      log.warning(s"connection terminated, stopping the transport")
+      log.info(s"connection terminated, stopping the transport")
       // this can be the connection or the listener, either way it is a cause of death
       stop(FSM.Normal)
   }

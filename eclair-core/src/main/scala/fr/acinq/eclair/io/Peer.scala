@@ -214,7 +214,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       stay
 
     case Event(Terminated(actor), ConnectedData(transport, _, channels)) if actor == transport =>
-      log.warning(s"lost connection to $remoteNodeId")
+      log.info(s"lost connection to $remoteNodeId")
       channels.values.foreach(_ ! INPUT_DISCONNECTED)
       val c: Set[OfflineChannel] = channels.map(c => HotChannel(c._1, c._2)).toSet
       goto(DISCONNECTED) using DisconnectedData(c)
