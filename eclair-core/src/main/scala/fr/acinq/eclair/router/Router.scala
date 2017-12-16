@@ -415,7 +415,7 @@ object Router {
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
       .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filter(c => updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max  < staleThresholdSeconds) // no update in the past 2 weeks (remember: there are 2 updates per channel)
+      .filter(c => (0L +: updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).toSeq).max  < staleThresholdSeconds) // no update in the past 2 weeks (remember: there are 2 updates per channel)
     staleChannels.map(_.shortChannelId)
   }
 
