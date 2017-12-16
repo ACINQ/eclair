@@ -85,8 +85,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
   when(NORMAL) {
-    case Event(TickValidate, d) if d.stash.isEmpty => stay
-
     case Event(TickValidate, d) =>
       require(d.awaiting.size == 0)
       // first we partition the announcements
