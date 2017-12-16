@@ -69,7 +69,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
   setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
-  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 minutes, repeat = true)
+  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 day, repeat = true)
 
   val db = nodeParams.networkDb
 
@@ -103,14 +103,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val newChannels = d.stash.collect { case c: ChannelAnnouncement => c }
       val newNodes = d.stash.collect { case c: NodeAnnouncement => c }
       val newUpdates = d.stash.collect { case c: ChannelUpdate => c }
-      // we only consider channel_announcement for which we have a channel_update
-      // because we don't want to drop an 'old' channel if its channel_update is recent and we might not yet have it
-      val newChannelsWithUpdate = newChannels.filter(c => newUpdates.exists(_.shortChannelId == c.shortChannelId))
-      val staleChannels = getStaleChannels(newChannelsWithUpdate, newUpdates)
+      val staleChannels = getStaleChannels(newChannels, newUpdates)
       if (staleChannels.size > 0) {
         log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       }
-      // we keep channels that didn't have a channel_update
+      // we remove stale channels
       val remainingChannels = newChannels.filterNot(c => staleChannels.contains(c.shortChannelId))
       val remainingUpdates = newUpdates.filterNot(c => staleChannels.contains(c.shortChannelId))
       // we verify non-stale channels that had a channel_update
@@ -401,18 +398,24 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
+  /**
+    * Is stale a channel that:
+    * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
+    *  AND
+    * (2) has a channel_update which is older than 2 weeks
+    *
+    * @param channels
+    * @param updates
+    * @return
+    */
   def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate]): Iterable[Long] = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    // so we consider stale a channel that:
-    // (1) is older than 2 weeks (2*7*144 = 2016 blocks)
-    //  AND
-    // (2) didn't have an update during the last 2 weeks
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
       .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filter(c => !updates.exists(u => u.shortChannelId == c.shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
+      .filter(c => updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max  < staleThresholdSeconds) // no update in the past 2 weeks (remember: there are 2 updates per channel)
     staleChannels.map(_.shortChannelId)
   }
 

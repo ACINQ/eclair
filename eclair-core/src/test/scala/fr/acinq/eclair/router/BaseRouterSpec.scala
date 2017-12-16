@@ -86,21 +86,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! chan_bc
       router ! chan_cd
       router ! chan_ef
-      router ! TickValidate // we manually trigger a validation
-      // watcher receives the get tx requests
-      watcher.expectMsg(ParallelGetRequest(chan_ab :: chan_bc :: chan_cd :: chan_ef :: Nil))
-      // and answers with valid scripts
-      watcher.send(router, ParallelGetResponse(
-        IndividualResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true) ::
-          IndividualResult(chan_bc, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0)), true) ::
-          IndividualResult(chan_cd, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0)), true) ::
-          IndividualResult(chan_ef, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0)), true) :: Nil
-      ))
-      // watcher receives watch-spent request
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
-      watcher.expectMsgType[WatchSpentBasic]
       // then nodes
       router ! ann_a
       router ! ann_b
@@ -117,20 +102,34 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! channelUpdate_dc
       router ! channelUpdate_ef
       router ! channelUpdate_fe
+      // we manually trigger a validation
+      router ! TickValidate
+      // watcher receives the get tx requests
+      watcher.expectMsg(ParallelGetRequest(chan_ab :: chan_bc :: chan_cd :: chan_ef :: Nil))
+      // and answers with valid scripts
+      watcher.send(router, ParallelGetResponse(
+        IndividualResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true) ::
+          IndividualResult(chan_bc, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0)), true) ::
+          IndividualResult(chan_cd, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0)), true) ::
+          IndividualResult(chan_ef, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0)), true) :: Nil
+      ))
+      // watcher receives watch-spent request
+      watcher.expectMsgType[WatchSpentBasic]
+      watcher.expectMsgType[WatchSpentBasic]
+      watcher.expectMsgType[WatchSpentBasic]
+      watcher.expectMsgType[WatchSpentBasic]
 
       val sender = TestProbe()
 
-      sender.send(router, 'nodes)
-      val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
-      assert(nodes.size === 6)
-
-      sender.send(router, 'channels)
-      val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
-      assert(channels.size === 4)
-
-      sender.send(router, 'updates)
-      val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-      assert(updates.size === 8)
+      awaitCond({
+        sender.send(router, 'nodes)
+        val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
+        sender.send(router, 'channels)
+        val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
+        sender.send(router, 'updates)
+        val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
+        nodes.size === 6 && channels.size === 4 && updates.size === 8
+      }, max = 10 seconds, interval = 1 second)
 
       test((router, watcher))
     }
