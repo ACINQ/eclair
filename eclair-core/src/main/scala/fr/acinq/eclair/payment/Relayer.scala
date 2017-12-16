@@ -53,7 +53,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       }
 
     case channelUpdate: ChannelUpdate =>
-      log.info(s"updating relay parameters with channelUpdate=$channelUpdate")
+      log.debug(s"updating relay parameters with channelUpdate=$channelUpdate")
       context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
 
     case ForwardAdd(add) =>

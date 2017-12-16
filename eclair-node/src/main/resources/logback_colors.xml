@@ -13,18 +13,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %yellow(%msg) %ex{12}%n
-            </pattern>
-        </encoder>
-    </appender>
-
-    <appender name="ORANGE" class="ch.qos.logback.core.ConsoleAppender">
-        <target>System.out</target>
-        <withJansi>false</withJansi>
-        <encoder>
-            <pattern>%boldYellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %yellow(%msg)
-                %ex{12}%n
-            </pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %yellow(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -32,8 +21,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %red(%msg) %ex{12}%n
-            </pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %red(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -41,9 +29,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} channelId=%X{channelId} - %blue(%msg)
-                %ex{12}%n
-            </pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} channelId=%X{channelId} - %blue(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -51,8 +37,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %cyan(%msg) %ex{12}%n
-            </pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %cyan(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -60,8 +45,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %green(%msg) %ex{12}%n
-            </pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %green(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -69,8 +53,7 @@
         <target>System.out</target>
         <withJansi>false</withJansi>
         <encoder>
-            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %magenta(%msg) %ex{12}%n
-            </pattern>
+            <pattern>%yellow(${HOSTNAME} %d) %highlight(%-5level) %logger{36} %X{akkaSource} - %magenta(%msg) %ex{12}%n</pattern>
         </encoder>
     </appender>
 
@@ -78,19 +61,19 @@
         <appender-ref ref="RED"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.channel" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.channel" level="INFO" additivity="false">
         <appender-ref ref="BLUE"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.payment" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.payment" level="INFO" additivity="false">
         <appender-ref ref="GREEN"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.blockchain.bitcoind.ZmqWatcher" level="INFO" additivity="false">
         <appender-ref ref="YELLOW"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.blockchain" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.blockchain" level="INFO" additivity="false">
         <appender-ref ref="YELLOW"/>
     </logger>
 
@@ -98,7 +81,7 @@
         <appender-ref ref="CYAN"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.gui" level="DEBUG" additivity="false">
+    <logger name="fr.acinq.eclair.gui" level="ERROR" additivity="false">
         <appender-ref ref="MAGENTA"/>
     </logger>
 
