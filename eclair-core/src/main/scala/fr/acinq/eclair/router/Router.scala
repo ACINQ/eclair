@@ -76,11 +76,23 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   // Note: We go through the whole validation process instead of directly loading into memory, because the channels
   // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
   // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
-  log.info(s"loading network announcements from db...")
-  db.listChannels().map(self ! _)
-  db.listNodes().map(self ! _)
-  db.listChannelUpdates().map(self ! _)
-  log.info(s"starting state machine")
+  {
+    log.info(s"loading network announcements from db...")
+    val channels = db.listChannels()
+    val nodes = db.listNodes()
+    val updates = db.listChannelUpdates()
+    val staleChannels = getStaleChannels(channels, updates)
+    if (staleChannels.size > 0) {
+      log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
+      staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
+    }
+    val remainingChannels = channels.filterNot(c => staleChannels.contains(c.shortChannelId))
+    val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
+    remainingChannels.map(self ! _)
+    nodes.map(self ! _)
+    remainingUpdates.map(self ! _)
+    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
+  }
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
