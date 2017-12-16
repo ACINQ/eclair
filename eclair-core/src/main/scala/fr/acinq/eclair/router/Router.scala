@@ -75,11 +75,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   // Note: We go through the whole validation process instead of directly loading into memory, because the channels
   // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
   // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
-  log.info(s"loading network announcements from db...")
-  db.listChannels().map(self ! _)
-  db.listNodes().map(self ! _)
-  db.listChannelUpdates().map(self ! _)
-  log.info(s"starting state machine")
+  {
+    log.info(s"loading network announcements from db...")
+    val channels = db.listChannels()
+    val nodes = db.listNodes()
+    val updates = db.listChannelUpdates()
+    channels.map(self ! _)
+    nodes.map(self ! _)
+    updates.map(self ! _)
+    log.info(s"loaded from db: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
+  }
 
   startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Set.empty))
 
@@ -178,7 +183,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug(s"ignoring $c (duplicate)")
         stay
       } else if (!Announcements.checkSigs(c)) {
-        log.error(s"bad signature for announcement $c")
+        log.warning(s"bad signature for announcement $c")
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else {
@@ -191,7 +196,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
         stay
       } else if (!Announcements.checkSig(n)) {
-        log.error(s"bad signature for announcement $n")
+        log.warning(s"bad signature for announcement $n")
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else if (d.nodes.containsKey(n.nodeId)) {
@@ -208,7 +213,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug(s"stashing $n")
         stay using d.copy(stash = d.stash :+ n, origins = d.origins + (n -> sender))
       } else {
-        log.warning(s"ignoring $n (no related channel found)")
+        log.debug(s"ignoring $n (no related channel found)")
         // there may be a record if we have just restarted
         db.removeNode(n.nodeId)
         stay
@@ -223,7 +228,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           stay
         } else if (!Announcements.checkSig(u, getDesc(u, d.channels(u.shortChannelId)).a)) {
           // TODO: (dirty) this will make the origin channel close the connection
-          log.error(s"bad signature for announcement $u")
+          log.warning(s"bad signature for announcement $u")
           sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
           stay
         } else if (d.updates.contains(desc)) {
@@ -241,7 +246,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug(s"stashing $u")
         stay using d.copy(stash = d.stash :+ u, origins = d.origins + (u -> sender))
       } else {
-        log.warning(s"ignoring announcement $u (unknown channel)")
+        log.debug(s"ignoring announcement $u (unknown channel)")
         stay
       }
 
