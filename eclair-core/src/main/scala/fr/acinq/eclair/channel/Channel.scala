@@ -472,15 +472,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // note: spec would allow us to keep sending new htlcs after having received their shutdown (and not sent ours)
       // but we want to converge as fast as possible and they would probably not route them anyway
       val error = NoMoreHtlcsClosingInProgress(d.channelId)
-      handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(d.channelUpdate)))
+      handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(d.channelUpdate)), c)
 
     case Event(c: CMD_ADD_HTLC, d: DATA_NORMAL) =>
       Try(Commitments.sendAdd(d.commitments, c, origin(c))) match {
         case Success(Right((commitments1, add))) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending add
-        case Success(Left(error)) => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(d.channelUpdate)))
-        case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, cause, origin(c), Some(d.channelUpdate)))
+        case Success(Left(error)) => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(d.channelUpdate)), c)
+        case Failure(cause) => handleCommandError(AddHtlcFailed(d.channelId, cause, origin(c), Some(d.channelUpdate)), c)
       }
 
     case Event(add: UpdateAddHtlc, d: DATA_NORMAL) =>
@@ -494,7 +494,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
@@ -511,7 +511,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_NORMAL) =>
@@ -519,7 +519,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
@@ -545,7 +545,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fee
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(fee: UpdateFee, d: DATA_NORMAL) =>
@@ -554,7 +554,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(CMD_SIGN, d: DATA_NORMAL) =>
+    case Event(c@CMD_SIGN, d: DATA_NORMAL) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.info("ignoring CMD_SIGN (nothing to sign)")
@@ -565,7 +565,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect { case u: UpdateFulfillHtlc => relayer ! AckFulfillCmd(u.channelId, u.id) }
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
-            case Failure(cause) => handleCommandError(cause)
+            case Failure(cause) => handleCommandError(cause, c)
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
@@ -614,15 +614,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(revocation))
       }
 
-    case Event(CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
+    case Event(c@CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
       if (d.localShutdown.isDefined)
-        handleCommandError(ClosingAlreadyInProgress((d.channelId)))
+        handleCommandError(ClosingAlreadyInProgress((d.channelId)), c)
       else if (Commitments.localHasUnsignedOutgoingHtlcs(d.commitments))
       // TODO: simplistic behavior, we could also sign-then-close
-        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs((d.channelId)))
+        handleCommandError(CannotCloseWithUnsignedOutgoingHtlcs((d.channelId)), c)
       else if (!Closing.isValidFinalScriptPubkey(localScriptPubKey))
-        handleCommandError(InvalidFinalScript(d.channelId))
+        handleCommandError(InvalidFinalScript(d.channelId), c)
       else {
         val shutdown = Shutdown(d.channelId, localScriptPubKey)
         handleCommandSuccess(sender, store(d.copy(localShutdown = Some(shutdown)))) sending shutdown
@@ -790,7 +790,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fulfill)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fulfill
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_SHUTDOWN) =>
@@ -807,7 +807,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(c: CMD_FAIL_MALFORMED_HTLC, d: DATA_SHUTDOWN) =>
@@ -815,7 +815,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fail)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fail
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
@@ -841,7 +841,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success((commitments1, fee)) =>
           if (c.commit) self ! CMD_SIGN
           handleCommandSuccess(sender, d.copy(commitments = commitments1)) sending fee
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(fee: UpdateFee, d: DATA_SHUTDOWN) =>
@@ -850,7 +850,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(fee))
       }
 
-    case Event(CMD_SIGN, d: DATA_SHUTDOWN) =>
+    case Event(c@CMD_SIGN, d: DATA_SHUTDOWN) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
           log.info("ignoring CMD_SIGN (nothing to sign)")
@@ -861,7 +861,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect { case u: UpdateFulfillHtlc => relayer ! AckFulfillCmd(u.channelId, u.id) }
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
-            case Failure(cause) => handleCommandError(cause)
+            case Failure(cause) => handleCommandError(cause, c)
           }
         case Left(waitForRevocation) =>
           log.debug(s"already in the process of signing, will sign again as soon as possible")
@@ -931,7 +931,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) => handleRemoteSpentOther(tx, d)
 
-    case Event(CMD_CLOSE(_), d: DATA_SHUTDOWN) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
+    case Event(c: CMD_CLOSE, d: DATA_SHUTDOWN) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(e: Error, d: DATA_SHUTDOWN) => handleRemoteError(e, d)
 
@@ -967,7 +967,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) => handleRemoteSpentOther(tx, d)
 
-    case Event(CMD_CLOSE(_), d: DATA_NEGOTIATING) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
+    case Event(c: CMD_CLOSE, d: DATA_NEGOTIATING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(e: Error, d: DATA_NEGOTIATING) => handleRemoteError(e, d)
 
@@ -997,7 +997,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
               remoteCommitPublished1
           }
           stay using store(d.copy(commitments = commitments1, localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1))
-        case Failure(cause) => handleCommandError(cause)
+        case Failure(cause) => handleCommandError(cause, c)
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_CLOSING) =>
@@ -1104,7 +1104,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     val error = Error(d.channelId, exc.getMessage.getBytes)
       stay sending error
 
-    case Event(CMD_CLOSE(_), d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId))
+    case Event(c: CMD_CLOSE, d: DATA_CLOSING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(e: Error, d: DATA_CLOSING) => handleRemoteError(e, d)
 
@@ -1141,7 +1141,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       )
       goto(SYNCING) sending channelReestablish
 
-    case Event(c@CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while disconnected"), d, Some(c)) replying "ok"
+    case Event(c: CMD_CLOSE, d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while disconnected"), d, Some(c)) replying "ok"
 
     case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) =>
       // note: this can only happen if state is NORMAL or SHUTDOWN
@@ -1218,7 +1218,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       forwarder ! d.localClosingSigned
       goto(NEGOTIATING)
 
-    case Event(c@CMD_CLOSE(_), d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while syncing"), d, Some(c))
+    case Event(c: CMD_CLOSE, d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while syncing"), d, Some(c))
 
     case Event(c@CurrentBlockCount(count), d: HasCommitments) if d.commitments.hasTimedoutOutgoingHtlcs(count) => handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
 
@@ -1268,8 +1268,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"rejecting htlc request in state=$stateName")
       val error = ChannelUnavailable(d.channelId)
       d match {
-        case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(normal.channelUpdate))) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
-        case _ => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), None))
+        case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(normal.channelUpdate)), c) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
+        case _ => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), None), c)
       }
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
@@ -1312,18 +1312,20 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     stay using newData replying "ok"
   }
 
-  def handleCommandError(cause: Throwable) = {
+  def handleCommandError(cause: Throwable, cmd: Command) = {
+    log.error(s"error=$cause while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
     cause match {
-      case _: ChannelException => log.error(s"$cause")
-      case _ => log.error(cause, "")
+      case _: ChannelException => ()
+      case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")
     }
     stay replying Status.Failure(cause)
   }
 
   def handleLocalError(cause: Throwable, d: HasCommitments, msg: Option[Any]) = {
+    log.error(s"error=$cause while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
     cause match {
-      case _: ChannelException => log.error(cause, s"error while processing msg=${msg.getOrElse("n/a")}")
-      case _ => log.error(cause, s"error while processing msg=${msg.getOrElse("n/a")} in state=$stateData ")
+      case _: ChannelException => ()
+      case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
     }
     val error = Error(d.channelId, cause.getMessage.getBytes)
     spendLocalCurrent(d) sending error
