@@ -735,7 +735,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           // this can happen if our announcement_signatures was lost during a disconnection
           // specs says that we "MUST respond to the first announcement_signatures message after reconnection with its own announcement_signatures message"
           // current implementation always replies to announcement_signatures, not only the first time
-          log.info(s"re-sending our announcement sigs")
+          log.debug(s"re-sending our announcement sigs")
           stay sending localAnnSigs
       }
 
@@ -1164,7 +1164,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       goto(WAIT_FOR_FUNDING_CONFIRMED)
 
     case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_FUNDING_LOCKED) =>
-      log.info(s"re-sending fundingLocked")
+      log.debug(s"re-sending fundingLocked")
       val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
@@ -1173,7 +1173,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
         // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
-        log.info(s"re-sending fundingLocked")
+        log.debug(s"re-sending fundingLocked")
         val nextPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, 1)
         val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
         forwarder ! fundingLocked
@@ -1183,7 +1183,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       d.localShutdown.map {
         case localShutdown =>
-          log.info(s"re-sending localShutdown")
+          log.debug(s"re-sending localShutdown")
           forwarder ! localShutdown
       }
 
