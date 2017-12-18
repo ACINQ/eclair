@@ -122,6 +122,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       val h = offlineChannels.collect { case h: HotChannel if h.a == actor => h }
       log.info(s"channel closed: channelId=${h.map(_.channelId).mkString("/")}")
       stay using d.copy(offlineChannels = offlineChannels -- h)
+
+    case Event(_: Rebroadcast, _) => stay // ignored
   }
 
   when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
