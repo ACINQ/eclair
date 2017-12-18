@@ -89,7 +89,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FULFILL_HTLC") { case (_, bob, _, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]

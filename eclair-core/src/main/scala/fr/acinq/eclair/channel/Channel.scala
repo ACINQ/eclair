@@ -1274,7 +1274,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val error = ChannelUnavailable(d.channelId)
       d match {
         case normal: DATA_NORMAL => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), Some(normal.channelUpdate))) // can happen if we are in OFFLINE or SYNCING state (channelUpdate will have enable=false)
-        case _ => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), None))
+        case _ => handleCommandError(AddHtlcFailed(d.channelId, error, origin(c), None)) // we don't provide a channel_update: this will be a permanent channel failure
       }
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream

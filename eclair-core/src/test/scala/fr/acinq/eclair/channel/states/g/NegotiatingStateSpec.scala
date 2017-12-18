@@ -8,6 +8,7 @@ import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.payment.Local
 import fr.acinq.eclair.wire.{ClosingSigned, CommitSig, Error, Shutdown}
 import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import org.junit.runner.RunWith
@@ -45,6 +46,18 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       awaitCond(alice.stateName == NEGOTIATING)
       awaitCond(bob.stateName == NEGOTIATING)
       test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
+    }
+  }
+
+  test("recv CMD_ADD_HTLC") { case (alice, _, alice2bob, _, _, _) =>
+    within(30 seconds) {
+      alice2bob.expectMsgType[ClosingSigned]
+      val sender = TestProbe()
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
+      sender.send(alice, add)
+      val error = ChannelUnavailable(channelId(alice))
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), error, Local(Some(sender.ref)), None)))
+      alice2bob.expectNoMsg(200 millis)
     }
   }
 

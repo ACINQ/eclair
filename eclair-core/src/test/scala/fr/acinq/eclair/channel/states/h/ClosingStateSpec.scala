@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{AckFulfillCmd, ForwardAdd, ForwardFulfill}
+import fr.acinq.eclair.payment.{AckFulfillCmd, ForwardAdd, ForwardFulfill, Local}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
@@ -86,6 +86,21 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
   }
+
+  test("recv CMD_ADD_HTLC") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
+    within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+
+      // actual test starts here
+      val sender = TestProbe()
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
+      sender.send(alice, add)
+      val error = ChannelUnavailable(channelId(alice))
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), error, Local(Some(sender.ref)), None)))
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
 
   test("recv CMD_FULFILL_HTLC (unexisting htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
     within(30 seconds) {
