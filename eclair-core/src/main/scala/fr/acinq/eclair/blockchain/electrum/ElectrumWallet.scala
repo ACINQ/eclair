@@ -10,6 +10,7 @@ import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, Determi
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetTransaction, GetTransactionResponse, TransactionHistoryItem, computeScriptHash}
 import fr.acinq.eclair.randomBytes
+import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 
 import scala.annotation.tailrec
@@ -610,6 +611,56 @@ object ElectrumWallet {
 
     /**
       *
+      * @param tx transaction without inputs
+      * @param fee fe that we want to pay
+      * @param dustLimit dust limit below which change outputs won't be kept
+      * @param allowSpendUnconfirmed if true, unconfirmed utxos can be selected
+      * @return a complete transaction, with enough inputs to pay the requested fees, but with
+      *         dummy signatures
+      */
+    def completeTransactionWithDummySigs(tx: Transaction, fee: Satoshi, dustLimit: Satoshi, allowSpendUnconfirmed: Boolean): Transaction = {
+      require(tx.txIn.isEmpty, "cannot complete a tx that already has inputs")
+      val amount = tx.txOut.map(_.amount).sum
+      require(amount > dustLimit, "amount to send is below dust limit")
+
+      @tailrec
+      def select(chooseFrom: Seq[Utxo], selected: Set[Utxo]): Set[Utxo] = {
+        if (totalAmount(selected) >= amount + fee) selected
+        else if (chooseFrom.isEmpty) Set()
+        else select(chooseFrom.tail, selected + chooseFrom.head)
+      }
+
+      // select utxos that are not locked by pending txs
+      val lockedOutputs = locks.map(_.txIn.map(_.outPoint)).flatten
+      val unlocked = utxos.filterNot(utxo => lockedOutputs.contains(utxo.outPoint))
+      val unlocked1 = if (allowSpendUnconfirmed) unlocked else unlocked.filter(_.item.height > 0)
+
+      // sort utxos by amount, in increasing order
+      // this way we minimize the number of utxos in the wallet, and so we minimize the fees we'll pay for them
+      val unlocked2 = unlocked1.sortBy(_.item.value)
+      val selected = select(unlocked2, Set()).toSeq
+      require(totalAmount(selected) >= amount + fee, "insufficient funds")
+
+      // add inputs
+      var tx1 = tx.copy(txIn = selected.map(utxo => TxIn(utxo.outPoint, Nil, TxIn.SEQUENCE_FINAL)))
+
+      // add change output
+      val change = totalAmount(selected) - amount - fee
+      if (change >= dustLimit) tx1 = tx1.addOutput(TxOut(change, computePublicKeyScript(currentChangeKey.publicKey)))
+
+      // "sign" with dummy sigs
+      for (i <- 0 until tx1.txIn.size) {
+        val key = selected(i).key
+        // we use dummy signature here, because the result is only used to estimate fees
+        val sig = BinaryData("01" * 71)
+        tx1 = tx1.updateWitness(i, ScriptWitness(sig :: key.publicKey.toBin :: Nil)).updateSigScript(i, OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
+      }
+
+      tx1
+    }
+
+    /**
+      *
       * @param tx           input tx that has no inputs
       * @param feeRatePerKw fee rate per kiloweight
       * @param minimumFee   minimum fee
@@ -624,33 +675,25 @@ object ElectrumWallet {
       require(feeRatePerKw >= 0, "fee rate cannot be negative")
       val amount = tx.txOut.map(_.amount).sum
       require(amount > dustLimit, "amount to send is below dust limit")
-      val fee = {
-        val estimatedFee = computeFee(700, feeRatePerKw)
-        if (estimatedFee < minimumFee) minimumFee else estimatedFee
+
+      // criteria for success: actual fee rate is within 10% of target fee rate
+      def isFeerateOk(actualFeeRate: Long, targetFeeRate: Long) : Boolean = Math.abs(actualFeeRate - targetFeeRate) < 0.1 * (actualFeeRate + targetFeeRate)
+
+      def loop(fee: Satoshi, count: Int) : Transaction = {
+        val tx1= completeTransactionWithDummySigs(tx, fee, dustLimit, allowSpendUnconfirmed)
+        val actualFeerate = Transactions.fee2rate(fee, tx1.weight())
+        if (isFeerateOk(actualFeerate, feeRatePerKw))
+          tx1
+        else loop(Transactions.weight2fee(feeRatePerKw, tx1.weight()), count + 1)
       }
 
-      @tailrec
-      def select(chooseFrom: Seq[Utxo], selected: Set[Utxo]): Set[Utxo] = {
-        if (totalAmount(selected) >= amount + fee) selected
-        else if (chooseFrom.isEmpty) Set()
-        else select(chooseFrom.tail, selected + chooseFrom.head)
-      }
+      var tx1 = loop(minimumFee, 0)
 
-      // select utxos that are not locked by pending txs
-      val lockedOutputs = locks.map(_.txIn.map(_.outPoint)).flatten
-      val unlocked = utxos.filterNot(utxo => lockedOutputs.contains(utxo.outPoint))
-      val unlocked1 = if (allowSpendUnconfirmed) unlocked else unlocked.filter(_.item.height > 0)
-      val selected = select(unlocked1, Set()).toSeq
-      require(totalAmount(selected) >= amount + fee, "insufficient funds")
-
-      // add inputs
-      var tx1 = tx.copy(txIn = selected.map(utxo => TxIn(utxo.outPoint, Nil, TxIn.SEQUENCE_FINAL)))
-
-      // add change output
-      val change = totalAmount(selected) - amount - fee
-      if (change >= dustLimit) tx1 = tx1.addOutput(TxOut(change, computePublicKeyScript(currentChangeKey.publicKey)))
-
-      // sign
+      // find which of our utxos we're spending
+      // the .get here should never fail since we built the inputs from our utxos
+      // * but * we'll need to change this is we decide to complete transactions that
+      // are already partially signed
+      val selected = tx1.txIn.map(input => utxos.find(utxo => input.outPoint == utxo.outPoint).get)
       for (i <- 0 until tx1.txIn.size) {
         val key = selected(i).key
         val sig = Transaction.signInput(tx1, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(selected(i).item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)

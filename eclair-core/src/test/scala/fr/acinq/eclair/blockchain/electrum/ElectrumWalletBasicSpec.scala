@@ -1,8 +1,9 @@
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.DeterministicWallet.derivePrivateKey
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey}
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.transactions.Transactions
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -30,11 +31,30 @@ class ElectrumWalletBasicSpec extends FunSuite {
   val params = ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)
 
   val state = Data(params, ElectrumClient.Header.RegtestGenesisHeader, firstAccountKeys, firstChangeKeys)
-  val unspents = Map(
-    computeScriptHashFromPublicKey(state.accountKeys(0).publicKey) -> Set(ElectrumClient.UnspentItem("01" * 32, 0, 1 * Satoshi(Coin).toLong, 100)),
-    computeScriptHashFromPublicKey(state.accountKeys(1).publicKey) -> Set(ElectrumClient.UnspentItem("02" * 32, 0, 2 * Satoshi(Coin).toLong, 100)),
-    computeScriptHashFromPublicKey(state.accountKeys(2).publicKey) -> Set(ElectrumClient.UnspentItem("03" * 32, 0, 3 * Satoshi(Coin).toLong, 100))
-  )
+    .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
+
+  def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi) : Data = {
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey)
+    val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
+    data.copy(
+      history = data.history.updated(scriptHash, scriptHashHistory :+ ElectrumClient.TransactionHistoryItem(100, tx.txid)),
+      transactions = data.transactions + (tx.txid -> tx)
+    )
+  }
+
+  def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)) : Data = {
+    val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
+    val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey)
+    val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
+    data.copy(
+      history = data.history.updated(scriptHash, scriptHashHistory :+ ElectrumClient.TransactionHistoryItem(100, tx.txid)),
+      transactions = data.transactions + (tx.txid -> tx)
+    )
+  }
+
+  def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]) : Data = keyamounts.foldLeft(data)(addFunds)
+
 
   test("compute addresses") {
     val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)
@@ -52,8 +72,9 @@ class ElectrumWalletBasicSpec extends FunSuite {
     assert(segwitAddress(firstKey) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
   }
 
-  ignore("complete transactions (enough funds)") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
+  test("complete transactions (enough funds)") {
+    val state1 = addFunds(state, state.accountKeys.head, 1 btc)
+    val (confirmed1, unconfirmed1) = state1.balance
 
     val pub = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
@@ -63,36 +84,62 @@ class ElectrumWalletBasicSpec extends FunSuite {
     assert(state3 == state1)
 
     val state4 = state2.commitTransaction(tx1)
-    assert(state4.utxos.size + tx1.txIn.size == state1.utxos.size)
+    val (confirmed4, unconfirmed4) = state4.balance
+    assert(confirmed4 == confirmed1)
+    assert(unconfirmed1 - unconfirmed4 >= btc2satoshi(0.5 btc))
   }
 
   test("complete transactions (insufficient funds)") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
+    val state1 = addFunds(state, state.accountKeys.head, 5 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(6 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val e = intercept[IllegalArgumentException] {
       val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
     }
   }
 
-  ignore("find what a tx spends from us") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
+  test("compute the effect of tx") {
+    val state1 = addFunds(state, state.accountKeys.head, 1 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
 
-    val pubkeys = tx1.txIn.map(extractPubKeySpentFrom).flatten
-    val utxos1 = state2.utxos.filter(utxo => pubkeys.contains(utxo.key.publicKey))
-    val utxos2 = state2.utxos.filter(utxo => tx1.txIn.map(_.outPoint).contains(utxo.outPoint))
-    println(pubkeys)
+    val Some((received, sent, Some(fee))) = state1.computeTransactionDelta(tx1)
+    assert(sent - received - fee == btc2satoshi(0.5 btc))
   }
 
-  ignore("find what a tx sends to us") {
-    val state1 = state.copy(status = (state.accountKeys ++ state.changeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
-    val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
-    val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
+  test("use actual transaction weight to compute fees") {
+    val state1 = addFunds(state, (state.accountKeys(0), Satoshi(5000000)) :: (state.accountKeys(1), Satoshi(6000000)) :: (state.accountKeys(2), Satoshi(4000000)) :: Nil)
 
-    val pubSpent = tx1.txIn.map(extractPubKeySpentFrom).flatten
-    val utxos1 = state2.utxos.filter(utxo => pubSpent.contains(utxo.key.publicKey))
-    val utxos2 = state2.utxos.filter(utxo => tx1.txIn.map(_.outPoint).contains(utxo.outPoint))
-    println(pubSpent)
+    def isFeerateOk(actualFeeRate: Long, targetFeeRate: Long) : Boolean = Math.abs(actualFeeRate - targetFeeRate) < 0.1 * (actualFeeRate + targetFeeRate)
+
+    {
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(5000000), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val (state3, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)
+      val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
+      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      assert(isFeerateOk(actualFeeRate, feeRatePerKw))
+    }
+    {
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(5000000) - dustLimit, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val (state3, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)
+      val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
+      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      assert(isFeerateOk(actualFeeRate, feeRatePerKw))
+    }
+    {
+      // with a huge fee rate that will force us to use an additional input when we complete our tx
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(3000000), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val (state3, tx1) = state1.completeTransaction(tx, 100 * feeRatePerKw, minimumFee, dustLimit, true)
+      val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
+      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      assert(isFeerateOk(actualFeeRate, 100 * feeRatePerKw))
+    }
+    {
+      // with a tiny fee rate that will force us to use an additional input when we complete our tx
+      val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Btc(0.09), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+      val (state3, tx1) = state1.completeTransaction(tx, feeRatePerKw / 10, minimumFee / 10, dustLimit, true)
+      val Some((_, _, Some(fee))) = state3.computeTransactionDelta(tx1)
+      val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
+      assert(isFeerateOk(actualFeeRate, feeRatePerKw / 10))
+    }
   }
 }
