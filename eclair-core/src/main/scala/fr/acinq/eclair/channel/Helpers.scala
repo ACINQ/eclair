@@ -195,7 +195,7 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
-      log.debug(s"closingTx=${Transaction.write(closingTx.tx)}")
+      log.debug(s"closingTx=${closingTx.tx}}")
       (closingTx, closingSigned)
     }
 
@@ -216,7 +216,7 @@ object Helpers {
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo])(implicit log: LoggingAdapter): Option[TransactionWithInputInfo] = {
       attempt match {
         case Success(txinfo) =>
-          log.warning(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${Transaction.write(txinfo.tx)}")
+          log.warning(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${txinfo.tx}")
           Some(txinfo)
         case Failure(t) =>
           log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
