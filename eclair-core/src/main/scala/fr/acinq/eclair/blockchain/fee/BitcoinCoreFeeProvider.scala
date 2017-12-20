@@ -15,20 +15,20 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     * We need this to keep commitment tx fees in sync with the state of the network
     *
     * @param nBlocks number of blocks until tx is confirmed
-    * @return the current fee estimate in Satoshi/Kb
+    * @return the current fee estimate in Satoshi/Byte
     */
   def estimateSmartFee(nBlocks: Int): Future[Long] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(json => {
       json \ "feerate" match {
         case JDouble(feerate) =>
           // estimatesmartfee returns a fee rate in Btc/Kb
-          btc2satoshi(Btc(feerate)).amount
+          btc2satoshi(Btc(feerate)).amount // 1024
         case JInt(feerate) if feerate.toLong < 0 =>
           // negative value means failure
           feerate.toLong
         case JInt(feerate) =>
           // should (hopefully) never happen
-          btc2satoshi(Btc(feerate.toLong)).amount
+          btc2satoshi(Btc(feerate.toLong)).amount / 1024
       }
     })
 
