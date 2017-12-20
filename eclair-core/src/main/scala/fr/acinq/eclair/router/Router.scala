@@ -4,7 +4,6 @@ import java.io.StringWriter
 
 import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -87,7 +86,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   when(NORMAL) {
     case Event(TickValidate, d) =>
-      require(d.awaiting.size == 0)
+      require(d.awaiting.size == 0, "awaiting queue should be empty")
       var i = 0
       // we extract a batch of channel announcements from the stash
       val (channelAnns: Seq[ChannelAnnouncement]@unchecked, otherAnns) = d.stash.partition {
@@ -231,7 +230,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug(s"added node nodeId=${n.nodeId}")
         context.system.eventStream.publish(NodeDiscovered(n))
         db.addNode(n)
-        goto(NORMAL) using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
+        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
       } else if (d.awaiting.exists(c => isRelatedTo(c, n.nodeId)) || d.stash.collectFirst { case c: ChannelAnnouncement if isRelatedTo(c, n.nodeId) => c }.isDefined) {
         log.debug(s"stashing $n")
         stay using d.copy(stash = d.stash :+ n, origins = d.origins + (n -> sender))
@@ -263,7 +262,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           log.info(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           db.addChannelUpdate(u)
-          goto(NORMAL) using d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
+          stay using d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
         }
       } else if (d.awaiting.exists(c => c.shortChannelId == u.shortChannelId) || d.stash.collectFirst { case c: ChannelAnnouncement if c.shortChannelId == u.shortChannelId => c }.isDefined) {
         log.debug(s"stashing $u")
@@ -286,7 +285,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         } else {
           log.info(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
-          goto(NORMAL) using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+          stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
         }
       } else {
         log.warning(s"ignoring announcement $u (unknown channel)")
@@ -310,7 +309,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      goto(NORMAL) using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
+      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
     case Event(TickValidate, d) => stay // ignored
 
