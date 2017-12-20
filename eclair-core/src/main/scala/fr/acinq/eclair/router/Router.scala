@@ -28,7 +28,7 @@ import scala.util.{Random, Success, Try}
 
 case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]], ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
+case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
@@ -326,16 +326,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay
 
     case Event(RouteRequest(start, end, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
-      val assistedUpdates: Seq[(ChannelDesc, ChannelUpdate)] = assistedRoutes.flatMap(getFakeUpdates(_, end))
-
+      // we convert extra routing info provided in the payment request to fake channel_update
+      // it has precedence over all other channel_updates we know
+      val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end))
       // we start with channel_updates of local channels
-      val updates0 = (d.localUpdates.values ++ assistedUpdates).toMap
+      val updates0 = d.localUpdates.values ++ assistedUpdates
       // we add them to the publicly-announced updates (channel_updates for announced channels will be deduped)
       val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
       val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
       // we also filter out disabled channels, and channels/nodes that are blacklisted for this particular request
-      val updates3: Map[ChannelDesc, ChannelUpdate] = filterUpdates(updates2, ignoreNodes, ignoreChannels)
+      val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
       log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.map(_.toHexString).mkString(",")}")
       findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
@@ -355,15 +356,17 @@ object Router {
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
-  def getFakeUpdates(extraRoute: Seq[ExtraHop], end: PublicKey): Seq[(ChannelDesc, ChannelUpdate)] = {
-    val nodeIds = extraRoute.map(_.nodeId)
+  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
+  // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
+  // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
+    ChannelUpdate(signature = "", chainHash = "", extraHop.shortChannelId, Platform.currentTime / 1000, flags = BinaryData("0000"), extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths)
 
-    nodeIds.zip(nodeIds.drop(1) :+ end).zip(extraRoute).map {
-      case ((from, to), ExtraHop(_, shortChannelId, feeBaseMsat, feeProportionalMillionths, cltvExpiryDelta)) =>
-        ChannelDesc(shortChannelId, from, to) -> ChannelUpdate(signature = null, chainHash = null, shortChannelId,
-          Platform.currentTime / 1000, flags = BinaryData("0000"), cltvExpiryDelta, htlcMinimumMsat = 0L,
-          feeBaseMsat, feeProportionalMillionths)
-    }
+  def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
+    // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
+    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
+    extraRoute.zip(nextNodeIds).map {
+      case (extraHop: ExtraHop, nextNodeId) => (ChannelDesc(extraHop.shortChannelId, extraHop.nodeId, nextNodeId) -> toFakeUpdate(extraHop))
+    }.toMap
   }
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {

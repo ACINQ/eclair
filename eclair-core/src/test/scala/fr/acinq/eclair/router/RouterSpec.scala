@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Error, NodeAnnouncement}
@@ -105,60 +106,74 @@ class RouterSpec extends BaseRouterSpec {
   test("route not found (unreachable target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, f, Nil))
+    sender.send(router, RouteRequest(a, f))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route not found (non-existing source)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(randomKey.publicKey, f, Nil))
+    sender.send(router, RouteRequest(randomKey.publicKey, f))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route not found (non-existing target)") { case (router, _) =>
     val sender = TestProbe()
     // no route a->f
-    sender.send(router, RouteRequest(a, randomKey.publicKey, Nil))
+    sender.send(router, RouteRequest(a, randomKey.publicKey))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("route found") { case (router, _) =>
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, Nil))
+    sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
   }
 
+  test("route found (with extra routing info)") { case (router, _) =>
+    val sender = TestProbe()
+    val x = randomKey.publicKey
+    val y = randomKey.publicKey
+    val z = randomKey.publicKey
+    val extraHop_cx = ExtraHop(c, 1, 10, 11, 12)
+    val extraHop_xy = ExtraHop(x, 1, 10, 11, 12)
+    val extraHop_yz = ExtraHop(y, 2, 20, 21, 22)
+    sender.send(router, RouteRequest(a, z, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
+    val res = sender.expectMsgType[RouteResponse]
+    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
+    assert(res.hops.last.nextNodeId === z)
+  }
+
   test("route not found (channel disabled)") { case (router, _) =>
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, Nil))
+    sender.send(router, RouteRequest(a, d))
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
 
     val channelUpdate_cd1 = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_c, d, channelId_cd, cltvExpiryDelta = 3, 0, feeBaseMsat = 153000, feeProportionalMillionths = 4, enable = false)
     sender.send(router, channelUpdate_cd1)
-    sender.send(router, RouteRequest(a, d, Nil))
+    sender.send(router, RouteRequest(a, d))
     sender.expectMsg(Failure(RouteNotFound))
   }
 
   test("temporary channel exclusion") { case (router, _) =>
     val sender = TestProbe()
-    sender.send(router, RouteRequest(a, d, Nil))
+    sender.send(router, RouteRequest(a, d))
     sender.expectMsgType[RouteResponse]
     val bc = ChannelDesc(channelId_bc, b, c)
     // let's exclude channel b->c
     sender.send(router, ExcludeChannel(bc))
-    sender.send(router, RouteRequest(a, d, Nil))
+    sender.send(router, RouteRequest(a, d))
     sender.expectMsg(Failure(RouteNotFound))
     // note that cb is still available!
-    sender.send(router, RouteRequest(d, a, Nil))
+    sender.send(router, RouteRequest(d, a))
     sender.expectMsgType[RouteResponse]
     // let's remove the exclusion
     sender.send(router, LiftChannelExclusion(bc))
-    sender.send(router, RouteRequest(a, d, Nil))
+    sender.send(router, RouteRequest(a, d))
     sender.expectMsgType[RouteResponse]
   }
 

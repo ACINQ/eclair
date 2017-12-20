@@ -215,7 +215,7 @@ object PaymentRequest {
   /**
     * Extra hop contained in RoutingInfoTag
     *
-    * @param nodeId          node id
+    * @param nodeId          start of the channel
     * @param shortChannelId  channel id
     * @param feeBaseMsat   node fixed fee
     * @param feeProportionalMillionths  node proportional fee

@@ -220,4 +220,29 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
+  test("convert extra hops to channel_update") {
+    val a = randomKey.publicKey
+    val b = randomKey.publicKey
+    val c = randomKey.publicKey
+    val d = randomKey.publicKey
+    val e = randomKey.publicKey
+
+    val extraHop1 = ExtraHop(a, 1, 10, 11, 12)
+    val extraHop2 = ExtraHop(b, 2, 20, 21, 22)
+    val extraHop3 = ExtraHop(c, 3, 30, 31, 32)
+    val extraHop4 = ExtraHop(d, 4, 40, 41, 42)
+
+    val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
+
+    val fakeUpdates = Router.toFakeUpdates(extraHops, e)
+
+    assert(fakeUpdates == Map(
+      ChannelDesc(extraHop1.shortChannelId, a, b) -> Router.toFakeUpdate(extraHop1),
+      ChannelDesc(extraHop2.shortChannelId, b, c) -> Router.toFakeUpdate(extraHop2),
+      ChannelDesc(extraHop3.shortChannelId, c, d) -> Router.toFakeUpdate(extraHop3),
+      ChannelDesc(extraHop4.shortChannelId, d, e) -> Router.toFakeUpdate(extraHop4)
+    ))
+
+  }
+
 }
