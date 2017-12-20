@@ -8,7 +8,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, _}
 import fr.acinq.eclair.crypto.BitStream
 import fr.acinq.eclair.crypto.BitStream.Bit
-import fr.acinq.eclair.payment.PaymentRequest.{Amount, RoutingInfoTag, Timestamp}
+import fr.acinq.eclair.payment.PaymentRequest.{Amount, ExtraHop, RoutingInfoTag, Timestamp}
 
 import scala.annotation.tailrec
 import scala.util.Try
@@ -58,7 +58,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
   }
 
-  def routingInfo(): Seq[RoutingInfoTag] = tags.collect { case t: RoutingInfoTag => t }
+  def routingInfo(): Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
 
   def expiry: Option[Long] = tags.collectFirst {
     case PaymentRequest.ExpiryTag(seconds) => seconds
@@ -215,18 +215,15 @@ object PaymentRequest {
   /**
     * Extra hop contained in RoutingInfoTag
     *
-    * @param nodeId          node id
+    * @param nodeId          start of the channel
     * @param shortChannelId  channel id
-    * @param feeBaseMast   node fixed fee
+    * @param feeBaseMsat   node fixed fee
     * @param feeProportionalMillionths  node proportional fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, feeBaseMast: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int) extends PaymentHop {
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int) {
     def pack: Seq[Byte] = nodeId.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
-      Protocol.writeUInt32(feeBaseMast, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt32(feeProportionalMillionths, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
-
-    // Fee is already pre-calculated for extra hops
-    def nextFee(msat: Long): Long = PaymentHop.nodeFee(feeBaseMast, feeProportionalMillionths, msat)
+      Protocol.writeUInt32(feeBaseMsat, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt32(feeProportionalMillionths, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
   }
 
   /**

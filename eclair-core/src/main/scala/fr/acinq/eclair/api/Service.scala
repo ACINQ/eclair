@@ -116,15 +116,15 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "send", JString(paymentRequest) :: rest) =>
                   for {
                     req <- Future(PaymentRequest.read(paymentRequest))
-                    amount = (req.amount, rest) match {
+                    amountMsat = (req.amount, rest) match {
                       case (Some(_), JInt(amt) :: Nil) => amt.toLong // overriding payment request amount with the one provided
                       case (Some(amt), _) => amt.amount
                       case (None, JInt(amt) :: Nil) => amt.toLong // amount wasn't specified in request, using custom one
                       case (None, _) => throw new RuntimeException("you need to manually specify an amount for this payment request")
                     }
                     sendPayment = req.minFinalCltvExpiry match {
-                      case None => SendPayment(amount, req.paymentHash, req.nodeId)
-                      case Some(value) => SendPayment(amount, req.paymentHash, req.nodeId, value)
+                      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo())
+                      case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo(), minFinalCltvExpiry = minFinalCltvExpiry)
                     }
                     res <- (paymentInitiator ? sendPayment).mapTo[PaymentResult]
                   } yield res
