@@ -552,7 +552,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CMD_SIGN, d: DATA_NORMAL) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
-          log.info("ignoring CMD_SIGN (nothing to sign)")
+          log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
@@ -705,7 +705,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
       } else d.channelUpdate
       val localAnnSigs_opt = if (d.commitments.announceChannel) {
-        // if channel is public we need to send our announcement signatures that will be used to generate the channel_announcement
+        // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
         Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
       } else None
       // we use GOTO instead of stay because we want to fire transitions
@@ -715,7 +715,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // channels are publicly announced if both parties want it (defined as feature bit)
       if (d.buried) {
         // we are aware that the channel has reached enough confirmations
-        // we already had sent this and need to recompute it
+        // we already had sent our announcement_signatures but we don't store them so we need to recompute it
         val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
         d.channelAnnouncement match {
           case None =>
@@ -750,7 +750,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(TickRefreshChannelUpdate, d: DATA_NORMAL) =>
       // periodic refresh is used as a keep alive
-      log.info(s"sending channel_update announcement (refresh)")
+      log.debug(s"sending channel_update announcement (refresh)")
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
       stay using store(d.copy(channelUpdate = channelUpdate))
 
@@ -762,7 +762,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(INPUT_DISCONNECTED, d: DATA_NORMAL) =>
       // we disable the channel
-      log.info(s"sending channel_update announcement (disable)")
+      log.debug(s"sending channel_update announcement (disable)")
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = false)
       d.commitments.localChanges.proposed.collect {
         case add: UpdateAddHtlc => relayer ! Status.Failure(AddHtlcFailed(d.channelId, ChannelUnavailable(d.channelId), d.commitments.originChannels(add.id), Some(channelUpdate)))
@@ -855,7 +855,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CMD_SIGN, d: DATA_SHUTDOWN) =>
       d.commitments.remoteNextCommitInfo match {
         case _ if !Commitments.localHasChanges(d.commitments) =>
-          log.info("ignoring CMD_SIGN (nothing to sign)")
+          log.debug("ignoring CMD_SIGN (nothing to sign)")
           stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments)) match {
@@ -1199,7 +1199,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // channel has been buried enough, should we (re)send our announcement sigs?
         d.channelAnnouncement match {
           case None if !d.commitments.announceChannel =>
-            // that's a private channel, nothing to
+            // that's a private channel, nothing to do
             ()
           case None =>
             // BOLT 7: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
@@ -1210,6 +1210,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             ()
         }
       }
+      // re-enable the channel
       val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
 
       goto(NORMAL) using d.copy(commitments = commitments1, channelUpdate = channelUpdate)
@@ -1301,22 +1302,25 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
       }
       (stateData, nextStateData) match {
-        // if this is a private channel and tx was just buried then we need to send it to our peer
         case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
+          // if this is a private channel and tx was just buried then we need to send it to our peer
           forwarder ! d2.channelUpdate
-        // otherwise, if there is no change in the channel_update, no need to announce it
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate => ()
-        // whenever we go to a state with NORMAL data (can be OFFLINE or NORMAL), we send out the new channel update (most of the time it will just be to enable/disable the channel)
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate =>
+          // otherwise, and there is no change in the channel_update, no need to announce it
+          ()
         case (_, normal: DATA_NORMAL) =>
+          // whenever we go to a state with NORMAL data (can be OFFLINE or NORMAL), we send out the new channel_update (most of the time it will just be to enable/disable the channel)
           if (!normal.commitments.announceChannel && normal.buried) {
             // if channel is private, we send the channel_update directly to remote
             // they need it "to learn the other end's forwarding parameters" (BOLT 7)
             forwarder ! normal.channelUpdate
           }
-          // we advertise the new channel_update
+          // in any case we advertise the new channel_update
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate))
-        // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to got to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
-        case (normal: DATA_NORMAL, _) => context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
+        case (normal: DATA_NORMAL, _) =>
+          // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to got to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
+          // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
+          context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
         case _ => ()
       }
   }
