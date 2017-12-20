@@ -217,13 +217,13 @@ object PaymentRequest {
     *
     * @param nodeId          node id
     * @param shortChannelId  channel id
-    * @param feeBaseMast   node fixed fee
+    * @param feeBaseMsat   node fixed fee
     * @param feeProportionalMillionths  node proportional fee
     * @param cltvExpiryDelta node cltv expiry delta
     */
-  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, feeBaseMast: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int) {
+  case class ExtraHop(nodeId: PublicKey, shortChannelId: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, cltvExpiryDelta: Int) {
     def pack: Seq[Byte] = nodeId.toBin ++ Protocol.writeUInt64(shortChannelId, ByteOrder.BIG_ENDIAN) ++
-      Protocol.writeUInt32(feeBaseMast, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt32(feeProportionalMillionths, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
+      Protocol.writeUInt32(feeBaseMsat, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt32(feeProportionalMillionths, ByteOrder.BIG_ENDIAN) ++ Protocol.writeUInt16(cltvExpiryDelta, ByteOrder.BIG_ENDIAN)
   }
 
   /**
