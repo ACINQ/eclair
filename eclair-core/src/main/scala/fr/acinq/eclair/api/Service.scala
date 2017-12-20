@@ -100,7 +100,7 @@ trait Service extends Logging {
                 case JsonRPCBody(_, _, "receive", JInt(amountMsat) :: JString(description) :: Nil) =>
                   (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write)
                 case JsonRPCBody(_, _, "send", JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil) =>
-                  (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, Nil, PublicKey(nodeId))).mapTo[PaymentResult]
+                  (paymentInitiator ? SendPayment(amountMsat.toLong, paymentHash, PublicKey(nodeId))).mapTo[PaymentResult]
                 case JsonRPCBody(_, _, "send", JString(paymentRequest) :: rest) =>
                   for {
                     req <- Future(PaymentRequest.read(paymentRequest))
@@ -111,8 +111,8 @@ trait Service extends Logging {
                       case (None, _) => throw new RuntimeException("you need to manually specify an amount for this payment request")
                     }
                     sendPayment = req.minFinalCltvExpiry match {
-                      case None => SendPayment(amount, req.paymentHash, req.routingInfo(), req.nodeId)
-                      case Some(value) => SendPayment(amount, req.paymentHash, req.routingInfo(), req.nodeId, value)
+                      case None => SendPayment(amount, req.paymentHash, req.nodeId, req.routingInfo())
+                      case Some(minFinalCltvExpiry) => SendPayment(amount, req.paymentHash, req.nodeId, req.routingInfo(), minFinalCltvExpiry = minFinalCltvExpiry)
                     }
                     res <- (paymentInitiator ? sendPayment).mapTo[PaymentResult]
                   } yield res
