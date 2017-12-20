@@ -162,13 +162,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u), d: Data) =>
       d.channels.get(shortChannelId) match {
         case Some(_) =>
-          // channel is already announced
+          // channel had already been announced and router knows about it, we can process the channel_update
           self ! u
           stay
         case None =>
           channelAnnouncement_opt match {
             case Some(c) =>
-              // channel wasn't announced but here is the announcement
+              // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
               self ! c
               self ! u
               stay
@@ -176,11 +176,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
               // channel isn't announced yet, do we have a fake announcement?
               d.privateChannels.get(shortChannelId) match {
                 case Some(_) =>
-                  // yes: use it
+                  // yes: nothing to do, we can process the channel_update
                   self ! u
                   stay
                 case None =>
-                  // no: create one
+                  // no: create one and add it to current state, then process the channel_update
                   log.info(s"adding unannounced local channel to remote=$remoteNodeId shortChannelId=${shortChannelId.toHexString}")
                   self ! u
                   val fake_c = Announcements.makeChannelAnnouncement("", shortChannelId, nodeParams.nodeId, remoteNodeId, nodeParams.nodeId, nodeParams.nodeId, "", "", "", "")
