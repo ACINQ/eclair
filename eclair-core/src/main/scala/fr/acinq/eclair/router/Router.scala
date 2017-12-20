@@ -254,12 +254,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
           stay
         } else if (d.updates.contains(desc)) {
-          log.info(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           db.updateChannelUpdate(u)
           stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
         } else {
-          log.info(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           db.addChannelUpdate(u)
           stay using d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ u, origins = d.origins + (u -> sender))
@@ -279,11 +279,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
           stay
         } else if (d.privateUpdates.contains(desc)) {
-          log.info(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
         } else {
-          log.info(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
         }
