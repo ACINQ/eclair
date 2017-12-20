@@ -1,8 +1,11 @@
 package fr.acinq.eclair.payment
 
+import java.time.ZonedDateTime
+
 import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.db.Payment
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{NodeParams, randomBytes}
 
@@ -44,6 +47,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           case _ =>
             log.info(s"received payment for paymentHash=${htlc.paymentHash} amountMsat=${htlc.amountMsat}")
             // amount is correct or was not specified in the payment request
+            nodeParams.paymentsDb.addPayment(Payment(htlc.paymentHash, htlc.amountMsat, ZonedDateTime.now().toEpochSecond))
             sender ! CMD_FULFILL_HTLC(htlc.id, r, commit = true)
             context.system.eventStream.publish(PaymentReceived(MilliSatoshi(htlc.amountMsat), htlc.paymentHash))
             context.become(run(h2r - htlc.paymentHash))
