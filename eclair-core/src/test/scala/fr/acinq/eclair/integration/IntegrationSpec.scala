@@ -622,7 +622,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
     // then we publish F's previous commit tx
-    sender.send(bitcoincli, BitcoinReq("sendrawtransaction", Transaction.write(localCommitTxF.commitTx.tx).toString()))
+    sender.send(bitcoincli, BitcoinReq("sendrawtransaction", localCommitTxF.commitTx.tx.toString()))
     sender.expectMsgType[JValue](10000 seconds)
     // at this point C should have 2 recv transactions: its previous main output and the one it took from F as a punishment
     awaitCond({

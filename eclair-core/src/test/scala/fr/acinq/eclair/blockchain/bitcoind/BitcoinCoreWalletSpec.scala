@@ -8,7 +8,7 @@ import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
 import com.typesafe.config.ConfigFactory
-import fr.acinq.bitcoin.{MilliBtc, Satoshi, Script, Transaction}
+import fr.acinq.bitcoin.{MilliBtc, Satoshi, Script}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import fr.acinq.eclair.randomKey
@@ -123,10 +123,10 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     assert(sender.expectMsgType[Boolean])
 
     sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(0).txid.toString()))
-    assert(sender.expectMsgType[JString](10 seconds).s === Transaction.write(fundingTxes(0)).toString())
+    assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(0).toString())
 
     sender.send(bitcoincli, BitcoinReq("getrawtransaction", fundingTxes(2).txid.toString()))
-    assert(sender.expectMsgType[JString](10 seconds).s === Transaction.write(fundingTxes(2)).toString())
+    assert(sender.expectMsgType[JString](10 seconds).s === fundingTxes(2).toString())
 
     // NB: bitcoin core doesn't clear the locks when a tx is published
     sender.send(bitcoincli, BitcoinReq("listlockunspent"))

@@ -146,7 +146,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn(0).outPoint.txid
-        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=${Transaction.write(tx)}")
+        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKeyScript = WatchConfirmed.extractPublicKeyScript(tx.txIn.head.witness)
         self ! WatchConfirmed(self, parentTxid, parentPublicKeyScript, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
@@ -154,7 +154,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
         val block2tx1 = block2tx.updated(cltvTimeout, block2tx.getOrElse(cltvTimeout, Seq.empty[Transaction]) :+ tx)
         context become running(tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
-        log.info(s"publishing tx=${Transaction.write(tx)}")
+        log.info(s"publishing tx=$tx")
         client ! BroadcastTransaction(tx)
         context become running(tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
@@ -169,16 +169,16 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
         val block2tx1 = block2tx.updated(absTimeout, block2tx.getOrElse(absTimeout, Seq.empty[Transaction]) :+ tx)
         context become running(tip, watches, scriptHashStatus, block2tx1, sent)
       } else {
-        log.info(s"publishing tx=${Transaction.write(tx)}")
+        log.info(s"publishing tx=$tx")
         client ! BroadcastTransaction(tx)
         context become running(tip, watches, scriptHashStatus, block2tx, sent :+ tx)
       }
 
     case ElectrumClient.BroadcastTransactionResponse(tx, error_opt) =>
       error_opt match {
-        case None => log.info(s"broadcast succeeded for txid=${tx.txid} tx=${Transaction.write(tx)}")
-        case Some(error) if error.message.contains("transaction already in block chain") => log.info(s"broadcast ignored for txid=${tx.txid} tx=${Transaction.write(tx)} (tx was already in blockchain)")
-        case Some(error) => log.error(s"broadcast failed for txid=${tx.txid} tx=${Transaction.write(tx)} with error=$error")
+        case None => log.info(s"broadcast succeeded for txid=${tx.txid} tx=$tx")
+        case Some(error) if error.message.contains("transaction already in block chain") => log.info(s"broadcast ignored for txid=${tx.txid} tx=$tx (tx was already in blockchain)")
+        case Some(error) => log.error(s"broadcast failed for txid=${tx.txid} tx=$tx with error=$error")
       }
       context become running(tip, watches, scriptHashStatus, block2tx, sent diff Seq(tx))
 
