@@ -38,7 +38,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      //log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
+      //log.debug(s"analyzing txid=${tx.txid} tx=$tx")
       watches.collect {
         case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpentBasic(event))
