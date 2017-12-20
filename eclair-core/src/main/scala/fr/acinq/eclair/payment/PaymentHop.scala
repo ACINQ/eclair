@@ -21,9 +21,9 @@ object PaymentHop {
     * @param msat        an amount to send to a payment recipient
     * @return a sequence of extra hops with a pre-calculated fee for a given msat amount
     */
-  def buildExtra(reversePath: Seq[Hop], msat: Long): Seq[ExtraHop] = (List.empty[ExtraHop] /: reversePath) {
-    case (Nil, hop) => ExtraHop(hop.nodeId, hop.shortChannelId, hop.nextFee(msat), hop.cltvExpiryDelta) :: Nil
-    case (head :: rest, hop) => ExtraHop(hop.nodeId, hop.shortChannelId, hop.nextFee(msat + head.fee), hop.cltvExpiryDelta) :: head :: rest
+  def buildExtra(reversePath: Seq[Hop], msat: Long): Seq[ExtraHop] = reversePath.foldLeft(List.empty[ExtraHop]) {
+    case (Nil, hop) => ExtraHop(hop.nodeId, hop.shortChannelId, hop.feeBaseMsat, hop.feeProportionalMillionths, hop.cltvExpiryDelta) :: Nil
+    case (head :: rest, hop) => ExtraHop(hop.nodeId, hop.shortChannelId, hop.feeBaseMsat, hop.feeProportionalMillionths, hop.cltvExpiryDelta) :: head :: rest
   }
 }
 
@@ -39,6 +39,10 @@ trait PaymentHop {
 
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate) extends PaymentHop {
   def nextFee(msat: Long): Long = PaymentHop.nodeFee(lastUpdate.feeBaseMsat, lastUpdate.feeProportionalMillionths, msat)
+
+  def feeBaseMsat: Long = lastUpdate.feeBaseMsat
+
+  def feeProportionalMillionths: Long = lastUpdate.feeProportionalMillionths
 
   def cltvExpiryDelta: Int = lastUpdate.cltvExpiryDelta
 

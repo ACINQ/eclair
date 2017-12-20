@@ -15,7 +15,7 @@ case class ChannelCreated(channel: ActorRef, peer: ActorRef, remoteNodeId: Publi
 
 case class ChannelRestored(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, isFunder: Boolean, channelId: BinaryData, currentData: HasCommitments) extends ChannelEvent
 
-case class ChannelIdAssigned(channel: ActorRef, temporaryChannelId: BinaryData, channelId: BinaryData) extends ChannelEvent
+case class ChannelIdAssigned(channel: ActorRef, remoteNodeId: PublicKey, temporaryChannelId: BinaryData, channelId: BinaryData) extends ChannelEvent
 
 case class ShortChannelIdAssigned(channel: ActorRef, channelId: BinaryData, shortChannelId: Long) extends ChannelEvent
 

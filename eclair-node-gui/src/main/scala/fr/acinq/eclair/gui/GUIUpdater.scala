@@ -81,7 +81,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       })
       context.become(main(m + (channel -> channelPaneController)))
 
-    case ChannelIdAssigned(channel, temporaryChannelId, channelId) if m.contains(channel) =>
+    case ChannelIdAssigned(channel, _, _, channelId) if m.contains(channel) =>
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
@@ -89,7 +89,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
         }
       })
 
-    case ChannelStateChanged(channel, _, _, _, currentState, currentData) if m.contains(channel) =>
+    case ChannelStateChanged(channel, _, _, _, currentState, _) if m.contains(channel) =>
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {

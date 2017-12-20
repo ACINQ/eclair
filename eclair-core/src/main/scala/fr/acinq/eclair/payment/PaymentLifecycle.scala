@@ -11,6 +11,8 @@ import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 
+import scala.util.{Failure, Success}
+
 // @formatter:off
 case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String)
 case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
@@ -74,25 +76,28 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
-        case None =>
-          log.warning(s"cannot parse returned error ${fail.reason}")
-          s ! PaymentFailed(c.paymentHash, failures = failures :+ UnreadableRemoteFailure(hops))
-          stop(FSM.Normal)
-        case Some(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
+        case Failure(t) =>
+          log.warning(s"cannot parse returned error: ${t.getMessage}")
+          // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
+          val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
+          log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes ++ blacklist, ignoreChannels)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
+        case Success(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           s ! PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
           stop(FSM.Normal)
-        case Some(e@ErrorPacket(nodeId, failureMessage)) if failures.size + 1 >= c.maxAttempts =>
+        case Success(e@ErrorPacket(nodeId, failureMessage)) if failures.size + 1 >= c.maxAttempts =>
           log.info(s"received an error message from nodeId=$nodeId (failure=$failureMessage)")
           log.warning(s"too many failed attempts, failing the payment")
           s ! PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
           stop(FSM.Normal)
-        case Some(e@ErrorPacket(nodeId, failureMessage: Node)) =>
+        case Success(e@ErrorPacket(nodeId, failureMessage: Node)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
           router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
-        case Some(e@ErrorPacket(nodeId, failureMessage: Update)) =>
+        case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           if (Announcements.checkSig(failureMessage.update, nodeId)) {
             // note that we check the sig, but we don't make sure that this update was for the exact channel we required
@@ -119,7 +124,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
             router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
-        case Some(e@ErrorPacket(nodeId, failureMessage)) =>
+        case Success(e@ErrorPacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
           val faultyChannel = hops.find(_.nodeId == nodeId).map(_.lastUpdate.shortChannelId)
