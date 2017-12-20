@@ -12,6 +12,8 @@ import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 import scodec.bits.BitVector
 
+import scala.util.Success
+
 /**
   * Created by PM on 31/05/2016.
   */
@@ -51,25 +53,25 @@ class HtlcGenerationSpec extends FunSuite {
     assert(packet_b.serialize.size === Sphinx.PacketLength)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, packet_b.serialize)
+    val Success(ParsedPacket(bin_b, packet_c, _)) = Sphinx.parsePacket(priv_b, paymentHash, packet_b.serialize)
     val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).require.value
     assert(packet_c.serialize.size === Sphinx.PacketLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
-    val ParsedPacket(bin_c, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c.serialize)
+    val Success(ParsedPacket(bin_c, packet_d, _)) = Sphinx.parsePacket(priv_c, paymentHash, packet_c.serialize)
     val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).require.value
     assert(packet_d.serialize.size === Sphinx.PacketLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
-    val ParsedPacket(bin_d, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d.serialize)
+    val Success(ParsedPacket(bin_d, packet_e, _)) = Sphinx.parsePacket(priv_d, paymentHash, packet_d.serialize)
     val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).require.value
     assert(packet_e.serialize.size === Sphinx.PacketLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
-    val ParsedPacket(bin_e, packet_random, _) = Sphinx.parsePacket(priv_e, paymentHash, packet_e.serialize)
+    val Success(ParsedPacket(bin_e, packet_random, _)) = Sphinx.parsePacket(priv_e, paymentHash, packet_e.serialize)
     val payload_e = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_e.data)).require.value
     assert(packet_random.serialize.size === Sphinx.PacketLength)
     assert(payload_e.amtToForward === finalAmountMsat)
@@ -86,25 +88,25 @@ class HtlcGenerationSpec extends FunSuite {
     assert(add.onion.length === Sphinx.PacketLength)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, packet_c, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
+    val Success(ParsedPacket(bin_b, packet_c, _)) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
     val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).require.value
     assert(packet_c.serialize.size === Sphinx.PacketLength)
     assert(payload_b.amtToForward === amount_bc)
     assert(payload_b.outgoingCltvValue === expiry_bc)
 
-    val ParsedPacket(bin_c, packet_d, _) = Sphinx.parsePacket(priv_c, paymentHash, packet_c.serialize)
+    val Success(ParsedPacket(bin_c, packet_d, _)) = Sphinx.parsePacket(priv_c, paymentHash, packet_c.serialize)
     val payload_c = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_c.data)).require.value
     assert(packet_d.serialize.size === Sphinx.PacketLength)
     assert(payload_c.amtToForward === amount_cd)
     assert(payload_c.outgoingCltvValue === expiry_cd)
 
-    val ParsedPacket(bin_d, packet_e, _) = Sphinx.parsePacket(priv_d, paymentHash, packet_d.serialize)
+    val Success(ParsedPacket(bin_d, packet_e, _)) = Sphinx.parsePacket(priv_d, paymentHash, packet_d.serialize)
     val payload_d = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_d.data)).require.value
     assert(packet_e.serialize.size === Sphinx.PacketLength)
     assert(payload_d.amtToForward === amount_de)
     assert(payload_d.outgoingCltvValue === expiry_de)
 
-    val ParsedPacket(bin_e, packet_random, _) = Sphinx.parsePacket(priv_e, paymentHash, packet_e.serialize)
+    val Success(ParsedPacket(bin_e, packet_random, _)) = Sphinx.parsePacket(priv_e, paymentHash, packet_e.serialize)
     val payload_e = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_e.data)).require.value
     assert(packet_random.serialize.size === Sphinx.PacketLength)
     assert(payload_e.amtToForward === finalAmountMsat)
@@ -120,7 +122,7 @@ class HtlcGenerationSpec extends FunSuite {
     assert(add.onion.size === Sphinx.PacketLength)
 
     // let's peel the onion
-    val ParsedPacket(bin_b, packet_random, _) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
+    val Success(ParsedPacket(bin_b, packet_random, _)) = Sphinx.parsePacket(priv_b, paymentHash, add.onion)
     val payload_b = LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(bin_b.data)).require.value
     assert(packet_random.serialize.size === Sphinx.PacketLength)
     assert(payload_b.amtToForward === finalAmountMsat)
