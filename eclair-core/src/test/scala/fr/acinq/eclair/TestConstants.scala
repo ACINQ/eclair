@@ -26,6 +26,7 @@ object TestConstants {
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
+    // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,

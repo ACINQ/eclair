@@ -4,6 +4,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.db.{Payment, PaymentsDb}
+import grizzled.slf4j.Logging
 
 /**
   * Payments are stored in the `payments` table.
@@ -15,7 +16,7 @@ import fr.acinq.eclair.db.{Payment, PaymentsDb}
   * <li>`amount_msat`: INTEGER
   * <li>`timestamp`: INTEGER (unix timestamp)
   */
-class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb {
+class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   {
     val statement = sqlite.createStatement
@@ -27,7 +28,8 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb {
     statement.setBytes(1, payment.payment_hash)
     statement.setLong(2, payment.amount_msat)
     statement.setLong(3, payment.timestamp)
-    statement.executeUpdate()
+    val res = statement.executeUpdate()
+    logger.debug(s"inserted $res payment=${payment} in DB")
   }
 
   @throws(classOf[NoSuchElementException])
