@@ -106,6 +106,35 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(500 millis)
   }
 
+  test("fail relay an htlc-add when the channel is advertised as unusable (down)") { case (relayer, register, paymentHandler) =>
+    val sender = TestProbe()
+
+    // check that payments are sent properly
+    val (cmd, _) = buildCommand(finalAmountMsat, finalExpiry, paymentHash, hops)
+    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
+    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc)
+
+    sender.send(relayer, ForwardAdd(add_ab))
+
+    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
+    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
+    assert(fwd.message.upstream_opt === Some(add_ab))
+
+    sender.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
+
+    // now tell the relayer that the channel is own and try again
+    relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId =  channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.privateKey.publicKey)
+
+    val (cmd1, _) = buildCommand(finalAmountMsat, finalExpiry, "02" * 32, hops)
+    val add_ab1 = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd1.amountMsat, cmd1.paymentHash, cmd1.expiry, cmd1.onion)
+    sender.send(relayer, ForwardAdd(add_ab))
+    val fail = sender.expectMsgType[CMD_FAIL_HTLC]
+    assert(fail.id === add_ab1.id)
+    register.expectNoMsg(500 millis)
+    paymentHandler.expectNoMsg(500 millis)
+  }
+
   test("fail to relay an htlc-add when the requested channel is disabled") { case (relayer, register, paymentHandler) =>
     val sender = TestProbe()
 

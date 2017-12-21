@@ -17,6 +17,7 @@ import scodec.bits.{BitVector, HexStringSyntax}
   */
 @RunWith(classOf[JUnitRunner])
 class LightningMessageCodecsSpec extends FunSuite {
+  import LightningMessageCodecsSpec._
 
   def bin(size: Int, fill: Byte): BinaryData = Array.fill[Byte](size)(fill)
 
@@ -25,13 +26,6 @@ class LightningMessageCodecsSpec extends FunSuite {
   def point(fill: Byte) = Scalar(bin(32, fill)).toPoint
 
   def publicKey(fill: Byte) = PrivateKey(bin(32, fill), compressed = true).publicKey
-
-  def randomSignature: BinaryData = {
-    val priv = randomBytes(32)
-    val data = randomBytes(32)
-    val (r, s) = Crypto.sign(data, PrivateKey(priv, true))
-    Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte
-  }
 
   test("encode/decode with uint64 codec") {
     val expected = Map(
@@ -218,5 +212,14 @@ class LightningMessageCodecsSpec extends FunSuite {
       val payload2 = LightningMessageCodecs.perHopPayloadCodec.decode(bin1.toBitVector).require.value
       assert(payload2 === payload1)
     }
+  }
+}
+
+object LightningMessageCodecsSpec {
+  def randomSignature: BinaryData = {
+    val priv = randomBytes(32)
+    val data = randomBytes(32)
+    val (r, s) = Crypto.sign(data, PrivateKey(priv, true))
+    Crypto.encodeSignature(r, s) :+ fr.acinq.bitcoin.SIGHASH_ALL.toByte
   }
 }
