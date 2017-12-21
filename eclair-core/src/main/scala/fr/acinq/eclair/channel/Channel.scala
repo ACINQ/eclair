@@ -702,14 +702,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // we need to re-announce this shortChannelId
         context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
         // we re-announce the channelUpdate for the same reason
-        Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
+        Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
       } else d.channelUpdate
+      val d1 = d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate)
       val localAnnSigs_opt = if (d.commitments.announceChannel) {
         // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
-        Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
+        Some(Helpers.makeAnnouncementSignatures(nodeParams, d1.commitments, shortChannelId))
       } else None
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using store(d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate)) sending localAnnSigs_opt.toSeq
+      goto(NORMAL) using store(d1) sending localAnnSigs_opt.toSeq
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
       // channels are publicly announced if both parties want it (defined as feature bit)
