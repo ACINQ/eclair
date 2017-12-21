@@ -160,7 +160,14 @@ trait Service extends Logging {
                     case JsonRPCBody(_, _, "close", JString(identifier) :: Nil) =>
                       sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                     case JsonRPCBody(_, _, "allpayments", _) => Future.successful(nodeParams.paymentsDb.listPayments())
-                    case JsonRPCBody(_, _, "payment", JString(paymentHash) :: Nil) => Future.successful(nodeParams.paymentsDb.findByPaymentHash(paymentHash))
+                    case JsonRPCBody(_, _, "payment", JString(identifier) :: Nil) =>
+                      Future.successful(Try(PaymentRequest.read(identifier)) match {
+                        case Success(pr) => nodeParams.paymentsDb.findByPaymentHash(pr.paymentHash)
+                        case Failure(f) => Try(BinaryData(identifier)) match {
+                          case Success(payment_hash) => nodeParams.paymentsDb.findByPaymentHash(payment_hash)
+                          case Failure(_) => throw new IllegalArgumentException("payment identifier must be a Payment Request or a Payment Hash")
+                        }
+                      })
                     case JsonRPCBody(_, _, "help", _) =>
                       Future.successful(List(
                         "connect (nodeId, host, port): connect to another lightning node through a secure connection",
@@ -177,6 +184,8 @@ trait Service extends Logging {
                         "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
                         "close (channelId): close a channel",
                         "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
+                        "allpayments: list all received payments",
+                        "payment (paymentHash or paymentRequest): returns the payment if it has been received",
                         "help: display this message"))
                     case _ => Future.failed(new RuntimeException("method not found"))
                   }
