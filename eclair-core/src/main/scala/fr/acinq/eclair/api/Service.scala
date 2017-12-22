@@ -5,10 +5,12 @@ import java.net.InetSocketAddress
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model.StatusCodes.{register => _}
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers.HttpOriginRange.*
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
@@ -18,27 +20,23 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Kit
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
-import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
-import org.json4s.JsonAST.{JInt, JString}
+import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
-/**
-  * Created by PM on 25/01/2016.
-  */
-
 // @formatter:off
-case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "scala-client", method: String, params: Seq[JValue])
+case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "eclair-node", method: String, params: Seq[JValue])
 case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
-case class ChannelInfo(shortChannelId: String, nodeId1: PublicKey , nodeId2: PublicKey)
+case class ChannelInfo(shortChannelId: String, nodeId1: PublicKey, nodeId2: PublicKey)
 // @formatter:on
 
 trait Service extends Logging {
@@ -64,6 +62,7 @@ trait Service extends Logging {
 
   /**
     * Sends a request to a channel and expects a response
+    *
     * @param channelIdentifier can be a shortChannelId (8-byte hex encoded) or a channelId (32-byte hex encoded)
     * @param request
     * @return
@@ -71,12 +70,12 @@ trait Service extends Logging {
   def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
     for {
       fwdReq <- Future(Register.ForwardShortId(java.lang.Long.parseLong(channelIdentifier, 16), request))
-          .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
-          .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
+        .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
+        .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
       res <- appKit.register ? fwdReq
     } yield res
 
-  val route =
+  val route: Route =
     respondWithDefaultHeaders(customHeaders) {
       pathSingleSlash {
         post {
@@ -132,6 +131,17 @@ trait Service extends Logging {
                   sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String]
                 case JsonRPCBody(_, _, "close", JString(identifier) :: Nil) =>
                   sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String]
+                case JsonRPCBody(_, _, "checkpayment", JString(identifier) :: Nil) =>
+                  for {
+                    paymentHash <- Try(PaymentRequest.read(identifier)) match {
+                        case Success(pr) => Future.successful(pr.paymentHash)
+                        case _ => Try(BinaryData(identifier)) match {
+                          case Success(s) => Future.successful(s)
+                          case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
+                        }
+                      }
+                    found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
+                  } yield found
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
                     "connect (nodeId, host, port): connect to another lightning node through a secure connection",
@@ -148,6 +158,8 @@ trait Service extends Logging {
                     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
+                    "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
+                    "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
                     "help: display this message"))
                 case _ => Future.failed(new RuntimeException("method not found"))
               }
