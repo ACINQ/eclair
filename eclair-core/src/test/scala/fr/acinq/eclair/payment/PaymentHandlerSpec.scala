@@ -40,8 +40,11 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, add_2)
     sender.expectMsgType[CMD_FULFILL_HTLC]
     eventListener.expectMsg(PaymentReceived(amountMsat, add_2.paymentHash))
-    assert(nodeParams.paymentsDb.listPayments().size == 2)
-    assert(nodeParams.paymentsDb.findByPaymentHash(add_2.paymentHash).payment_hash == add_2.paymentHash)
+
+    val checkPayment_2 = CheckPayment(add_2.paymentHash)
+    sender.send(handler, checkPayment_2)
+    val found = sender.expectMsgType[Boolean]
+    assert(found)
   }
 
   test("Payment request generation should fail when the amount asked in not valid") {
@@ -80,6 +83,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     sender.send(handler, ReceivePayment(None, "This is a donation PR"))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount == None && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
+    assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
   }
 }

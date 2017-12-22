@@ -34,6 +34,13 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
           sender ! Status.Failure(t)
       }
 
+    case CheckPayment(paymentHash) =>
+      val found: Boolean = Try(nodeParams.paymentsDb.findByPaymentHash(paymentHash)) match {
+        case Success(s) if paymentHash == s.payment_hash => true
+        case _ => false
+      }
+      sender ! found
+
     case htlc: UpdateAddHtlc =>
       if (h2r.contains(htlc.paymentHash)) {
         val r = h2r(htlc.paymentHash)._1
