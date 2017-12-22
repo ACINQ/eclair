@@ -72,34 +72,52 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   val db = nodeParams.networkDb
 
+  // Note: We go through the whole validation process instead of directly loading into memory, because the channels
+  // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
+  // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
   {
     log.info(s"loading network announcements from db...")
-    val initChannels = db.listChannels().map(c => (c.shortChannelId -> c)).toMap
-    val initNodes = (db.listNodes() match {
-      case Nil => Nil
-      case l => l :+ Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses, Platform.currentTime / 1000)
-    }).map(n => (n.nodeId -> n)).toMap
-    val initChannelUpdates = db.listChannelUpdates().map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
-    log.info(s"starting state machine")
-    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Nil, Nil, Nil, Map.empty, Map.empty, Map.empty, Set.empty))
+    // On Android, we discard the node announcements
+    val channels = db.listChannels()
+    val updates = db.listChannelUpdates()
+    val staleChannels = getStaleChannels(channels, updates)
+    if (staleChannels.size > 0) {
+      log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
+      staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
+    }
+    val remainingChannels = channels.filterNot(c => staleChannels.contains(c.shortChannelId))
+    val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
+    val initChannels = remainingChannels.map(c => (c.shortChannelId -> c)).toMap
+    val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=N/A updates=${remainingUpdates.size}")
+    startWith(NORMAL, Data(Map.empty, initChannels, initChannelUpdates, Nil, Nil, Nil, Map.empty, Map.empty, Map.empty, Set.empty))
   }
+
+
 
   when(NORMAL) {
     case Event(TickValidate, d) =>
       require(d.awaiting.size == 0, "awaiting queue should be empty")
-      var i = 0
-      // we extract a batch of channel announcements from the stash
-      val (channelAnns: Seq[ChannelAnnouncement]@unchecked, otherAnns) = d.stash.partition {
-        case _: ChannelAnnouncement =>
-          i = i + 1
-          i <= MAX_PARALLEL_JSONRPC_REQUESTS
-        case _ => false
+      // first we partition the announcements
+      val newChannels = d.stash.collect { case c: ChannelAnnouncement => c }
+      val newNodes = d.stash.collect { case c: NodeAnnouncement => c }
+      val newUpdates = d.stash.collect { case c: ChannelUpdate => c }
+      val staleChannels = getStaleChannels(newChannels, newUpdates)
+      if (staleChannels.size > 0) {
+        log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       }
-      if (channelAnns.size > 0) {
-        log.info(s"validating a batch of ${channelAnns.size} channels")
-        watcher ! ParallelGetRequest(channelAnns)
-        goto(WAITING_FOR_VALIDATION) using d.copy(stash = otherAnns, awaiting = channelAnns)
-      } else stay
+      // we remove stale channels
+      val remainingChannels = newChannels.filterNot(c => staleChannels.contains(c.shortChannelId))
+      val remainingUpdates = newUpdates.filterNot(c => staleChannels.contains(c.shortChannelId))
+      // we verify non-stale channels that had a channel_update
+      val batch = remainingChannels.filter(c => newUpdates.exists(_.shortChannelId == c.shortChannelId)).take(MAX_PARALLEL_JSONRPC_REQUESTS)
+      // we clean up the stash (nodes will be filtered afterwards)
+      val stash1 = (remainingChannels diff batch) ++ newNodes ++ remainingUpdates
+      if (batch.size > 0) {
+        log.info(s"validating a batch of ${batch.size} channels")
+        watcher ! ParallelGetRequest(batch)
+        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash1, awaiting = batch)
+      } else stay using d.copy(stash = stash1)
   }
 
   when(WAITING_FOR_VALIDATION) {
@@ -215,33 +233,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(stash = d.stash :+ c, origins = d.origins + (c -> sender))
       }
 
-    case Event(n: NodeAnnouncement, d: Data) =>
-      if (d.nodes.containsKey(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
-        log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
-        stay
-      } else if (!Announcements.checkSig(n)) {
-        log.error(s"bad signature for announcement $n")
-        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else if (d.nodes.containsKey(n.nodeId)) {
-        log.debug(s"updated node nodeId=${n.nodeId}")
-        context.system.eventStream.publish(NodeUpdated(n))
-        db.updateNode(n)
-        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
-      } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
-        log.debug(s"added node nodeId=${n.nodeId}")
-        context.system.eventStream.publish(NodeDiscovered(n))
-        db.addNode(n)
-        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ n, origins = d.origins + (n -> sender))
-      } else if (d.awaiting.exists(c => isRelatedTo(c, n.nodeId)) || d.stash.collectFirst { case c: ChannelAnnouncement if isRelatedTo(c, n.nodeId) => c }.isDefined) {
-        log.debug(s"stashing $n")
-        stay using d.copy(stash = d.stash :+ n, origins = d.origins + (n -> sender))
-      } else {
-        log.warning(s"ignoring $n (no related channel found)")
-        // there may be a record if we have just restarted
-        db.removeNode(n.nodeId)
-        stay
-      }
+    case Event(n: NodeAnnouncement, d: Data) => stay // we just ignore node_announcements on android
 
     case Event(u: ChannelUpdate, d: Data) =>
       if (d.channels.contains(u.shortChannelId)) {
@@ -326,7 +318,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels, d.updates)
+      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
       // then we clean up the related channel updates
       val staleUpdates = d.updates.keys.filter(desc => staleChannels.contains(desc.id))
       // finally we remove nodes that aren't tied to any channels anymore
@@ -444,19 +436,25 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
-  def getStaleChannels(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
+  /**
+    * Is stale a channel that:
+    * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
+    *  AND
+    * (2) has a channel_update which is older than 2 weeks
+    *
+    * @param channels
+    * @param updates
+    * @return
+    */
+  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate]): Iterable[Long] = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    // so we consider stale a channel that:
-    // (1) is older than 2 weeks (2*7*144 = 2016 blocks)
-    //  AND
-    // (2) didn't have an update during the last 2 weeks
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
-      .filterKeys(shortChannelId => fromShortId(shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filterKeys(shortChannelId => !updates.values.exists(u => u.shortChannelId == shortChannelId && u.timestamp >= staleThresholdSeconds)) // no update in the past 2 weeks
-    staleChannels.keys
+      .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
+      .filter(c => (0L +: updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).toSeq).max  < staleThresholdSeconds) // no update in the past 2 weeks (remember: there are 2 updates per channel)
+    staleChannels.map(_.shortChannelId)
   }
 
   /**

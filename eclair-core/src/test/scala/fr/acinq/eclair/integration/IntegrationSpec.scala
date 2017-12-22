@@ -659,6 +659,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // then we make the announcements
     val announcements = channels.map(c => AnnouncementsBatchValidationSpec.makeChannelAnnouncement(c))
     announcements.foreach(ann => nodes("A").router ! ann)
+    // we need to send channel_update otherwise router won't validate the channels
+    val updates = channels.zip(announcements).map(x => AnnouncementsBatchValidationSpec.makeChannelUpdate(x._1, x._2.shortChannelId))
+    updates.foreach(update => nodes("A").router ! update)
     awaitCond({
       sender.send(nodes("D").router, 'channels)
       sender.expectMsgType[Iterable[ChannelAnnouncement]](5 seconds).size == channels.size + 5 // 5 remaining channels because  D->F{1-F4} have disappeared
