@@ -33,16 +33,16 @@ class FxApp extends Application with Logging {
   }
 
   def onError(t: Throwable): Unit = t match {
-    case TCPBindException(port) =>
-      notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", null))
-    case BitcoinRPCConnectionException =>
-      notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", null))
+    case e@TCPBindException(port) =>
+      notifyPreloader(new ErrorNotification("Setup", s"Could not bind to port $port", e))
+    case e@BitcoinRPCConnectionException =>
+      notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using JSON-RPC.", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and RPC parameters are correct."))
-    case BitcoinZMQConnectionTimeoutException =>
-      notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", null))
+    case e@BitcoinZMQConnectionTimeoutException =>
+      notifyPreloader(new ErrorNotification("Setup", "Could not connect to Bitcoin Core using ZMQ.", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Make sure that Bitcoin Core is up and running and ZMQ parameters are correct."))
-    case IncompatibleDBException =>
-      notifyPreloader(new ErrorNotification("Setup", "Breaking changes!", null))
+    case e@IncompatibleDBException =>
+      notifyPreloader(new ErrorNotification("Setup", "Breaking changes!", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Eclair is still in alpha, and under heavy development. Last update was not backward compatible."))
       notifyPreloader(new AppNotification(InfoAppNotification, "Please reset your datadir."))
     case t: Throwable =>

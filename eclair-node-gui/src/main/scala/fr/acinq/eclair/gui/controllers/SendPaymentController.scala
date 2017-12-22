@@ -8,7 +8,6 @@ import javafx.scene.input.KeyCode.{ENTER, TAB}
 import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
 
-import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
@@ -47,32 +46,52 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
       }
     })
     paymentRequest.textProperty.addListener(new ChangeListener[String] {
-      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String) = {
-        clearErrors()
-        Try(PaymentRequest.read(paymentRequest.getText)) match {
-          case Success(pr) =>
-            pr.amount.foreach(amount => amountField.setText(amount.amount.toString))
-            pr.description match {
-              case Left(s) => descriptionField.setText(s)
-              case Right(hash) =>
-                descriptionLabel.setText("Description's Hash")
-                descriptionField.setText(hash.toString())
-            }
-            nodeIdField.setText(pr.nodeId.toString)
-            paymentHashField.setText(pr.paymentHash.toString)
+      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+        readPaymentRequest() match {
+          case Success(pr) => setUIFields(pr)
           case Failure(f) =>
             paymentRequestError.setText("Could not read this payment request")
+            descriptionLabel.setText("")
+            nodeIdField.setText("")
+            paymentHashField.setText("")
         }
       }
     })
   }
 
-  @FXML def handleSend(event: ActionEvent) = {
-    (Try(amountField.getText().toLong), Try(PaymentRequest.read(paymentRequest.getText))) match {
+  /**
+    * Tries to read the payment request string in the payment request input field
+    *
+    * @return a Try containing the payment request object, if successfully parsed
+    */
+  private def readPaymentRequest(): Try[PaymentRequest] = {
+    clearErrors()
+    val prString: String = paymentRequest.getText.trim match {
+      case s if s.startsWith("lightning://") => s.replaceAll("lightning://", "")
+      case s if s.startsWith("lightning:") => s.replaceAll("lightning:", "")
+      case s => s
+    }
+    Try(PaymentRequest.read(prString))
+  }
+
+  private def setUIFields(pr: PaymentRequest) = {
+    pr.amount.foreach(amount => amountField.setText(amount.amount.toString))
+    pr.description match {
+      case Left(s) => descriptionField.setText(s)
+      case Right(hash) =>
+        descriptionLabel.setText("Description's Hash")
+        descriptionField.setText(hash.toString())
+    }
+    nodeIdField.setText(pr.nodeId.toString)
+    paymentHashField.setText(pr.paymentHash.toString)
+  }
+
+  @FXML def handleSend(event: ActionEvent): Unit = {
+    (Try(amountField.getText().toLong), readPaymentRequest()) match {
       case (Success(amountMsat), Success(pr)) =>
         // we always override the payment request amount with the one from the UI
         Try(handlers.send(Some(amountMsat), pr)) match {
-          case Success(_) => stage.close
+          case Success(_) => stage.close()
           case Failure(f) => paymentRequestError.setText(s"Invalid Payment Request: ${f.getMessage}")
         }
       case (_, Success(_)) => amountFieldError.setText("Invalid amount")
@@ -80,8 +99,8 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
     }
   }
 
-  @FXML def handleClose(event: ActionEvent) = {
-    stage.close
+  @FXML def handleClose(event: ActionEvent): Unit = {
+    stage.close()
   }
 
   private def clearErrors(): Unit = {
