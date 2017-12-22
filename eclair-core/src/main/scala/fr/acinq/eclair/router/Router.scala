@@ -93,8 +93,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     startWith(NORMAL, Data(Map.empty, initChannels, initChannelUpdates, Nil, Nil, Nil, Map.empty, Map.empty, Map.empty, Set.empty))
   }
 
-
-
   when(NORMAL) {
     case Event(TickValidate, d) =>
       require(d.awaiting.size == 0, "awaiting queue should be empty")

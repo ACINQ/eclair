@@ -122,13 +122,14 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       val sender = TestProbe()
 
       awaitCond({
-        sender.send(router, 'nodes)
-        val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
+        //sender.send(router, 'nodes)
+        //val nodes = sender.expectMsgType[Iterable[NodeAnnouncement]]
         sender.send(router, 'channels)
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, 'updates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-        nodes.size === 6 && channels.size === 4 && updates.size === 8
+        //nodes.size === 6 &&
+        channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
       test((router, watcher))
