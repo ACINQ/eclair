@@ -8,7 +8,8 @@ import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.payment.{Hop, PaymentLifecycle}
+import fr.acinq.eclair.payment.PaymentLifecycle
+import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, TestConstants}
 

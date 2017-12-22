@@ -68,14 +68,15 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
   }
 
   @FXML def handleSend(event: ActionEvent) = {
-    (Try(MilliSatoshi(amountField.getText().toLong)), Try(PaymentRequest.read(paymentRequest.getText))) match {
+    (Try(amountField.getText().toLong), Try(PaymentRequest.read(paymentRequest.getText))) match {
       case (Success(amountMsat), Success(pr)) =>
-        Try(handlers.send(pr.nodeId, pr.paymentHash, amountMsat.amount, pr.minFinalCltvExpiry)) match {
-          case Success(s) => stage.close
+        // we always override the payment request amount with the one from the UI
+        Try(handlers.send(Some(amountMsat), pr)) match {
+          case Success(_) => stage.close
           case Failure(f) => paymentRequestError.setText(s"Invalid Payment Request: ${f.getMessage}")
         }
       case (_, Success(_)) => amountFieldError.setText("Invalid amount")
-      case (_, Failure(f)) => paymentRequestError.setText("Could not read this payment request")
+      case (_, Failure(_)) => paymentRequestError.setText("Could not read this payment request")
     }
   }
 

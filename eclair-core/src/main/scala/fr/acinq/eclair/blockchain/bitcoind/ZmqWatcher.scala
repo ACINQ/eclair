@@ -38,7 +38,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], nextTick: Option[Cancellable]): Receive = {
 
     case NewTransaction(tx) =>
-      //log.debug(s"analyzing txid=${tx.txid} tx=${Transaction.write(tx)}")
+      //log.debug(s"analyzing txid=${tx.txid} tx=$tx")
       watches.collect {
         case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpentBasic(event))
@@ -105,7 +105,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn(0).outPoint.txid
-        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=${Transaction.write(tx)}")
+        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
         self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {
@@ -187,14 +187,14 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
 
   def publish(tx: Transaction, isRetry: Boolean = false): Unit = {
-    log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx=${Transaction.write(tx)}")
+    log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx=$tx")
     client.publishTransaction(tx)(singleThreadExecutionContext).recover {
       case t: Throwable if t.getMessage.contains("-25") && !isRetry => // we retry only once
         import akka.pattern.after
 
         import scala.concurrent.duration._
         after(3 seconds, context.system.scheduler)(Future.successful({})).map(x => publish(tx, isRetry = true))
-      case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=${BinaryData(Transaction.write(tx))}")
+      case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
     }
   }
 

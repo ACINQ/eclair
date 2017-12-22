@@ -4,13 +4,14 @@ import java.io.StringWriter
 
 import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer
-import fr.acinq.eclair.payment.Hop
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
@@ -26,7 +27,8 @@ import scala.util.{Random, Success, Try}
 // @formatter:off
 
 case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
-case class RouteRequest(source: PublicKey, target: PublicKey, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
+case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
+case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
@@ -371,8 +373,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       graph2dot(d.nodes, d.channels) pipeTo sender
       stay
 
-    case Event(RouteRequest(start, end, ignoreNodes, ignoreChannels), d) =>
-      // we start with unannounced channel_updates
+    case Event(RouteRequest(start, end, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
+      // we convert extra routing info provided in the payment request to fake channel_update
+      // it has precedence over all other channel_updates we know
+      val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end))
+      // we add them to  unannounced channel_updates
       val updates0 = d.privateUpdates
       // we add them to the publicly-announced updates (order matters!! local channel_updates will override channel_updates received by the network)
       val updates1 = d.updates ++ updates0
@@ -398,6 +403,19 @@ object Router {
   val MAX_PARALLEL_JSONRPC_REQUESTS = 50
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
+
+  def toFakeUpdate(extraHop: ExtraHop): ChannelUpdate =
+  // the `direction` bit in flags will not be accurate but it doesn't matter because it is not used
+  // what matters is that the `disable` bit is 0 so that this update doesn't get filtered out
+    ChannelUpdate(signature = "", chainHash = "", extraHop.shortChannelId, Platform.currentTime / 1000, flags = BinaryData("0000"), extraHop.cltvExpiryDelta, htlcMinimumMsat = 0L, extraHop.feeBaseMsat, extraHop.feeProportionalMillionths)
+
+  def toFakeUpdates(extraRoute: Seq[ExtraHop], targetNodeId: PublicKey): Map[ChannelDesc, ChannelUpdate] = {
+    // BOLT 11: "For each entry, the pubkey is the node ID of the start of the channel", and the last node is the destination
+    val nextNodeIds = extraRoute.map(_.nodeId).drop(1) :+ targetNodeId
+    extraRoute.zip(nextNodeIds).map {
+      case (extraHop: ExtraHop, nextNodeId) => (ChannelDesc(extraHop.shortChannelId, extraHop.nodeId, nextNodeId) -> toFakeUpdate(extraHop))
+    }.toMap
+  }
 
   /**
     * Helper method to build a ChannelDesc, *nodeX and nodeY are provided in no particular order* and will be sorted

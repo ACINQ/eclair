@@ -78,9 +78,9 @@ java -jar eclair-node-<version>-<commit_id>.jar
 
 #### Configuration file
 
-Eclair reads its configuration file, and write its logs, to a `datadir` directory, located in `~/.eclair` by default.
+Eclair reads its configuration file, and write its logs, to `~/.eclair` by default.
 
-To change your node's configuration, create a file named `eclair.conf` in `datadir`. Here's an example configuration file:
+To change your node's configuration, create a file named `eclair.conf` in `~/.eclair`. Here's an example configuration file:
 
 ```
 eclair.server.port=9735
@@ -106,7 +106,7 @@ Quotes are not required unless the value contains special characters. Full synta
 
 Some advanced parameters can be changed with java environment variables. Most users won't need this and can skip this section.
 
-:warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in eclair.conf (see above).
+:warning: Using separate `datadir` is mandatory if you want to run **several instances of eclair** on the same machine. You will also have to change ports in `eclair.conf` (see above).
 
 name                  | description                                | default value
 ----------------------|--------------------------------------------|--------------

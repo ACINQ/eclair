@@ -40,7 +40,7 @@ class BitcoinjWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Exe
   def watching(watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]], oldEvents: Seq[NewConfidenceLevel], sent: Seq[TriggerEvent]): Receive = {
 
     case event@NewConfidenceLevel(tx, blockHeight, confirmations) =>
-      log.debug(s"analyzing txid=${tx.txid} confirmations=$confirmations tx=${Transaction.write(tx)}")
+      log.debug(s"analyzing txid=${tx.txid} confirmations=$confirmations tx=$tx")
       watches.collect {
         case w@WatchSpentBasic(_, txid, outputIndex, _, event) if tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex) =>
           self ! TriggerEvent(w, WatchEventSpentBasic(event))
@@ -85,7 +85,7 @@ class BitcoinjWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Exe
       if (csvTimeout > 0) {
         require(tx.txIn.size == 1, s"watcher only supports tx with 1 input, this tx has ${tx.txIn.size} inputs")
         val parentTxid = tx.txIn(0).outPoint.txid
-        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=${Transaction.write(tx)}")
+        log.info(s"txid=${tx.txid} has a relative timeout of $csvTimeout blocks, watching parenttxid=$parentTxid tx=$tx")
         val parentPublicKey = fr.acinq.bitcoin.Script.write(fr.acinq.bitcoin.Script.pay2wsh(tx.txIn.head.witness.stack.last))
         self ! WatchConfirmed(self, parentTxid, parentPublicKey, minDepth = 1, BITCOIN_PARENT_TX_CONFIRMED(tx))
       } else if (cltvTimeout > blockCount) {

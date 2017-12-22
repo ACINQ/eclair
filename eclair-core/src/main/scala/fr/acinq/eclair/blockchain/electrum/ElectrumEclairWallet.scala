@@ -57,7 +57,7 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
       .flatMap {
         case CompleteTransactionResponse(tx, None) => commit(tx).map {
           case true => tx.txid.toString()
-          case false => throw new RuntimeException(s"could not commit tx=${Transaction.write(tx)}")
+          case false => throw new RuntimeException(s"could not commit tx=$tx")
         }
         case CompleteTransactionResponse(_, Some(error)) => throw error
       }
