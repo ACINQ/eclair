@@ -1090,11 +1090,23 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val revokedCommitDone = revokedCommitPublished1.map(Closing.isRevokedCommitDone(_)).exists(_ == true) // we only need one revoked commit done
     // finally, if one of the unilateral closes is done, we move to CLOSED state, otherwise we stay (note that we don't store the state)
     val d1 = d.copy(localCommitPublished = localCommitPublished1, remoteCommitPublished = remoteCommitPublished1, nextRemoteCommitPublished = nextRemoteCommitPublished1, revokedCommitPublished = revokedCommitPublished1)
-      if (mutualCloseDone || localCommitDone || remoteCommitDone || nextRemoteCommitDone || revokedCommitDone) {
-        log.info(s"channel closed (mutualClose=$mutualCloseDone localCommit=$localCommitDone remoteCommit=$remoteCommitDone nextRemoteCommit=$nextRemoteCommitDone revokedCommit=$revokedCommitDone)")
-        goto(CLOSED) using d1
+      val closeType_opt = if (mutualCloseDone) {
+        Some("mutual")
+      } else if (localCommitDone) {
+        Some("local")
+      } else if (remoteCommitDone || nextRemoteCommitDone) {
+        Some("remote")
+      } else if (revokedCommitDone) {
+        Some("revoked")
       } else {
-        stay using d1
+        None
+      }
+      closeType_opt match {
+        case Some(closeType) =>
+          log.info(s"channel closed type=$closeType")
+          goto(CLOSED) using d1
+        case None =>
+          stay using d1
       }
 
     case Event(_: ChannelReestablish, d: DATA_CLOSING) =>
