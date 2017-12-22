@@ -73,6 +73,14 @@ object Transactions {
 
   def weight2fee(feeratePerKw: Long, weight: Int) = Satoshi((feeratePerKw * weight) / 1000)
 
+  /**
+    *
+    * @param fee tx fee
+    * @param weight tx weight
+    * @return the fee rate (in Satoshi/Kw) for this tx
+    */
+  def fee2rate(fee: Satoshi, weight: Int) = (fee.amount * 1000L) / weight
+
   def trimOfferedHtlcs(dustLimit: Satoshi, spec: CommitmentSpec): Seq[DirectedHtlc] = {
     val htlcTimeoutFee = weight2fee(spec.feeratePerKw, htlcTimeoutWeight)
     spec.htlcs
