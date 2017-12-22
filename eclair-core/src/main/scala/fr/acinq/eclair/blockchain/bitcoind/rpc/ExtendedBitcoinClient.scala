@@ -37,22 +37,17 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
         case t: JsonRPCError if t.error.code == -5 => None
       }
 
-  def getBlockHashesSinceBlockHash(blockHash: String, previous: Seq[String] = Nil)(implicit ec: ExecutionContext): Future[Seq[String]] =
+  def lookForSpendingTx(blockhash_opt: Option[String], txid: String, outputIndex: Int)(implicit ec: ExecutionContext): Future[Transaction] =
     for {
-      nextblockhash_opt <- rpcClient.invoke("getblock", blockHash).map(json => ((json \ "nextblockhash").extractOpt[String]))
-      res <- nextblockhash_opt match {
-        case Some(nextBlockHash) => getBlockHashesSinceBlockHash(nextBlockHash, previous :+ nextBlockHash)
-        case None => Future.successful(previous)
+      blockhash <- blockhash_opt match {
+        case Some(b) => Future.successful(b)
+        case None => rpcClient.invoke("getbestblockhash") collect { case JString(b) => b }
       }
-    } yield res
-
-  def getTxsSinceBlockHash(blockHash: String, previous: Seq[Transaction] = Nil)(implicit ec: ExecutionContext): Future[Seq[Transaction]] =
-    for {
-      (nextblockhash_opt, txids) <- rpcClient.invoke("getblock", blockHash).map(json => ((json \ "nextblockhash").extractOpt[String], (json \ "tx").extract[List[String]]))
-      next <- Future.sequence(txids.map(getTransaction(_)))
-      res <- nextblockhash_opt match {
-        case Some(nextBlockHash) => getTxsSinceBlockHash(nextBlockHash, previous ++ next)
-        case None => Future.successful(previous ++ next)
+      (prevblockhash, txids) <- rpcClient.invoke("getblock", blockhash).map(json => ((json \ "previousblockhash").extract[String], (json \ "tx").extract[List[String]]))
+      txes <- Future.sequence(txids.map(getTransaction(_)))
+      res <- txes.find(tx => tx.txIn.exists(i => i.outPoint.txid.toString() == txid && i.outPoint.index == outputIndex)) match {
+        case None => lookForSpendingTx(Some(prevblockhash), txid, outputIndex)
+        case Some(tx) => Future.successful(tx)
       }
     } yield res
 

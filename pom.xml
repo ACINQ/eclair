@@ -49,7 +49,7 @@
         <scala.version>2.11.11</scala.version>
         <scala.version.short>2.11</scala.version.short>
         <akka.version>2.3.14</akka.version>
-        <bitcoinlib.version>0.9.13</bitcoinlib.version>
+        <bitcoinlib.version>0.9.14</bitcoinlib.version>
         <bitcoinj.version>0.15-rc4</bitcoinj.version>
     </properties>
 
@@ -105,6 +105,7 @@
                         <arg>-language:postfixOps</arg>
                         <arg>-language:implicitConversions</arg>
                         <arg>-Xfatal-warnings</arg>
+                        <arg>-unchecked</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>

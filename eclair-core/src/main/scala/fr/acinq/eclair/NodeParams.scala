@@ -13,7 +13,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.db._
-import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqliteNetworkDb, SqlitePeersDb, SqlitePreimagesDb}
+import fr.acinq.eclair.db.sqlite._
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -44,6 +44,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
                       preimagesDb: PreimagesDb,
+                      paymentsDb: PaymentsDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
                       pingInterval: FiniteDuration,
@@ -107,6 +108,7 @@ object NodeParams {
     val peersDb = new SqlitePeersDb(sqlite)
     val networkDb = new SqliteNetworkDb(sqlite)
     val preimagesDb = new SqlitePreimagesDb(sqlite)
+    val paymentsDb = new SqlitePaymentsDb(sqlite)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -149,6 +151,7 @@ object NodeParams {
       peersDb = peersDb,
       networkDb = networkDb,
       preimagesDb = preimagesDb,
+      paymentsDb = paymentsDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       pingInterval = FiniteDuration(config.getDuration("ping-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),

@@ -6,6 +6,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Error
@@ -129,6 +130,20 @@ class RouterSpec extends BaseRouterSpec {
     val res = sender.expectMsgType[RouteResponse]
     assert(res.hops.map(_.nodeId).toList === a :: b :: c :: Nil)
     assert(res.hops.last.nextNodeId === d)
+  }
+
+  test("route found (with extra routing info)") { case (router, _) =>
+    val sender = TestProbe()
+    val x = randomKey.publicKey
+    val y = randomKey.publicKey
+    val z = randomKey.publicKey
+    val extraHop_cx = ExtraHop(c, 1, 10, 11, 12)
+    val extraHop_xy = ExtraHop(x, 1, 10, 11, 12)
+    val extraHop_yz = ExtraHop(y, 2, 20, 21, 22)
+    sender.send(router, RouteRequest(a, z, assistedRoutes = Seq(extraHop_cx :: extraHop_xy :: extraHop_yz :: Nil)))
+    val res = sender.expectMsgType[RouteResponse]
+    assert(res.hops.map(_.nodeId).toList === a :: b :: c :: x :: y :: Nil)
+    assert(res.hops.last.nextNodeId === z)
   }
 
   test("route not found (channel disabled)") { case (router, _) =>

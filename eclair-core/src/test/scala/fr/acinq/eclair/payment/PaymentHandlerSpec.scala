@@ -17,8 +17,9 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
-  test("LocalPaymentHandler should send an event when receiving a payment") {
-    val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+  test("LocalPaymentHandler should send PaymentReceived and adds payment in DB") {
+    val nodeParams = Alice.nodeParams
+    val handler = system.actorOf(LocalPaymentHandler.props(nodeParams))
     val sender = TestProbe()
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
@@ -31,10 +32,24 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     sender.send(handler, add)
     sender.expectMsgType[CMD_FULFILL_HTLC]
     eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+
+    sender.send(handler, ReceivePayment(Some(amountMsat), "another coffee"))
+    val pr_2 = sender.expectMsgType[PaymentRequest]
+
+    val add_2 = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr_2.paymentHash, 0, "")
+    sender.send(handler, add_2)
+    sender.expectMsgType[CMD_FULFILL_HTLC]
+    eventListener.expectMsg(PaymentReceived(amountMsat, add_2.paymentHash))
+
+    val checkPayment_2 = CheckPayment(add_2.paymentHash)
+    sender.send(handler, checkPayment_2)
+    val found = sender.expectMsgType[Boolean]
+    assert(found)
   }
 
   test("Payment request generation should fail when the amount asked in not valid") {
-    val handler = system.actorOf(LocalPaymentHandler.props(Alice.nodeParams))
+    val nodeParams = Alice.nodeParams
+    val handler = system.actorOf(LocalPaymentHandler.props(nodeParams))
     val sender = TestProbe()
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
@@ -57,7 +72,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     // success with 1 mBTC
     sender.send(handler, ReceivePayment(Some(MilliSatoshi(100000000L)), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount == Some(MilliSatoshi(100000000L)) && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
+    assert(pr.amount.contains(MilliSatoshi(100000000L)) && pr.nodeId.toString == nodeParams.privateKey.publicKey.toString)
   }
 
   test("Payment request generation should succeed when the amount is not set") {
@@ -68,6 +83,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     sender.send(handler, ReceivePayment(None, "This is a donation PR"))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount == None && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
+    assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
   }
 }

@@ -30,8 +30,8 @@ case class TemporaryChannelId(id: BinaryData) extends ChannelId
 case class FinalChannelId(id: BinaryData) extends ChannelId
 
 sealed trait Data
-case class DisconnectedData(offlineChannels: Set[OfflineChannel], attempts: Int = 0) extends Data
-case class InitializingData(transport: ActorRef, offlineChannels: Set[OfflineChannel]) extends Data
+case class DisconnectedData(offlineChannels: Seq[OfflineChannel], attempts: Int = 0) extends Data
+case class InitializingData(transport: ActorRef, offlineChannels: Seq[OfflineChannel]) extends Data
 case class ConnectedData(transport: ActorRef, remoteInit: Init, channels: Map[ChannelId, ActorRef]) extends Data
 
 sealed trait State
@@ -54,12 +54,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     val channel = spawnChannel(nodeParams, context.system.deadLetters)
     channel ! INPUT_RESTORED(state)
     HotChannel(FinalChannelId(state.channelId), channel)
-  }, attempts = 0))
+  }.toSeq, attempts = 0))
   setTimer(RECONNECT_TIMER, Reconnect, 1 second, repeat = false)
 
   when(DISCONNECTED) {
     case Event(c: NewChannel, d@DisconnectedData(offlineChannels, _)) =>
-      stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
+      stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
     case Event(Reconnect, d@DisconnectedData(_, attempts)) =>
       address_opt match {
@@ -84,14 +84,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(Terminated(actor), d@DisconnectedData(offlineChannels, _)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size >= 0 =>
       val h = offlineChannels.collect { case h: HotChannel if h.a == actor => h }
       log.info(s"channel closed: channelId=${h.map(_.channelId).mkString("/")}")
-      stay using d.copy(offlineChannels = offlineChannels -- h)
+      stay using d.copy(offlineChannels = offlineChannels diff h)
 
     case Event(_: Rebroadcast | "connected", _) => stay // ignored
   }
 
   when(INITIALIZING) {
     case Event(c: NewChannel, d@InitializingData(_, offlineChannels)) =>
-      stay using d.copy(offlineChannels = offlineChannels + BrandNewChannel(c))
+      stay using d.copy(offlineChannels = offlineChannels :+ BrandNewChannel(c))
 
     case Event(remoteInit: Init, InitializingData(transport, offlineChannels)) =>
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
@@ -122,7 +122,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(Terminated(actor), d@InitializingData(_, offlineChannels)) if offlineChannels.collect { case h: HotChannel if h.a == actor => h }.size > 0 =>
       val h = offlineChannels.collect { case h: HotChannel if h.a == actor => h }
       log.info(s"channel closed: channelId=${h.map(_.channelId).mkString("/")}")
-      stay using d.copy(offlineChannels = offlineChannels -- h)
+      stay using d.copy(offlineChannels = offlineChannels diff h)
   }
 
   when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
@@ -217,7 +217,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
     case Event(Terminated(actor), ConnectedData(transport, _, channels)) if actor == transport =>
       log.warning(s"lost connection to $remoteNodeId")
       channels.values.foreach(_ ! INPUT_DISCONNECTED)
-      val c: Set[OfflineChannel] = channels.map(c => HotChannel(c._1, c._2)).toSet
+      val c = channels.map(c => HotChannel(c._1, c._2)).toSeq
       goto(DISCONNECTED) using DisconnectedData(c)
 
     case Event(Terminated(actor), d@ConnectedData(transport, _, channels)) if channels.values.toSet.contains(actor) =>
@@ -235,7 +235,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, address_opt: Option[
       context unwatch oldTransport
       oldTransport ! PoisonPill
       channels.values.foreach(_ ! INPUT_DISCONNECTED)
-      val c: Set[OfflineChannel] = channels.map(c => HotChannel(c._1, c._2)).toSet
+      val c = channels.map(c => HotChannel(c._1, c._2)).toSeq
       self ! h
       goto(DISCONNECTED) using DisconnectedData(c)
   }
