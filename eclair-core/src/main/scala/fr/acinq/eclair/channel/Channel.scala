@@ -710,7 +710,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
       } else None
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using store(d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate)) sending localAnnSigs_opt.toSeq
+      goto(NORMAL) using manualTransition(d, store(d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate))) sending localAnnSigs_opt.toSeq
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
       // channels are publicly announced if both parties want it (defined as feature bit)
@@ -725,7 +725,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             import d.commitments.{localParams, remoteParams}
             val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
             // we use GOTO instead of stay because we want to fire transitions
-            goto(NORMAL) using store(d.copy(channelAnnouncement = Some(channelAnn)))
+            goto(NORMAL) using manualTransition(d, store(d.copy(channelAnnouncement = Some(channelAnn))))
           case Some(_) =>
             // they have sent their announcement sigs, but we already have a valid channel announcement
             // this can happen if our announcement_signatures was lost during a disconnection
@@ -1291,6 +1291,38 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event("ok", _) => stay
   }
 
+  /**
+    * This is needed because of a bug in akka where onTransition event are not fired for same-state transition
+    */
+  def manualTransition(stateData: Data, nextStateData: Data): Data = {
+    // if channel is private, we send the channel_update directly to remote
+    // they need it "to learn the other end's forwarding parameters" (BOLT 7)
+    (stateData, nextStateData) match {
+      case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
+        // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
+        forwarder ! d2.channelUpdate
+      case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
+        // otherwise, we only send it when it is different, and tx is already buried
+        forwarder ! d2.channelUpdate
+      case _ => ()
+    }
+
+    (stateData, nextStateData) match {
+      case (d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
+        // don't do anything if neither the channel_update nor the channel_announcement didn't change
+        ()
+      case (_, normal: DATA_NORMAL) =>
+        // whenever we go to a state with NORMAL data (can be OFFLINE or NORMAL), we send out the new channel_update (most of the time it will just be to enable/disable the channel)
+        context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate))
+      case (normal: DATA_NORMAL, _) =>
+        // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to got to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
+        // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
+        context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
+      case _ => ()
+    }
+    nextStateData
+  }
+
   onTransition {
     case WAIT_FOR_INIT_INTERNAL -> WAIT_FOR_INIT_INTERNAL => () // called at channel initialization
     case state -> nextState =>
@@ -1302,31 +1334,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
       }
 
-      // if channel is private, we send the channel_update directly to remote
-      // they need it "to learn the other end's forwarding parameters" (BOLT 7)
-      (stateData, nextStateData) match {
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
-          // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
-          forwarder ! d2.channelUpdate
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
-          // otherwise, we only send it when it is different, and tx is already buried
-          forwarder ! d2.channelUpdate
-        case _ => ()
-      }
-
-      (stateData, nextStateData) match {
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
-          // don't do anything if neither the channel_update nor the channel_announcement didn't change
-          ()
-        case (_, normal: DATA_NORMAL) =>
-          // whenever we go to a state with NORMAL data (can be OFFLINE or NORMAL), we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate))
-        case (normal: DATA_NORMAL, _) =>
-          // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to got to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore
-          // if the channel is private we don't really need to tell the counterparty because it is already aware that the channel is being closed
-          context.system.eventStream.publish(LocalChannelDown(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId))
-        case _ => ()
-      }
+      manualTransition(stateData, nextStateData)
   }
 
   /*
