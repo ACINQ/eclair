@@ -29,9 +29,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-      relayer.expectMsgType[ChannelUpdate]
-      relayer.expectMsgType[ChannelUpdate]
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
       val sender = TestProbe()
       // alice sends an HTLC to bob
       val r1: BinaryData = "11" * 32
@@ -92,7 +90,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv CMD_FULFILL_HTLC") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("recv CMD_FULFILL_HTLC") { case (_, bob, _, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = bob.stateData.asInstanceOf[DATA_SHUTDOWN]
