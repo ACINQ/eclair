@@ -124,8 +124,8 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
  method       |  params                                       | description
  -------------|-----------------------------------------------|-----------------------------------------------------------
   getinfo     |                                               | return basic node information (id, chain hash, current block height) 
-  connect     | nodeId, host, port                            | connect to another lightning node through a secure connection
-  open        | nodeId, host, port, fundingSatoshis, pushMsat | opens a channel with another lightning node
+  connect     | uri                                           | open a secure connection to a lightning node
+  open        | nodeId, fundingSatoshis, pushMsat             | open a channel with another lightning node
   peers       |                                               | list existing local peers
   channels    |                                               | list existing local channels
   channel     | channelId                                     | retrieve detailed information about a given channel

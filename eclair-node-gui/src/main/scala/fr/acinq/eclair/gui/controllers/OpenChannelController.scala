@@ -11,7 +11,7 @@ import javafx.stage.Stage
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.utils.{CoinUtils, GUIValidators}
-import fr.acinq.eclair.io.Switchboard.NewChannel
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -48,8 +48,9 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML def handleOpen(event: ActionEvent) = {
     clearErrors()
     if (GUIValidators.validate(host.getText, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)) {
+      val nodeUri = NodeURI.parse(host.getText)
       if (simpleConnection.isSelected) {
-        handlers.open(host.getText, None)
+        handlers.open(nodeUri, None)
         stage.close
       } else {
         import fr.acinq.bitcoin._
@@ -63,7 +64,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
               case Success(capacitySat) =>
                 pushMsatField.getText match {
                   case "" =>
-                    handlers.open(host.getText, Some(NewChannel(capacitySat, MilliSatoshi(0), None)))
+                    handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, MilliSatoshi(0), None)))
                     stage close()
                   case GUIValidators.amountRegex(_*) =>
                     Try(MilliSatoshi(pushMsatField.getText.toLong)) match {
@@ -71,7 +72,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
                         pushMsatError.setText("Push must be less or equal to capacity")
                       case Success(pushMsat) =>
                         val channelFlags = if (publicChannel.isSelected) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
-                        handlers.open(host.getText, Some(NewChannel(capacitySat, pushMsat, Some(channelFlags))))
+                        handlers.open(nodeUri, Some(Peer.OpenChannel(nodeUri.nodeId, capacitySat, pushMsat, Some(channelFlags))))
                         stage close()
                       case Failure(t) =>
                         logger.error("Could not parse push amount", t)

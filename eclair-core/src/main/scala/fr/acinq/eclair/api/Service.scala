@@ -1,7 +1,5 @@
 package fr.acinq.eclair.api
 
-import java.net.InetSocketAddress
-
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
@@ -17,7 +15,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Kit
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
@@ -86,16 +85,19 @@ trait Service extends Logging {
               import kit._
               val f_res: Future[AnyRef] = req match {
                 case JsonRPCBody(_, _, "getinfo", _) => getInfoResponse
-                case JsonRPCBody(_, _, "connect", JString(nodeId) :: JString(host) :: JInt(port) :: Nil) =>
-                  (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), None)).mapTo[String]
-                case JsonRPCBody(_, _, "open", JString(nodeId) :: JString(host) :: JInt(port) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: options) =>
+                case JsonRPCBody(_, _, "connect", JString(uri) :: Nil) =>
+                  (switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String]
+                case JsonRPCBody(_, _, "open", JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: options) =>
                   val channelFlags = options match {
                     case JInt(value) :: Nil => Some(value.toByte)
                     case _ => None // TODO: too lax?
                   }
-                  (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags)))).mapTo[String]
+                  (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags)).mapTo[String]
                 case JsonRPCBody(_, _, "peers", _) =>
-                  (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin))
+                  for {
+                    peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
+                    peerinfos <- Future.sequence(peers.values.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
+                  } yield peerinfos
                 case JsonRPCBody(_, _, "channels", _) =>
                   (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys)
                 case JsonRPCBody(_, _, "channelsto", JString(remoteNodeId) :: Nil) =>
@@ -134,8 +136,8 @@ trait Service extends Logging {
                   sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String]
                 case JsonRPCBody(_, _, "help", _) =>
                   Future.successful(List(
-                    "connect (nodeId, host, port): connect to another lightning node through a secure connection",
-                    "open (nodeId, host, port, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
+                    "connect (uri): open a secure connection to a lightning node",
+                    "open (nodeId, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
                     "peers: list existing local peers",
                     "channels: list existing local channels",
                     "channelsto (nodeId): list existing local channels to a particular nodeId",

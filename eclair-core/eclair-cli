@@ -24,8 +24,11 @@ case $1 in
 "channel")
         eval curl "$CURL_OPTS -d '{ \"method\": \"channel\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL" | jq ".result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount }"
         ;;
+"connect")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"open\", \"params\" : [\"${2?"missing uri"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
+        ;;
 "open")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"open\", \"params\" : [\"${2?"missing node id"}\", \"${3?"missing ip"}\", ${4?"missing port"}, ${5?"missing amount (sat)"}, ${6?"missing push amount (msat)"}] }' $URL" | jq -r "if .error == null then .result else .error.message end"
+        eval curl "$CURL_OPTS -d '{ \"method\": \"open\", \"params\" : [\"${2?"missing node id"}\", ${3?"missing amount (sat)"}, ${4?"missing push amount (msat)"}] }' $URL" | jq -r "if .error == null then .result else .error.message end"
         ;;
 "close")
         eval curl "$CURL_OPTS -d '{ \"method\": \"close\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL"
