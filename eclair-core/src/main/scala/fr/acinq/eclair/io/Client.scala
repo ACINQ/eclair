@@ -7,57 +7,42 @@ import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
-import fr.acinq.eclair.crypto.Noise.KeyPair
-import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
-import fr.acinq.eclair.wire.{LightningMessage, LightningMessageCodecs}
+import fr.acinq.eclair.io.Client.ConnectionFailed
+
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 27/10/2015.
+  *
   */
-class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef) extends Actor with ActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Connect(address, options = KeepAlive(true) :: Nil)
+  log.info(s"connecting to $remoteNodeId@${address.getHostString}:${address.getPort}")
+  IO(Tcp) ! Connect(address, timeout = Some(5 seconds), options = KeepAlive(true) :: Nil)
 
   def receive = {
     case CommandFailed(_: Connect) =>
-      origin ! Status.Failure(new RuntimeException("connection failed"))
+      origin ! Status.Failure(ConnectionFailed(address))
       context stop self
 
     case Connected(remote, _) =>
-      log.info(s"connected to $remote")
+      log.info(s"connected to $remoteNodeId@${remote.getHostString}:${remote.getPort}")
       val connection = sender
-      val transport = context.actorOf(Props(
-        new TransportHandler[LightningMessage](
-          KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
-          Some(remoteNodeId),
-          connection = connection,
-          codec = LightningMessageCodecs.lightningMessageCodec)))
-      context watch transport
-      context become authenticating(transport)
+      authenticator ! Authenticator.PendingAuth(connection, origin_opt = Some(origin), outgoingConnection_opt = Some(Authenticator.OutgoingConnection(remoteNodeId, address)))
+      // TODO: shutdown?
+      context watch connection
+      context become connected(connection)
   }
 
-  def authenticating(transport: ActorRef): Receive = {
-    case Terminated(actor) if actor == transport =>
-      origin ! Status.Failure(new RuntimeException("authentication failed"))
+  def connected(connection: ActorRef): Receive = {
+    case Terminated(actor) if actor == connection =>
       context stop self
-
-    case h: HandshakeCompleted =>
-      log.info(s"handshake completed with ${h.remoteNodeId}")
-      origin ! "connected"
-      switchboard ! h
-      context become connected(transport)
   }
 
-  def connected(transport: ActorRef): Receive = {
-    case Terminated(actor) if actor == transport =>
-      context stop self
-
-    case msg => log.warning(s"unexpected message $msg")
-  }
+  override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
 
   // we should not restart a failing transport
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
@@ -65,6 +50,8 @@ class Client(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
 
 object Client extends App {
 
-  def props(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef): Props = Props(new Client(nodeParams, switchboard, address, remoteNodeId, origin))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin))
+
+  case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
 
 }
