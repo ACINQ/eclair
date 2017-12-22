@@ -58,8 +58,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       val h = channels.filter(_._2 == actor).map(_._1)
       log.info(s"channel closed: channelId=${h.mkString("/")}")
       stay using d.copy(channels = channels -- h)
-
-    case Event(_: Rebroadcast, _) => stay // ignored
   }
 
   when(INITIALIZING) {
@@ -187,7 +185,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay
 
     case Event(Terminated(actor), ConnectedData(address_opt, transport, _, channels)) if actor == transport =>
-      log.warning(s"lost connection to $remoteNodeId")
+      log.info(s"lost connection to $remoteNodeId")
       channels.values.foreach(_ ! INPUT_DISCONNECTED)
       goto(DISCONNECTED) using DisconnectedData(address_opt, channels)
 
@@ -224,6 +222,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
     case Event(GetPeerInfo, d) =>
       sender ! PeerInfo(remoteNodeId, stateName.toString, d.address_opt, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId
       stay
+
+    case Event(_: Rebroadcast, _) => stay // ignored
   }
 
   onTransition {

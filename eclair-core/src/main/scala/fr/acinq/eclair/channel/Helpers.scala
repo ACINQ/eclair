@@ -216,8 +216,11 @@ object Helpers {
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo])(implicit log: LoggingAdapter): Option[TransactionWithInputInfo] = {
       attempt match {
         case Success(txinfo) =>
-          log.warning(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${txinfo.tx}")
+          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${txinfo.tx}")
           Some(txinfo)
+        case Failure(t: TxGenerationSkipped) =>
+          log.info(s"tx generation skipped: desc=$desc reason: ${t.getMessage}")
+          None
         case Failure(t) =>
           log.warning(s"tx generation failure: desc=$desc reason: ${t.getMessage}")
           None

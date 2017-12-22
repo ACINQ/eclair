@@ -173,7 +173,9 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
       case w: WatchConfirmed => self ! TickNewBlock
 
-      case w => log.warning(s"ignoring $w (not implemented)")
+      case w: WatchLost => () // TODO: not implemented
+
+      case w => log.warning(s"ignoring $w")
     }
     log.debug(s"adding watch $w for $sender")
     context.watch(w.channel)

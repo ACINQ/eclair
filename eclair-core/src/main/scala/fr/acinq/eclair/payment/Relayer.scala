@@ -62,7 +62,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case _: ChannelStateChanged => ()
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate) =>
-      log.info(s"updating channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString} remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
+      log.debug(s"updating channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString} remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
       context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
 
     case LocalChannelDown(_, channelId, shortChannelId, _) =>
@@ -70,49 +70,68 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       context become main(channelUpdates - shortChannelId)
 
     case ForwardAdd(add) =>
+      log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} ")
       Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
-          .map(parsedPacket => (LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(parsedPacket.payload.data)), parsedPacket.nextPacket, parsedPacket.sharedSecret)) match {
-        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) if nextPacket.isLastPacket =>
-          log.info(s"looks like we are the final recipient of htlc #${add.id}")
-          perHopPayload match {
+        .flatMap {
+          case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) =>
+            LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)) match {
+              case Attempt.Successful(DecodeResult(perHopPayload, _)) => Success((perHopPayload, nextPacket, sharedSecret))
+              case Attempt.Failure(cause) => Failure(new RuntimeException(cause.messageWithContext))
+            }
+        } match {
+        case Success((perHopPayload, nextPacket, _)) if nextPacket.isLastPacket =>
+          val cmd = perHopPayload match {
             case PerHopPayload(_, finalAmountToForward, _) if finalAmountToForward > add.amountMsat =>
-              sender ! CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectHtlcAmount(add.amountMsat)), commit = true))
             case PerHopPayload(_, _, finalOutgoingCltvValue) if finalOutgoingCltvValue != add.expiry =>
-              sender ! CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.expiry)), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(FinalIncorrectCltvExpiry(add.expiry)), commit = true))
             case _ if add.expiry < Globals.blockCount.get() + 3 => // TODO: check hardcoded value
-              sender ! CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(FinalExpiryTooSoon), commit = true))
             case _ =>
-              paymentHandler forward add
+              Right(add)
           }
-        case Success((Attempt.Successful(DecodeResult(perHopPayload, _)), nextPacket, _)) =>
-          channelUpdates.get(perHopPayload.channel_id) match {
+          cmd match {
+            case Left(cmdFail) =>
+              log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=${cmdFail.reason}")
+              sender ! cmdFail
+            case Right(addHtlc) =>
+              log.debug(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} to payment-handler")
+              paymentHandler forward addHtlc
+          }
+        case Success((perHopPayload, nextPacket, _)) =>
+          val cmd = channelUpdates.get(perHopPayload.channel_id) match {
             case None =>
               // if we don't (yet?) have a channel_update for the next channel, we consider the channel doesn't exist
               // TODO: use a different channel to the same peer instead?
-              sender ! CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
             case Some(channelUpdate) if !Announcements.isEnabled(channelUpdate.flags) =>
-              sender ! CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(ChannelDisabled(channelUpdate.flags, channelUpdate)), commit = true))
             case Some(channelUpdate) if add.amountMsat < channelUpdate.htlcMinimumMsat =>
-              sender ! CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(AmountBelowMinimum(add.amountMsat, channelUpdate)), commit = true))
             case Some(channelUpdate) if add.expiry != perHopPayload.outgoingCltvValue + channelUpdate.cltvExpiryDelta =>
-              sender ! CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.expiry, channelUpdate)), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(IncorrectCltvExpiry(add.expiry, channelUpdate)), commit = true))
             case Some(channelUpdate) if add.expiry < Globals.blockCount.get() + 3 => // TODO: hardcoded value
-              sender ! CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true)
+              Left(CMD_FAIL_HTLC(add.id, Right(ExpiryTooSoon(channelUpdate)), commit = true))
             case _ =>
-              log.info(s"forwarding htlc #${add.id} to shortChannelId=${perHopPayload.channel_id.toHexString}")
-              register ! Register.ForwardShortId(perHopPayload.channel_id, CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
+              Right(CMD_ADD_HTLC(perHopPayload.amtToForward, add.paymentHash, perHopPayload.outgoingCltvValue, nextPacket.serialize, upstream_opt = Some(add), commit = true))
           }
-        case Success((Attempt.Failure(cause), _, _)) =>
-          log.error(s"couldn't parse payload: $cause")
-          sender ! CMD_FAIL_HTLC(add.id, Right(PermanentNodeFailure), commit = true)
+          cmd match {
+            case Left(cmdFail) =>
+              log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id.toHexString} reason=${cmdFail.reason}")
+              sender ! cmdFail
+            case Right(cmdAdd) =>
+              log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id.toHexString}")
+              register ! Register.ForwardShortId(perHopPayload.channel_id, cmdAdd)
+          }
         case Failure(t) =>
-          log.error(t, "couldn't parse onion: ")
-          // we cannot even parse the onion packet
-          sender ! CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessageCodecs.BADONION, commit = true)
+          log.warning(s"couldn't parse onion: reason=${t.getMessage}")
+          val cmdFail = CMD_FAIL_MALFORMED_HTLC(add.id, Crypto.sha256(add.onionRoutingPacket), failureCode = FailureMessageCodecs.BADONION, commit = true)
+          log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} reason=malformed onionHash=${cmdFail.onionHash} failureCode=${cmdFail.failureCode}")
+          sender ! cmdFail
       }
 
     case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _)))) =>
-      log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
+      log.warning(s"couldn't resolve downstream channel ${shortChannelId.toHexString}, failing htlc #${add.id}")
       register ! Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
     case Status.Failure(AddHtlcFailed(_, error, Local(Some(sender)), _)) =>
