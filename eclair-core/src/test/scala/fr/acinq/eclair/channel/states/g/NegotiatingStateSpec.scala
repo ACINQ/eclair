@@ -30,7 +30,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4319)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))

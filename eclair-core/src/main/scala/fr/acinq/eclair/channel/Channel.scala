@@ -698,19 +698,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"funding tx is deeply buried at blockHeight=$blockHeight txIndex=$txIndex shortChannelId=${shortChannelId.toHexString}")
       // if final shortChannelId is different from the one we had before, we need to re-announce it
       val channelUpdate = if (shortChannelId != d.shortChannelId) {
-        log.warning(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId.toHexString} new=${shortChannelId.toHexString}")
+        log.info(s"short channel id changed, probably due to a chain reorg: old=${d.shortChannelId.toHexString} new=${shortChannelId.toHexString}")
         // we need to re-announce this shortChannelId
         context.system.eventStream.publish(ShortChannelIdAssigned(self, d.channelId, shortChannelId))
         // we re-announce the channelUpdate for the same reason
         Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
       } else d.channelUpdate
-      val d1 = d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate)
       val localAnnSigs_opt = if (d.commitments.announceChannel) {
         // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
-        Some(Helpers.makeAnnouncementSignatures(nodeParams, d1.commitments, shortChannelId))
+        Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
       } else None
       // we use GOTO instead of stay because we want to fire transitions
-      goto(NORMAL) using store(d1) sending localAnnSigs_opt.toSeq
+      goto(NORMAL) using store(d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate)) sending localAnnSigs_opt.toSeq
 
     case Event(remoteAnnSigs: AnnouncementSignatures, d: DATA_NORMAL) if d.commitments.announceChannel =>
       // channels are publicly announced if both parties want it (defined as feature bit)
@@ -724,9 +723,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             log.info(s"announcing channelId=${d.channelId} on the network with shortId=${d.shortChannelId}")
             import d.commitments.{localParams, remoteParams}
             val channelAnn = Announcements.makeChannelAnnouncement(nodeParams.chainHash, localAnnSigs.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, localAnnSigs.nodeSignature, remoteAnnSigs.nodeSignature, localAnnSigs.bitcoinSignature, remoteAnnSigs.bitcoinSignature)
-            val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, d.shortChannelId, d.channelUpdate.cltvExpiryDelta, d.channelUpdate.htlcMinimumMsat, d.channelUpdate.feeBaseMsat, d.channelUpdate.feeProportionalMillionths, enable = true)
             // we use GOTO instead of stay because we want to fire transitions
-            goto(NORMAL) using store(d.copy(channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate))
+            goto(NORMAL) using store(d.copy(channelAnnouncement = Some(channelAnn)))
           case Some(_) =>
             // they have sent their announcement sigs, but we already have a valid channel announcement
             // this can happen if our announcement_signatures was lost during a disconnection
@@ -1302,21 +1300,25 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // channel is closed, scheduling this actor for self destruction
         context.system.scheduler.scheduleOnce(10 seconds, self, 'shutdown)
       }
+
+      // if channel is private, we send the channel_update directly to remote
+      // they need it "to learn the other end's forwarding parameters" (BOLT 7)
       (stateData, nextStateData) match {
         case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && !d1.buried && d2.buried =>
-          // if this is a private channel and tx was just buried then we need to send it to our peer
+          // for a private channel, when the tx was just buried we need to send the channel_update to our peer (even if it didn't change)
           forwarder ! d2.channelUpdate
-        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate =>
-          // otherwise, and there is no change in the channel_update, no need to announce it
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if !d1.commitments.announceChannel && d1.channelUpdate != d2.channelUpdate && d2.buried =>
+          // otherwise, we only send it when it is different, and tx is already buried
+          forwarder ! d2.channelUpdate
+        case _ => ()
+      }
+
+      (stateData, nextStateData) match {
+        case (d1: DATA_NORMAL, d2: DATA_NORMAL) if d1.channelUpdate == d2.channelUpdate && d1.channelAnnouncement == d2.channelAnnouncement =>
+          // don't do anything if neither the channel_update nor the channel_announcement didn't change
           ()
         case (_, normal: DATA_NORMAL) =>
           // whenever we go to a state with NORMAL data (can be OFFLINE or NORMAL), we send out the new channel_update (most of the time it will just be to enable/disable the channel)
-          if (!normal.commitments.announceChannel && normal.buried) {
-            // if channel is private, we send the channel_update directly to remote
-            // they need it "to learn the other end's forwarding parameters" (BOLT 7)
-            forwarder ! normal.channelUpdate
-          }
-          // in any case we advertise the new channel_update
           context.system.eventStream.publish(LocalChannelUpdate(self, normal.commitments.channelId, normal.shortChannelId, normal.commitments.remoteParams.nodeId, normal.channelAnnouncement, normal.channelUpdate))
         case (normal: DATA_NORMAL, _) =>
           // when we finally leave the NORMAL state (or OFFLINE with NORMAL data) to got to SHUTDOWN/NEGOTIATING/CLOSING/ERR*, we advertise the fact that channel can't be used for payments anymore

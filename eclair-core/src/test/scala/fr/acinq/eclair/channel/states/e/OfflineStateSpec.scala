@@ -23,7 +23,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
       awaitCond(alice.stateName == NORMAL)
       awaitCond(bob.stateName == NORMAL)
       test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer))
