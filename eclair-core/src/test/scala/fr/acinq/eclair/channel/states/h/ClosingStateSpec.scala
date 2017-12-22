@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{AckFulfillCmd, ForwardAdd, ForwardFulfill}
+import fr.acinq.eclair.payment.{AckFulfillCmd, ForwardAdd, ForwardFulfill, Local}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
@@ -27,9 +27,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val setup = init()
     import setup._
     within(30 seconds) {
-      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
-      relayer.expectMsgType[ChannelUpdate]
-      relayer.expectMsgType[ChannelUpdate]
+      reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
       val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
         val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
         crossSign(alice, bob, alice2bob, bob2alice)
@@ -88,6 +86,21 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     awaitCond(bob.stateName == CLOSING)
     // both nodes are now in CLOSING state with a mutual close tx pending for confirmation
   }
+
+  test("recv CMD_ADD_HTLC") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
+    within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+
+      // actual test starts here
+      val sender = TestProbe()
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
+      sender.send(alice, add)
+      val error = ChannelUnavailable(channelId(alice))
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), error, Local(Some(sender.ref)), None)))
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
 
   test("recv CMD_FULFILL_HTLC (unexisting htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
     within(30 seconds) {
@@ -154,6 +167,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(initialState.localCommitPublished.isDefined)
 
       // actual test starts here
+      relayer.expectMsgType[LocalChannelDown]
 
       // scenario 1: bob claims the htlc output from the commit tx using its preimage
       val claimHtlcSuccessFromCommitTx = Transaction(version = 0, txIn = TxIn(outPoint = OutPoint("22" * 32, 0), signatureScript = "", sequence = 0, witness = Scripts.witnessClaimHtlcSuccessFromCommitTx("11" * 70, ra1, "33" * 130)) :: Nil, txOut = Nil, lockTime = 0)

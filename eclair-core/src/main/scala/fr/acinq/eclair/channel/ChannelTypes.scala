@@ -136,9 +136,9 @@ final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, defer
 final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: Long, lastSent: FundingLocked) extends Data with HasCommitments
 final case class DATA_NORMAL(commitments: Commitments,
                              shortChannelId: Long,
+                             buried: Boolean,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,
-                             localAnnouncementSignatures: Option[AnnouncementSignatures],
                              localShutdown: Option[Shutdown],
                              remoteShutdown: Option[Shutdown]) extends Data with HasCommitments
 final case class DATA_SHUTDOWN(commitments: Commitments,
