@@ -106,6 +106,7 @@
                         <arg>-language:postfixOps</arg>
                         <arg>-language:implicitConversions</arg>
                         <arg>-Xfatal-warnings</arg>
+                        <arg>-unchecked</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
