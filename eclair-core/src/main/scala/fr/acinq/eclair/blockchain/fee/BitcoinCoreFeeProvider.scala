@@ -1,6 +1,6 @@
 package fr.acinq.eclair.blockchain.fee
 
-import fr.acinq.bitcoin.Btc
+import fr.acinq.bitcoin._
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BitcoinJsonRPCClient
 import org.json4s.JsonAST.{JDouble, JInt}
 
@@ -15,14 +15,20 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
     * We need this to keep commitment tx fees in sync with the state of the network
     *
     * @param nBlocks number of blocks until tx is confirmed
-    * @return the current
+    * @return the current fee estimate in Satoshi/Kb
     */
   def estimateSmartFee(nBlocks: Int): Future[Long] =
     rpcClient.invoke("estimatesmartfee", nBlocks).map(json => {
       json \ "feerate" match {
-        case JDouble(feerate) => Btc(feerate).toLong
-        case JInt(feerate) if feerate.toLong < 0 => feerate.toLong
-        case JInt(feerate) => Btc(feerate.toLong).toLong
+        case JDouble(feerate) =>
+          // estimatesmartfee returns a fee rate in Btc/Kb
+          btc2satoshi(Btc(feerate)).amount
+        case JInt(feerate) if feerate.toLong < 0 =>
+          // negative value means failure
+          feerate.toLong
+        case JInt(feerate) =>
+          // should (hopefully) never happen
+          btc2satoshi(Btc(feerate.toLong)).amount
       }
     })
 

@@ -1032,23 +1032,23 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=${Transaction.write(tx)}")
+      log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
       require(tx.txIn.size == 1, s"htlc tx should only have 1 input")
       val witness = tx.txIn(0).witness
       val extracted = witness match {
         case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
-          log.warning(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (claim-htlc-success)")
+          log.warning(s"extracted preimage=$paymentPreimage from tx=$tx (claim-htlc-success)")
           paymentPreimage
         case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcReceivedScript)) if paymentPreimage.size == 32 =>
-          log.warning(s"extracted preimage=$paymentPreimage from tx=${Transaction.write(tx)} (htlc-success)")
+          log.warning(s"extracted preimage=$paymentPreimage from tx=$tx (htlc-success)")
           paymentPreimage
         case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, BinaryData.empty, htlcOfferedScript)) =>
           val paymentHash160 = BinaryData(htlcOfferedScript.slice(109, 109 + 20))
-          log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (htlc-timeout)")
+          log.warning(s"extracted paymentHash160=$paymentHash160 from tx=$tx (htlc-timeout)")
           paymentHash160
         case ScriptWitness(Seq(remoteSig, BinaryData.empty, htlcReceivedScript)) =>
           val paymentHash160 = BinaryData(htlcReceivedScript.slice(69, 69 + 20))
-          log.warning(s"extracted paymentHash160=$paymentHash160 from tx=${Transaction.write(tx)} (claim-htlc-timeout)")
+          log.warning(s"extracted paymentHash160=$paymentHash160 from tx=$tx (claim-htlc-timeout)")
           paymentHash160
       }
       // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment

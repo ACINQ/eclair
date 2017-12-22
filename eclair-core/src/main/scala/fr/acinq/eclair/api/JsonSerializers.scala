@@ -71,7 +71,7 @@ class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWit
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
-  case x: TransactionWithInputInfo => JString(Transaction.write(x.tx).toString())
+  case x: TransactionWithInputInfo => JString(x.tx.toString())
 }
 ))
 
