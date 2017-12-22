@@ -4,6 +4,7 @@ import java.io.InputStream
 import java.net.InetSocketAddress
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
+import akka.io.Tcp.SO.KeepAlive
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import fr.acinq.bitcoin._
@@ -39,7 +40,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       case _: Tcp.ConnectionClosed =>
         val nextAddress = nextPeer()
         log.warning(s"connection failed, trying $nextAddress")
-        self ! Tcp.Connect(nextAddress)
+        self ! Tcp.Connect(nextAddress, options = KeepAlive(true) :: Nil)
         statusListeners.map(_ ! ElectrumDisconnected)
         context.system.eventStream.publish(ElectrumDisconnected)
         context become disconnected
@@ -104,7 +105,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
 
   context.system.eventStream.publish(ElectrumDisconnected)
-  self ! Tcp.Connect(serverAddresses.head)
+  self ! Tcp.Connect(serverAddresses.head, options = KeepAlive(true) :: Nil)
 
   var reqId = 0L
 
@@ -133,7 +134,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       connectionFailures.put(remoteAddress, connectionFailures.getOrElse(remoteAddress, 0L) + 1L)
       val count = connectionFailures.getOrElse(nextAddress, 0L)
       val delay = Math.min(Math.pow(2.0, count), 60.0) seconds;
-      context.system.scheduler.scheduleOnce(delay, self, Tcp.Connect(nextAddress))
+      context.system.scheduler.scheduleOnce(delay, self, Tcp.Connect(nextAddress, options = KeepAlive(true) :: Nil))
   }
 
   def waitingForVersion(connection: ActorRef, remote: InetSocketAddress): Receive = {
