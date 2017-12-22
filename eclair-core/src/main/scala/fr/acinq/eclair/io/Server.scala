@@ -16,7 +16,7 @@ import scala.concurrent.Promise
 /**
   * Created by PM on 27/10/2015.
   */
-class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketAddress, bound: Option[Promise[Unit]] = None) extends Actor with ActorLogging {
+class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, bound: Option[Promise[Unit]] = None) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -35,17 +35,10 @@ class Server(nodeParams: NodeParams, switchboard: ActorRef, address: InetSocketA
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
       val connection = sender
-      context.actorOf(Props(
-        new TransportHandler[LightningMessage](
-          KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
-          None,
-          connection = connection,
-          codec = LightningMessageCodecs.lightningMessageCodec)))
-
-    case h: HandshakeCompleted =>
-      log.info(s"handshake completed with ${h.remoteNodeId}")
-      switchboard ! h
+      authenticator ! Authenticator.PendingAuth(connection, origin_opt = None, outgoingConnection_opt = None)
   }
+
+  override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
 
   // we should not restart a failing transport
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }

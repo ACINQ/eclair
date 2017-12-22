@@ -2,13 +2,15 @@ package fr.acinq.eclair.gui.utils
 
 import javafx.scene.control.Label
 
+import fr.acinq.eclair.io.NodeURI
+
 import scala.util.matching.Regex
 
 /**
   * Created by DPA on 27/09/2016.
   */
 object GUIValidators {
-  val hostRegex = """([a-fA-F0-9]{66})@([a-zA-Z0-9:\.\-_]+):([0-9]+)""".r
+  val hostRegex = NodeURI.regex
   val amountRegex = """\d+""".r
   val amountDecRegex = """(\d+)|(\d+\.[\d]{1,})""".r
   val paymentRequestRegex =

@@ -1,5 +1,7 @@
 package fr.acinq.eclair.api
 
+import java.net.InetSocketAddress
+
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
@@ -72,6 +74,14 @@ class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWit
     ???
 }, {
   case x: TransactionWithInputInfo => JString(x.tx.toString())
+}
+))
+
+class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ( {
+  case JString(x) if (false) => // NOT IMPLEMENTED
+    ???
+}, {
+  case x: InetSocketAddress => JString(s"${x.getHostString}:${x.getPort}")
 }
 ))
 

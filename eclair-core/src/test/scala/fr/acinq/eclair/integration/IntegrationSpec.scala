@@ -15,8 +15,8 @@ import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
-import fr.acinq.eclair.io.Disconnect
-import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.io.Peer.Disconnect
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
@@ -132,11 +132,16 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   def connect(node1: Kit, node2: Kit, fundingSatoshis: Long, pushMsat: Long) = {
     val sender = TestProbe()
-    sender.send(node1.switchboard, NewConnection(
+    sender.send(node1.switchboard, Peer.Connect(NodeURI(
+      nodeId = node2.nodeParams.privateKey.publicKey,
+      address = node2.nodeParams.publicAddresses.head)))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+    sender.send(node1.switchboard, Peer.OpenChannel(
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
-      address = node2.nodeParams.publicAddresses.head,
-      newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat), None))))
-    sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
+      fundingSatoshis = Satoshi(fundingSatoshis),
+      pushMsat = MilliSatoshi(pushMsat),
+      channelFlags = None))
+    sender.expectMsgAnyOf(10 seconds, "channel created")
   }
 
   test("connect nodes") {
