@@ -1,7 +1,8 @@
 package fr.acinq.eclair.channel.states
 
 import akka.testkit.{TestFSMRef, TestKitBase, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, Crypto}
+import fr.acinq.bitcoin.Crypto.PrivateKey
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
@@ -37,6 +38,12 @@ trait StateTestsHelperMethods extends TestKitBase {
     val alice2blockchain = TestProbe()
     val bob2blockchain = TestProbe()
     val relayer = TestProbe()
+    system.eventStream.subscribe(relayer.ref, classOf[LocalChannelUpdate])
+    system.eventStream.subscribe(relayer.ref, classOf[LocalChannelDown])
+    // hacky... publish a fake update and wait till we've received it
+//    val fakeUpdate = LocalChannelUpdate(probe.ref, BinaryData("00" * 32), 0, PrivateKey("01" * 32).publicKey, None, ChannelUpdate(LightningMessageCodecsSpec.randomSignature, Block.RegtestGenesisBlock.hash, 1, 2, BinaryData("0202"), 3, 4, 5, 6))
+//    system.eventStream.publish(fakeUpdate)
+//    probe.expectMsg(fakeUpdate)
     val router = TestProbe()
     val wallet = new TestWallet
     val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
@@ -50,6 +57,7 @@ trait StateTestsHelperMethods extends TestKitBase {
                   bob2alice: TestProbe,
                   alice2blockchain: TestProbe,
                   bob2blockchain: TestProbe,
+                  relayer: TestProbe,
                   tags: Set[String] = Set.empty): Unit = {
     val channelFlags = if (tags.contains("channels_public")) ChannelFlags.AnnounceChannel else ChannelFlags.Empty
     val (aliceParams, bobParams) = (Alice.channelParams, Bob.channelParams)
@@ -82,6 +90,9 @@ trait StateTestsHelperMethods extends TestKitBase {
     bob2blockchain.expectMsgType[WatchConfirmed] // deeply buried
     awaitCond(alice.stateName == NORMAL)
     awaitCond(bob.stateName == NORMAL)
+    // x2 because alice and bob share the same relayer
+    relayer.expectMsgType[LocalChannelUpdate]
+    relayer.expectMsgType[LocalChannelUpdate]
   }
 
   def addHtlc(amountMsat: Int, s: TestFSMRef[State, Data, Channel], r: TestFSMRef[State, Data, Channel], s2r: TestProbe, r2s: TestProbe): (BinaryData, UpdateAddHtlc) = {

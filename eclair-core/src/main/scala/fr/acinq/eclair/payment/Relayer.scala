@@ -36,25 +36,38 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
   import nodeParams.preimagesDb
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
+  context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
+  context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
   override def receive: Receive = main(Map())
 
   def main(channelUpdates: Map[Long, ChannelUpdate]): Receive = {
 
-    case ChannelStateChanged(channel, _, _, _, NORMAL | SHUTDOWN | CLOSING, d: HasCommitments) =>
+    case ChannelStateChanged(channel, _, _, _, nextState, d: HasCommitments) =>
       import d.channelId
-      preimagesDb.listPreimages(channelId) match {
-        case Nil => ()
-        case preimages =>
-          log.info(s"re-sending ${preimages.size} unacked fulfills to channel $channelId")
-          preimages.map(p => CMD_FULFILL_HTLC(p._2, p._3, commit = false)).foreach(channel ! _)
-          // better to sign once instead of after each fulfill
-          channel ! CMD_SIGN
+      // if channel is in a state where it can have pending htlcs, we send them the fulfills we know of
+      nextState match {
+        case NORMAL | SHUTDOWN | CLOSING =>
+          preimagesDb.listPreimages(channelId) match {
+            case Nil => ()
+            case preimages =>
+              log.info(s"re-sending ${preimages.size} unacked fulfills to channel $channelId")
+              preimages.map(p => CMD_FULFILL_HTLC(p._2, p._3, commit = false)).foreach(channel ! _)
+              // better to sign once instead of after each fulfill
+              channel ! CMD_SIGN
+          }
+        case _ => ()
       }
 
-    case channelUpdate: ChannelUpdate =>
-      log.debug(s"updating relay parameters with channelUpdate=$channelUpdate")
+    case _: ChannelStateChanged => ()
+
+    case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate) =>
+      log.debug(s"updating channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString} remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
       context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
+
+    case LocalChannelDown(_, channelId, shortChannelId, _) =>
+      log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString}")
+      context become main(channelUpdates - shortChannelId)
 
     case ForwardAdd(add) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} ")
@@ -126,9 +139,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case Status.Failure(AddHtlcFailed(_, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt)) =>
       val failure = (error, channelUpdate_opt) match {
-        case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
         case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
         case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
+        case (_: ChannelUnavailable, Some(channelUpdate)) if !Announcements.isEnabled(channelUpdate.flags) => ChannelDisabled(channelUpdate.flags, channelUpdate)
+        case (_: ChannelUnavailable, None) => PermanentChannelFailure
         case (_: HtlcTimedout, _) => PermanentChannelFailure
         case _ => TemporaryNodeFailure
       }
