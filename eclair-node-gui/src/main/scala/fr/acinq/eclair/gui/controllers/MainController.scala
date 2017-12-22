@@ -323,9 +323,22 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
     contextMenu = ContextMenuUtils.buildCopyContext(
       List(
-        Some(new CopyAction("Copy Pubkey", s"${setup.nodeParams.privateKey.publicKey}")),
-        setup.nodeParams.publicAddresses.headOption.map(address => new CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}"))
+        Some(CopyAction("Copy Pubkey", setup.nodeParams.privateKey.publicKey.toString())),
+        setup.nodeParams.publicAddresses.headOption.map(address => CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}"))
       ).flatten)
+
+    setup.nodeParams.publicAddresses.headOption.map(address => {
+      val nodeInfoAction = new MenuItem("Node Info")
+      nodeInfoAction.setOnAction(new EventHandler[ActionEvent] {
+        override def handle(event: ActionEvent): Unit = {
+          val nodeInfoStage = new NodeInfoStage(s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}", handlers)
+          nodeInfoStage.initOwner(getWindow.orNull)
+          positionAtCenter(nodeInfoStage)
+          nodeInfoStage.show()
+        }
+      })
+      contextMenu.getItems.add(nodeInfoAction)
+    })
   }
 
   private def updateTabHeader(tab: Tab, prefix: String, items: ObservableList[_]) = {

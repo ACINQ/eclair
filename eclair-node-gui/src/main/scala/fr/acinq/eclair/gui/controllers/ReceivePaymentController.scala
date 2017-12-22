@@ -7,15 +7,11 @@ import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.scene.image.{ImageView, WritableImage}
 import javafx.scene.layout.GridPane
-import javafx.scene.paint.Color
 import javafx.stage.Stage
 
-import com.google.zxing.qrcode.QRCodeWriter
-import com.google.zxing.qrcode.decoder.ErrorCorrectionLevel
-import com.google.zxing.{BarcodeFormat, EncodeHintType}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, GUIValidators}
+import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, GUIValidators, QRCodeUtils}
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
@@ -99,7 +95,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
     handlers.receive(amount_opt, description.getText) onComplete {
       case Success(s) =>
         val pr = if (prependPrefixCheckbox.isSelected) s"lightning:$s" else s
-        Try(createQRCode(pr)) match {
+        Try(QRCodeUtils.createQRCode(pr, margin = -1)) match {
           case Success(wImage) => displayPaymentRequestQR(pr, Some(wImage))
           case Failure(t) => displayPaymentRequestQR(pr, None)
         }
@@ -131,28 +127,6 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
       stage.sizeToScene()
     }
   })
-
-  private def createQRCode(data: String, width: Int = 250, height: Int = 250, margin: Int = -1): WritableImage = {
-    import scala.collection.JavaConversions._
-    val hintMap = collection.mutable.Map[EncodeHintType, Object]()
-    hintMap.put(EncodeHintType.CHARACTER_SET, "UTF-8")
-    hintMap.put(EncodeHintType.ERROR_CORRECTION, ErrorCorrectionLevel.L)
-    hintMap.put(EncodeHintType.MARGIN, margin.toString)
-    val qrWriter = new QRCodeWriter
-    val byteMatrix = qrWriter.encode(data, BarcodeFormat.QR_CODE, width, height, hintMap)
-    val writableImage = new WritableImage(width, height)
-    val pixelWriter = writableImage.getPixelWriter
-    for (i <- 0 to byteMatrix.getWidth - 1) {
-      for (j <- 0 to byteMatrix.getWidth - 1) {
-        if (byteMatrix.get(i, j)) {
-          pixelWriter.setColor(i, j, Color.BLACK)
-        } else {
-          pixelWriter.setColor(i, j, Color.WHITE)
-        }
-      }
-    }
-    writableImage
-  }
 
   @FXML def handleClose(event: ActionEvent) = stage.close
 }
