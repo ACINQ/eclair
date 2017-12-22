@@ -10,6 +10,7 @@ import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, 
 import akka.http.scaladsl.model.headers.HttpOriginRange.*
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
+import akka.http.scaladsl.server.Route
 import akka.pattern.ask
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
@@ -31,17 +32,11 @@ import scala.util.{Failure, Success, Try}
 
 // @formatter:off
 case class JsonRPCBody(jsonrpc: String = "1.0", id: String = "eclair-node", method: String, params: Seq[JValue])
-
 case class Error(code: Int, message: String)
-
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
-
 case class Status(node_id: String)
-
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
-
 case class ChannelInfo(shortChannelId: String, nodeId1: PublicKey, nodeId2: PublicKey)
-
 // @formatter:on
 
 trait Service extends Logging {
@@ -80,7 +75,7 @@ trait Service extends Logging {
       res <- appKit.register ? fwdReq
     } yield res
 
-  val route =
+  val route: Route =
     respondWithDefaultHeaders(customHeaders) {
       pathSingleSlash {
         post {
@@ -142,7 +137,7 @@ trait Service extends Logging {
                         case Success(pr) => Future.successful(pr.paymentHash)
                         case _ => Try(BinaryData(identifier)) match {
                           case Success(s) => Future.successful(s)
-                          case _ => Future.failed(new IllegalArgumentException("payment identifier must be a Payment Request or a Payment Hash"))
+                          case _ => Future.failed(new IllegalArgumentException("payment identifier must be a payment request or a payment hash"))
                         }
                       }
                     found <- (paymentHandler ? CheckPayment(paymentHash)).map(found => new JBool(found.asInstanceOf[Boolean]))
@@ -163,8 +158,8 @@ trait Service extends Logging {
                     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
                     "close (channelId): close a channel",
                     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
-                    "allpayments: list all received payments",
-                    "payment (paymentHash or paymentRequest): returns the payment if it has been received",
+                    "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
+                    "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
                     "help: display this message"))
                 case _ => Future.failed(new RuntimeException("method not found"))
               }
