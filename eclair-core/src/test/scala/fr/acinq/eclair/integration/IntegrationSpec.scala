@@ -94,7 +94,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](10 seconds)
+    sender.expectMsgType[JValue](30 seconds)
   }
 
   def instantiateEclairNode(name: String, config: Config) = {
