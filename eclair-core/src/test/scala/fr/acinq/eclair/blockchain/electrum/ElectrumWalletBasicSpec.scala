@@ -8,10 +8,13 @@ import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
+import scala.util.{Failure, Random, Success, Try}
+
 @RunWith(classOf[JUnitRunner])
 class ElectrumWalletBasicSpec extends FunSuite {
 
   import ElectrumWallet._
+  import ElectrumWalletBasicSpec._
 
   val swipeRange = 10
   val dustLimit = 546 satoshi
@@ -33,7 +36,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
   val state = Data(params, ElectrumClient.Header.RegtestGenesisHeader, firstAccountKeys, firstChangeKeys)
     .copy(status = (firstAccountKeys ++ firstChangeKeys).map(key => computeScriptHashFromPublicKey(key.publicKey) -> "").toMap)
 
-  def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi) : Data = {
+  def addFunds(data: Data, key: ExtendedPrivateKey, amount: Satoshi): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(amount, ElectrumWallet.computePublicKeyScript(key.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(key.publicKey)
     val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
@@ -43,7 +46,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
     )
   }
 
-  def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)) : Data = {
+  def addFunds(data: Data, keyamount: (ExtendedPrivateKey, Satoshi)): Data = {
     val tx = Transaction(version = 1, txIn = Nil, txOut = TxOut(keyamount._2, ElectrumWallet.computePublicKeyScript(keyamount._1.publicKey)) :: Nil, lockTime = 0)
     val scriptHash = ElectrumWallet.computeScriptHashFromPublicKey(keyamount._1.publicKey)
     val scriptHashHistory = data.history.getOrElse(scriptHash, Seq.empty[ElectrumClient.TransactionHistoryItem])
@@ -53,7 +56,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
     )
   }
 
-  def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]) : Data = keyamounts.foldLeft(data)(addFunds)
+  def addFunds(data: Data, keyamounts: Seq[(ExtendedPrivateKey, Satoshi)]): Data = keyamounts.foldLeft(data)(addFunds)
 
 
   test("compute addresses") {
@@ -79,6 +82,8 @@ class ElectrumWalletBasicSpec extends FunSuite {
     val pub = PrivateKey(BinaryData("01" * 32), compressed = true).publicKey
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(0.5 btc, Script.pay2pkh(pub)) :: Nil, lockTime = 0)
     val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
+    val Some((_, _, Some(fee))) = state2.computeTransactionDelta(tx1)
+    val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
 
     val state3 = state2.cancelTransaction(tx1)
     assert(state3 == state1)
@@ -93,7 +98,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
     val state1 = addFunds(state, state.accountKeys.head, 5 btc)
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(6 btc, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
     val e = intercept[IllegalArgumentException] {
-      val (state2, tx1) = state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
+      state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, false)
     }
   }
 
@@ -108,8 +113,6 @@ class ElectrumWalletBasicSpec extends FunSuite {
 
   test("use actual transaction weight to compute fees") {
     val state1 = addFunds(state, (state.accountKeys(0), Satoshi(5000000)) :: (state.accountKeys(1), Satoshi(6000000)) :: (state.accountKeys(2), Satoshi(4000000)) :: Nil)
-
-    def isFeerateOk(actualFeeRate: Long, targetFeeRate: Long) : Boolean = Math.abs(actualFeeRate - targetFeeRate) < 0.1 * (actualFeeRate + targetFeeRate)
 
     {
       val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(Satoshi(5000000), Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
@@ -142,4 +145,35 @@ class ElectrumWalletBasicSpec extends FunSuite {
       assert(isFeerateOk(actualFeeRate, feeRatePerKw / 10))
     }
   }
+
+  test("fuzzy test") {
+    val random = new Random()
+    (0 to 10) foreach { _ =>
+      val funds = for (i <- 0 until random.nextInt(10)) yield {
+        val index = random.nextInt(state.accountKeys.length)
+        val amount = dustLimit + Satoshi(random.nextInt(10000000))
+        (state.accountKeys(index), amount)
+      }
+      val state1 = addFunds(state, funds)
+      (0 until 30) foreach { _ =>
+        val amount = dustLimit + Satoshi(random.nextInt(10000000))
+        val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, Script.pay2pkh(state1.accountKeys(0).publicKey)) :: Nil, lockTime = 0)
+        Try(state1.completeTransaction(tx, feeRatePerKw, minimumFee, dustLimit, true)) match {
+          case Success((state2, tx1)) => ()
+          case Failure(cause) if cause.getMessage != null && cause.getMessage.contains("insufficient funds") => ()
+          case Failure(cause) => println(s"unexpected $cause")
+        }
+      }
+    }
+  }
+}
+
+object ElectrumWalletBasicSpec {
+  /**
+    *
+    * @param actualFeeRate actual fee rate
+    * @param targetFeeRate target fee rate
+    * @return true if actual fee rate is within 10% of target
+    */
+  def isFeerateOk(actualFeeRate: Long, targetFeeRate: Long): Boolean = Math.abs(actualFeeRate - targetFeeRate) < 0.1 * (actualFeeRate + targetFeeRate)
 }
