@@ -691,7 +691,7 @@ object ElectrumWallet {
       // sign our tx
       val tx3 = tx2.copy(txIn = tx2.txIn.zipWithIndex.map { case (txIn, i) =>
         val key = utxos(i).key
-        val sig = Transaction.signInput(tx3, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxos(i).item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
+        val sig = Transaction.signInput(tx2, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxos(i).item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
         val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
         val witness = ScriptWitness(sig :: key.publicKey.toBin :: Nil)
         txIn.copy(signatureScript = sigScript, witness = witness)
