@@ -22,7 +22,7 @@ class BitcoinCoreFeeProvider(rpcClient: BitcoinJsonRPCClient, defaultFeerates: F
       json \ "feerate" match {
         case JDouble(feerate) =>
           // estimatesmartfee returns a fee rate in Btc/Kb
-          btc2satoshi(Btc(feerate)).amount // 1024
+          btc2satoshi(Btc(feerate)).amount / 1024
         case JInt(feerate) if feerate.toLong < 0 =>
           // negative value means failure
           feerate.toLong
