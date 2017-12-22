@@ -131,7 +131,10 @@ trait Service extends Logging {
                     }
 
                     // local network methods
-                    case "peers"        => completeRpcFuture(req.id, (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin)))
+                    case "peers"        => completeRpcFuture(req.id, for {
+                      peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
+                      peerinfos <- Future.sequence(peers.values.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
+                    } yield peerinfos)
                     case "channels"     => req.params match {
                       case Nil => completeRpcFuture(req.id, (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys))
                       case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
