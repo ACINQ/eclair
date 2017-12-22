@@ -154,21 +154,19 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
             client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
               case false =>
                 log.warning(s"output=$outputIndex of txid=$txid has already been spent")
-                client.getTxBlockHash(txid.toString()).collect {
-                  case Some(blockhash) =>
-                    log.warning(s"getting all transactions since blockhash=$blockhash")
-                    client.getTxsSinceBlockHash(blockhash).map {
-                      case txs =>
-                        log.warning(s"found ${txs.size} txs since blockhash=$blockhash")
-                        txs.foreach(tx => self ! NewTransaction(tx))
-                    } onFailure {
-                      case t: Throwable => log.error(t, "")
-                    }
-                }
-                client.getMempool().map {
-                  case txs =>
-                    log.warning(s"found ${txs.size} txs in the mempool")
-                    txs.foreach(tx => self ! NewTransaction(tx))
+                log.warning(s"looking first in the mempool")
+                client.getMempool().map { mempoolTxs =>
+                  mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+                    case Nil =>
+                      log.warning(s"couldn't find spending tx in the mempool, looking into blocks...")
+                      client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
+                        log.warning(s"found the spending tx in the blockchain: txid=${tx.txid}")
+                        self ! NewTransaction(tx)
+                      }
+                    case txs =>
+                      log.warning(s"found ${txs.size} spending txs in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                      txs.foreach(tx => self ! NewTransaction(tx))
+                  }
                 }
             }
         }

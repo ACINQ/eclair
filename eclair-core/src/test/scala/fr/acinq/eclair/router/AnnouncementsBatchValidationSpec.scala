@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.ChannelAnnouncement
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -82,4 +82,8 @@ object AnnouncementsBatchValidationSpec {
     val channelAnnouncement = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, c.node1Key.publicKey, c.node2Key.publicKey, c.node1FundingKey.publicKey, c.node2FundingKey.publicKey, channelAnnNodeSig1, channelAnnNodeSig2, channelAnnBitcoinSig1, channelAnnBitcoinSig2)
     channelAnnouncement
   }
+
+  def makeChannelUpdate(c: SimulatedChannel, shortChannelId: Long): ChannelUpdate =
+    Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, c.node1Key, c.node2Key.publicKey, shortChannelId, 10, 1000, 10, 100)
+
 }

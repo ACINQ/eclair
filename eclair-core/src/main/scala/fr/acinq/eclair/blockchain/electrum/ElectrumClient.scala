@@ -29,6 +29,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
 
   val newline = "\n"
   val connectionFailures = collection.mutable.HashMap.empty[InetSocketAddress, Long]
+  val socketOptions = Tcp.SO.KeepAlive(true) :: Nil
 
   val version = ServerVersion("2.1.7", "1.1")
   // we need to regularly send a ping in order not to get disconnected
@@ -39,7 +40,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       case _: Tcp.ConnectionClosed =>
         val nextAddress = nextPeer()
         log.warning(s"connection failed, trying $nextAddress")
-        self ! Tcp.Connect(nextAddress)
+        self ! Tcp.Connect(nextAddress, options = socketOptions)
         statusListeners.map(_ ! ElectrumDisconnected)
         context.system.eventStream.publish(ElectrumDisconnected)
         context become disconnected
@@ -104,7 +105,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
   val headerSubscriptions = collection.mutable.HashSet.empty[ActorRef]
 
   context.system.eventStream.publish(ElectrumDisconnected)
-  self ! Tcp.Connect(serverAddresses.head)
+  self ! Tcp.Connect(serverAddresses.head, options = socketOptions)
 
   var reqId = 0L
 
@@ -133,7 +134,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       connectionFailures.put(remoteAddress, connectionFailures.getOrElse(remoteAddress, 0L) + 1L)
       val count = connectionFailures.getOrElse(nextAddress, 0L)
       val delay = Math.min(Math.pow(2.0, count), 60.0) seconds;
-      context.system.scheduler.scheduleOnce(delay, self, Tcp.Connect(nextAddress))
+      context.system.scheduler.scheduleOnce(delay, self, Tcp.Connect(nextAddress, options = socketOptions))
   }
 
   def waitingForVersion(connection: ActorRef, remote: InetSocketAddress): Receive = {

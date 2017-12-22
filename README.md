@@ -128,6 +128,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   open        | nodeId, host, port, fundingSatoshis, pushMsat | opens a channel with another lightning node
   peers       |                                               | list existing local peers
   channels    |                                               | list existing local channels
+  channels    | nodeId                                        | list existing local channels opened with a particular nodeId
   channel     | channelId                                     | retrieve detailed information about a given channel
   allnodes    |                                               | list all known nodes
   allchannels |                                               | list all known channels
@@ -136,6 +137,8 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   send        | amountMsat, paymentHash, nodeId               | send a payment to a lightning node
   send        | paymentRequest                                | send a payment to a lightning node using a BOLT11 payment request
   send        | paymentRequest, amountMsat                    | send a payment to a lightning node using a BOLT11 payment request and a custom amount
+  checkpayment| paymentHash                                   | returns true if the payment has been received, false otherwise
+  checkpayment| paymentRequest                                | returns true if the payment has been received, false otherwise
   close       | channelId                                     | close a channel
   close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
   help        |                                               | display available methods

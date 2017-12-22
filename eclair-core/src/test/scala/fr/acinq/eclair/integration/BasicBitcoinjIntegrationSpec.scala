@@ -503,7 +503,7 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("generate", 1))
       sender.expectMsgType[JValue](10 seconds)
-      ext.getTxsSinceBlockHash(currentBlockHash).pipeTo(sender.ref)
+      //ext.getTxsSinceBlockHash(currentBlockHash).pipeTo(sender.ref)
       val txes = sender.expectMsgType[Seq[fr.acinq.bitcoin.Transaction]].filterNot(fr.acinq.bitcoin.Transaction.isCoinbase(_))
       // at this point F should have 1 recv transactions: the redeemed htlc and C will have its main output
       txes.count(tx => tx.txOut(0).publicKeyScript == finalScriptPubkeyF) == 1 &&
@@ -558,7 +558,7 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("generate", 1))
       sender.expectMsgType[JValue](10 seconds)
-      ext.getTxsSinceBlockHash(currentBlockHash).pipeTo(sender.ref)
+      //ext.getTxsSinceBlockHash(currentBlockHash).pipeTo(sender.ref)
       val txes = sender.expectMsgType[Seq[fr.acinq.bitcoin.Transaction]].filterNot(fr.acinq.bitcoin.Transaction.isCoinbase(_))
       // at this point C should have 2 recv transactions: its main output and the htlc timeout
       txes.count(tx => tx.txOut(0).publicKeyScript == finalScriptPubkeyF) == 0 &&
@@ -615,7 +615,7 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("generate", 1))
       sender.expectMsgType[JValue](10 seconds)
-      ext.getTxsSinceBlockHash(currentBlockHash).pipeTo(sender.ref)
+      //ext.getTxsSinceBlockHash(currentBlockHash).pipeTo(sender.ref)
       val txes = sender.expectMsgType[Seq[fr.acinq.bitcoin.Transaction]].filterNot(fr.acinq.bitcoin.Transaction.isCoinbase(_))
       // at this point C should have 2 recv transactions: its main output and the htlc timeout
       txes.count(tx => tx.txOut(0).publicKeyScript == finalScriptPubkeyF) == 0 &&
