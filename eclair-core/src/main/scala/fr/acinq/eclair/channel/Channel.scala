@@ -1313,7 +1313,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def handleCommandError(cause: Throwable, cmd: Command) = {
-    log.error(s"error=$cause while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
+    log.error(s"${cause.getMessage} while processing cmd=${cmd.getClass.getSimpleName} in state=$stateName")
     cause match {
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=$cmd stateData=$stateData ")
@@ -1322,7 +1322,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def handleLocalError(cause: Throwable, d: HasCommitments, msg: Option[Any]) = {
-    log.error(s"error=$cause while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
+    log.error(s"${cause.getMessage} while processing msg=${msg.getOrElse("n/a").getClass.getSimpleName} in state=$stateName")
     cause match {
       case _: ChannelException => ()
       case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
