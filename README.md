@@ -12,7 +12,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
  
  :construction: Both the BOLTs and Eclair itself are a work in progress. Expect things to break/change!
  
- :warning: Eclair currently only runs on regtest or testnet. We recommend testing in regtest, as it allows you to generate blocks manually and not wait for confirmations.
+ :warning: Eclair currently only runs on regtest or testnet. We recommend testing in testnet, as it allows you to generate blocks manually and not wait for confirmations.
  
  :rotating_light: We had reports of Eclair being tested on various segwit-enabled blockchains. Keep in mind that Eclair is still alpha quality software, by using it with actual coins you are putting your funds at risk!
 
@@ -35,7 +35,7 @@ Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _non-prunin
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 ```
-regtest=1
+testnet=1
 server=1
 rpcuser=XXX
 rpcpassword=XXX
