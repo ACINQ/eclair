@@ -28,21 +28,31 @@ class RouterSpec extends BaseRouterSpec {
 
     val channelId_ac = toShortId(420000, 5, 0)
     val chan_ac = channelAnnouncement(channelId_ac, priv_a, priv_c, priv_funding_a, priv_funding_c)
+    val update_ac = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, c, channelId_ac, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
     // a-x will not be found
-    val chan_ax = channelAnnouncement(42001, priv_a, randomKey, priv_funding_a, randomKey)
+    val priv_x = randomKey
+    val chan_ax = channelAnnouncement(42001, priv_a, priv_x, priv_funding_a, randomKey)
+    val update_ax = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_x.publicKey, chan_ax.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
     // a-y will have an invalid script
     val priv_y = randomKey
     val priv_funding_y = randomKey
     val chan_ay = channelAnnouncement(42002, priv_a, priv_y, priv_funding_a, priv_funding_y)
+    val update_ay = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_y.publicKey, chan_ay.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
     // a-z will be spent
     val priv_z = randomKey
     val priv_funding_z = randomKey
     val chan_az = channelAnnouncement(42003, priv_a, priv_z, priv_funding_a, priv_funding_z)
+    val update_az = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_z.publicKey, chan_az.shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10)
 
     router ! chan_ac
     router ! chan_ax
     router ! chan_ay
     router ! chan_az
+    // router won't validate channels before it has a recent enough channel update
+    router ! update_ac
+    router ! update_ax
+    router ! update_ay
+    router ! update_az
     router ! TickValidate // we manually trigger a validation
     watcher.expectMsg(ParallelGetRequest(chan_ac :: chan_ax :: chan_ay :: chan_az :: Nil))
     watcher.send(router, ParallelGetResponse(
