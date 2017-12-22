@@ -377,9 +377,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // we convert extra routing info provided in the payment request to fake channel_update
       // it has precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end))
-      // we add them to  unannounced channel_updates
-      val updates0 = d.privateUpdates
-      // we add them to the publicly-announced updates (order matters!! local channel_updates will override channel_updates received by the network)
+      // we add them to the private channel_updates
+      val updates0 = d.privateUpdates ++ assistedUpdates
+      // we add them to the publicly-announced updates (order matters!! local/assisted channel_updates will override channel_updates received by the network)
       val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
       val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
