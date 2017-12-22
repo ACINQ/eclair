@@ -88,7 +88,9 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           val confirmations = computeDepth(header.block_height, height)
           context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
       }
-      stay using data.copy(tip = header)
+      // goto instead of stay because we want to advertise than we have an updated tip even if
+      // nothing else has changed
+      goto(stateName) using data.copy(tip = header)
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) => stay // we already have it
 
@@ -315,7 +317,7 @@ object ElectrumWallet {
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi]) extends WalletEvent
   case class TransactionConfidenceChanged(txid: BinaryData, depth: Long) extends WalletEvent
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
-  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long) extends WalletEvent
+  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
   // @formatter:on
 
   /**
@@ -453,7 +455,7 @@ object ElectrumWallet {
 
     def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
-      WalletReady(confirmed, unconfirmed, tip.block_height)
+      WalletReady(confirmed, unconfirmed, tip.block_height, tip.timestamp)
     }
 
     /**
