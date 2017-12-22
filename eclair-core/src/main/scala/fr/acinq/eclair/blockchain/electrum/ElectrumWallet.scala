@@ -232,7 +232,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   }
 
   onTransition {
-    case _ -> _ if nextStateData.isReady(params.swipeRange) =>
+    case _ -> RUNNING if nextStateData.isReady(params.swipeRange) =>
       val ready = nextStateData.readyMessage
       log.info(s"wallet is ready with $ready")
       context.system.eventStream.publish(ready)
