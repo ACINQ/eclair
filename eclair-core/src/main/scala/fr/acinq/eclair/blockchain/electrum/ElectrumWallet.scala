@@ -409,18 +409,18 @@ object ElectrumWallet {
     * - 0 means unconfirmed, but all input are confirmed
     * < 0 means unconfirmed, and sonme inputs are unconfirmed as well
     *
-    * @param tip          current blockchain tip
-    * @param accountKeys  account keys
-    * @param changeKeys   change keys
-    * @param status       script hash -> status; "" means that the script hash has not been used
-    *                     yet
-    * @param transactions wallet transactions
-    * @param heights      transactions heights
-    * @param history      script hash -> history
-    * @param locks        transactions which lock some of our utxos.
-    * @param pendingHistoryRequests       requests pending a response from the electrum server
-    * @param pendingTransactionRequests   requests pending a response from the electrum server
-    * @param pendingTransactions          transactions received but not yet connected to their parents
+    * @param tip                        current blockchain tip
+    * @param accountKeys                account keys
+    * @param changeKeys                 change keys
+    * @param status                     script hash -> status; "" means that the script hash has not been used
+    *                                   yet
+    * @param transactions               wallet transactions
+    * @param heights                    transactions heights
+    * @param history                    script hash -> history
+    * @param locks                      transactions which lock some of our utxos.
+    * @param pendingHistoryRequests     requests pending a response from the electrum server
+    * @param pendingTransactionRequests requests pending a response from the electrum server
+    * @param pendingTransactions        transactions received but not yet connected to their parents
     */
   case class Data(tip: ElectrumClient.Header,
                   accountKeys: Vector[ExtendedPrivateKey],
@@ -611,30 +611,27 @@ object ElectrumWallet {
 
     /**
       *
-      * @param tx input transaction
+      * @param tx    input transaction
       * @param utxos input uxtos
       * @return a tx where all utxos have been added as inputs, signed with dummy invalid signatures. This
       *         is used to estimate the weight of the signed transaction
       */
-    def addUtxosWithDummySig(tx: Transaction, utxos: Seq[Utxo]) : Transaction = {
-      val selected = utxos
-      var tx1 = tx.copy(txIn = selected.map(utxo => TxIn(utxo.outPoint, Nil, TxIn.SEQUENCE_FINAL)))
-      for (i <- 0 until tx1.txIn.size) {
-        val key = selected(i).key
+    def addUtxosWithDummySig(tx: Transaction, utxos: Seq[Utxo]): Transaction =
+      tx.copy(txIn = utxos.map { case utxo =>
         // we use dummy signature here, because the result is only used to estimate fees
         val sig = BinaryData("01" * 71)
-        tx1 = tx1.updateWitness(i, ScriptWitness(sig :: key.publicKey.toBin :: Nil)).updateSigScript(i, OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
-      }
-      tx1
-    }
+        val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(utxo.key.publicKey))) :: Nil)
+        val witness = ScriptWitness(sig :: utxo.key.publicKey.toBin :: Nil)
+        TxIn(utxo.outPoint, signatureScript = sigScript, sequence = TxIn.SEQUENCE_FINAL, witness = witness)
+      })
 
     /**
       *
-      * @param amount amount we want to pay
+      * @param amount                amount we want to pay
       * @param allowSpendUnconfirmed if true, use unconfirmed utxos
       * @return a set of utxos with a total value that is greater than amount
       */
-    def chooseUtxos(amount: Satoshi, allowSpendUnconfirmed: Boolean) : Seq[Utxo] = {
+    def chooseUtxos(amount: Satoshi, allowSpendUnconfirmed: Boolean): Seq[Utxo] = {
       @tailrec
       def select(chooseFrom: Seq[Utxo], selected: Set[Utxo]): Set[Utxo] = {
         if (totalAmount(selected) >= amount) selected
@@ -687,19 +684,19 @@ object ElectrumWallet {
 
       // add change output only if non-dust, otherwise change is added to the fee
       val (tx2, fee2, pos) = (spent - amount - fee1) match {
-        case change if change < dustLimit => (tx1, fee1 + change, -1)
-        case change => (tx1.addOutput(TxOut(change, computePublicKeyScript(currentChangeKey.publicKey))), fee1, 1)
+        case dustChange if dustChange < dustLimit => (tx1, fee1 + dustChange, -1) // if change is below dust we add it to fees
+        case change => (tx1.addOutput(TxOut(change, computePublicKeyScript(currentChangeKey.publicKey))), fee1, 1) // change output index is always 1
       }
 
       // sign our tx
-      val selected = utxos
-      var tx3 = tx2
-      for (i <- 0 until tx3.txIn.size) {
-        val key = selected(i).key
-        val sig = Transaction.signInput(tx3, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(selected(i).item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
-        tx3 = tx3.updateWitness(i, ScriptWitness(sig :: key.publicKey.toBin :: Nil)).updateSigScript(i, OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
-      }
-      Transaction.correctlySpends(tx3, selected.map(utxo => utxo.outPoint -> TxOut(Satoshi(utxo.item.value), computePublicKeyScript(utxo.key.publicKey))).toMap, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      val tx3 = tx2.copy(txIn = tx2.txIn.zipWithIndex.map { case (txIn, i) =>
+        val key = utxos(i).key
+        val sig = Transaction.signInput(tx3, i, Script.pay2pkh(key.publicKey), SIGHASH_ALL, Satoshi(utxos(i).item.value), SigVersion.SIGVERSION_WITNESS_V0, key.privateKey)
+        val sigScript = Script.write(OP_PUSHDATA(Script.write(Script.pay2wpkh(key.publicKey))) :: Nil)
+        val witness = ScriptWitness(sig :: key.publicKey.toBin :: Nil)
+        txIn.copy(signatureScript = sigScript, witness = witness)
+      })
+      //Transaction.correctlySpends(tx3, utxos.map(utxo => utxo.outPoint -> TxOut(Satoshi(utxo.item.value), computePublicKeyScript(utxo.key.publicKey))).toMap, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
       // and add the completed tx to the lokcs
       val data1 = this.copy(locks = this.locks + tx3)
@@ -746,4 +743,5 @@ object ElectrumWallet {
   }
 
   case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
+
 }
