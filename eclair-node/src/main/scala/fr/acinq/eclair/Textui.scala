@@ -1,6 +1,5 @@
 package fr.acinq.eclair
 
-import java.net.InetSocketAddress
 import java.util.concurrent.atomic.AtomicBoolean
 
 import akka.actor.{ActorRef, Props, SupervisorStrategy}
@@ -10,11 +9,14 @@ import com.googlecode.lanterna.{TerminalPosition, TerminalSize}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliBtc, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel.State
-import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, SendPayment}
 import grizzled.slf4j.Logging
 
 import scala.collection.JavaConversions._
+import akka.pattern.ask
+import akka.util.Timeout
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 05/06/2017.
@@ -88,6 +90,8 @@ class Textui(kit: Kit) extends Logging {
   //window.setTheme(theme)
   window.setHints(/*Window.Hint.FULL_SCREEN :: */ Window.Hint.NO_DECORATIONS :: Nil)
 
+  import scala.concurrent.ExecutionContext.Implicits.global
+  implicit val timeout = Timeout(30 seconds)
 
   val textuiUpdater = kit.system.actorOf(SimpleSupervisor.props(Props(classOf[TextuiUpdater], this), "textui-updater", SupervisorStrategy.Resume))
   // Create gui and start gui
@@ -109,10 +113,11 @@ class Textui(kit: Kit) extends Logging {
               //.setValidationPattern(Pattern.compile("[0-9]"), "You didn't enter a single number!")
               .build()
               .showDialog(gui)
-            val hostRegex = """([a-fA-F0-9]{66})@([a-zA-Z0-9:\.\-_]+):([0-9]+)""".r
             try {
-              val hostRegex(nodeId, host, port) = input
-              kit.switchboard ! NewConnection(PublicKey(BinaryData(nodeId)), new InetSocketAddress(host, port.toInt), Some(NewChannel(MilliBtc(30), MilliSatoshi(0), None)))
+              for {
+                _ <- kit.switchboard ? Peer.Connect(NodeURI.parse(input))
+                _ <- kit.switchboard ? Peer.OpenChannel(NodeURI.parse(input).nodeId, MilliBtc(30), MilliSatoshi(0), None)
+              } yield {}
             } catch {
               case t: Throwable => logger.error("", t)
             }
