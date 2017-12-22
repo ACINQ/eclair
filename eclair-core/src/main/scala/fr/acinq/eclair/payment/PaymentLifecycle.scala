@@ -7,13 +7,16 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
+import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
 
+import scala.util.{Failure, Success}
+
 // @formatter:off
 case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String)
-case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
+case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
 
 sealed trait PaymentResult
 case class PaymentSucceeded(route: Seq[Hop], paymentPreimage: BinaryData) extends PaymentResult
@@ -46,7 +49,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
   when(WAITING_FOR_REQUEST) {
     case Event(c: SendPayment, WaitingForRequest) =>
-      router ! RouteRequest(sourceNodeId, c.targetNodeId)
+      router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes)
       goto(WAITING_FOR_ROUTE) using WaitingForRoute(sender, c, failures = Nil)
   }
 
@@ -74,25 +77,28 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 
     case Event(fail: UpdateFailHtlc, WaitingForComplete(s, c, _, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)) =>
       Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
-        case None =>
-          log.warning(s"cannot parse returned error ${fail.reason}")
-          s ! PaymentFailed(c.paymentHash, failures = failures :+ UnreadableRemoteFailure(hops))
-          stop(FSM.Normal)
-        case Some(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
+        case Failure(t) =>
+          log.warning(s"cannot parse returned error: ${t.getMessage}")
+          // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
+          val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
+          log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels)
+          goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
+        case Success(e@ErrorPacket(nodeId, failureMessage)) if nodeId == c.targetNodeId =>
           log.warning(s"received an error message from target nodeId=$nodeId, failing the payment (failure=$failureMessage)")
           s ! PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
           stop(FSM.Normal)
-        case Some(e@ErrorPacket(nodeId, failureMessage)) if failures.size + 1 >= c.maxAttempts =>
+        case Success(e@ErrorPacket(nodeId, failureMessage)) if failures.size + 1 >= c.maxAttempts =>
           log.info(s"received an error message from nodeId=$nodeId (failure=$failureMessage)")
           log.warning(s"too many failed attempts, failing the payment")
           s ! PaymentFailed(c.paymentHash, failures = failures :+ RemoteFailure(hops, e))
           stop(FSM.Normal)
-        case Some(e@ErrorPacket(nodeId, failureMessage: Node)) =>
+        case Success(e@ErrorPacket(nodeId, failureMessage: Node)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to route around it (failure=$failureMessage)")
           // let's try to route around this node
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
-        case Some(e@ErrorPacket(nodeId, failureMessage: Update)) =>
+        case Success(e@ErrorPacket(nodeId, failureMessage: Update)) =>
           log.info(s"received 'Update' type error message from nodeId=$nodeId, retrying payment (failure=$failureMessage)")
           if (Announcements.checkSig(failureMessage.update, nodeId)) {
             // note that we check the sig, but we don't make sure that this update was for the exact channel we required
@@ -112,18 +118,18 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
             // in any case, we forward the update to the router
             router ! failureMessage.update
             // let's try again, router will have updated its state
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes, ignoreChannels)
           } else {
             // this node is fishy, it gave us a bad sig!! let's filter it out
             log.warning(s"got bad signature from node=$nodeId update=${failureMessage.update}")
-            router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes + nodeId, ignoreChannels)
+            router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes + nodeId, ignoreChannels)
           }
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
-        case Some(e@ErrorPacket(nodeId, failureMessage)) =>
+        case Success(e@ErrorPacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
           val faultyChannel = hops.find(_.nodeId == nodeId).map(_.lastUpdate.shortChannelId)
-          router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels ++ faultyChannel.toSet)
+          router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
 
@@ -141,7 +147,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         stop(FSM.Normal)
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-        router ! RouteRequest(sourceNodeId, c.targetNodeId, ignoreNodes, ignoreChannels + hops.head.lastUpdate.shortChannelId)
+        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes, ignoreChannels + hops.head.lastUpdate.shortChannelId)
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
       }
 
@@ -153,6 +159,15 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
+
+  /**
+    *
+    * @param baseMsat     fixed fee
+    * @param proportional proportional fee
+    * @param msat         amount in millisatoshi
+    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
+    */
+  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
 
   def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
@@ -176,10 +191,11 @@ object PaymentLifecycle {
     *         - firstExpiry is the cltv expiry for the first htlc in the route
     *         - a sequence of payloads that will be used to build the onion
     */
-  def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[PaymentHop]): (Long, Long, Seq[PerHopPayload]) =
+  def buildPayloads(finalAmountMsat: Long, finalExpiry: Long, hops: Seq[Hop]): (Long, Long, Seq[PerHopPayload]) =
     hops.reverse.foldLeft((finalAmountMsat, finalExpiry, PerHopPayload(0L, finalAmountMsat, finalExpiry) :: Nil)) {
       case ((msat, expiry, payloads), hop) =>
-        (msat + hop.nextFee(msat), expiry + hop.cltvExpiryDelta, PerHopPayload(hop.shortChannelId, msat, expiry) +: payloads)
+        val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
+        (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
 
   // this is defined in BOLT 11

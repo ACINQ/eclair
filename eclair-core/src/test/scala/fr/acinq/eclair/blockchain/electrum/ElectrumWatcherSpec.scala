@@ -71,7 +71,7 @@ class ElectrumWatcherSpec extends IntegrationSpec {
     val listener = TestProbe()
     probe.send(watcher, WatchSpent(listener.ref, tx.txid, pos, tx.txOut(pos).publicKeyScript, BITCOIN_FUNDING_SPENT))
     listener.expectNoMsg(1 second)
-    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", Transaction.write(spendingTx).toString :: Nil))
+    probe.send(bitcoincli, BitcoinReq("sendrawtransaction", spendingTx.toString :: Nil))
     probe.expectMsgType[JValue]
     probe.send(bitcoincli, BitcoinReq("generate", 2 :: Nil))
     val blocks = probe.expectMsgType[JValue]

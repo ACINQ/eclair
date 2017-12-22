@@ -1,11 +1,11 @@
 package fr.acinq.eclair.api
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Transaction}
+import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import org.json4s.CustomSerializer
+import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.json4s.JsonAST.{JNull, JString}
 
 /**
@@ -71,6 +71,15 @@ class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWit
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
-  case x: TransactionWithInputInfo => JString(Transaction.write(x.tx).toString())
+  case x: TransactionWithInputInfo => JString(x.tx.toString())
+}
+))
+
+class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ( {
+  case x: String =>
+    val Array(k, v) = x.split(":")
+    OutPoint(BinaryData(k), v.toLong)
+}, {
+  case x: OutPoint => s"${x.hash}:${x.index}"
 }
 ))

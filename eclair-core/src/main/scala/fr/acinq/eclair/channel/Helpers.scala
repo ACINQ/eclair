@@ -195,7 +195,7 @@ object Helpers {
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
-      log.debug(s"closingTx=${Transaction.write(closingTx.tx)}")
+      log.debug(s"closingTx=${closingTx.tx}}")
       (closingTx, closingSigned)
     }
 
@@ -216,7 +216,7 @@ object Helpers {
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo])(implicit log: LoggingAdapter): Option[TransactionWithInputInfo] = {
       attempt match {
         case Success(txinfo) =>
-          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${Transaction.write(txinfo.tx)}")
+          log.info(s"tx generation success: desc=$desc txid=${txinfo.tx.txid} amount=${txinfo.tx.txOut.map(_.amount.amount).sum} tx=${txinfo.tx}")
           Some(txinfo)
         case Failure(t: TxGenerationSkipped) =>
           log.info(s"tx generation skipped: desc=$desc reason: ${t.getMessage}")
@@ -248,7 +248,7 @@ object Helpers {
 
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output")(Try {
-        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+        val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
         val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
         Transactions.addSigs(claimDelayed, sig)
       })
@@ -277,7 +277,7 @@ object Helpers {
       val htlcDelayedTxes = htlcTxes.map {
         case txinfo: TransactionWithInputInfo => generateTx("claim-delayed-output")(Try {
           // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, localParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
+          val claimDelayed = Transactions.makeClaimDelayedOutputTx(txinfo.tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPrivkey.publicKey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
           val sig = Transactions.sign(claimDelayed, localDelayedPrivkey)
           Transactions.addSigs(claimDelayed, sig)
         })
@@ -406,7 +406,7 @@ object Helpers {
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
             // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
-            val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, remoteParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
+            val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPrivkey.publicKey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
             val sig = Transactions.sign(txinfo, remoteRevocationPrivkey)
             Transactions.addSigs(txinfo, sig)
           })

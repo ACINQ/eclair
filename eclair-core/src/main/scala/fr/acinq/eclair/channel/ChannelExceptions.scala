@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.payment.Origin
-import fr.acinq.eclair.wire.ChannelUpdate
+import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 
 /**
   * Created by PM on 11/04/2017.
@@ -28,9 +28,9 @@ case class FundingTxTimedout                   (override val channelId: BinaryDa
 case class FundingTxSpent                      (override val channelId: BinaryData, spendingTx: Transaction) extends ChannelException(channelId, s"funding tx has been spent by txid=${spendingTx.txid}")
 case class HtlcTimedout                        (override val channelId: BinaryData) extends ChannelException(channelId, "one or more htlcs timed out")
 case class FeerateTooDifferent                 (override val channelId: BinaryData, localFeeratePerKw: Long, remoteFeeratePerKw: Long) extends ChannelException(channelId, s"local/remote feerates are too different: remoteFeeratePerKw=$remoteFeeratePerKw localFeeratePerKw=$localFeeratePerKw")
-case class InvalidCommitmentSignature          (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid commitment signature: tx=${Transaction.write(tx)}")
-case class InvalidHtlcSignature                (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid htlc signature: tx=${Transaction.write(tx)}")
-case class InvalidCloseSignature               (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid close signature: tx=${Transaction.write(tx)}")
+case class InvalidCommitmentSignature          (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid commitment signature: tx=$tx")
+case class InvalidHtlcSignature                (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid htlc signature: tx=$tx")
+case class InvalidCloseSignature               (override val channelId: BinaryData, tx: Transaction) extends ChannelException(channelId, s"invalid close signature: tx=$tx")
 case class InvalidCloseFee                     (override val channelId: BinaryData, feeSatoshi: Long) extends ChannelException(channelId, s"invalid close fee: fee_satoshis=$feeSatoshi")
 case class HtlcSigCountMismatch                (override val channelId: BinaryData, expected: Int, actual: Int) extends ChannelException(channelId, s"htlc sig count mismatch: expected=$expected actual: $actual")
 case class ForcedLocalCommit                   (override val channelId: BinaryData, reason: String) extends ChannelException(channelId, s"forced local commit: reason")
@@ -44,6 +44,7 @@ case class TooManyAcceptedHtlcs                (override val channelId: BinaryDa
 case class InsufficientFunds                   (override val channelId: BinaryData, amountMsat: Long, missingSatoshis: Long, reserveSatoshis: Long, feesSatoshis: Long) extends ChannelException(channelId, s"insufficient funds: missingSatoshis=$missingSatoshis reserveSatoshis=$reserveSatoshis fees=$feesSatoshis")
 case class InvalidHtlcPreimage                 (override val channelId: BinaryData, id: Long) extends ChannelException(channelId, s"invalid htlc preimage for htlc id=$id")
 case class UnknownHtlcId                       (override val channelId: BinaryData, id: Long) extends ChannelException(channelId, s"unknown htlc id=$id")
+case class CannotExtractSharedSecret           (override val channelId: BinaryData, htlc: UpdateAddHtlc) extends ChannelException(channelId, s"can't extract shared secret: paymentHash=${htlc.paymentHash} onion=${htlc.onionRoutingPacket}")
 case class FundeeCannotSendUpdateFee           (override val channelId: BinaryData) extends ChannelException(channelId, s"only the funder should send update_fee messages")
 case class CannotAffordFees                    (override val channelId: BinaryData, missingSatoshis: Long, reserveSatoshis: Long, feesSatoshis: Long) extends ChannelException(channelId, s"can't pay the fee: missingSatoshis=$missingSatoshis reserveSatoshis=$reserveSatoshis feesSatoshis=$feesSatoshis")
 case class CannotSignWithoutChanges            (override val channelId: BinaryData) extends ChannelException(channelId, "cannot sign when there are no changes")

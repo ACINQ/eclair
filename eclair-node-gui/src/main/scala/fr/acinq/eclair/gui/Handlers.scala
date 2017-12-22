@@ -57,15 +57,19 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     }
   }
 
-  def send(nodeId: PublicKey, paymentHash: BinaryData, amountMsat: Long, minFinalCltvExpiry: Option[Long]) = {
-    logger.info(s"sending $amountMsat to $paymentHash @ $nodeId")
-    val request = minFinalCltvExpiry match {
-      case None => SendPayment(amountMsat, paymentHash, nodeId)
-      case Some(value) => SendPayment(amountMsat, paymentHash, nodeId, value)
+  def send(overrideAmountMsat_opt: Option[Long], req: PaymentRequest) = {
+    val amountMsat = overrideAmountMsat_opt
+      .orElse(req.amount.map(_.amount))
+      .getOrElse(throw new RuntimeException("you need to manually specify an amount for this payment request"))
+
+    logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
+    val sendPayment = req.minFinalCltvExpiry match {
+      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo())
+      case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo(), minFinalCltvExpiry = minFinalCltvExpiry)
     }
     (for {
       kit <- fKit
-      res <- (kit.paymentInitiator ? request).mapTo[PaymentResult]
+      res <- (kit.paymentInitiator ? sendPayment).mapTo[PaymentResult]
     } yield res)
       .onComplete {
         case Success(_: PaymentSucceeded) =>

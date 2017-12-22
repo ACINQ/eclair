@@ -58,7 +58,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardAdd(add) =>
       log.debug(s"received forwarding request for htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} ")
-      Try(Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket))
+      Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
         .flatMap {
           case Sphinx.ParsedPacket(payload, nextPacket, sharedSecret) =>
             LightningMessageCodecs.perHopPayloadCodec.decode(BitVector(payload.data)) match {
