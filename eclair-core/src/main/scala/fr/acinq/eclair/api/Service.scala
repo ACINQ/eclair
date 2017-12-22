@@ -134,13 +134,13 @@ trait Service extends Logging {
 
                     // local network methods
                     case "peers"        => completeRpcFuture(req.id, (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin)))
-                    case "channels"     => completeRpcFuture(req.id, (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys))
-                    case "channelsto"   => req.params match {
+                    case "channels"     => req.params match {
+                      case Nil => completeRpcFuture(req.id, (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys))
                       case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
-                        case Success(pk) => completeRpcFuture(req.id, (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys))
-                        case Failure(f) => reject(ValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
-                      }
-                      case _ => reject(UnknownParamsRejection(req.id, "[remoteNodeId]"))
+                          case Success(pk) => completeRpcFuture(req.id, (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys))
+                          case Failure(f) => reject(ValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
+                        }
+                      case _ => reject(UnknownParamsRejection(req.id, "no arguments or [remoteNodeId]"))
                     }
                     case "channel"      => req.params match {
                       case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_GETINFO).mapTo[RES_GETINFO])
@@ -222,7 +222,7 @@ trait Service extends Logging {
     "open (nodeId, host, port, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
     "peers: list existing local peers",
     "channels: list existing local channels",
-    "channelsto (nodeId): list existing local channels to a particular nodeId",
+    "channels (nodeId): list existing local channels to a particular nodeId",
     "channel (channelId): retrieve detailed information about a given channel",
     "allnodes: list all known nodes",
     "allchannels: list all known channels",
@@ -232,8 +232,8 @@ trait Service extends Logging {
     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
     "close (channelId): close a channel",
     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
-    "allpayments: list all received payments",
-    "payment (paymentHash or paymentRequest): returns the payment if it has been received",
+    "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
+    "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
     "help: display this message")
 
   /**

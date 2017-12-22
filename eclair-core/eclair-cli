@@ -18,8 +18,8 @@ case $1 in
 "channels")
         eval curl "$CURL_OPTS -d '{ \"method\": \"channels\", \"params\" : [] }' $URL" | jq ".result[]"
         ;;
-"channelsto")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"channelsto\", \"params\" : [\"${2?"missing node id"}\"] }' $URL" | jq ".result[]"
+"channels")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"channels\", \"params\" : [\"${2?"missing node id"}\"] }' $URL" | jq ".result[]"
         ;;
 "channel")
         eval curl "$CURL_OPTS -d '{ \"method\": \"channel\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL" | jq ".result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount }"
@@ -44,5 +44,8 @@ case $1 in
         ;;
 "peers")
         eval curl "$CURL_OPTS -d '{ \"method\": \"peers\", \"params\" : [] }' $URL" | jq ".result"
+        ;;
+"checkpayment")
+        eval curl "$CURL_OPTS -d '{ \"method\": \"checkpayment\", \"params\" : [\"${2?"missing payment request or payment hash"}\"] }' $URL" | jq ".result"
         ;;
 esac
