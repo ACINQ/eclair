@@ -50,6 +50,28 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   // |                                            |
   //  --------------------------------------------
 
+  /**
+    * Send a notification if the wallet is ready and its ready message has not
+    * already been sent
+    * @param data wallet data
+    * @return the input data with an updated 'last ready message' if needed
+    */
+  def notifyReady(data: ElectrumWallet.Data) : ElectrumWallet.Data = {
+    if(data.isReady(swipeRange)) {
+      data.lastReadyMessage match {
+        case Some(value) if value == data.readyMessage =>
+          log.debug(s"ready message $value has already been sent")
+          data
+        case _ =>
+          val ready = data.readyMessage
+          log.info(s"wallet is ready with $ready")
+          context.system.eventStream.publish(ready)
+          context.system.eventStream.publish(NewWalletReceiveAddress(data.currentReceiveAddress))
+          data.copy(lastReadyMessage = Some(ready))
+      }
+    } else data
+  }
+
   startWith(DISCONNECTED, {
     val header = chainHash match {
       case Block.RegtestGenesisBlock.hash => ElectrumClient.Header.RegtestGenesisHeader
@@ -72,7 +94,8 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case Event(ElectrumClient.HeaderSubscriptionResponse(header), data) =>
       data.accountKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
       data.changeKeys.foreach(key => client ! ElectrumClient.ScriptHashSubscription(computeScriptHashFromPublicKey(key.publicKey), self))
-      goto(RUNNING) using data.copy(tip = header)
+      // make sure there is not last ready message
+      goto(RUNNING) using data.copy(tip = header, lastReadyMessage = None)
 
     case Event(ElectrumClient.ElectrumDisconnected, data) =>
       log.info(s"wallet got disconnected")
@@ -89,9 +112,10 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           val confirmations = computeDepth(header.block_height, height)
           context.system.eventStream.publish(TransactionConfidenceChanged(txid, confirmations))
       }
-      stay using data.copy(tip = header)
+      stay using notifyReady(data.copy(tip = header))
 
-    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) => stay // we already have it
+    case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if data.status.get(scriptHash) == Some(status) =>
+      stay using notifyReady(data)// we already have it
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if !data.accountKeyMap.contains(scriptHash) && !data.changeKeyMap.contains(scriptHash) =>
       log.warning(s"received status=$status for scriptHash=$scriptHash which does not match any of our keys")
@@ -99,7 +123,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) if status == "" =>
       val data1 = data.copy(status = data.status + (scriptHash -> status)) // empty status, nothing to do
-      goto(stateName) using data1
+      stay using notifyReady(data1)
 
     case Event(ElectrumClient.ScriptHashSubscriptionResponse(scriptHash, status), data) =>
       val key = data.accountKeyMap.getOrElse(scriptHash, data.changeKeyMap(scriptHash))
@@ -127,7 +151,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
         status = data.status + (scriptHash -> status),
         pendingHistoryRequests = data.pendingHistoryRequests + scriptHash)
 
-      goto(stateName) using data1 // goto instead of stay because we want to fire transitions
+      stay using notifyReady(data1)
 
     case Event(ElectrumClient.GetScriptHashHistoryResponse(scriptHash, items), data) =>
       log.debug(s"scriptHash=$scriptHash has history=$items")
@@ -166,7 +190,7 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           }
       }
       val data1 = data.copy(heights = heights1, history = data.history + (scriptHash -> items0), pendingHistoryRequests = data.pendingHistoryRequests - scriptHash, pendingTransactionRequests = pendingTransactionRequests1)
-      goto(stateName) using data1 // goto instead of stay because we want to fire transitions
+      stay using notifyReady(data1)
 
     case Event(GetTransactionResponse(tx), data) =>
       log.debug(s"received transaction ${tx.txid}")
@@ -177,12 +201,12 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
           // when we have successfully processed a new tx, we retry all pending txes to see if they can be added now
           data.pendingTransactions.foreach(self ! GetTransactionResponse(_))
           val data1 = data.copy(transactions = data.transactions + (tx.txid -> tx), pendingTransactionRequests = data.pendingTransactionRequests - tx.txid, pendingTransactions = Nil)
-          goto(stateName) using data1 // goto instead of stay because we want to fire transitions
+          stay using notifyReady(data1)
         case None =>
           // missing parents
           log.info(s"couldn't connect txid=${tx.txid}")
           val data1 = data.copy(pendingTransactions = data.pendingTransactions :+ tx)
-          stay using data1
+          stay using notifyReady(data1)
       }
 
     case Event(CompleteTransaction(tx, feeRatePerKw), data) =>
@@ -200,11 +224,11 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
       val (received, sent, Some(fee)) = data.computeTransactionDelta(tx).get
       // we notify here because the tx won't be downloaded again (it has been added to the state at commit)
       context.system.eventStream.publish(TransactionReceived(tx, data1.computeTransactionDepth(tx.txid), received, sent, Some(fee)))
-      goto(stateName) using data1 replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
+      stay using notifyReady(data1) replying CommitTransactionResponse(tx) // goto instead of stay because we want to fire transitions
 
     case Event(CancelTransaction(tx), data) =>
       log.info(s"cancelling txid=${tx.txid}")
-      stay using data.cancelTransaction(tx) replying CancelTransactionResponse(tx)
+      stay using notifyReady(data.cancelTransaction(tx)) replying CancelTransactionResponse(tx)
 
     case Event(bc@ElectrumClient.BroadcastTransaction(tx), _) =>
       log.info(s"broadcasting txid=${tx.txid}")
@@ -228,14 +252,6 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
     case Event(GetData, data) => stay replying GetDataResponse(data)
 
     case Event(ElectrumClient.BroadcastTransaction(tx), _) => stay replying ElectrumClient.BroadcastTransactionResponse(tx, Some(Error(-1, "wallet is not connected")))
-  }
-
-  onTransition {
-    case _ -> _ if nextStateData.isReady(params.swipeRange) =>
-      val ready = nextStateData.readyMessage
-      log.info(s"wallet is ready with $ready")
-      context.system.eventStream.publish(ready)
-      context.system.eventStream.publish(NewWalletReceiveAddress(nextStateData.currentReceiveAddress))
   }
 
   initialize()
@@ -316,7 +332,7 @@ object ElectrumWallet {
   case class TransactionReceived(tx: Transaction, depth: Long, received: Satoshi, sent: Satoshi, feeOpt: Option[Satoshi]) extends WalletEvent
   case class TransactionConfidenceChanged(txid: BinaryData, depth: Long) extends WalletEvent
   case class NewWalletReceiveAddress(address: String) extends WalletEvent
-  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long) extends WalletEvent
+  case class WalletReady(confirmedBalance: Satoshi, unconfirmedBalance: Satoshi, height: Long, timestamp: Long) extends WalletEvent
   // @formatter:on
 
   /**
@@ -432,7 +448,8 @@ object ElectrumWallet {
                   locks: Set[Transaction],
                   pendingHistoryRequests: Set[BinaryData],
                   pendingTransactionRequests: Set[BinaryData],
-                  pendingTransactions: Seq[Transaction]) extends Logging {
+                  pendingTransactions: Seq[Transaction],
+                  lastReadyMessage: Option[WalletReady]) extends Logging {
     lazy val accountKeyMap = accountKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
 
     lazy val changeKeyMap = changeKeys.map(key => computeScriptHashFromPublicKey(key.publicKey) -> key).toMap
@@ -454,7 +471,7 @@ object ElectrumWallet {
 
     def readyMessage: WalletReady = {
       val (confirmed, unconfirmed) = balance
-      WalletReady(confirmed, unconfirmed, tip.block_height)
+      WalletReady(confirmed, unconfirmed, tip.block_height, tip.timestamp)
     }
 
     /**
@@ -739,7 +756,7 @@ object ElectrumWallet {
 
   object Data {
     def apply(params: ElectrumWallet.WalletParameters, tip: ElectrumClient.Header, accountKeys: Vector[ExtendedPrivateKey], changeKeys: Vector[ExtendedPrivateKey]): Data
-    = Data(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Seq())
+    = Data(tip, accountKeys, changeKeys, Map(), Map(), Map(), Map(), Set(), Set(), Set(), Seq(), None)
   }
 
   case class InfiniteLoopException(data: Data, tx: Transaction) extends Exception
