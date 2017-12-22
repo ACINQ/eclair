@@ -17,10 +17,6 @@
         </encoder>
     </appender>
 
-    <logger name="fr.acinq.eclair.channel" level="DEBUG"/>
-    <logger name="fr.acinq.eclair.channel.Register" level="DEBUG"/>
-    <logger name="fr.acinq.eclair.router" level="INFO"/>
-
     <if condition='isDefined("eclair.printToConsole")'>
         <then>
             <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
