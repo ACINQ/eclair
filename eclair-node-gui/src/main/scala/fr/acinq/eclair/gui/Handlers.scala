@@ -1,18 +1,15 @@
 package fr.acinq.eclair.gui
 
 import java.io.{File, FileWriter}
-import java.net.InetSocketAddress
 import java.text.NumberFormat
 import java.util.Locale
 
 import akka.pattern.ask
 import akka.util.Timeout
-import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
+import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
-import fr.acinq.eclair.gui.utils.GUIValidators
-import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
 
@@ -37,23 +34,24 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     * Opens a connection to a node. If the channel option exists this will also open a channel with the node, with a
     * `fundingSatoshis` capacity and `pushMsat` amount.
     *
-    * @param hostPort
+    * @param nodeUri
     * @param channel
     */
-  def open(hostPort: String, channel: Option[NewChannel]) = {
-    hostPort match {
-      case GUIValidators.hostRegex(remoteNodeId, host, port) =>
-        logger.info(s"opening a channel with remoteNodeId=$remoteNodeId")
-        (for {
-          address <- Future(new InetSocketAddress(host, port.toInt))
-          pubkey = PublicKey(remoteNodeId)
+  def open(nodeUri: NodeURI, channel: Option[Peer.OpenChannel]) = {
+    logger.info(s"opening a connection to nodeUri=$nodeUri")
+    (for {
           kit <- fKit
-          conn <- kit.switchboard ? NewConnection(pubkey, address, channel)
-        } yield conn) onFailure {
-          case t =>
-            notification("Connection failed", s"$host:$port", NOTIFICATION_ERROR)
-        }
-      case _ => {}
+          conn <- kit.switchboard ? Peer.Connect(nodeUri)
+          _ <- channel match {
+            case Some(o) =>
+              logger.info(s"opening a channel with remoteNodeId=${o.remoteNodeId}")
+              kit.switchboard ? o
+            case None => Future.successful(0) // nothing to do
+          }
+    } yield conn) onFailure {
+          case t: Throwable =>
+            t.printStackTrace()
+            notification("Connection failed", s"${nodeUri.address.getHostString}:${nodeUri.address.getPort}", NOTIFICATION_ERROR)
     }
   }
 

@@ -77,7 +77,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
         reader.read(payload) match {
           case (writer, _, Some((dec, enc, ck))) =>
             val remoteNodeId = PublicKey(writer.rs)
-            context.parent ! HandshakeCompleted(self, remoteNodeId)
+            context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
             val nextStateData = WaitingForListenerData(ExtendedCipherState(enc, ck), ExtendedCipherState(dec, ck), remainder)
             goto(WaitingForListener) using nextStateData
 
@@ -93,7 +93,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
               case (_, message, Some((enc, dec, ck))) => {
                 out ! buf(TransportHandler.prefix +: message)
                 val remoteNodeId = PublicKey(writer.rs)
-                context.parent ! HandshakeCompleted(self, remoteNodeId)
+                context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
                 val nextStateData = WaitingForListenerData(ExtendedCipherState(enc, ck), ExtendedCipherState(dec, ck), remainder)
                 goto(WaitingForListener) using nextStateData
               }
@@ -215,7 +215,7 @@ object TransportHandler {
 
   case class Listener(listener: ActorRef)
 
-  case class HandshakeCompleted(transport: ActorRef, remoteNodeId: PublicKey)
+  case class HandshakeCompleted(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey)
 
   sealed trait Data
 

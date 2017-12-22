@@ -1,7 +1,5 @@
 package fr.acinq.eclair.api
 
-import java.net.InetSocketAddress
-
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
@@ -20,7 +18,9 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Kit
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
+import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
@@ -52,7 +52,7 @@ trait Service extends Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer + new OutPointKeySerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -113,17 +113,15 @@ trait Service extends Logging {
 
                     // channel lifecycle methods
                     case "connect"      => req.params match {
-                      case JString(nodeId) :: JString(host) :: JInt(port) :: Nil =>
-                        completeRpcFuture(req.id, (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), None)).mapTo[String])
+                      case JString(uri) :: Nil =>
+                        completeRpcFuture(req.id, (switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String])
                       case _ => reject(UnknownParamsRejection(req.id, "[nodeId, host, port]"))
                     }
                     case "open"         => req.params match {
-                      case JString(nodeId) :: JString(host) :: JInt(port) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(newChannel) :: Nil =>
-                        completeRpcFuture(req.id, (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong),
-                          MilliSatoshi(pushMsat.toLong), Some(newChannel.toByte))))).mapTo[String])
-                      case JString(nodeId) :: JString(host) :: JInt(port) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil =>
-                        completeRpcFuture(req.id, (switchboard ? NewConnection(PublicKey(nodeId), new InetSocketAddress(host, port.toInt), Some(NewChannel(Satoshi(fundingSatoshi.toLong),
-                          MilliSatoshi(pushMsat.toLong), None)))).mapTo[String])
+                      case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(flags) :: Nil =>
+                        completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = Some(flags.toByte))).mapTo[String])
+                      case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil =>
+                        completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None)).mapTo[String])
                       case _ => reject(UnknownParamsRejection(req.id, "[nodeId, host, port, fundingSatoshi, pushMsat] or [nodeId, host, port, fundingSatoshi, pushMsat, newChannel]"))
                     }
                     case "close"        => req.params match {
@@ -133,7 +131,10 @@ trait Service extends Logging {
                     }
 
                     // local network methods
-                    case "peers"        => completeRpcFuture(req.id, (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]].map(_.map(_._1.toBin)))
+                    case "peers"        => completeRpcFuture(req.id, for {
+                      peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
+                      peerinfos <- Future.sequence(peers.values.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
+                    } yield peerinfos)
                     case "channels"     => req.params match {
                       case Nil => completeRpcFuture(req.id, (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys))
                       case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
@@ -218,8 +219,9 @@ trait Service extends Logging {
 
   def getInfoResponse: Future[GetInfoResponse]
 
-  def help = List("connect (nodeId, host, port): connect to another lightning node through a secure connection",
-    "open (nodeId, host, port, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
+  def help = List(
+    "connect (uri): open a secure connection to a lightning node",
+    "open (nodeId, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",

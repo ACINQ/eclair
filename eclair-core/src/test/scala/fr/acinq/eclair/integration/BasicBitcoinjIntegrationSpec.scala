@@ -16,8 +16,8 @@ import fr.acinq.eclair.blockchain.{Watch, WatchConfirmed}
 import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
-import fr.acinq.eclair.io.Disconnect
-import fr.acinq.eclair.io.Switchboard.{NewChannel, NewConnection}
+import fr.acinq.eclair.io.Peer.Disconnect
+import fr.acinq.eclair.io.{NodeURI, Peer, Switchboard}
 import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
@@ -165,11 +165,17 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
     node2.system.eventStream.subscribe(eventListener2.ref, classOf[ChannelStateChanged])
     val sender = TestProbe()
-    sender.send(node1.switchboard, NewConnection(
-      remoteNodeId = node2.nodeParams.privateKey.publicKey,
-      address = node2.nodeParams.publicAddresses.head,
-      newChannel_opt = Some(NewChannel(Satoshi(fundingSatoshis), MilliSatoshi(pushMsat), None))))
-    sender.expectMsgAnyOf(10 seconds, "connected", s"already connected to nodeId=${node2.nodeParams.privateKey.publicKey.toBin}")
+    sender.send(node1.switchboard, Peer.Connect(NodeURI(
+      nodeId = node2.nodeParams.privateKey.publicKey,
+      address = node2.nodeParams.publicAddresses.head)))
+    sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
+      sender.send(node1.switchboard, Peer.OpenChannel(
+        remoteNodeId = node2.nodeParams.privateKey.publicKey,
+        fundingSatoshis = Satoshi(fundingSatoshis),
+        pushMsat = MilliSatoshi(pushMsat),
+        channelFlags = None))
+    sender.expectMsgAnyOf(10 seconds, "channel created")
+
     awaitCond(eventListener1.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds, interval = 1 seconds)
     awaitCond(eventListener2.expectMsgType[ChannelStateChanged](10 seconds).currentState == WAIT_FOR_FUNDING_CONFIRMED, max = 30 seconds, interval = 1 seconds)
   }
