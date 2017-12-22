@@ -24,12 +24,18 @@ class CoinUtilsSpec  extends FunSuite {
   test("Convert decimal string amount to the correct BtcAmount") {
     val am_btc_dec: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1.23456789876", CoinUtils.BTC_LABEL)
     assert(am_btc_dec == MilliSatoshi(123456789876L))
+    val am_mbtc_dec_nozero: MilliSatoshi = CoinUtils.convertStringAmountToMsat(".25", CoinUtils.MILLI_BTC_LABEL)
+    assert(am_mbtc_dec_nozero == MilliSatoshi(25000000L))
     val am_mbtc_dec: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1.23456789", CoinUtils.MILLI_BTC_LABEL)
     assert(am_mbtc_dec == MilliSatoshi(123456789L))
     val am_sat_dec: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1.23456789", CoinUtils.SATOSHI_LABEL)
     assert(am_sat_dec == MilliSatoshi(1234))
     val am_msat_dec: MilliSatoshi = CoinUtils.convertStringAmountToMsat("1.234", CoinUtils.MILLI_SATOSHI_LABEL)
     assert(am_msat_dec == MilliSatoshi(1))
+  }
+
+  test("Convert string amount with multiple decimal") {
+    intercept[IllegalArgumentException](CoinUtils.convertStringAmountToMsat(".12.3456789876", "foo"))
   }
 
   test("Convert string amount with unknown unit") {

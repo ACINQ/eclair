@@ -23,9 +23,9 @@ class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: In
 
   override def receive = group(messages)
 
-  def group(messages: Iterable[Any]): Receive = {
+  def group(remaining: Iterable[Any]): Receive = {
     case Tick =>
-      messages.splitAt(chunkSize) match {
+      remaining.splitAt(chunkSize) match {
         case (Nil, _) =>
           clock.cancel()
           log.debug(s"sent messages=${messages.size} with chunkSize=$chunkSize and delay=$delay")
