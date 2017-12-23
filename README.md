@@ -12,7 +12,7 @@ This software follows the [Lightning Network Specifications (BOLTs)](https://git
  
  :construction: Both the BOLTs and Eclair itself are a work in progress. Expect things to break/change!
  
- :warning: Eclair currently only runs on regtest or testnet. We recommend testing in testnet, as it allows you to generate blocks manually and not wait for confirmations.
+ :warning: Eclair currently only runs on regtest or testnet.
  
  :rotating_light: We had reports of Eclair being tested on various segwit-enabled blockchains. Keep in mind that Eclair is still alpha quality software, by using it with actual coins you are putting your funds at risk!
 
@@ -145,7 +145,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 
 ## Docker
 
-A [Dockerfile](Dockerfile) images are built on each commit on [docker hub](https://hub.docker.com/r/ACINQ/eclair) for running a dockerized eclair-node.
+A [Dockerfile](Dockerfile) image is built on each commit on [docker hub](https://hub.docker.com/r/ACINQ/eclair) for running a dockerized eclair-node.
 
 You can use the `JAVA_OPTS` environment variable to set arguments to `eclair-node`.
 
@@ -163,7 +163,7 @@ docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConso
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
-- [3] [https://explorer.acinq.co](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to.
+- [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to
 
 [Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
 [lightning-c]: https://github.com/ElementsProject/lightning
