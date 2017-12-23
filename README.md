@@ -163,6 +163,7 @@ docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConso
 ## Resources
 - [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
+- [3] [https://explorer.acinq.co](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to.
 
 [Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
 [lightning-c]: https://github.com/ElementsProject/lightning
