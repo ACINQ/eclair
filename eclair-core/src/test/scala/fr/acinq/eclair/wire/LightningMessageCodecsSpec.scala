@@ -183,7 +183,7 @@ class LightningMessageCodecsSpec extends FunSuite {
     val announcement_signatures = AnnouncementSignatures(randomBytes(32), 42, randomSignature, randomSignature)
     val ping = Ping(100, BinaryData("01" * 10))
     val pong = Pong(BinaryData("01" * 10))
-    val channel_reestablish = ChannelReestablish(randomBytes(32), 242842L, 42L)
+    val channel_reestablish = ChannelReestablish(randomBytes(32), 242842L, 42L, Some(scalar(0)), Some(point(1)))
 
     val msgs: List[LightningMessage] =
       open :: accept :: funding_created :: funding_signed :: funding_locked :: update_fee :: shutdown :: closing_signed ::

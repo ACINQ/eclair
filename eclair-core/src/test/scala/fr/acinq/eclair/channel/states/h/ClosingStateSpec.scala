@@ -303,7 +303,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       val sender = TestProbe()
-      sender.send(alice, ChannelReestablish(channelId(bob), 42, 42))
+      sender.send(alice, ChannelReestablish(channelId(bob), 42, 42, None, None))
       val error = alice2bob.expectMsgType[Error]
       assert(new String(error.data) === FundingTxSpent(channelId(alice), initialState.spendingTxes.head).getMessage)
     }

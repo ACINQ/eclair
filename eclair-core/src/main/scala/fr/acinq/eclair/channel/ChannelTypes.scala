@@ -43,6 +43,7 @@ case object CLOSING extends State
 case object CLOSED extends State
 case object OFFLINE extends State
 case object SYNCING extends State
+case object REFUNDING extends State
 case object ERR_FUNDING_PUBLISH_FAILED extends State
 case object ERR_FUNDING_LOST extends State
 case object ERR_FUNDING_TIMEOUT extends State
@@ -145,6 +146,10 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
+
+final case class DATA_REFUNDING(commitments: Commitments,
+                                startedAt: Long) extends Data with HasCommitments // `startedAt` may be used to remove channel if peer does not respond for a long time
+
 final case class DATA_CLOSING(commitments: Commitments,
                               localClosingSigned: List[ClosingSigned],
                               mutualClosePublished: List[Transaction] = Nil,
