@@ -116,11 +116,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val batch = remainingChannels.filter(c => newUpdates.exists(_.shortChannelId == c.shortChannelId)).take(MAX_PARALLEL_JSONRPC_REQUESTS)
       // we clean up the stash (nodes will be filtered afterwards)
       val stash1 = (remainingChannels diff batch) ++ newNodes ++ remainingUpdates
+      val stash2 = stash1.toSet.toSeq // dedupped
       if (batch.size > 0) {
         log.info(s"validating a batch of ${batch.size} channels")
         watcher ! ParallelGetRequest(batch)
-        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash1, awaiting = batch)
-      } else stay using d.copy(stash = stash1)
+        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash2, awaiting = batch)
+      } else stay using d.copy(stash = stash2)
   }
 
   when(WAITING_FOR_VALIDATION) {
