@@ -84,6 +84,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     peers.get(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
+        log.info(s"creating new peer current=${peers.size}")
         val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, previousKnownAddress, authenticator, watcher, router, relayer, wallet, offlineChannels), name = s"peer-$remoteNodeId")
         context watch (peer)
         peer

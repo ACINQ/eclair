@@ -25,6 +25,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
     case pending@PendingAuth(connection, _, outgoingConnection_opt) =>
+      log.info(s"added auth request current=${authenticating.size}")
       val transport = context.actorOf(Props(
         new TransportHandler[LightningMessage](
           KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
