@@ -412,7 +412,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   onTransition {
     case _ -> NORMAL =>
       log.info(s"current status channels=${nextStateData.channels.size} nodes=${nextStateData.nodes.size} updates=${nextStateData.updates.size} privateChannels=${nextStateData.privateChannels.size} privateUpdates=${nextStateData.privateUpdates.size}")
-      log.info(s"rebroadcast=${nextStateData.rebroadcast.size} stash=${nextStateData.stash.size} awaiting=${nextStateData.awaiting.size} origins=${nextStateData.origins.size} excludedChannels=${nextStateData.excludedChannels.size}")
+      log.info(s"children=${context.children.size} rebroadcast=${nextStateData.rebroadcast.size} stash=${nextStateData.stash.size} awaiting=${nextStateData.awaiting.size} origins=${nextStateData.origins.size} excludedChannels=${nextStateData.excludedChannels.size}")
   }
 
   initialize()
