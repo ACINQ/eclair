@@ -35,7 +35,7 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
   implicit val materializer = ActorMaterializer()
   val httpClientFlow = Http().cachedHostConnectionPool[Promise[HttpResponse]](host, port)
 
-  val queueSize = 512
+  val queueSize = 32768
   val queue = Source.queue[(HttpRequest, Promise[HttpResponse])](queueSize, OverflowStrategy.dropNew)
       .via(httpClientFlow)
       .toMat(Sink.foreach({
