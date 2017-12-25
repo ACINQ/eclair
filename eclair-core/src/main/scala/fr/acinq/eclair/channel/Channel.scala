@@ -130,12 +130,21 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(INPUT_RESTORED(data), _) =>
       log.info(s"restoring channel channelId=${data.channelId}")
       context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data))
-      // TODO: should we wait for an acknowledgment from the watcher?
-      blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-      blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
       data match {
         //NB: order matters!
         case closing: DATA_CLOSING =>
+          // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
+          val commitTxOutpoint = closing.commitments.commitInput.outPoint
+          if (closing.localCommitPublished.exists(_.spent.contains(commitTxOutpoint)) ||
+            closing.remoteCommitPublished.exists(_.spent.contains(commitTxOutpoint)) ||
+            closing.nextRemoteCommitPublished.exists(_.spent.contains(commitTxOutpoint)) ||
+            closing.revokedCommitPublished.exists(_.spent.contains(commitTxOutpoint))) {
+            log.info(s"funding tx has already been spent and spending tx reached mindepth, no need to put back the watch-spent")
+          } else {
+            // TODO: should we wait for an acknowledgment from the watcher?
+            blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+            blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          }
           closing.mutualClosePublished.map(doPublish(_))
           closing.localCommitPublished.foreach(doPublish(_))
           closing.remoteCommitPublished.foreach(doPublish(_))
@@ -145,6 +154,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(CLOSING) using closing
 
         case normal: DATA_NORMAL =>
+          // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId))
           // we rebuild a channel_update for two reasons:
           // - we want to reload values from configuration
@@ -152,7 +164,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks, normal.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate)
 
-        case _ => goto(OFFLINE) using data
+        case _ =>
+          // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          goto(OFFLINE) using data
       }
   })
 
@@ -735,16 +751,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             stay sending localAnnSigs
         }
       } else {
-          // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
-          // note: no need to persist their message, in case of disconnection they will resend it
-          log.debug(s"received remote announcement signatures, delaying")
-          context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
-          if (nodeParams.watcherType == BITCOINJ) {
-            log.warning(s"HACK: since we cannot get the tx index with bitcoinj, we copy the value sent by remote")
-            val (blockHeight, txIndex, _) = fromShortId(remoteAnnSigs.shortChannelId)
-            self ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex)
-          }
-          stay
+        // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
+        // note: no need to persist their message, in case of disconnection they will resend it
+        log.debug(s"received remote announcement signatures, delaying")
+        context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
+        if (nodeParams.watcherType == BITCOINJ) {
+          log.warning(s"HACK: since we cannot get the tx index with bitcoinj, we copy the value sent by remote")
+          val (blockHeight, txIndex, _) = fromShortId(remoteAnnSigs.shortChannelId)
+          self ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex)
+        }
+        stay
       }
 
     case Event(TickRefreshChannelUpdate, d: DATA_NORMAL) =>
