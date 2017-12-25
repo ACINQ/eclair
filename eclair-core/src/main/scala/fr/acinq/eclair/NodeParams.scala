@@ -54,7 +54,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      watcherType: WatcherType) {
+                      watcherType: WatcherType,
+                      paymentRequestExpiry: Int) {
   val nodeId = privateKey.publicKey
 }
 
@@ -161,6 +162,7 @@ object NodeParams {
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
-      watcherType = watcherType)
+      watcherType = watcherType,
+      paymentRequestExpiry = config.getInt("payment-request-expiry"))
   }
 }

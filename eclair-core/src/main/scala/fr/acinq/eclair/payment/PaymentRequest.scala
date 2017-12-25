@@ -122,7 +122,7 @@ object PaymentRequest {
       tags = List(
         Some(PaymentHashTag(paymentHash)),
         Some(DescriptionTag(description)),
-        expirySeconds.map(ExpiryTag(_))
+        expirySeconds.map(ExpiryTag)
       ).flatten ++ extraHops.map(RoutingInfoTag(_)),
       signature = BinaryData.empty)
       .sign(privateKey)

@@ -23,7 +23,7 @@ class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLoggin
       Try {
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
-        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc))
+        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, None, Some(nodeParams.paymentRequestExpiry)))
       } match {
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount_opt")
