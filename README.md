@@ -37,8 +37,8 @@ Run bitcoind with the following minimal `bitcoin.conf`:
 ```
 testnet=1
 server=1
-rpcuser=XXX
-rpcpassword=XXX
+rpcuser=foo
+rpcpassword=bar
 txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
@@ -80,12 +80,14 @@ java -jar eclair-node-<version>-<commit_id>.jar
 
 Eclair reads its configuration file, and write its logs, to `~/.eclair` by default.
 
-To change your node's configuration, create a file named `eclair.conf` in `~/.eclair`. Here's an example configuration file:
+To change your node's configuration, create a file named `eclair.conf` in `~/.eclair`. Make sure that you enter the same rpc credentials as you did in ```bitcoin.conf```. Here's an example configuration file:
 
 ```
 eclair.server.port=9735
 eclair.node-alias=eclair
 eclair.node-color=49daaa
+eclair.bitcoind.rpcuser=foo
+eclair.bitcoind.rpcpassword=bar
 ```
 
 Here are some of the most common options:
