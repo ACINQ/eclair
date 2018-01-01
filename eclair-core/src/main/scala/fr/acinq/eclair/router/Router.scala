@@ -215,10 +215,14 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
     case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _, _, _)) =>
-      log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
-      val batch = channels.values ++ nodes.values ++ updates.values
-      // we group and add delays to leave room for channel messages
-      context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+      if (System.getProperty("nodump") != null) {
+       log.warning(s"skipped sending of routing state")
+      } else {
+        log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
+        val batch = channels.values ++ nodes.values ++ updates.values
+        // we group and add delays to leave room for channel messages
+        context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+      }
       stay
 
     case Event(c: ChannelAnnouncement, d) =>
