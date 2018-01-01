@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import java.io.StringWriter
 
-import akka.actor.{ActorRef, FSM, Props}
+import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
@@ -44,7 +44,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   origins: Map[RoutingMessage, ActorRef],
                   privateChannels: Map[Long, ChannelAnnouncement],
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc]) // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  excludedChannels: Set[ChannelDesc],
+                  sendingState: Set[ActorRef]) // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
 
 sealed trait State
 case object NORMAL extends State
@@ -96,7 +97,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
   }
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Map.empty, Set.empty))
+  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Nil, Nil, Nil, Map.empty, Map.empty, Map.empty, Set.empty, Set.empty))
 
   when(NORMAL) {
     case Event(TickValidate, d) =>
@@ -214,16 +215,23 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString}")
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
-    case Event(SendRoutingState(remote), Data(nodes, channels, updates, _, _, _, _, _, _, _)) =>
-      if (System.getProperty("nodump") != null) {
-       log.warning(s"skipped sending of routing state")
+    case Event(s@SendRoutingState(remote), d: Data) =>
+      if (d.sendingState.size > 3) {
+        log.info(s"already sending state to ${d.sendingState.size} peers, delaying SendRoutingState request")
+        context.system.scheduler.scheduleOnce(3 seconds, self, s)
+        stay
       } else {
-        log.debug(s"info sending all announcements to $remote: channels=${channels.size} nodes=${nodes.size} updates=${updates.size}")
-        val batch = channels.values ++ nodes.values ++ updates.values
+        log.info(s"info sending all announcements to $remote: channels=${d.channels.size} nodes=${d.nodes.size} updates=${d.updates.size}")
+        val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
         // we group and add delays to leave room for channel messages
-        context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+        val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+        context watch actor
+        stay using d.copy(sendingState = d.sendingState + actor)
       }
-      stay
+
+    case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
+      log.info(s"done sending announcements to a peer, freeing slot")
+      stay using d.copy(sendingState = d.sendingState - actor)
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId.toHexString} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2}")
