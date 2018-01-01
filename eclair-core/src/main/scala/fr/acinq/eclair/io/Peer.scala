@@ -231,6 +231,11 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
 
+  onTransition {
+    case _ -> CONNECTED => context.parent ! CONNECTED
+    case CONNECTED -> _ => context.parent ! DISCONNECTED
+  }
+
   def createNewChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
     val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet)
     val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)

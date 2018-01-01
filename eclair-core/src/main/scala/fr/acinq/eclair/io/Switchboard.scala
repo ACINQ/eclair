@@ -33,9 +33,9 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       }.toMap
   }
 
-  def receive: Receive = main(initialPeers)
+  def receive: Receive = main(initialPeers, Set.empty)
 
-  def main(peers: Map[PublicKey, ActorRef]): Receive = {
+  def main(peers: Map[PublicKey, ActorRef], connectedPeers: Set[ActorRef]): Receive = {
 
     case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.privateKey.publicKey =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
@@ -44,7 +44,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       // we create a peer if it doesn't exist
       val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
-      context become main(peers + (remoteNodeId -> peer))
+      context become main(peers + (remoteNodeId -> peer), connectedPeers)
 
     case o@Peer.OpenChannel(remoteNodeId, _, _, _) =>
       peers.get(remoteNodeId) match {
@@ -57,16 +57,24 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, peer) if peer == actor =>
           log.debug(s"$actor is dead, removing from peers")
           nodeParams.peersDb.removePeer(remoteNodeId)
-          context become main(peers - remoteNodeId)
+          context become main(peers - remoteNodeId, connectedPeers)
       }
 
     case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
-      context become main(peers + (remoteNodeId -> peer))
+      context become main(peers + (remoteNodeId -> peer), connectedPeers)
 
-    case r: Rebroadcast => peers.values.foreach(_ forward r)
+    case Peer.CONNECTED =>
+      log.info(s"$sender => CONNECTED")
+      context become main(peers, connectedPeers + sender)
+
+    case Peer.DISCONNECTED =>
+      log.info(s"$sender => DISCONNECTED")
+      context become main(peers, connectedPeers - sender)
+
+    case r: Rebroadcast => connectedPeers.foreach(_ forward r)
 
     case 'peers => sender ! peers
 

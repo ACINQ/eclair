@@ -352,7 +352,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       d.rebroadcast match {
         case Nil => stay using d.copy(origins = Map.empty)
         case _ =>
-          log.info(s"broadcasting ${d.rebroadcast.size} routing messages")
+          log.info(s"broadcasting ${d.rebroadcast.size} routing messages (origins=${d.origins.size})")
           context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast, d.origins)
           stay using d.copy(rebroadcast = Nil, origins = Map.empty)
       }
