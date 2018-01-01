@@ -111,18 +111,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       }
       // we remove stale channels
-      val remainingChannels = newChannels.filterNot(c => staleChannels.contains(c.shortChannelId))
-      val remainingUpdates = newUpdates.filterNot(c => staleChannels.contains(c.shortChannelId))
+      val (droppedChannels, remainingChannels) = newChannels.partition(c => staleChannels.contains(c.shortChannelId))
+      val (droppedUpdates, remainingUpdates) = newUpdates.partition(u => staleChannels.contains(u.shortChannelId))
       // we verify non-stale channels that had a channel_update
       val batch = remainingChannels.filter(c => newUpdates.exists(_.shortChannelId == c.shortChannelId)).take(MAX_PARALLEL_JSONRPC_REQUESTS)
       // we clean up the stash (nodes will be filtered afterwards)
       val stash1 = (remainingChannels diff batch) ++ newNodes ++ remainingUpdates
-      val stash2 = stash1.toSet.toSeq // dedupped
+      val stash2 = stash1.toSet.toSeq // deduped
+      val origins1 = d.origins -- droppedChannels -- droppedUpdates // we clean up origins
       if (batch.size > 0) {
         log.info(s"validating a batch of ${batch.size} channels")
         watcher ! ParallelGetRequest(batch)
-        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash2, awaiting = batch)
-      } else stay using d.copy(stash = stash2)
+        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash2, awaiting = batch, origins = origins1)
+      } else stay using d.copy(stash = stash2, origins = origins1)
   }
 
   when(WAITING_FOR_VALIDATION) {
