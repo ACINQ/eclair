@@ -2,7 +2,7 @@ package fr.acinq.eclair.io
 
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, OneForOneStrategy, Props, Status, SupervisorStrategy, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.crypto.Noise.KeyPair
@@ -25,7 +25,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
     case pending@PendingAuth(connection, _, outgoingConnection_opt) =>
-      log.info(s"added auth request current=${authenticating.size}")
+      log.info(s"added auth request current=${authenticating.size} handlers=${context.children.size}")
       val transport = context.actorOf(Props(
         new TransportHandler[LightningMessage](
           KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
@@ -53,6 +53,9 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
   }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
+
+  // we should not restart a failing transport-handler
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 }
 
 object Authenticator {
