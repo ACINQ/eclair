@@ -54,7 +54,7 @@ class RouterSpec extends BaseRouterSpec {
     router ! update_ay
     router ! update_az
     router ! TickValidate // we manually trigger a validation
-    watcher.expectMsg(ParallelGetRequest(chan_ac :: chan_ax :: chan_ay :: chan_az :: Nil))
+    assert(watcher.expectMsgType[ParallelGetRequest].ann.toSet === Set(chan_ac, chan_ax, chan_ay, chan_az))
     watcher.send(router, ParallelGetResponse(
       IndividualResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true) ::
         IndividualResult(chan_ax, None, false) ::
@@ -206,8 +206,8 @@ class RouterSpec extends BaseRouterSpec {
     val receiver = TestProbe()
     sender.send(router, SendRoutingState(receiver.ref))
     for (_ <- 0 until 4) receiver.expectMsgType[ChannelAnnouncement]
-    for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
     for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
+    for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
   }
 
 }

@@ -171,9 +171,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(Rebroadcast(announcements, origins), ConnectedData(_, transport, _, _)) =>
+    case Event(Rebroadcast(announcements), ConnectedData(_, transport, _, _)) =>
       // we filter out announcements that we received from this node
-      announcements.filterNot(ann => origins.getOrElse(ann, context.system.deadLetters) == self).foreach(transport forward _)
+      announcements.foreach {
+        case (_, s) if s == self => ()
+        case (ann, _) => transport forward ann
+      }
       stay
 
     case Event(msg: wire.RoutingMessage, _) =>

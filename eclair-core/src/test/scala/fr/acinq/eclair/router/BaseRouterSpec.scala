@@ -105,7 +105,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       // we manually trigger a validation
       router ! TickValidate
       // watcher receives the get tx requests
-      watcher.expectMsg(ParallelGetRequest(chan_ab :: chan_bc :: chan_cd :: chan_ef :: Nil))
+      assert(watcher.expectMsgType[ParallelGetRequest].ann.toSet === Set(chan_ab, chan_bc, chan_cd, chan_ef))
       // and answers with valid scripts
       watcher.send(router, ParallelGetResponse(
         IndividualResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true) ::
