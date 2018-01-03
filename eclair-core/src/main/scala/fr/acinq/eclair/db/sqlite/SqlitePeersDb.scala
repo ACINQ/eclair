@@ -14,6 +14,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
   {
     val statement = sqlite.createStatement
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS peers (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    statement.close()
   }
 
   override def addOrUpdatePeer(nodeId: Crypto.PublicKey, address: InetSocketAddress): Unit = {
@@ -26,21 +27,29 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
       statement.setBytes(1, nodeId.toBin)
       statement.setBytes(2, data)
       statement.executeUpdate()
+      statement.close()
     }
+    update.close()
   }
 
   override def removePeer(nodeId: Crypto.PublicKey): Unit = {
     val statement = sqlite.prepareStatement("DELETE FROM peers WHERE node_id=?")
     statement.setBytes(1, nodeId.toBin)
     statement.executeUpdate()
+    statement.close()
   }
 
   override def listPeers(): List[(PublicKey, InetSocketAddress)] = {
-    val rs = sqlite.createStatement.executeQuery("SELECT node_id, data FROM peers")
-    var l: List[(PublicKey, InetSocketAddress)] = Nil
-    while (rs.next()) {
-      l = l :+ (PublicKey(rs.getBytes("node_id")), socketaddress.decode(BitVector(rs.getBytes("data"))).require.value)
+    val statement = sqlite.createStatement()
+    try {
+      val rs = statement.executeQuery("SELECT node_id, data FROM peers")
+      var l: List[(PublicKey, InetSocketAddress)] = Nil
+      while (rs.next()) {
+        l = l :+ (PublicKey(rs.getBytes("node_id")), socketaddress.decode(BitVector(rs.getBytes("data"))).require.value)
+      }
+      l
+    } finally {
+      statement.close()
     }
-    l
   }
 }

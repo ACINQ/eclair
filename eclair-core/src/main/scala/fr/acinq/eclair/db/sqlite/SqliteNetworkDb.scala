@@ -19,6 +19,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+    statement.close()
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
@@ -26,6 +27,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.setBytes(1, n.nodeId.toBin)
     statement.setBytes(2, nodeAnnouncementCodec.encode(n).require.toByteArray)
     statement.executeUpdate()
+    statement.close()
   }
 
   override def updateNode(n: NodeAnnouncement): Unit = {
@@ -33,17 +35,24 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.setBytes(1, nodeAnnouncementCodec.encode(n).require.toByteArray)
     statement.setBytes(2, n.nodeId.toBin)
     statement.executeUpdate()
+    statement.close()
   }
 
   override def removeNode(nodeId: Crypto.PublicKey): Unit = {
     val statement = sqlite.prepareStatement("DELETE FROM nodes WHERE node_id=?")
     statement.setBytes(1, nodeId.toBin)
     statement.executeUpdate()
+    statement.close()
   }
 
   override def listNodes(): List[NodeAnnouncement] = {
-    val rs = sqlite.createStatement.executeQuery("SELECT data FROM nodes")
-    codecList(rs, nodeAnnouncementCodec)
+    val statement = sqlite.createStatement()
+    try {
+      val rs = statement.executeQuery("SELECT data FROM nodes")
+      codecList(rs, nodeAnnouncementCodec)
+    } finally {
+      statement.close()
+    }
   }
 
   override def addChannel(c: ChannelAnnouncement): Unit = {
@@ -51,6 +60,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.setLong(1, c.shortChannelId)
     statement.setBytes(2, channelAnnouncementCodec.encode(c).require.toByteArray)
     statement.executeUpdate()
+    statement.close()
   }
 
   override def removeChannel(shortChannelId: Long): Unit = {
@@ -59,11 +69,17 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id=$shortChannelId")
     statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$shortChannelId")
     statement.execute("COMMIT TRANSACTION")
+    statement.close()
   }
 
   override def listChannels(): List[ChannelAnnouncement] = {
-    val rs = sqlite.createStatement.executeQuery("SELECT data FROM channels")
-    codecList(rs, channelAnnouncementCodec)
+    val statement = sqlite.createStatement()
+    try {
+      val rs = statement.executeQuery("SELECT data FROM channels")
+      codecList(rs, channelAnnouncementCodec)
+    } finally {
+      statement.close()
+    }
   }
 
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
@@ -72,6 +88,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.setBoolean(2, Announcements.isNode1(u.flags))
     statement.setBytes(3, channelUpdateCodec.encode(u).require.toByteArray)
     statement.executeUpdate()
+    statement.close()
   }
 
   override def updateChannelUpdate(u: ChannelUpdate): Unit = {
@@ -80,11 +97,17 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.setLong(2, u.shortChannelId)
     statement.setBoolean(3, Announcements.isNode1(u.flags))
     statement.executeUpdate()
+    statement.close()
   }
 
   override def listChannelUpdates(): List[ChannelUpdate] = {
-    val rs = sqlite.createStatement.executeQuery("SELECT data FROM channel_updates")
-    codecList(rs, channelUpdateCodec)
+    val statement = sqlite.createStatement()
+    try {
+      val rs = statement.executeQuery("SELECT data FROM channel_updates")
+      codecList(rs, channelUpdateCodec)
+    } finally {
+      statement.close()
+    }
   }
 
 }
