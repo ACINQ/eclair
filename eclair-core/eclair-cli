@@ -52,7 +52,11 @@ callAndRead() {
     log "\tmethod: \e[01;32m${METHOD}\e[0m"
     log "\tparams: \e[01;34m${2}\e[0m"
     log "\nResult: \n"
-    eval call $1 $2 | jq -r "if .error == null then .result else .error.message end" | tee
+
+    jqexp='if .error == null then .result else .error.message end'
+    if [ $# -ge 3 ]; then jqexp=${3}; fi
+
+    eval call ${1} ${2} | jq -r "$jqexp" | tee
 }
 
 
@@ -103,6 +107,9 @@ case $METHOD in
     "receive")      if   [ $# -eq 2 ];  then callAndRead ${METHOD} $(printf '[%s,\\"%s\\"]' ${1} ${2}) # ${1} is numeric (amount to receive)
                     else                callAndRead ${METHOD} ${PARAMS}
                     fi ;;
+
+    "channel")      callAndRead ${METHOD} ${PARAMS} ".result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount }"
+                    ;;
 
     "send")         if   [ $# -eq 3 ];  then callAndRead ${METHOD} $(printf '[%s,\\"%s\\",\\"%s\\"]' ${1} ${2} ${3}) # ${1} is numeric (amount of the payment)
                     elif [ $# -eq 2 ];  then callAndRead ${METHOD} $(printf '[\\"%s\\",%s]' ${1} ${2}) # ${2} is numeric (amount overriding the payment request)
