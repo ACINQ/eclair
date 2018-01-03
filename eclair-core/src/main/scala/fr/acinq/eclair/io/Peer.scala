@@ -175,12 +175,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       // we filter out announcements that we received from this node
       announcements.foreach {
         case (_, s) if s == self => ()
-        case (ann, _) => transport forward ann
+        case (ann, _) => transport ! ann
       }
       stay
 
     case Event(msg: wire.RoutingMessage, _) =>
-      router forward msg
+      router ! msg
       stay
 
     case Event(Disconnect, ConnectedData(_, transport, _, _)) =>

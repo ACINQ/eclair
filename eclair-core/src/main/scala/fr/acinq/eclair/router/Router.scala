@@ -124,6 +124,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   when(WAITING_FOR_VALIDATION) {
     case Event(ParallelGetResponse(results), d) =>
+      log.info(s"got validation results for ${results.size} channels")
       val validated = results.flatMap {
         case IndividualResult(c, Some(tx), true) =>
           // TODO: blacklisting
