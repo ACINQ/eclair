@@ -64,14 +64,13 @@ checkup ${@}
 # get script options
 while getopts 'cvh:' flag; do
     case "${flag}" in
-        h)  URL="${OPTARG}"
-            shift $(($OPTIND - 1))
-            ;;
-        v)  VERBOSE="true"
-            ;;
+        h)  URL="${OPTARG}" ;;
+        v)  VERBOSE="true" ;;
         *)  error "unexpected option '${flag}'" ;;
     esac
 done
+
+shift $(($OPTIND - 1))
 
 # assigning JSON RPC method and params values from arguments
 METHOD=$1
