@@ -562,6 +562,23 @@ object Helpers {
       isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty
     }
 
+    /**
+      * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
+      *
+      * It can be useful to:
+      *   - not attempt to publish this tx when we know this will fail
+      *   - not watch the corresponding utxo when we already know the final spending tx
+      *
+      * @param tx a tx with only one input
+      * @param spent a map of known spent outpoints
+      * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
+      */
+    def alreadySpent(tx: Transaction, spent: Map[OutPoint, BinaryData]): Boolean = {
+      require(tx.txIn.size == 1, "only tx with one input is supported")
+      val outPoint = tx.txIn.head.outPoint
+      spent.contains(outPoint)
+    }
+
   }
 
 }

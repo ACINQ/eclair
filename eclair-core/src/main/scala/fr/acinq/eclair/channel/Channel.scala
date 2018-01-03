@@ -1445,7 +1445,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def doPublish(localCommitPublished: LocalCommitPublished) = {
-    blockchain ! PublishAsap(localCommitPublished.commitTx)
+    if (Closing.alreadySpent(localCommitPublished.commitTx, localCommitPublished.spent)) {
+      log.info(s"no need to republish txid=${localCommitPublished.commitTx.txid}")
+    } else {
+      blockchain ! PublishAsap(localCommitPublished.commitTx)
+    }
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
     localCommitPublished.htlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))
     localCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
