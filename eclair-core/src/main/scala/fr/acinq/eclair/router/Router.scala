@@ -112,7 +112,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // we clean up the stash (nodes will be filtered afterwards)
       val stash1 = d.stash.copy(channels = d.stash.channels -- droppedChannels -- batch, updates = d.stash.updates -- droppedUpdates)
       if (staleChannels.size > 0) {
-        log.info(s"dropping ${staleChannels.size} stale channels pre-validation, stash channels: ${d.stash.channels.size} -> ${stash1.channels.size} updates: ${d.stash.updates.size} -> ${stash1.updates.size} nodes: ${stash1.nodes}")
+        log.info(s"dropping ${staleChannels.size} stale channels pre-validation, stash channels: ${d.stash.channels.size} -> ${stash1.channels.size} updates: ${d.stash.updates.size} -> ${stash1.updates.size} nodes: ${stash1.nodes.size}")
       }
       if (batch.size > 0) {
         log.info(s"validating a batch of ${batch.size} channels")
