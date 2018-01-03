@@ -108,7 +108,7 @@ case $METHOD in
                     else                callAndRead ${METHOD} ${PARAMS}
                     fi ;;
 
-    "channel")      callAndRead ${METHOD} ${PARAMS} ".result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount }"
+    "channel")      callAndRead ${METHOD} ${PARAMS} "if .error != null then .error.message else .result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount } end"
                     ;;
 
     "send")         if   [ $# -eq 3 ];  then callAndRead ${METHOD} $(printf '[%s,\\"%s\\",\\"%s\\"]' ${1} ${2} ${3}) # ${1} is numeric (amount of the payment)
