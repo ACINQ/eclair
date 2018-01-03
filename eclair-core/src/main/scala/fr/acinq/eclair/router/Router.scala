@@ -480,7 +480,7 @@ object Router {
     * Is stale a channel that:
     * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
     * AND
-    * (2) has a channel_update which is older than 2 weeks
+    * (2) has 1 or 2 channel_update and they are older than 2 weeks
     *
     * @param channels
     * @param updates
@@ -493,7 +493,8 @@ object Router {
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
       .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filter(c => (0L +: updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).toSeq).max < staleThresholdSeconds) // no update in the past 2 weeks (remember: there are 2 updates per channel)
+      .filter(c => updates.exists(_.shortChannelId == c.shortChannelId)) // channel must have updates
+      .filter(c => updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
     staleChannels.map(_.shortChannelId)
   }
 
