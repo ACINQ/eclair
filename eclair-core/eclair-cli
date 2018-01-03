@@ -1,56 +1,121 @@
 #!/bin/bash
 
-[ -z "$1" ] && (
-echo "usage: "
-echo "  eclair-cli help"
-) && exit 1
+# -------------------- VARIABLES
 
-URL="http://localhost:8080"
-CURL_OPTS="-sS -X POST -H \"Content-Type: application/json\""
+VERBOSE='false'
+URL='http://localhost:8080'
 
-case $1 in
-"help")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"help\", \"params\" : [] }' $URL" | jq -r ".result[]"
-        ;;
-"getinfo")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"getinfo\", \"params\" : [] }' $URL" | jq ".result"
-        ;;
-"channels")
-        if [ $# -ge 2 ]
-                then
-                        eval curl "$CURL_OPTS -d '{ \"method\": \"channels\", \"params\" : [\"${2?"missing node id"}\"] }' $URL" | jq ".result[]"
-                else
-                        eval curl "$CURL_OPTS -d '{ \"method\": \"channels\", \"params\" : [] }' $URL" | jq ".result[]"
-        fi
-        ;;
-"channel")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"channel\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL" | jq ".result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount }"
-        ;;
-"connect")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"connect\", \"params\" : [\"${2?"missing uri"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
-        ;;
-"open")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"open\", \"params\" : [\"${2?"missing node id"}\", ${3?"missing amount (sat)"}, ${4?"missing push amount (msat)"}] }' $URL" | jq -r "if .error == null then .result else .error.message end"
-        ;;
-"close")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"close\", \"params\" : [\"${2?"missing channel id"}\"] }' $URL"
-        ;;
-"receive")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"receive\", \"params\" : [${2?"missing amount"}, \"${3?"missing description"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
-        ;;
-"send")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"send\", \"params\" : [\"${2?"missing request"}\"] }' $URL" | jq -r "if .error == null then .result else .error.message end"
-        ;;
-"allnodes")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"allnodes\", \"params\" : [] }' $URL" | jq ".result"
-        ;;
-"allchannels")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"allchannels\", \"params\" : [] }' $URL" | jq ".result"
-        ;;
-"peers")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"peers\", \"params\" : [] }' $URL" | jq ".result"
-        ;;
-"checkpayment")
-        eval curl "$CURL_OPTS -d '{ \"method\": \"checkpayment\", \"params\" : [\"${2?"missing payment request or payment hash"}\"] }' $URL" | jq ".result"
-        ;;
+# -------------------- METHODS
+
+error() {
+    echo -e "\e[01;31mError: ${@}\e[0m\nAbort..." >&2 && exit 1
+}
+
+warning() {
+    echo -e "\e[01;33mWarning: ${@}\e[0m" >&2
+}
+
+# print a log if verbose option is set
+log() {
+    if [ "$VERBOSE" == "true" ]; then
+        echo -e "${@}"
+    fi
+}
+
+checkup() {
+    # Check if jq is installed. If not, display instructions and abort program
+    command -v jq >/dev/null 2>&1 || { error "This tool requires jq.\nFor installation instructions, visit https://stedolan.github.io/jq/download/.\n\nAborting..."; exit 1; }
+
+    # if no arguments, print usage instructions and abort program
+    [ -z "$1" ] && (
+        echo -e "\nClient for eclair. Uses the JSON RPC API exposed by the node.\nDefault node URL is http://localhost:8080. Use the -h option to override."
+        echo -e "\nUSAGE"
+        echo -e "-----"
+        echo -e "  eclair-cli <command>"
+        echo -e "  where <command> is one of the methods listed by \e[01;33meclair-cli help\e[0m"
+        echo -e "\nOPTIONS"
+        echo -e "-------"
+        echo -e "  -h <url>     Override the default node URL with <url>"
+        echo -e "  -v           Verbose logging"
+    ) && exit 1
+}
+
+# Executes a JSON RPC call to a node listening on ${URL}
+call() {
+    response=$(curl --silent --show-error -X POST -H "Content-Type: application/json" -d '{ "method": "'${1}'", "params": '${2}' }' ${URL})
+    echo ${response}
+}
+
+callAndRead() {
+    CURL_OPTS="-sS -X POST -H \"Content-Type: application/json\""
+    log "\nQuerying node on \e[01;33m${URL}\e[0m..."
+    log "\tmethod: \e[01;32m${METHOD}\e[0m"
+    log "\tparams: \e[01;34m${2}\e[0m"
+    log "\nResult: \n"
+    eval call $1 $2 | jq -r "if .error == null then .result else .error.message end" | tee
+}
+
+
+# -------------------- START OF SCRIPT
+
+# check that the script can be executed. If not, the scripts aborts here.
+checkup ${@}
+
+# get script options
+while getopts 'cvh:' flag; do
+    case "${flag}" in
+        h)  URL="${OPTARG}"
+            shift $(($OPTIND - 1))
+            ;;
+        v)  VERBOSE="true"
+            ;;
+        *)  error "unexpected option '${flag}'" ;;
+    esac
+done
+
+# assigning JSON RPC method and params values from arguments
+METHOD=$1
+shift 1
+
+# Create a JSON Array containing the remaining program args as QUOTED STRINGS, separated with a `,` character
+# Resulting array should look like this: ["param1", "param2", ...].
+PARAMS="";
+for arg; do
+    PARAMS=$(printf '%s\\"%s\\"' "$PARAMS", "$arg");
+done;
+PARAMS="[${PARAMS#,}]"
+
+# Whatever the arguments provided to eclair-cli, a call to the API will be sent. Let it fail!
+# Parameters validation and errors are handled by the API.
+case $METHOD in
+
+    # special cases needing a bit of attention, most of the time because these methods have numeric parameters and the
+    # API is strict.
+
+    "connect")      if   [ $# -eq 3 ];  then callAndRead ${METHOD} $(printf '[\\"%s\\",\\"%s\\",%s]' ${1} ${2} ${3}) # ${3} is numeric
+                    else                callAndRead ${METHOD} ${PARAMS}
+                    fi ;;
+
+    "open")         if   [ $# -eq 4 ];  then callAndRead ${METHOD} $(printf '[\\"%s\\",%s,%s,%s]' ${1} ${2} ${3} ${4}) # ${2} ${3} ${4} are numeric (funding, push, flags)
+                    elif [ $# -eq 3 ];  then callAndRead ${METHOD} $(printf '[\\"%s\\",%s,%s]' ${1} ${2} ${3}) # ${2} ${3} are numeric (funding, push)
+                    else                callAndRead ${METHOD} ${PARAMS}
+                    fi ;;
+
+    "receive")      if   [ $# -eq 2 ];  then callAndRead ${METHOD} $(printf '[%s,\\"%s\\"]' ${1} ${2}) # ${1} is numeric (amount to receive)
+                    else                callAndRead ${METHOD} ${PARAMS}
+                    fi ;;
+
+    "send")         if   [ $# -eq 3 ];  then callAndRead ${METHOD} $(printf '[%s,\\"%s\\",\\"%s\\"]' ${1} ${2} ${3}) # ${1} is numeric (amount of the payment)
+                    elif [ $# -eq 2 ];  then callAndRead ${METHOD} $(printf '[\\"%s\\",%s]' ${1} ${2}) # ${2} is numeric (amount overriding the payment request)
+                    else                callAndRead ${METHOD} ${PARAMS}
+                    fi ;;
+
+    *)              # Default case.
+                    # Sends the method and for parameters, use the JSON table containing the remaining args.
+                    #
+                    # NOTE: Arguments will be sent as QUOTED STRING so if this particular API call requires an INT param,
+                    # this call will fail. In that case, a specific rule for that method MUST be set and the ${PARAMS} JSON
+                    # array can not be used.
+                    callAndRead ${METHOD} ${PARAMS} ;;
+
 esac

@@ -124,8 +124,10 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
  method       |  params                                       | description
  -------------|-----------------------------------------------|-----------------------------------------------------------
   getinfo     |                                               | return basic node information (id, chain hash, current block height) 
+  connect     | nodeId, host, port                            | open a secure connection to a lightning node
   connect     | uri                                           | open a secure connection to a lightning node
   open        | nodeId, fundingSatoshis, pushMsat             | open a channel with another lightning node
+  open        | nodeId, fundingSatoshis, pushMsat, channelFlags | open a channel with another lightning node
   peers       |                                               | list existing local peers
   channels    |                                               | list existing local channels
   channels    | nodeId                                        | list existing local channels opened with a particular nodeId
@@ -140,7 +142,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   checkpayment| paymentHash                                   | returns true if the payment has been received, false otherwise
   checkpayment| paymentRequest                                | returns true if the payment has been received, false otherwise
   close       | channelId                                     | close a channel
-  close       | channelId, scriptPubKey (optional)            | close a channel and send the funds to the given scriptPubKey
+  close       | channelId, scriptPubKey                       | close a channel and send the funds to the given scriptPubKey
   help        |                                               | display available methods
 
 ## Docker

@@ -3,13 +3,12 @@ package fr.acinq.eclair.api
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
-import akka.http.scaladsl.model.StatusCodes.{register => _}
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers.HttpOriginRange.*
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.directives.RouteDirectives.reject
-import akka.http.scaladsl.server.{ExceptionHandler, Rejection, RejectionHandler, Route}
+import akka.http.scaladsl.server.{ExceptionHandler, Rejection, RejectionHandler, Route, MalformedRequestContentRejection}
 import akka.pattern.ask
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
@@ -70,7 +69,7 @@ trait Service extends Logging {
     case t: Throwable =>
       extractRequest { request =>
         logger.info(s"API call failed with cause=${t.getMessage}")
-        complete(StatusCodes.InternalServerError, JsonRPCRes(null, Some(Error(StatusCodes.InternalServerError.intValue, t.getMessage)), request.asInstanceOf[JsonRPCBody].id))
+        complete(StatusCodes.InternalServerError, JsonRPCRes(null, Some(Error(StatusCodes.InternalServerError.intValue, t.getMessage)), "-1"))
       }
   }
 
@@ -90,6 +89,8 @@ trait Service extends Logging {
       case ukm: UnknownMethodRejection ⇒ complete(StatusCodes.BadRequest, JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, "method not found")), ukm.requestId))
       case p: UnknownParamsRejection ⇒ complete(StatusCodes.BadRequest,
         JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, s"invalid parameters for this method, should be: ${p.message}")), p.requestId))
+      case m: MalformedRequestContentRejection ⇒ complete(StatusCodes.BadRequest,
+        JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, s"malformed parameters for this method: ${m.message}")), "-1"))
       case r ⇒ logger.error(s"API call failed with cause=$r")
         complete(StatusCodes.BadRequest, JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, r.toString)), "-1"))
     }
@@ -113,16 +114,18 @@ trait Service extends Logging {
 
                     // channel lifecycle methods
                     case "connect"      => req.params match {
+                      case JString(pubkey) :: JString(host) :: JInt(port) :: Nil =>
+                        completeRpcFuture(req.id, (switchboard ? Peer.Connect(NodeURI.parse(s"$pubkey@$host:$port"))).mapTo[String])
                       case JString(uri) :: Nil =>
                         completeRpcFuture(req.id, (switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String])
-                      case _ => reject(UnknownParamsRejection(req.id, "[nodeId, host, port]"))
+                      case _ => reject(UnknownParamsRejection(req.id, "[nodeId@host:port] or [nodeId, host, port]"))
                     }
                     case "open"         => req.params match {
                       case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(flags) :: Nil =>
                         completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = Some(flags.toByte))).mapTo[String])
                       case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil =>
                         completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None)).mapTo[String])
-                      case _ => reject(UnknownParamsRejection(req.id, "[nodeId, host, port, fundingSatoshi, pushMsat] or [nodeId, host, port, fundingSatoshi, pushMsat, newChannel]"))
+                      case _ => reject(UnknownParamsRejection(req.id, "[nodeId, fundingSatoshi, pushMsat] or [nodeId, fundingSatoshi, pushMsat, newChannel]"))
                     }
                     case "close"        => req.params match {
                       case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
@@ -221,7 +224,9 @@ trait Service extends Logging {
 
   def help = List(
     "connect (uri): open a secure connection to a lightning node",
-    "open (nodeId, fundingSatoshi, pushMsat, channelFlags = 0x01): open a channel with another lightning node",
+    "connect (nodeId, host, port): open a secure connection to a lightning node",
+    "open (nodeId, fundingSatoshi, pushMsat): open a channel with another lightning node",
+    "open (nodeId, fundingSatoshi, pushMsat, channelFlags): open a channel with another lightning node",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
