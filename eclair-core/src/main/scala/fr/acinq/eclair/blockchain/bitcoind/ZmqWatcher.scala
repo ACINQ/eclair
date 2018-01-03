@@ -56,7 +56,6 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       context become watching(watches, block2tx, Some(task))
 
     case TickNewBlock =>
-      log.info(s"")
       client.getBlockCount.map {
         case count =>
           log.debug(s"setting blockCount=$count")
