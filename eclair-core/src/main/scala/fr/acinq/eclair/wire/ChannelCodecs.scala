@@ -149,6 +149,13 @@ object ChannelCodecs {
     (wire: BitVector) => originsListCodec.decode(wire).map(_.map(_.toMap))
   )
 
+  val spentListCodec: Codec[List[(OutPoint, BinaryData)]] = listOfN(uint16, outPointCodec ~ binarydata(32))
+
+  val spentMapCodec: Codec[Map[OutPoint, BinaryData]] = Codec[Map[OutPoint, BinaryData]](
+    (map: Map[OutPoint, BinaryData]) => spentListCodec.encode(map.toList),
+    (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
+  )
+
   val commitmentsCodec: Codec[Commitments] = (
     ("localParams" | localParamsCodec) ::
       ("remoteParams" | remoteParamsCodec) ::
@@ -171,14 +178,14 @@ object ChannelCodecs {
       ("htlcSuccessTxs" | listOfN(uint16, txCodec)) ::
       ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
       ("claimHtlcDelayedTx" | listOfN(uint16, txCodec)) ::
-      ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[LocalCommitPublished]
+      ("spent" | spentMapCodec)).as[LocalCommitPublished]
 
   val remoteCommitPublishedCodec: Codec[RemoteCommitPublished] = (
     ("commitTx" | txCodec) ::
       ("claimMainOutputTx" | optional(bool, txCodec)) ::
       ("claimHtlcSuccessTxs" | listOfN(uint16, txCodec)) ::
       ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-      ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[RemoteCommitPublished]
+      ("spent" | spentMapCodec)).as[RemoteCommitPublished]
 
   val revokedCommitPublishedCodec: Codec[RevokedCommitPublished] = (
     ("commitTx" | txCodec) ::
@@ -187,7 +194,7 @@ object ChannelCodecs {
       ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
       ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
       ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
-      ("spent" | provide(Map.empty[OutPoint, BinaryData]))).as[RevokedCommitPublished]
+      ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 
   val DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec: Codec[DATA_WAIT_FOR_FUNDING_CONFIRMED] = (
     ("commitments" | commitmentsCodec) ::
