@@ -71,7 +71,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       if (buffer1.length < expectedLength(reader))
         stay using HandshakeData(reader, buffer1)
       else {
-        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix ${buffer1.head}")
+        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix first64=${BinaryData(buffer.take(64))}")
         val (payload, remainder) = buffer1.tail.splitAt(expectedLength(reader) - 1)
 
         reader.read(payload) match {
