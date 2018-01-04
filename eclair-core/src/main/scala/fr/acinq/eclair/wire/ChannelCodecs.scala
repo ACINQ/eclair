@@ -154,12 +154,7 @@ object ChannelCodecs extends Logging {
 
   val spentMapCodec: Codec[Map[OutPoint, BinaryData]] = Codec[Map[OutPoint, BinaryData]](
     (map: Map[OutPoint, BinaryData]) => spentListCodec.encode(map.toList),
-    (wire: BitVector) => fallback(provide(Map.empty[OutPoint, BinaryData]), spentListCodec).decode(wire).map(_.map {
-      case Left(empty) =>
-        logger.warn(s"can't read spent map, defaulting to empty map")
-        empty
-      case Right(l) => l.toMap
-    })
+    (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
   )
 
   val commitmentsCodec: Codec[Commitments] = (
