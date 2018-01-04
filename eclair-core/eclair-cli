@@ -65,7 +65,7 @@ case ${METHOD}_${@} in
 
     "receive_2")    call ${METHOD} $(printf '[%s,\\"%s\\"]' ${1} ${2}) ;; # ${1} is numeric (amount to receive)
 
-    "channel_"*)    call ${METHOD} ${PARAMS} "if .error != null then .error.message else .result | { nodeid, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount } end" ;;
+    "channel_"*)    call ${METHOD} ${PARAMS} "if .error != null then .error.message else .result | { nodeId, channelId, state, balanceMsat: .data.commitments.localCommit.spec.toLocalMsat, capacitySat: .data.commitments.commitInput.txOut.amount.amount } end" ;;
 
     "send_3")       call ${METHOD} $(printf '[%s,\\"%s\\",\\"%s\\"]' ${1} ${2} ${3}) ;; # ${1} is numeric (amount of the payment)
     "send_2")       call ${METHOD} $(printf '[\\"%s\\",%s]' ${1} ${2}) ;; # ${2} is numeric (amount overriding the payment request)
