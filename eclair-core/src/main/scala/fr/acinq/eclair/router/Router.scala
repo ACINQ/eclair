@@ -45,8 +45,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   awaiting: Map[ChannelAnnouncement, ActorRef],
                   privateChannels: Map[Long, ChannelAnnouncement],
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc],
-                  sendingState: Set[ActorRef]) // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  sendingState: Set[ActorRef])
 
 sealed trait State
 case object NORMAL extends State

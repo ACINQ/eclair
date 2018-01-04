@@ -28,7 +28,7 @@ class WriteAckSender(connection: ActorRef) extends Actor with ActorLogging {
       log.warning(s"buffer overrun, closing connection")
       connection ! PoisonPill
     case data: ByteString =>
-      log.debug(s"buffering write $data")
+      log.debug("buffering write {}", data)
       context become buffering(buffer :+ data)
     case Ack =>
       buffer.headOption match {

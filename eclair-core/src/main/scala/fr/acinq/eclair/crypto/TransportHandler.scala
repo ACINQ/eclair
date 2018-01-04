@@ -66,7 +66,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   when(Handshake) {
     case Event(Received(data), HandshakeData(reader, buffer)) =>
-      log.debug(s"received ${BinaryData(data)}")
+      log.debug("received {}", BinaryData(data))
       val buffer1 = buffer ++ data
       if (buffer1.length < expectedLength(reader))
         stay using HandshakeData(reader, buffer1)
