@@ -1446,7 +1446,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   def doPublish(localCommitPublished: LocalCommitPublished) = {
     if (Closing.alreadySpent(localCommitPublished.commitTx, localCommitPublished.spent)) {
-      log.info(s"no need to republish txid=${localCommitPublished.commitTx.txid}")
+      log.info(s"no need to republish txid=${localCommitPublished.commitTx.txid}, it has already been confirmed")
     } else {
       blockchain ! PublishAsap(localCommitPublished.commitTx)
     }
@@ -1455,8 +1455,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     localCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
     localCommitPublished.claimHtlcDelayedTx.foreach(tx => blockchain ! PublishAsap(tx))
 
-    // we watch the commitment tx itself, so that we can handle the case where we don't have any outputs
-    blockchain ! WatchConfirmed(self, localCommitPublished.commitTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx))
+    if (Closing.alreadySpent(localCommitPublished.commitTx, localCommitPublished.spent)) {
+      log.info(s"no need to watch txid=${localCommitPublished.commitTx.txid}, it has already been confirmed")
+    } else {
+      // we watch the commitment tx itself, so that we can handle the case where we don't have any outputs
+      blockchain ! WatchConfirmed(self, localCommitPublished.commitTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx))
+    }
     // we watch 'final txes' that send funds to our wallet and that spend outputs that only us control
     localCommitPublished.claimMainDelayedOutputTx.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
     localCommitPublished.claimHtlcDelayedTx.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
