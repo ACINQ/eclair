@@ -1094,6 +1094,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       stay
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
+      log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
       // first we check if this tx belongs to a one of the current local/remote commits and update it
       val localCommitPublished1 = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx))
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
@@ -1120,7 +1121,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
       closeType_opt match {
         case Some(closeType) =>
-          log.info(s"channel closed type=$closeType")
+          log.info(s"channel closed (type=$closeType)")
           goto(CLOSED) using store(d1)
         case None =>
           stay using store(d1)
