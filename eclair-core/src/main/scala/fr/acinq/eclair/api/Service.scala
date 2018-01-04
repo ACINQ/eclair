@@ -36,6 +36,7 @@ case class Error(code: Int, message: String)
 case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
+case class LocalChannelInfo(nodeId: BinaryData, channelId: BinaryData, state: String)
 case class ChannelInfo(shortChannelId: String, nodeId1: PublicKey, nodeId2: PublicKey)
 trait RPCRejection extends Rejection {
   def requestId: String
@@ -139,10 +140,22 @@ trait Service extends Logging {
                       peerinfos <- Future.sequence(peers.values.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
                     } yield peerinfos)
                     case "channels"     => req.params match {
-                      case Nil => completeRpcFuture(req.id, (register ? 'channels).mapTo[Map[Long, ActorRef]].map(_.keys))
+                      case Nil =>
+                        val f = for {
+                          channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
+                          channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+                            .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                        } yield channels
+                        completeRpcFuture(req.id, f)
                       case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
-                          case Success(pk) => completeRpcFuture(req.id, (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys))
-                          case Failure(f) => reject(ValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
+                          case Success(pk) =>
+                            val f = for {
+                              channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
+                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+                                .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                            } yield channels
+                            completeRpcFuture(req.id, f)
+                          case Failure(_) => reject(ValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
                         }
                       case _ => reject(UnknownParamsRejection(req.id, "no arguments or [remoteNodeId]"))
                     }
