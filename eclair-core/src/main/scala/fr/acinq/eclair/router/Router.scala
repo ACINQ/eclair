@@ -225,7 +225,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay
       } else {
         log.info(s"info sending all announcements to $remote: channels=${d.channels.size} nodes=${d.nodes.size} updates=${d.updates.size}")
-        val batch = d.nodes.values ++ d.channels.values ++ d.updates.values
+        val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
         // we group and add delays to leave room for channel messages
         val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
         context watch actor
