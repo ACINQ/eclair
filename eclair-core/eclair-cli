@@ -3,6 +3,7 @@
 # -------------------- VARIABLES
 
 VERBOSE='false'
+FULL_OUTPUT='false'
 URL='http://localhost:8080'
 
 # -------------------- METHODS
@@ -17,9 +18,20 @@ warning() {
 
 # print a log if verbose option is set
 log() {
-    if [ "$VERBOSE" == "true" ]; then
-        echo -e "${@}"
-    fi
+    if [ ${VERBOSE} == "true" ]; then echo -e "${@}"; fi
+}
+
+help() {
+    echo -e "\nClient for eclair. Uses the JSON RPC API exposed by the node.\nDefault node URL is http://localhost:8080. Use the -h option to override."
+    echo -e "\nUSAGE"
+    echo -e "-----"
+    echo -e "  eclair-cli <command>"
+    echo -e "  where <command> is one of the methods listed by \e[01;33meclair-cli help\e[0m"
+    echo -e "\nOPTIONS"
+    echo -e "-------"
+    echo -e "  -h <url>     Override the default node URL with <url>"
+    echo -e "  -v           Verbose logging"
+    echo -e "  -f           Outputs full json returned by the API"
 }
 
 checkup() {
@@ -28,15 +40,7 @@ checkup() {
 
     # if no arguments, print usage instructions and abort program
     [ -z "$1" ] && (
-        echo -e "\nClient for eclair. Uses the JSON RPC API exposed by the node.\nDefault node URL is http://localhost:8080. Use the -h option to override."
-        echo -e "\nUSAGE"
-        echo -e "-----"
-        echo -e "  eclair-cli <command>"
-        echo -e "  where <command> is one of the methods listed by \e[01;33meclair-cli help\e[0m"
-        echo -e "\nOPTIONS"
-        echo -e "-------"
-        echo -e "  -h <url>     Override the default node URL with <url>"
-        echo -e "  -v           Verbose logging"
+        help
     ) && exit 1
 }
 
@@ -54,9 +58,9 @@ callAndRead() {
     log "\nResult: \n"
 
     jqexp='if .error == null then .result else .error.message end'
-    if [ $# -ge 3 ]; then jqexp=${3}; fi
+    if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
 
-    eval call ${1} ${2} | jq -r "$jqexp" | tee
+    eval call ${1} ${2} | jq -r "$jqexp"
 }
 
 
@@ -66,10 +70,11 @@ callAndRead() {
 checkup ${@}
 
 # get script options
-while getopts 'cvh:' flag; do
+while getopts 'fvh:' flag; do
     case "${flag}" in
         h)  URL="${OPTARG}" ;;
         v)  VERBOSE="true" ;;
+        f)  FULL_OUTPUT="true" ;;
         *)  error "unexpected option '${flag}'" ;;
     esac
 done
@@ -115,6 +120,11 @@ case $METHOD in
                     elif [ $# -eq 2 ];  then callAndRead ${METHOD} $(printf '[\\"%s\\",%s]' ${1} ${2}) # ${2} is numeric (amount overriding the payment request)
                     else                callAndRead ${METHOD} ${PARAMS}
                     fi ;;
+
+    "help")         help
+                    echo -e "\nLIST OF AVAILABLE COMMANDS\n--------------------------"
+                    callAndRead ${METHOD} ${PARAMS}
+                    ;;
 
     *)              # Default case.
                     # Sends the method and for parameters, use the JSON table containing the remaining args.
