@@ -567,6 +567,7 @@ object Helpers {
       *
       * It can be useful to:
       *   - not attempt to publish this tx when we know this will fail
+      *   - not watch for confirmations if we know the tx is already confirmed
       *   - not watch the corresponding utxo when we already know the final spending tx
       *
       * @param tx a tx with only one input
