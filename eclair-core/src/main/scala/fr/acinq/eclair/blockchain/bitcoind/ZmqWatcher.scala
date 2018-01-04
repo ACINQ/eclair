@@ -62,25 +62,8 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
           Globals.blockCount.set(count)
           context.system.eventStream.publish(CurrentBlockCount(count))
       }
-      /*client.estimateSmartFee(nodeParams.smartfeeNBlocks).map {
-        case feeratePerKB if feeratePerKB > 0 =>
-          val feeratePerKw = feerateKB2Kw(feeratePerKB)
-          log.debug(s"setting feeratePerKB=$feeratePerKB -> feeratePerKw=$feeratePerKw")
-          Globals.feeratePerKw.set(feeratePerKw)
-          context.system.eventStream.publish(CurrentFeerate(feeratePerKw))
-        case _ => () // bitcoind cannot estimate feerate
-      }*/
       // TODO: beware of the herd effect
-      watches.collect {
-        case w@WatchConfirmed(_, txId, _, minDepth, event) =>
-          log.debug(s"checking confirmations of txid=$txId")
-          client.getTxConfirmations(txId.toString).map {
-            case Some(confirmations) if confirmations >= minDepth =>
-              client.getTransactionShortId(txId.toString).map {
-                case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(event, height, index))
-              }
-          }
-      }
+      watches.collect { case w: WatchConfirmed => checkConfirmed(w) }
       context become (watching(watches, block2tx, None))
 
     case TriggerEvent(w, e) if watches.contains(w) =>
@@ -96,7 +79,51 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       context.become(watching(watches, block2tx -- toPublish.keys, None))
     }
 
-    case w: Watch if !watches.contains(w) => addWatch(w, watches, block2tx)
+    case w: Watch if !watches.contains(w) =>
+      w match {
+        case WatchSpentBasic(_, txid, outputIndex, _, _) =>
+          // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
+          client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
+            case false =>
+              log.warning(s"output=$outputIndex of txid=$txid has already been spent")
+              self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
+          }
+
+        case WatchSpent(_, txid, outputIndex, _, _) =>
+          // first let's see if the parent tx was published or not
+          client.getTxConfirmations(txid.toString()).collect {
+            case Some(_) =>
+              // parent tx was published, we need to make sure this particular output has not been spent
+              client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
+                case false =>
+                  log.warning(s"output=$outputIndex of txid=$txid has already been spent")
+                  log.warning(s"looking first in the mempool")
+                  client.getMempool().map { mempoolTxs =>
+                    mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
+                      case Nil =>
+                        log.warning(s"couldn't find spending tx in the mempool, looking into blocks...")
+                        client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
+                          log.warning(s"found the spending tx in the blockchain: txid=${tx.txid}")
+                          self ! NewTransaction(tx)
+                        }
+                      case txs =>
+                        log.warning(s"found ${txs.size} spending txs in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                        txs.foreach(tx => self ! NewTransaction(tx))
+                    }
+                  }
+              }
+          }
+
+        case w: WatchConfirmed => checkConfirmed(w) // maybe the tx is already tx, in that case the watch will be triggered and removed immediately
+
+        case _: WatchLost => () // TODO: not implemented
+
+        case w => log.warning(s"ignoring $w")
+      }
+
+      log.debug(s"adding watch $w for $sender")
+      context.watch(w.channel)
+      context.become(watching(watches + w, block2tx, nextTick))
 
     case PublishAsap(tx) =>
       val blockCount = Globals.blockCount.get()
@@ -136,53 +163,6 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
   }
 
-  def addWatch(w: Watch, watches: Set[Watch], block2tx: SortedMap[Long, Seq[Transaction]]) = {
-    w match {
-      case WatchSpentBasic(_, txid, outputIndex, _, _) =>
-        // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
-        client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
-          case false =>
-            log.warning(s"output=$outputIndex of txid=$txid has already been spent")
-            self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
-        }
-
-      case w@WatchSpent(_, txid, outputIndex, _, _) =>
-        // first let's see if the parent tx was published or not
-        client.getTxConfirmations(txid.toString()).collect {
-          case Some(_) =>
-            // parent tx was published, we need to make sure this particular output has not been spent
-            client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
-              case false =>
-                log.warning(s"output=$outputIndex of txid=$txid has already been spent")
-                log.warning(s"looking first in the mempool")
-                client.getMempool().map { mempoolTxs =>
-                  mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
-                    case Nil =>
-                      log.warning(s"couldn't find spending tx in the mempool, looking into blocks...")
-                      client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
-                        log.warning(s"found the spending tx in the blockchain: txid=${tx.txid}")
-                        self ! NewTransaction(tx)
-                      }
-                    case txs =>
-                      log.warning(s"found ${txs.size} spending txs in the mempool: txids=${txs.map(_.txid).mkString(",")}")
-                      txs.foreach(tx => self ! NewTransaction(tx))
-                  }
-                }
-            }
-        }
-
-      case w: WatchConfirmed => ()
-
-      case w: WatchLost => () // TODO: not implemented
-
-      case w => log.warning(s"ignoring $w")
-    }
-
-    log.debug(s"adding watch $w for $sender")
-    context.watch(w.channel)
-    context.become(watching(watches + w, block2tx, None))
-  }
-
   // NOTE: we use a single thread to publish transactions so that it preserves order.
   // CHANGING THIS WILL RESULT IN CONCURRENCY ISSUES WHILE PUBLISHING PARENT AND CHILD TXS
   val singleThreadExecutionContext = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor())
@@ -196,6 +176,16 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
         import scala.concurrent.duration._
         after(3 seconds, context.system.scheduler)(Future.successful({})).map(x => publish(tx, isRetry = true))
       case t: Throwable => log.error(s"cannot publish tx: reason=${t.getMessage} txid=${tx.txid} tx=$tx")
+    }
+  }
+
+  def checkConfirmed(w: WatchConfirmed) = {
+    log.debug(s"checking confirmations of txid=${w.txId}")
+    client.getTxConfirmations(w.txId.toString).map {
+      case Some(confirmations) if confirmations >= w.minDepth =>
+        client.getTransactionShortId(w.txId.toString).map {
+          case (height, index) => self ! TriggerEvent(w, WatchEventConfirmed(w.event, height, index))
+        }
     }
   }
 
