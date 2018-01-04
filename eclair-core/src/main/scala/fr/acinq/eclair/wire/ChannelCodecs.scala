@@ -7,14 +7,15 @@ import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.LightningMessageCodecs._
+import grizzled.slf4j.Logging
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec}
+import scodec.{Attempt, Codec, DecodeResult}
 
 /**
   * Created by PM on 02/06/2017.
   */
-object ChannelCodecs {
+object ChannelCodecs extends Logging {
 
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
@@ -153,7 +154,12 @@ object ChannelCodecs {
 
   val spentMapCodec: Codec[Map[OutPoint, BinaryData]] = Codec[Map[OutPoint, BinaryData]](
     (map: Map[OutPoint, BinaryData]) => spentListCodec.encode(map.toList),
-    (wire: BitVector) => spentListCodec.decode(wire).map(_.map(_.toMap))
+    (wire: BitVector) => fallback(provide(Map.empty[OutPoint, BinaryData]), spentListCodec).decode(wire).map(_.map {
+      case Left(empty) =>
+        logger.warn(s"can't read spent map, defaulting to empty map")
+        empty
+      case Right(l) => l.toMap
+    })
   )
 
   val commitmentsCodec: Codec[Commitments] = (
