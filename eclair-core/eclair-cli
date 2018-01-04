@@ -4,7 +4,7 @@
 command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installation instructions, visit https://stedolan.github.io/jq/download/.\n\nAborting..."; exit 1; }
 
 FULL_OUTPUT='false'
-URL='http://localhost:8081'
+URL='http://localhost:8080'
 
 # -------------------- METHODS
 
