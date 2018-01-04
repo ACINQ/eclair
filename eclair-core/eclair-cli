@@ -20,8 +20,8 @@ USAGE
 
 OPTIONS
 -------
-  -h <url>     Override the default node URL with <url>
-  -f           Outputs full json returned by the API"
+  -u <url>     Override the default node URL with <url>
+  -v           Outputs full json returned by the API"
 }
 
 # Executes a JSON RPC call to a node listening on ${URL}
@@ -33,10 +33,10 @@ call() {
 }
 
 # get script options
-while getopts 'fh:' flag; do
+while getopts 'vu:' flag; do
     case "${flag}" in
-        h)  URL="${OPTARG}" ;;
-        f)  FULL_OUTPUT="true" ;;
+        u)  URL="${OPTARG}" ;;
+        v)  FULL_OUTPUT="true" ;;
         *)  echo -e "\nAborting..."; exit 1; ;;
     esac
 done
@@ -51,9 +51,8 @@ shift 1
 PARAMS="";
 for arg; do PARAMS=$(printf '%s\\"%s\\"' "$PARAMS", "$arg"); done;
 PARAMS="[${PARAMS#,}]"
-
 # Whatever the arguments provided to eclair-cli, a call to the API will be sent. Let it fail!
-case ${METHOD}_${@} in
+case ${METHOD}_${#} in
     ""_* | "help"*) displayhelp
                     echo -e "\nLIST OF AVAILABLE COMMANDS\n--------------------------"
                     call "help" [] ;;
@@ -62,6 +61,7 @@ case ${METHOD}_${@} in
 
     "open_4")       call ${METHOD} $(printf '[\\"%s\\",%s,%s,%s]' ${1} ${2} ${3} ${4}) ;; # ${2} ${3} ${4} are numeric (funding, push, flags)
     "open_3")       call ${METHOD} $(printf '[\\"%s\\",%s,%s]' ${1} ${2} ${3}) ;; # ${2} ${3} are numeric (funding, push)
+    "open_2")       call ${METHOD} $(printf '[\\"%s\\",%s]' ${1} ${2}) ;; # ${2} is numeric (funding)
 
     "receive_2")    call ${METHOD} $(printf '[%s,\\"%s\\"]' ${1} ${2}) ;; # ${1} is numeric (amount to receive)
 

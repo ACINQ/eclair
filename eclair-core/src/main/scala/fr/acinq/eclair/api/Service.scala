@@ -122,11 +122,13 @@ trait Service extends Logging {
                       case _ => reject(UnknownParamsRejection(req.id, "[nodeId@host:port] or [nodeId, host, port]"))
                     }
                     case "open"         => req.params match {
-                      case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(flags) :: Nil =>
-                        completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = Some(flags.toByte))).mapTo[String])
+                      case JString(nodeId) :: JInt(fundingSatoshi) :: Nil =>
+                        completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(0), channelFlags = None)).mapTo[String])
                       case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil =>
                         completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None)).mapTo[String])
-                      case _ => reject(UnknownParamsRejection(req.id, "[nodeId, fundingSatoshi, pushMsat] or [nodeId, fundingSatoshi, pushMsat, newChannel]"))
+                      case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(flags) :: Nil =>
+                        completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = Some(flags.toByte))).mapTo[String])
+                      case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshi], [nodeId, fundingSatoshi, pushMsat] or [nodeId, fundingSatoshi, pushMsat, newChannel]"))
                     }
                     case "close"        => req.params match {
                       case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
@@ -238,8 +240,7 @@ trait Service extends Logging {
   def help = List(
     "connect (uri): open a secure connection to a lightning node",
     "connect (nodeId, host, port): open a secure connection to a lightning node",
-    "open (nodeId, fundingSatoshi, pushMsat): open a channel with another lightning node",
-    "open (nodeId, fundingSatoshi, pushMsat, channelFlags): open a channel with another lightning node",
+    "open (nodeId, fundingSatoshi, pushMsat = 0, channelFlags = 0x01): open a channel with another lightning node",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",
