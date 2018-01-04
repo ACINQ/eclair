@@ -237,25 +237,26 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(sendingState = d.sendingState - actor)
 
     case Event(c: ChannelAnnouncement, d) =>
-      log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId.toHexString} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2}")
+      log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId.toHexString} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2} from $sender")
       if (d.channels.containsKey(c.shortChannelId) || d.awaiting.keys.exists(_.shortChannelId == c.shortChannelId) || d.stash.channels.contains(c)) {
-        log.debug(s"ignoring $c (duplicate)")
+        log.debug("ignoring {} (duplicate)", c)
         stay
       } else if (!Announcements.checkSigs(c)) {
-        log.warning(s"bad signature for announcement $c")
+        log.warning("bad signature for announcement {}", c)
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else {
-        log.debug(s"stashing $c")
+        log.debug("stashing {}", c)
         stay using d.copy(stash = d.stash.copy(channels = d.stash.channels + (c -> sender)))
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
+      log.debug(s"received node announcement for nodeId=${n.nodeId} from $sender")
       if (d.nodes.containsKey(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
-        log.debug(s"ignoring announcement $n (old timestamp or duplicate)")
+        log.debug("ignoring {} (old timestamp or duplicate)", n)
         stay
       } else if (!Announcements.checkSig(n)) {
-        log.warning(s"bad signature for announcement $n")
+        log.warning("bad signature for {}", n)
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else if (d.nodes.containsKey(n.nodeId)) {
@@ -269,63 +270,64 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         db.addNode(n)
         stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ (n -> sender))
       } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId)) || d.stash.channels.keys.exists(c => isRelatedTo(c, n.nodeId))) {
-        log.debug(s"stashing $n")
+        log.debug("stashing {}", n)
         stay using d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> sender)))
       } else {
-        log.debug(s"ignoring $n (no related channel found)")
+        log.debug("ignoring {} (no related channel found)", n)
         // there may be a record if we have just restarted
         db.removeNode(n.nodeId)
         stay
       }
 
     case Event(u: ChannelUpdate, d: Data) =>
+      log.debug(s"received channel update for shortChannelId=${u.shortChannelId.toHexString} from $sender")
       if (d.channels.contains(u.shortChannelId)) {
         val publicChannel = true
         val c = d.channels(u.shortChannelId)
         val desc = getDesc(u, c)
         if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-          log.debug(s"ignoring $u (old timestamp or duplicate)")
+          log.debug("ignoring {} (old timestamp or duplicate)", u)
           stay
         } else if (!Announcements.checkSig(u, desc.a)) {
-          log.warning(s"bad signature for announcement shortChannelId=${u.shortChannelId.toHexString} $u")
+          log.warning(s"bad signature for announcement shortChannelId=${u.shortChannelId.toHexString} {}", u)
           sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
           stay
         } else if (d.updates.contains(desc)) {
-          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           db.updateChannelUpdate(u)
           stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ (u -> sender))
         } else {
-          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           db.addChannelUpdate(u)
           stay using d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ (u -> sender))
         }
       } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId) || d.stash.channels.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
-        log.debug(s"stashing $u")
+        log.debug("stashing {}", u)
         stay using d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> sender)))
       } else if (d.privateChannels.contains(u.shortChannelId)) {
         val publicChannel = false
         val c = d.privateChannels(u.shortChannelId)
         val desc = getDesc(u, c)
         if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-          log.debug(s"ignoring $u (old timestamp or duplicate)")
+          log.debug("ignoring {} (old timestamp or duplicate)", u)
           stay
         } else if (!Announcements.checkSig(u, desc.a)) {
-          log.warning(s"bad signature for announcement shortChannelId=${u.shortChannelId.toHexString} $u")
+          log.warning(s"bad signature for announcement shortChannelId=${u.shortChannelId.toHexString} {}", u)
           sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
           stay
         } else if (d.privateUpdates.contains(desc)) {
-          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
         } else {
-          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} $u")
+          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
           context.system.eventStream.publish(ChannelUpdateReceived(u))
           stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
         }
       } else {
-        log.debug(s"ignoring announcement $u (unknown channel)")
+        log.debug("ignoring announcement {} (unknown channel)", u)
         stay
       }
 
