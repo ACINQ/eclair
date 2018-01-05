@@ -220,7 +220,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       sender ! Status.Failure(new RuntimeException("not connected"))
       stay
 
-    case Event(e@Status.Failure(Client.ConnectionFailed(_)), _) => stay // ignored
+    case Event(Status.Failure(Client.ConnectionFailed(_)), _) => stay // ignore reconnection errors
+
+    case Event(Status.Failure(Authenticator.AuthenticationFailed(remote)), _) => stay // ignore reconnection errors
 
     case Event(GetPeerInfo, d) =>
       sender ! PeerInfo(remoteNodeId, stateName.toString, d.address_opt, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId

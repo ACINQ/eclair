@@ -52,8 +52,6 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
 
   }
 
-  override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
-
   // we should not restart a failing transport-handler
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 }

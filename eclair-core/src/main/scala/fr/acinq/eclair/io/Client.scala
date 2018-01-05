@@ -25,6 +25,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
   def receive = {
     case CommandFailed(_: Connect) =>
+      log.info(s"connection failed to $remoteNodeId@${address.getHostString}:${address.getPort}")
       origin ! Status.Failure(ConnectionFailed(address))
       context stop self
 
