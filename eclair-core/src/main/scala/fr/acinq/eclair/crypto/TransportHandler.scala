@@ -130,7 +130,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   whenUnhandled {
     case Event(closed: Tcp.ConnectionClosed, _) =>
-      log.info(s"tcp connection error: $closed")
+      log.info(s"connection closed: $closed")
       stop(FSM.Normal)
 
     case Event(Terminated(actor), _) if actor == connection =>
