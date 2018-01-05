@@ -26,7 +26,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
     val channel = spawnChannel(nodeParams, context.system.deadLetters)
     channel ! INPUT_RESTORED(state)
     FinalChannelId(state.channelId) -> channel
-  }.toMap, attempts = 0))
+  }.toMap))
 
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, address)), _) =>
@@ -37,7 +37,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
     case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
       address_opt match {
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
-        case _ if channels.size == 0 => stay // no-op (no more channels with this peer)
+        case _ if channels.isEmpty => stay // no-op (no more channels with this peer)
         case Some(address) =>
           context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
@@ -45,14 +45,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
           stay using d.copy(attempts = attempts + 1)
       }
 
-    case Event(Authenticator.Authenticated(_, transport, remoteNodeId, address_opt, origin_opt), DisconnectedData(_, channels, _)) =>
-      log.debug(s"got authenticated connection to $remoteNodeId")
+    case Event(Authenticator.Authenticated(_, transport, remoteNodeId, address, outgoing, origin_opt), DisconnectedData(_, channels, _)) =>
+      log.debug(s"got authenticated connection to $remoteNodeId@${address.getHostString}:${address.getPort}")
       transport ! Listener(self)
       context watch transport
       transport ! wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
-      // we store the ip upon successful connection, keeping only the most recent one
-      address_opt.map(address => nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address))
-      goto(INITIALIZING) using InitializingData(address_opt, transport, channels, origin_opt)
+      // we store the ip upon successful outgoing connection, keeping only the most recent one
+      if (outgoing) {
+        nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
+      }
+      goto(INITIALIZING) using InitializingData(if (outgoing) Some(address) else None, transport, channels, origin_opt)
 
     case Event(Terminated(actor), d@DisconnectedData(_, channels, _)) if channels.exists(_._2 == actor) =>
       val h = channels.filter(_._2 == actor).map(_._1)
@@ -194,7 +196,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
     case Event(Terminated(actor), d@ConnectedData(_, transport, _, channels)) if channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
-      val channelIds = channels.filter(_._2 == actor).map(_._1)
+      val channelIds = channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
       if (channels.values.toSet - actor == Set.empty) {
         log.info(s"that was the last open channel, closing the connection")

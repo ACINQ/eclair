@@ -9,7 +9,7 @@ import fr.acinq.eclair.crypto.Noise.KeyPair
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.HandshakeCompleted
 import fr.acinq.eclair.io.Authenticator.{Authenticated, AuthenticationFailed, PendingAuth}
-import fr.acinq.eclair.wire.{LightningMessage, LightningMessageCodecs}
+import fr.acinq.eclair.wire.LightningMessageCodecs
 
 /**
   * The purpose of this class is to serve as a buffer for newly connection before they are authenticated
@@ -24,28 +24,29 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
   }
 
   def ready(switchboard: ActorRef, authenticating: Map[ActorRef, PendingAuth]): Receive = {
-    case pending@PendingAuth(connection, _, outgoingConnection_opt) =>
-      log.info(s"added auth request current=${authenticating.size} handlers=${context.children.size}")
-      val transport = context.actorOf(Props(
-        new TransportHandler[LightningMessage](
-          KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
-          outgoingConnection_opt.map(_.remoteNodeId),
-          connection = connection,
-          codec = LightningMessageCodecs.lightningMessageCodec)))
+    case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
+      log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
+      val transport = context.actorOf(TransportHandler.props(
+        KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
+        remoteNodeId_opt.map(_.toBin),
+        connection = connection,
+        codec = LightningMessageCodecs.lightningMessageCodec))
       context watch transport
       context become (ready(switchboard, authenticating + (transport -> pending)))
 
     case HandshakeCompleted(connection, transport, remoteNodeId) if authenticating.contains(transport) =>
       val pendingAuth = authenticating(transport)
-      log.info(s"connection authenticated with $remoteNodeId address=${pendingAuth.outgoingConnection_opt.map(_.address).getOrElse("(incoming)")}")
-      switchboard ! Authenticated(connection, transport, remoteNodeId, pendingAuth.outgoingConnection_opt.map(_.address), pendingAuth.origin_opt)
+      import pendingAuth.{address, remoteNodeId_opt}
+      val outgoing = remoteNodeId_opt.isDefined
+      log.info(s"connection authenticated with $remoteNodeId@${address.getHostString}:${address.getPort} direction=${if (outgoing) "outgoing" else "incoming"}")
+      switchboard ! Authenticated(connection, transport, remoteNodeId, address, remoteNodeId_opt.isDefined, pendingAuth.origin_opt)
       context become ready(switchboard, authenticating - transport)
 
     case Terminated(transport) =>
       authenticating.get(transport) match {
         case Some(pendingAuth) =>
           // we send an error only when we are the initiator
-          pendingAuth.origin_opt.map(origin => pendingAuth.outgoingConnection_opt.map(_.address).map(address => origin ! Status.Failure(AuthenticationFailed(address))))
+          pendingAuth.origin_opt.map(origin => origin ! Status.Failure(AuthenticationFailed(pendingAuth.address)))
           context become ready(switchboard, authenticating - transport)
         case None => ()
       }
@@ -62,8 +63,8 @@ object Authenticator {
 
   // @formatter:off
   case class OutgoingConnection(remoteNodeId: PublicKey, address: InetSocketAddress)
-  case class PendingAuth(connection: ActorRef, origin_opt: Option[ActorRef], outgoingConnection_opt: Option[OutgoingConnection])
-  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, address_opt: Option[InetSocketAddress], origin: Option[ActorRef])
+  case class PendingAuth(connection: ActorRef, remoteNodeId_opt: Option[PublicKey], address: InetSocketAddress, origin_opt: Option[ActorRef])
+  case class Authenticated(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey, address: InetSocketAddress, outgoing: Boolean, origin_opt: Option[ActorRef])
   case class AuthenticationFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
   // @formatter:on
 

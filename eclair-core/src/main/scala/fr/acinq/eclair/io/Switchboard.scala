@@ -18,7 +18,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   authenticator ! self
 
   // we load peers and channels from database
-  val initialPeers = {
+  private val initialPeers = {
     val channels = nodeParams.channelsDb.listChannels().groupBy(_.commitments.remoteParams.nodeId)
     val peers = nodeParams.peersDb.listPeers().toMap
     channels
@@ -29,7 +29,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
         case (remoteNodeId, states, address_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
           val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
-          (remoteNodeId -> peer)
+          remoteNodeId -> peer
       }.toMap
   }
 
@@ -60,7 +60,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
           context become main(peers - remoteNodeId)
       }
 
-    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _) =>
+    case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
       val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth

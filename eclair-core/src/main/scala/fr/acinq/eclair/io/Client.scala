@@ -32,8 +32,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
     case Connected(remote, _) =>
       log.info(s"connected to $remoteNodeId@${remote.getHostString}:${remote.getPort}")
       val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, origin_opt = origin_opt, outgoingConnection_opt = Some(Authenticator.OutgoingConnection(remoteNodeId, address)))
-      // TODO: shutdown?
+      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = address, origin_opt = origin_opt)
       context watch connection
       context become connected(connection)
   }
