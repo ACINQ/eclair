@@ -31,7 +31,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, address)), _) =>
       // even if we are in a reconnection loop, we immediately process explicit connection requests
-      context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin = sender()))
+      context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = Some(sender)))
       stay
 
     case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>
@@ -39,7 +39,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
         case None => stay // no-op (this peer didn't initiate the connection and doesn't have the ip of the counterparty)
         case _ if channels.size == 0 => stay // no-op (no more channels with this peer)
         case Some(address) =>
-          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin = self))
+          context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin_opt = None))
           // exponential backoff retry with a finite max
           setTimer(RECONNECT_TIMER, Reconnect, Math.min(10 + Math.pow(2, attempts), 60) seconds, repeat = false)
           stay using d.copy(attempts = attempts + 1)
@@ -212,17 +212,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
   }
 
   whenUnhandled {
-    case Event(_: Peer.Connect, d) =>
+    case Event(_: Peer.Connect, _) =>
       sender ! "already connected"
       stay
 
     case Event(_: Peer.OpenChannel, _) =>
       sender ! Status.Failure(new RuntimeException("not connected"))
       stay
-
-    case Event(Status.Failure(Client.ConnectionFailed(_)), _) => stay // ignore reconnection errors
-
-    case Event(Status.Failure(Authenticator.AuthenticationFailed(remote)), _) => stay // ignore reconnection errors
 
     case Event(GetPeerInfo, d) =>
       sender ! PeerInfo(remoteNodeId, stateName.toString, d.address_opt, d.channels.values.toSet.size) // we use toSet to dedup because a channel can have a TemporaryChannelId + a ChannelId

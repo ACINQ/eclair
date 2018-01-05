@@ -15,7 +15,7 @@ import scala.concurrent.duration._
   * Created by PM on 27/10/2015.
   *
   */
-class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef) extends Actor with ActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -26,13 +26,13 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   def receive = {
     case CommandFailed(_: Connect) =>
       log.info(s"connection failed to $remoteNodeId@${address.getHostString}:${address.getPort}")
-      origin ! Status.Failure(ConnectionFailed(address))
+      origin_opt.map(_ ! Status.Failure(ConnectionFailed(address)))
       context stop self
 
     case Connected(remote, _) =>
       log.info(s"connected to $remoteNodeId@${remote.getHostString}:${remote.getPort}")
       val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, origin_opt = Some(origin), outgoingConnection_opt = Some(Authenticator.OutgoingConnection(remoteNodeId, address)))
+      authenticator ! Authenticator.PendingAuth(connection, origin_opt = origin_opt, outgoingConnection_opt = Some(Authenticator.OutgoingConnection(remoteNodeId, address)))
       // TODO: shutdown?
       context watch connection
       context become connected(connection)
@@ -48,7 +48,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
 object Client extends App {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
 
   case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
 
