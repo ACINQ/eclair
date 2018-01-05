@@ -80,6 +80,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
         stay
       }
 
+    case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
+      // two connections in parallel
+      origin_opt.map(origin => origin ! "there is another connection attempt in progress")
+      // we kill this one
+      log.warning(s"killing parallel connection $connection")
+      connection ! PoisonPill
+      stay
+
     case Event(o: Peer.OpenChannel, _) =>
       // we're almost there, just wait a little
       import scala.concurrent.ExecutionContext.Implicits.global
