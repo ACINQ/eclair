@@ -45,12 +45,6 @@
                             <type>fat</type>
                             <fileName>${project.name}-${project.version}</fileName>
                             <fileDesc>-${git.commit.id.abbrev}</fileDesc>
-                            <manifest>
-                                <entry>
-                                    <key>Java-Agents</key>
-                                    <value>jmx-firewall-friendly-agent-1.0-SNAPSHOT.jar</value>
-                                </entry>
-                            </manifest>
                         </configuration>
                     </execution>
                 </executions>
@@ -68,11 +62,6 @@
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>
             <version>1.2.3</version>
-        </dependency>
-        <dependency>
-            <groupId>org.angelsmasterpiece</groupId>
-            <artifactId>jmx-firewall-friendly-agent</artifactId>
-            <version>1.0-SNAPSHOT</version>
         </dependency>
         <dependency>
             <!--conditional logging -->
