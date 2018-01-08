@@ -53,12 +53,13 @@ class ServiceSpec extends FunSuite with ScalatestRouteTest {
       addHeader("Content-Type", "application/json") ~>
       mockService.route ~>
       check {
-      assert(handled)
-      assert(status == StatusCodes.OK)
+        assert(handled)
+        assert(status == StatusCodes.OK)
+        val response = entityAs[JsonRPCRes]
+        assert(response.result.asInstanceOf[List[String]].last.contains("display this message"))
     }
     
-    assert(1 == 1, "One is not one")
-
+    
   }
   
 }
