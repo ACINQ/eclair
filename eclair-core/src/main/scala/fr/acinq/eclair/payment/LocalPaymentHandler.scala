@@ -5,19 +5,26 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.Payment
 import fr.acinq.eclair.wire._
+import scala.concurrent.duration._
 import fr.acinq.eclair.{NodeParams, randomBytes}
 
 import scala.compat.Platform
+import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 
 /**
   * Created by PM on 17/06/2016.
   */
-class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
+class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
+
+  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! Platform.currentTime / 1000)
 
   override def receive: Receive = run(Map())
 
   def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
+
+    case currentSeconds: Long =>
+      context.become(run(h2r.filter { case (_, (_, pr)) => pr.expiry.exists(_ + pr.timestamp > currentSeconds) }))
 
     case ReceivePayment(amount_opt, desc) =>
       Try {

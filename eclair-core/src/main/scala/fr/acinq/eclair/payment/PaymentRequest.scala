@@ -60,7 +60,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
 
   def routingInfo(): Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
 
-  def expiry: Option[Long] = tags.collectFirst {
+  lazy val expiry: Option[Long] = tags.collectFirst {
     case PaymentRequest.ExpiryTag(seconds) => seconds
   }
 
