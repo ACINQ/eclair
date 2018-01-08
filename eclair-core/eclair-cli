@@ -5,6 +5,7 @@ command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installa
 
 FULL_OUTPUT='false'
 URL='http://localhost:8080'
+USER=''
 
 # -------------------- METHODS
 
@@ -20,8 +21,9 @@ USAGE
 
 OPTIONS
 -------
-  -u <url>     Override the default node URL with <url>
-  -v           Outputs full json returned by the API"
+  -u <user> or <user:password>    Node's RPC API user
+  -a <address>                    Override the default node URL with <address>
+  -v                              Outputs full json returned by the API"
 }
 
 # Executes a JSON RPC call to a node listening on ${URL}
@@ -29,17 +31,21 @@ call() {
     jqexp='if .error == null then .result else .error.message end'
     # override default jq parsing expression
     if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
-    eval curl "--silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
+    eval curl "--user ${USER} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
 }
 
 # get script options
-while getopts 'vu:' flag; do
+while getopts 'vu:p:a:' flag; do
     case "${flag}" in
-        u)  URL="${OPTARG}" ;;
+        u)  USER="${OPTARG}" ;;
+        a)  URL="${OPTARG}" ;;
         v)  FULL_OUTPUT="true" ;;
         *)  echo -e "\nAborting..."; exit 1; ;;
     esac
 done
+
+if [ -z ${USER} ]; then echo "User is required. Use the -u option."; exit 1; fi
+
 
 shift $(($OPTIND - 1))
 

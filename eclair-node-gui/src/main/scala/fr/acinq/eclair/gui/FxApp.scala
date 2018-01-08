@@ -22,6 +22,8 @@ import grizzled.slf4j.Logging
 import scala.concurrent.Promise
 import scala.util.{Failure, Success}
 
+import scala.concurrent.ExecutionContext.Implicits.global
+
 
 /**
   * Created by PM on 16/08/2016.
@@ -46,7 +48,7 @@ class FxApp extends Application with Logging {
       notifyPreloader(new AppNotification(InfoAppNotification, "Eclair is still in alpha, and under heavy development. Last update was not backward compatible."))
       notifyPreloader(new AppNotification(InfoAppNotification, "Please reset your datadir."))
     case t: Throwable =>
-      notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.toString}", t))
+      notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.getLocalizedMessage}", t))
   }
 
   override def start(primaryStage: Stage): Unit = {
@@ -71,7 +73,6 @@ class FxApp extends Application with Logging {
           setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)
-          import scala.concurrent.ExecutionContext.Implicits.global
           pKit.future.onComplete {
             case Success(_) =>
               Platform.runLater(new Runnable {

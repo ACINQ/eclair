@@ -2,9 +2,11 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
+import java.security.MessageDigest
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
+import akka.http.scaladsl.server.directives.Credentials
 import akka.pattern.after
 import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
@@ -37,9 +39,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams = NodeParams.makeNodeParams(datadir, config)
-  val chain = config.getString("chain")
+  val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val chain: String = config.getString("chain")
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
@@ -172,24 +174,44 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       server = server,
       wallet = wallet)
 
-    val api = new Service {
-
-      override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(nodeId = nodeParams.privateKey.publicKey, alias = nodeParams.alias, port = config.getInt("server.port"), chainHash = nodeParams.chainHash, blockHeight = Globals.blockCount.intValue()))
-
-      override def appKit = kit
-    }
-    val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
-      case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
-    }
-
     val zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
     val tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
-    val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
 
     for {
       _ <- Future.firstCompletedOf(zmqConnected.future :: zmqTimeout :: Nil)
       _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
-      _ <- Future.firstCompletedOf(httpBound :: httpTimeout :: Nil)
+      _ <- if (config.getBoolean("api.enabled")) {
+        logger.info(s"JSON-RPC API enabled on port=${config.getInt("api.port")}")
+        val user = config.getString("api.user")
+        val password = config.getString("api.password")
+        if (user.isEmpty || password.isEmpty) {
+          Future.failed(throw new RuntimeException("The API was enabled but no user/password were set. Check the eclair.api.user/eclair.api.password keys in the eclair.conf file."))
+        } else {
+          val api = new Service {
+            override def userPassAuthenticator(credentials: Credentials): Option[String] = credentials match {
+              case p@Credentials.Provided(id)
+                if MessageDigest.isEqual(id.getBytes(), config.getString("api.user").getBytes()) && p.verify(config.getString("api.password")) => Some(id)
+              case _ =>
+                // TODO deter brute force with a forced delay
+                None
+            }
+            override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
+              GetInfoResponse(nodeId = nodeParams.privateKey.publicKey,
+                alias = nodeParams.alias,
+                port = config.getInt("server.port"),
+                chainHash = nodeParams.chainHash,
+                blockHeight = Globals.blockCount.intValue()))
+            override def appKit: Kit = kit
+          }
+          val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+            case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
+          }
+          val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
+          Future.firstCompletedOf(httpBound :: httpTimeout :: Nil)
+        }
+      } else {
+        Future.successful(logger.info("JSON-RPC API is disabled"))
+      }
     } yield kit
 
   }

@@ -93,7 +93,10 @@ Here are some of the most common options:
 name                         | description               | default value
 -----------------------------|---------------------------|--------------
  eclair.server.port          | Lightning TCP port        | 9735
+ eclair.api.enabled          | Enable/disable the API    | false. By default the API is disabled. If you want to enable it, you must set a user/password.
  eclair.api.port             | API HTTP port             | 8080
+ eclair.api.user             | API user (BASIC)          | "" (must be set if the API is enabled)
+ eclair.api.password         | API password (BASIC)      | "" (must be set if the API is enabled)
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
  eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
@@ -162,8 +165,8 @@ docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConso
 
 
 ## Resources
-- [1]  [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
-- [2]  [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
+- [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
+- [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 - [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to
 
 [Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
