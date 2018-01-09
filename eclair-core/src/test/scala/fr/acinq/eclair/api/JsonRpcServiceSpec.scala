@@ -11,9 +11,9 @@ import fr.acinq.eclair.{Kit, TestConstants}
 
 import scala.concurrent.Future
 
-class ServiceSpec extends FunSuite with ScalatestRouteTest {
+class JsonRpcServiceSpec extends FunSuite with ScalatestRouteTest {
   
-  val mockService = new Service {
+  def mockService = new Service {
     
     override def getInfoResponse: Future[GetInfoResponse] = Future.successful(???)
   
@@ -34,7 +34,9 @@ class ServiceSpec extends FunSuite with ScalatestRouteTest {
   
   class MockActor extends Actor {
     override def receive: Receive = {
-      case _ => sender() ! "Yo"
+      case msg =>
+        println(s"mock actor got $msg")
+        sender() ! "Yo"
     }
   }
   
@@ -42,7 +44,23 @@ class ServiceSpec extends FunSuite with ScalatestRouteTest {
   implicit val ser = mockService.serialization
   import Json4sSupport.{marshaller, unmarshaller}
   
-  test("Peers should ask the switchboard for its peers") {
+  test("Calling non root path should result in HTTP 404") {
+  
+    val postBody = JsonRPCBody(
+      method = "help",
+      params = Seq.empty
+    )
+  
+    Post("/some/wrong/path", postBody) ~>
+      addHeader("Content-Type", "application/json") ~>
+      mockService.route ~>
+      check {
+        assert(handled)
+        assert(status == StatusCodes.NotFound)
+      }
+  }
+  
+  test("Help should respond with a help message") {
     
     val postBody = JsonRPCBody(
       method = "help",
@@ -55,8 +73,8 @@ class ServiceSpec extends FunSuite with ScalatestRouteTest {
       check {
         assert(handled)
         assert(status == StatusCodes.OK)
-        val response = entityAs[JsonRPCRes]
-        assert(response.result.asInstanceOf[List[String]].last.contains("display this message"))
+        val helpList = entityAs[JsonRPCRes].result.asInstanceOf[List[String]]
+        assert(helpList.mkString == mockService.help.mkString)
     }
     
     
