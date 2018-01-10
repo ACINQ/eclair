@@ -1,6 +1,4 @@
 package fr.acinq.eclair.api
-import java.security.MessageDigest
-
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
@@ -52,7 +50,7 @@ trait Service extends Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -176,7 +174,7 @@ trait Service extends Logging {
                       }
 
                       // global network methods
-                      case "allnodes"     => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]].map(_.map(_.nodeId)))
+                      case "allnodes"     => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
                       case "allchannels"  => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelInfo(c.shortChannelId.toHexString, c.nodeId1, c.nodeId2))))
 
                       // payment methods

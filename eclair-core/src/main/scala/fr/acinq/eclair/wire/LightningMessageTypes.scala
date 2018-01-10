@@ -136,11 +136,15 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                bitcoinKey1: PublicKey,
                                bitcoinKey2: PublicKey) extends RoutingMessage
 
+case class Color(r: Byte, g: Byte, b: Byte) {
+  override def toString: String = f"#$r%02x$g%02x$b%02x" // to hexa s"#  ${r}%02x ${r & 0xFF}${g & 0xFF}${b & 0xFF}"
+}
+
 case class NodeAnnouncement(signature: BinaryData,
                             features: BinaryData,
                             timestamp: Long,
                             nodeId: PublicKey,
-                            rgbColor: (Byte, Byte, Byte),
+                            rgbColor: Color,
                             alias: String,
                             // TODO: check address order + support padding data (type 0)
                             addresses: List[InetSocketAddress]) extends RoutingMessage

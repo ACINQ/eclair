@@ -3,17 +3,18 @@ package fr.acinq.eclair.api
 import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
+import fr.acinq.bitcoin.{BinaryData, OutPoint}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import org.json4s.{CustomKeySerializer, CustomSerializer}
+import fr.acinq.eclair.wire.Color
 import org.json4s.JsonAST.{JNull, JString}
+import org.json4s.{CustomKeySerializer, CustomSerializer}
 
 /**
   * Created by PM on 28/01/2016.
   */
-class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ( {
+class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({
   case JString(hex) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -21,7 +22,7 @@ class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ( {
 }
 ))
 
-class StateSerializer extends CustomSerializer[State](format => ( {
+class StateSerializer extends CustomSerializer[State](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -29,7 +30,7 @@ class StateSerializer extends CustomSerializer[State](format => ( {
 }
 ))
 
-class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
+class ShaChainSerializer extends CustomSerializer[ShaChain](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -37,7 +38,7 @@ class ShaChainSerializer extends CustomSerializer[ShaChain](format => ( {
 }
 ))
 
-class PublicKeySerializer extends CustomSerializer[PublicKey](format => ( {
+class PublicKeySerializer extends CustomSerializer[PublicKey](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -45,7 +46,7 @@ class PublicKeySerializer extends CustomSerializer[PublicKey](format => ( {
 }
 ))
 
-class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ( {
+class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -53,7 +54,7 @@ class PrivateKeySerializer extends CustomSerializer[PrivateKey](format => ( {
 }
 ))
 
-class PointSerializer extends CustomSerializer[Point](format => ( {
+class PointSerializer extends CustomSerializer[Point](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -61,7 +62,7 @@ class PointSerializer extends CustomSerializer[Point](format => ( {
 }
 ))
 
-class ScalarSerializer extends CustomSerializer[Scalar](format => ( {
+class ScalarSerializer extends CustomSerializer[Scalar](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -69,7 +70,7 @@ class ScalarSerializer extends CustomSerializer[Scalar](format => ( {
 }
 ))
 
-class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](format => ( {
+class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -77,7 +78,7 @@ class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWit
 }
 ))
 
-class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ( {
+class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](format => ({
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
@@ -85,7 +86,7 @@ class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](fo
 }
 ))
 
-class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ( {
+class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({
   case x: String =>
     val Array(k, v) = x.split(":")
     OutPoint(BinaryData(k), v.toLong)
@@ -93,3 +94,10 @@ class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ( {
   case x: OutPoint => s"${x.hash}:${x.index}"
 }
 ))
+
+class ColorSerializer extends CustomSerializer[Color](format => ({
+  case JString(x) if (false) => // NOT IMPLEMENTED
+    ???
+}, {
+  case c: Color => JString(c.toString)
+}))
