@@ -1,16 +1,14 @@
 package fr.acinq.eclair.api
 
-import akka.actor.Actor.Receive
-import akka.actor.{Actor, ActorRef, ActorSystem, Props}
-import org.scalatest.{FunSuite, FunSuiteLike}
-import akka.http.scaladsl.model.{HttpRequest, StatusCodes}
+import akka.actor.{Actor, ActorSystem, Props}
+import org.scalatest.FunSuite
+import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.testkit.{RouteTestTimeout, ScalatestRouteTest}
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.{marshaller, unmarshaller}
 import fr.acinq.eclair.blockchain.TestWallet
 import fr.acinq.eclair.{Kit, TestConstants}
-import TestConstants._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
-
+import TestConstants._
 import scala.concurrent.Future
 import scala.concurrent.duration._
 
