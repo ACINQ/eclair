@@ -5,25 +5,26 @@ command -v jq >/dev/null 2>&1 || { echo -e "This tool requires jq.\nFor installa
 
 FULL_OUTPUT='false'
 URL='http://localhost:8080'
-USER=''
+PASSWORD=''
 
 # -------------------- METHODS
 
 displayhelp() {
-    echo -e "
-Client for eclair. Uses the JSON RPC API exposed by the node.
-Default node URL is http://localhost:8080. Use the -h option to override.
+    echo -e "Usage: eclair-cli [OPTION]... [COMMAND]
+Client for an eclair node.
 
-USAGE
------
-  eclair-cli <command>
-  where <command> is one of the methods listed by \e[01;33meclair-cli help\e[0m
+With COMMAND is one of the command listed by \e[01;33meclair-cli help\e[0m.
 
-OPTIONS
--------
-  -u <user> or <user:password>    Node's RPC API user
-  -a <address>                    Override the default node URL with <address>
-  -v                              Outputs full json returned by the API"
+  -p <password>         api's password
+  -a <address>          Override the api URL with <address>
+  -v                    Outputs full json returned by the API
+
+Examples:
+  eclair-cli -a localhost:1234 peers     list the peers
+  eclair-cli close 006fb...              closes the channel with id 006fb...
+
+Note: Uses the json-rpc api exposed by the node on localhost:8080. Make sure the api is enabled.
+Full documentation at: <https://github.com/ACINQ/eclair>"
 }
 
 # Executes a JSON RPC call to a node listening on ${URL}
@@ -31,21 +32,21 @@ call() {
     jqexp='if .error == null then .result else .error.message end'
     # override default jq parsing expression
     if [ $# -ge 3 ] && [ ${FULL_OUTPUT} == "false" ]; then jqexp=${3}; fi
-    eval curl "--user ${USER} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
+    # set password
+    if [ -z ${PASSWORD} ]; then auth="eclair-cli";
+    else auth="eclair-cli:"${PASSWORD}; fi
+    eval curl "--user ${auth} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
 }
 
 # get script options
 while getopts 'vu:p:a:' flag; do
     case "${flag}" in
-        u)  USER="${OPTARG}" ;;
+        p)  PASSWORD="${OPTARG}" ;;
         a)  URL="${OPTARG}" ;;
         v)  FULL_OUTPUT="true" ;;
         *)  echo -e "\nAborting..."; exit 1; ;;
     esac
 done
-
-if [ -z ${USER} ]; then echo "User is required. Use the -u option."; exit 1; fi
-
 
 shift $(($OPTIND - 1))
 
@@ -57,8 +58,8 @@ shift 1
 PARAMS=""
 i=1
 for arg in "${@}"; do
-	if [ $i -eq 1 ]; then 	PARAMS=$(printf '"%s"' "$arg");
-	else 					PARAMS=$(printf '%s,"%s"' "$PARAMS" "$arg");
+	if [ $i -eq 1 ]; then PARAMS=$(printf '"%s"' "$arg");
+	else PARAMS=$(printf '%s,"%s"' "$PARAMS" "$arg");
 	fi
 	let "i++"
 done;
@@ -66,8 +67,9 @@ PARAMS="[${PARAMS}]"
 
 # Whatever the arguments provided to eclair-cli, a call to the API will be sent. Let it fail!
 case ${METHOD}_${#} in
-    ""_* | "help"*) displayhelp
-                    echo -e "\nLIST OF AVAILABLE COMMANDS\n--------------------------"
+    ""_*)           displayhelp ;;
+    "help"*)        displayhelp
+                    echo -e "\nAvailable commands:\n"
                     call "help" [] ;;
 
     "connect_3")    call ${METHOD} "'$(printf '["%s","%s",%s]' "${1}" "${2}" "${3}")'" ;; # ${3} is numeric
