@@ -48,7 +48,7 @@ class FxApp extends Application with Logging {
       notifyPreloader(new AppNotification(InfoAppNotification, "Eclair is still in alpha, and under heavy development. Last update was not backward compatible."))
       notifyPreloader(new AppNotification(InfoAppNotification, "Please reset your datadir."))
     case t: Throwable =>
-      notifyPreloader(new ErrorNotification("Setup", s"Internal error: ${t.getLocalizedMessage}", t))
+      notifyPreloader(new ErrorNotification("Setup", s"Error: ${t.getLocalizedMessage}", t))
   }
 
   override def start(primaryStage: Stage): Unit = {

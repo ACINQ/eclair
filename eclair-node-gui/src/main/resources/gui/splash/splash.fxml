@@ -40,7 +40,7 @@
                             </children>
                         </VBox>
                         <Label onMouseClicked="#openGithubPage" VBox.vgrow="NEVER" styleClass="link"
-                               text="Consult our readme to get started."/>
+                               text="Check our readme to get started."/>
                         <Button fx:id="closeButton" VBox.vgrow="NEVER" mnemonicParsing="false" onAction="#closeAndKill"
                                 text="Close" cancelButton="true"/>
                     </children>

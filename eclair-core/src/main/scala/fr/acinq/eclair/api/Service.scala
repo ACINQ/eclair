@@ -1,4 +1,6 @@
 package fr.acinq.eclair.api
+import java.security.MessageDigest
+
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
 import akka.http.scaladsl.model.StatusCodes
@@ -56,9 +58,16 @@ trait Service extends Logging {
 
   import Json4sSupport.{marshaller, unmarshaller}
 
+  def password: String
+
   def appKit: Kit
 
-  def userPassAuthenticator(credentials: Credentials): Option[String]
+  def userPassAuthenticator(credentials: Credentials): Option[String] = credentials match {
+    case p@Credentials.Provided(id) if p.verify(password) => Some(id)
+    case _ =>
+      // TODO deter brute force with a forced delay
+      None
+  }
 
   val customHeaders = `Access-Control-Allow-Headers`("Content-Type, Authorization") ::
     `Access-Control-Allow-Methods`(POST) ::
