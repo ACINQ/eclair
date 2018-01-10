@@ -24,10 +24,12 @@ import javafx.stage.FileChooser.ExtensionFilter
 import javafx.stage._
 import javafx.util.{Callback, Duration}
 
+import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.Handlers
 import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
@@ -64,7 +66,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var labelAlias: Label = _
   @FXML var labelApi: Label = _
   @FXML var labelServer: Label = _
-  @FXML var bitcoinVersion: Label = _
+  @FXML var bitcoinWallet: Label = _
   @FXML var bitcoinChain: Label = _
 
   // channels tab elements
@@ -73,7 +75,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var channelsTab: Tab = _
 
   // all nodes tab
-  val networkNodesList: ObservableList[NodeAnnouncement] = FXCollections.observableArrayList[NodeAnnouncement]()
+  val networkNodesList = FXCollections.observableArrayList[NodeAnnouncement]()
   @FXML var networkNodesTab: Tab = _
   @FXML var networkNodesTable: TableView[NodeAnnouncement] = _
   @FXML var networkNodesIdColumn: TableColumn[NodeAnnouncement, String] = _
@@ -82,7 +84,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var networkNodesIPColumn: TableColumn[NodeAnnouncement, String] = _
 
   // all channels
-  val networkChannelsList: ObservableList[ChannelInfo] = FXCollections.observableArrayList[ChannelInfo]()
+  val networkChannelsList = FXCollections.observableArrayList[ChannelInfo]()
   @FXML var networkChannelsTab: Tab = _
   @FXML var networkChannelsTable: TableView[ChannelInfo] = _
   @FXML var networkChannelsIdColumn: TableColumn[ChannelInfo, String] = _
@@ -120,8 +122,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var blockerDialog: HBox = _
   @FXML var blockerDialogTitleEngineName: Text = _
 
-  val PAYMENT_DATE_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
-  val moneyFormatter = NumberFormat.getInstance(Locale.getDefault)
+  val PAYMENT_DATE_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
+  val moneyFormatter: NumberFormat = NumberFormat.getInstance(Locale.getDefault)
 
   /**
     * Initialize the main window.
@@ -130,7 +132,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     * - init the channels tab with a 'No channels found' message
     * - init the 'nodes in network' and 'channels in network' tables
     */
-  @FXML def initialize = {
+  @FXML def initialize(): Unit = {
 
     // init channels tab
     if (channelBox.getChildren.size() > 0) {
@@ -167,7 +169,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     })
     networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = {
-        val address = pn.getValue.addresses.map(a => s"${a.getHostString}:${a.getPort}").mkString(",")
+        val address = pn.getValue.addresses.map(a => NodeURI.getHostAndPort(a)).mkString(",")
         new SimpleStringProperty(address)
       }
     })
@@ -188,7 +190,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       }
     })
     networkNodesTable.setRowFactory(new Callback[TableView[NodeAnnouncement], TableRow[NodeAnnouncement]]() {
-      override def call(table: TableView[NodeAnnouncement]): TableRow[NodeAnnouncement] = setupPeerNodeContextMenu
+      override def call(table: TableView[NodeAnnouncement]) = setupPeerNodeContextMenu()
     })
 
     // init all channels
@@ -206,7 +208,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(pc.getValue.announcement.nodeId2.toString)
     })
     networkChannelsTable.setRowFactory(new Callback[TableView[ChannelInfo], TableRow[ChannelInfo]]() {
-      override def call(table: TableView[ChannelInfo]): TableRow[ChannelInfo] = setupPeerChannelContextMenu
+      override def call(table: TableView[ChannelInfo]): TableRow[ChannelInfo] = setupPeerChannelContextMenu()
     })
     networkChannelsDirectionsColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, ChannelInfo], ObservableValue[ChannelInfo]]() {
       def call(pc: CellDataFeatures[ChannelInfo, ChannelInfo]) = new SimpleObjectProperty[ChannelInfo](pc.getValue)
@@ -316,43 +318,46 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     rectRGB.setFill(Color.rgb(setup.nodeParams.color._1 & 0xFF, setup.nodeParams.color._2 & 0xFF, setup.nodeParams.color._3 & 0xFF))
     labelApi.setText(s"${setup.config.getInt("api.port")}")
     labelServer.setText(s"${setup.config.getInt("server.port")}")
-    bitcoinVersion.setText(s"v0.0.0")
-    //bitcoinVersion.setText(s"v${setup.bitcoinVersion}")
+
+    val wallet = setup.nodeParams.watcherType match {
+      case BITCOIND => "Bitcoin-core"
+      case ELECTRUM => "Electrum"
+      case BITCOINJ => "BitcoinJ"
+    }
+    bitcoinWallet.setText(wallet)
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
     bitcoinChain.getStyleClass.add(setup.chain)
 
-    contextMenu = ContextMenuUtils.buildCopyContext(
-      List(
-        Some(CopyAction("Copy Pubkey", setup.nodeParams.privateKey.publicKey.toString())),
-        setup.nodeParams.publicAddresses.headOption.map(address => CopyAction("Copy URI", s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}"))
-      ).flatten)
+    val nodeURI_opt = setup.nodeParams.publicAddresses.headOption.map(address => {
+      s"${setup.nodeParams.privateKey.publicKey}@${NodeURI.getHostAndPort(address)}"
+    })
 
-    setup.nodeParams.publicAddresses.headOption.map(address => {
+    contextMenu = ContextMenuUtils.buildCopyContext(List(CopyAction("Copy Pubkey", setup.nodeParams.privateKey.publicKey.toString())))
+    nodeURI_opt.map(nodeURI => {
       val nodeInfoAction = new MenuItem("Node Info")
       nodeInfoAction.setOnAction(new EventHandler[ActionEvent] {
         override def handle(event: ActionEvent): Unit = {
-          val nodeInfoStage = new NodeInfoStage(s"${setup.nodeParams.privateKey.publicKey}@${address.getHostString}:${address.getPort}", handlers)
+          val nodeInfoStage = new NodeInfoStage(nodeURI, handlers)
           nodeInfoStage.initOwner(getWindow.orNull)
           positionAtCenter(nodeInfoStage)
           nodeInfoStage.show()
         }
       })
       contextMenu.getItems.add(nodeInfoAction)
+      contextMenu.getItems.add(ContextMenuUtils.buildCopyMenuItem(CopyAction("Copy URI", nodeURI)))
     })
   }
 
-  private def updateTabHeader(tab: Tab, prefix: String, items: ObservableList[_]) = {
-    Platform.runLater(new Runnable() {
-      override def run = tab.setText(s"$prefix (${items.size})")
+  private def updateTabHeader(tab: Tab, prefix: String, items: ObservableList[_]) = Platform.runLater(new Runnable() {
+      override def run(): Unit = tab.setText(s"$prefix (${items.size})")
     })
-  }
 
   private def paymentHashCellValueFactory[T <: Record] = new Callback[CellDataFeatures[T, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[T, String]) = new SimpleStringProperty(p.getValue.event.paymentHash.toString)
   }
 
   private def buildMoneyTableCell[T <: Record] = new TableCell[T, Number]() {
-    override def updateItem(item: Number, empty: Boolean) = {
+    override def updateItem(item: Number, empty: Boolean): Unit = {
       super.updateItem(item, empty)
       if (empty || item == null) {
         setText(null)
@@ -373,7 +378,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       val rowContextMenu = new ContextMenu
       val copyHash = new MenuItem("Copy Payment Hash")
       copyHash.setOnAction(new EventHandler[ActionEvent] {
-        override def handle(event: ActionEvent) = Option(row.getItem) match {
+        override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
           case Some(p) => ContextMenuUtils.copyToClipboard(p.event.paymentHash.toString)
           case None =>
         }
@@ -394,16 +399,16 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     val rowContextMenu = new ContextMenu
     val copyPubkey = new MenuItem("Copy Pubkey")
     copyPubkey.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = Option(row.getItem) match {
+      override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pn) => ContextMenuUtils.copyToClipboard(pn.nodeId.toString)
         case None =>
       }
     })
     val copyURI = new MenuItem("Copy first known URI")
     copyURI.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = Option(row.getItem) match {
+      override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pn) => ContextMenuUtils.copyToClipboard(
-          if (pn.addresses.nonEmpty) s"${pn.nodeId.toString}@${pn.addresses.head.getHostString}:${pn.addresses.head.getPort}"
+          if (pn.addresses.nonEmpty) s"${pn.nodeId.toString}@${NodeURI.getHostAndPort(pn.addresses.head)}"
           else "no URI Known")
         case None =>
       }
@@ -423,21 +428,21 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     val rowContextMenu = new ContextMenu
     val copyChannelId = new MenuItem("Copy Channel Id")
     copyChannelId.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = Option(row.getItem) match {
+      override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pc) => ContextMenuUtils.copyToClipboard(pc.announcement.shortChannelId.toHexString)
         case None =>
       }
     })
     val copyNode1 = new MenuItem("Copy Node 1")
     copyNode1.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = Option(row.getItem) match {
+      override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pc) => ContextMenuUtils.copyToClipboard(pc.announcement.nodeId1.toString)
         case None =>
       }
     })
     val copyNode2 = new MenuItem("Copy Node 2")
     copyNode2.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = Option(row.getItem) match {
+      override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
         case Some(pc) => ContextMenuUtils.copyToClipboard(pc.announcement.nodeId2.toString)
         case None =>
       }
@@ -451,29 +456,29 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     val fileChooser = new FileChooser
     fileChooser.setTitle("Save as")
     fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
-    val file = fileChooser.showSaveDialog(getWindow.getOrElse(null))
+    val file = fileChooser.showSaveDialog(getWindow.orNull)
     if (file != null) handlers.exportToDot(file)
   }
 
   @FXML def handleOpenChannel = {
     val openChannelStage = new OpenChannelStage(handlers)
-    openChannelStage.initOwner(getWindow.getOrElse(null))
+    openChannelStage.initOwner(getWindow.orNull)
     positionAtCenter(openChannelStage)
-    openChannelStage.show
+    openChannelStage.show()
   }
 
   @FXML def handleSendPayment = {
     val sendPaymentStage = new SendPaymentStage(handlers)
-    sendPaymentStage.initOwner(getWindow.getOrElse(null))
+    sendPaymentStage.initOwner(getWindow.orNull)
     positionAtCenter(sendPaymentStage)
-    sendPaymentStage.show
+    sendPaymentStage.show()
   }
 
   @FXML def handleReceivePayment = {
     val receiveStage = new ReceivePaymentStage(handlers)
-    receiveStage.initOwner(getWindow.getOrElse(null))
+    receiveStage.initOwner(getWindow.orNull)
     positionAtCenter(receiveStage)
-    receiveStage.show
+    receiveStage.show()
   }
 
   def showBlockerModal(backendName: String) = {
@@ -488,10 +493,10 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     val ftCover = new FadeTransition(Duration.millis(200), blocker)
     ftCover.setFromValue(0)
     ftCover.setToValue(1)
-    ftCover.play
+    ftCover.play()
     val t = new ParallelTransition(blockerDialog, fadeTransition, translateTransition)
     t.setDelay(Duration.millis(200))
-    t.play
+    t.play()
   }
 
   def hideBlockerModal = {
@@ -502,7 +507,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     s.setOnFinished(new EventHandler[ActionEvent]() {
       override def handle(event: ActionEvent): Unit = blocker.setVisible(false)
     })
-    s.play
+    s.play()
   }
 
   private def getWindow: Option[Window] = {
@@ -511,16 +516,16 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
   @FXML def handleCloseRequest = getWindow.map(_.fireEvent(new WindowEvent(getWindow.get, WindowEvent.WINDOW_CLOSE_REQUEST)))
 
-  @FXML def handleOpenAbout = {
+  @FXML def handleOpenAbout(): Unit = {
     val aboutStage = new AboutStage(hostServices)
     aboutStage.initOwner(getWindow.getOrElse(null))
     positionAtCenter(aboutStage)
-    aboutStage.show
+    aboutStage.show()
   }
 
   @FXML def openNodeIdContext(event: ContextMenuEvent) = contextMenu.show(labelNodeId, event.getScreenX, event.getScreenY)
 
-  def positionAtCenter(childStage: Stage) = {
+  def positionAtCenter(childStage: Stage): Unit = {
     childStage.setX(getWindow.map(w => w.getX + w.getWidth / 2 - childStage.getWidth / 2).getOrElse(0))
     childStage.setY(getWindow.map(w => w.getY + w.getHeight / 2 - childStage.getHeight / 2).getOrElse(0))
   }

@@ -3,12 +3,13 @@ package fr.acinq.eclair.api
 import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
+import fr.acinq.bitcoin.{BinaryData, OutPoint}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.io.NodeURI
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
-import org.json4s.{CustomKeySerializer, CustomSerializer}
 import org.json4s.JsonAST.{JNull, JString}
+import org.json4s.{CustomKeySerializer, CustomSerializer}
 
 /**
   * Created by PM on 28/01/2016.
@@ -81,7 +82,7 @@ class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](fo
   case JString(x) if (false) => // NOT IMPLEMENTED
     ???
 }, {
-  case x: InetSocketAddress => JString(s"${x.getHostString}:${x.getPort}")
+  case x: InetSocketAddress => JString(NodeURI.getHostAndPort(x))
 }
 ))
 

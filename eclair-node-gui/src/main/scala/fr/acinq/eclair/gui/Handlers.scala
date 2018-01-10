@@ -51,7 +51,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     } yield conn) onFailure {
           case t: Throwable =>
             t.printStackTrace()
-            notification("Connection failed", s"${nodeUri.address.getHostString}:${nodeUri.address.getPort}", NOTIFICATION_ERROR)
+            notification("Connection failed", nodeUri.getHostAndPort, NOTIFICATION_ERROR)
     }
   }
 

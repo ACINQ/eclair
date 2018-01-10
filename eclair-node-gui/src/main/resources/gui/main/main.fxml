@@ -216,8 +216,7 @@
                         </HBox>
                         <HBox alignment="CENTER_RIGHT" HBox.hgrow="SOMETIMES" minWidth="195.0">
                             <children>
-                                <Label text="Bitcoin-core" textAlignment="RIGHT" textOverrun="CLIP"/>
-                                <Label fx:id="bitcoinVersion" text="N/A" textOverrun="CLIP"/>
+                                <Label fx:id="bitcoinWallet" text="N/A" textAlignment="RIGHT" textOverrun="CLIP"/>
                                 <Label fx:id="bitcoinChain" styleClass="chain" text="(N/A)" textOverrun="CLIP"/>
                             </children>
                         </HBox>

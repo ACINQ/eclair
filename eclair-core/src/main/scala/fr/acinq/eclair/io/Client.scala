@@ -20,7 +20,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   import Tcp._
   import context.system
 
-  log.info(s"connecting to $remoteNodeId@${address.getHostString}:${address.getPort}")
+  log.info(s"connecting to pubkey=$remoteNodeId host=${address.getHostString} port=${address.getPort}")
   IO(Tcp) ! Connect(address, timeout = Some(5 seconds), options = KeepAlive(true) :: Nil)
 
   def receive = {
@@ -29,7 +29,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
       context stop self
 
     case Connected(remote, _) =>
-      log.info(s"connected to $remoteNodeId@${remote.getHostString}:${remote.getPort}")
+      log.info(s"connected to pubkey=$remoteNodeId host=${remote.getHostString} port=${remote.getPort}")
       val connection = sender
       authenticator ! Authenticator.PendingAuth(connection, origin_opt = Some(origin), outgoingConnection_opt = Some(Authenticator.OutgoingConnection(remoteNodeId, address)))
       // TODO: shutdown?
