@@ -31,7 +31,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, address)), _) =>
       // even if we are in a reconnection loop, we immediately process explicit connection requests
-      context.actorOf(Client.props(nodeParams, authenticator, address, remoteNodeId, origin = sender()))
+      context.actorOf(Client.props(nodeParams, authenticator, new InetSocketAddress(address.getHost, address.getPort), remoteNodeId, origin = sender()))
       stay
 
     case Event(Reconnect, d@DisconnectedData(address_opt, channels, attempts)) =>

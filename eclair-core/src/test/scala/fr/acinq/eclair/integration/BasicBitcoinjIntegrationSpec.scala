@@ -7,6 +7,7 @@ import java.util.{Properties, UUID}
 import akka.actor.{Actor, ActorRef, ActorSystem, Props}
 import akka.pattern.pipe
 import akka.testkit.{TestKit, TestProbe}
+import com.google.common.net.HostAndPort
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, MilliSatoshi, OP_CHECKSIG, OP_DUP, OP_EQUAL, OP_EQUALVERIFY, OP_HASH160, OP_PUSHDATA, Satoshi, Script}
@@ -17,7 +18,7 @@ import fr.acinq.eclair.channel.Register.Forward
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Peer.Disconnect
-import fr.acinq.eclair.io.{NodeURI, Peer, Switchboard}
+import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{State => _, _}
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
@@ -165,9 +166,10 @@ class BasicIntegrationSpvSpec extends TestKit(ActorSystem("test")) with FunSuite
     node1.system.eventStream.subscribe(eventListener1.ref, classOf[ChannelStateChanged])
     node2.system.eventStream.subscribe(eventListener2.ref, classOf[ChannelStateChanged])
     val sender = TestProbe()
+    val address = node2.nodeParams.publicAddresses.head
     sender.send(node1.switchboard, Peer.Connect(NodeURI(
       nodeId = node2.nodeParams.privateKey.publicKey,
-      address = node2.nodeParams.publicAddresses.head)))
+      address = HostAndPort.fromParts(address.getHostString, address.getPort))))
     sender.expectMsgAnyOf(10 seconds, "connected", "already connected")
       sender.send(node1.switchboard, Peer.OpenChannel(
         remoteNodeId = node2.nodeParams.privateKey.publicKey,
