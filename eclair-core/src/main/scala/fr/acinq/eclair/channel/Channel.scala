@@ -1449,10 +1449,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     * This helper method will publish txes only if they haven't yet reached minDepth
     *
     * @param txes
-    * @param spent
+    * @param irrevocablySpent
     */
-  def publishIfNeeded(txes: Iterable[Transaction], spent: Map[OutPoint, BinaryData]) = {
-    val (skip, process) = txes.partition(Closing.alreadySpent(_, spent))
+  def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
+    val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! PublishAsap(tx))
     skip.foreach(tx => log.info(s"no need to republish txid=${tx.txid}, it has already been confirmed"))
   }
@@ -1461,10 +1461,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     * This helper method will watch txes only if they haven't yet reached minDepth
     *
     * @param txes
-    * @param spent
+    * @param irrevocablySpent
     */
-  def watchConfirmedIfNeeded(txes: Iterable[Transaction], spent: Map[OutPoint, BinaryData]) = {
-    val (skip, process) = txes.partition(Closing.alreadySpent(_, spent))
+  def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
+    val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
@@ -1474,10 +1474,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     *
     * @param parentTx
     * @param txes
-    * @param spent
+    * @param irrevocablySpent
     */
-  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], spent: Map[OutPoint, BinaryData]) = {
-    val (skip, process) = txes.partition(Closing.alreadySpent(_, spent))
+  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
+    val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
     process.foreach(tx => blockchain ! WatchSpent(self, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
     skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
   }
