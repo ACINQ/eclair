@@ -65,7 +65,7 @@ object FailureMessageCodecs {
     .typecase(PERM | 10, provide(UnknownNextPeer))
     .typecase(UPDATE | 11, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
     .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
-    .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | ("channelUpdate" | variableSizeBytes(uint16, channelUpdateCodec)))).as[IncorrectCltvExpiry])
+    .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate"  | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
     .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateWithLengthCodec)).as[ExpiryTooSoon])
     .typecase(UPDATE | 20, (("flags" | binarydata(2)) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
     .typecase(PERM | 15, provide(UnknownPaymentHash))
