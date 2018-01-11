@@ -24,9 +24,12 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
   def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
     case currentSeconds: Long =>
-      context.become(run(h2r.filter { case (_, (_, pr)) => pr.expiry.exists(_ + pr.timestamp > currentSeconds) }))
+      context.become(run(h2r.collect {
+        case e@(_, (_, pr)) if pr.expiry.isEmpty => e // requests that don't expire are kept forever
+        case e@(_, (_, pr)) if pr.timestamp + pr.expiry.get > currentSeconds => e // clean up expired requests
+      }))
 
-    case ReceivePayment(amount_opt, desc) =>
+    case ReceivePayment(amount_opt, desc) if h2r.size < nodeParams.maxPendingRequests =>
       Try {
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
