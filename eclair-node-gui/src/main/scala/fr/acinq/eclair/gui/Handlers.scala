@@ -40,18 +40,18 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
   def open(nodeUri: NodeURI, channel: Option[Peer.OpenChannel]) = {
     logger.info(s"opening a connection to nodeUri=$nodeUri")
     (for {
-          kit <- fKit
-          conn <- kit.switchboard ? Peer.Connect(nodeUri)
-          _ <- channel match {
-            case Some(o) =>
-              logger.info(s"opening a channel with remoteNodeId=${o.remoteNodeId}")
-              kit.switchboard ? o
-            case None => Future.successful(0) // nothing to do
-          }
+      kit <- fKit
+      conn <- kit.switchboard ? Peer.Connect(nodeUri)
+      _ <- channel match {
+        case Some(o) =>
+          logger.info(s"opening a channel with remoteNodeId=${o.remoteNodeId}")
+          kit.switchboard ? o
+        case None => Future.successful(0) // nothing to do
+      }
     } yield conn) onFailure {
-          case t: Throwable =>
-            t.printStackTrace()
-            notification("Connection failed", s"${nodeUri.address.getHostString}:${nodeUri.address.getPort}", NOTIFICATION_ERROR)
+      case t: Throwable =>
+        logger.error("Could not open channel ", t)
+        notification("Connection failed", nodeUri.address.toString, NOTIFICATION_ERROR)
     }
   }
 

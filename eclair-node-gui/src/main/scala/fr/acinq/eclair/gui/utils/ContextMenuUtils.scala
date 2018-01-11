@@ -30,13 +30,17 @@ object ContextMenuUtils {
   def buildCopyContext(actions: List[CopyAction]): ContextMenu = {
     val context = new ContextMenu()
     for (action <- actions) {
-      val copyItem = new MenuItem(action.label)
-      copyItem.setOnAction(new EventHandler[ActionEvent] {
-        override def handle(event: ActionEvent) = copyToClipboard(action.value)
-      })
-      context.getItems.addAll(copyItem)
+      context.getItems.addAll(buildCopyMenuItem(action))
     }
     context
+  }
+
+  def buildCopyMenuItem(action: CopyAction): MenuItem = {
+    val copyItem = new MenuItem(action.label)
+    copyItem.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent): Unit = copyToClipboard(action.value)
+    })
+    copyItem
   }
 
   def copyToClipboard(value: String) = {
