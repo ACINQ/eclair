@@ -135,10 +135,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case closing: DATA_CLOSING =>
           // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
           val commitTxOutpoint = closing.commitments.commitInput.outPoint
-          if (closing.localCommitPublished.exists(_.spent.contains(commitTxOutpoint)) ||
-            closing.remoteCommitPublished.exists(_.spent.contains(commitTxOutpoint)) ||
-            closing.nextRemoteCommitPublished.exists(_.spent.contains(commitTxOutpoint)) ||
-            closing.revokedCommitPublished.exists(_.spent.contains(commitTxOutpoint))) {
+          if (closing.localCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.remoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.nextRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
             log.info(s"funding tx has already been spent and spending tx reached mindepth, no need to put back the watch-spent")
           } else {
             // TODO: should we wait for an acknowledgment from the watcher?
@@ -1486,17 +1486,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     import localCommitPublished._
 
     val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTx
-    publishIfNeeded(publishQueue, spent)
+    publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTx
-    watchConfirmedIfNeeded(watchConfirmedQueue, spent)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     val watchSpentQueue = htlcSuccessTxs ++ htlcTimeoutTxs
-    watchSpentIfNeeded(commitTx, watchSpentQueue, spent)
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
   def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments) = {
@@ -1537,17 +1537,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     import remoteCommitPublished._
 
     val publishQueue = claimMainOutputTx ++ claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs
-    publishIfNeeded(publishQueue, spent)
+    publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx
-    watchConfirmedIfNeeded(watchConfirmedQueue, spent)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     val watchSpentQueue = claimHtlcTimeoutTxs ++ claimHtlcSuccessTxs
-    watchSpentIfNeeded(commitTx, watchSpentQueue, spent)
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
@@ -1578,17 +1578,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     import revokedCommitPublished._
 
     val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs ++ htlcPenaltyTxs
-    publishIfNeeded(publishQueue, spent)
+    publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
     val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx ++ htlcPenaltyTxs
-    watchConfirmedIfNeeded(watchConfirmedQueue, spent)
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
     val watchSpentQueue = mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs
-    watchSpentIfNeeded(commitTx, watchSpentQueue, spent)
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
   def handleInformationLeak(tx: Transaction, d: HasCommitments) = {
