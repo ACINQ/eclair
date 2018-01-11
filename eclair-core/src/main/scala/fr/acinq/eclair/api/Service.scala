@@ -42,8 +42,8 @@ trait RPCRejection extends Rejection {
 }
 final case class UnknownMethodRejection(requestId: String) extends RPCRejection
 final case class UnknownParamsRejection(requestId: String, message: String) extends RPCRejection
-final case class NotFoundRejection(requestId: String) extends RPCRejection
 final case class RpcValidationRejection(requestId: String, message: String) extends RPCRejection
+final case class ExceptionRejection(requestId: String, message: String) extends RPCRejection
 // @formatter:on
 
 trait Service extends Logging {
@@ -74,7 +74,7 @@ trait Service extends Logging {
 
   val myExceptionHandler = ExceptionHandler {
     case t: Throwable =>
-      extractRequest { request =>
+      extractRequest { _ =>
         logger.info(s"API call failed with cause=${t.getMessage}")
         complete(StatusCodes.InternalServerError, JsonRPCRes(null, Some(Error(StatusCodes.InternalServerError.intValue, t.getMessage)), "-1"))
       }
@@ -82,7 +82,7 @@ trait Service extends Logging {
 
   def completeRpcFuture(requestId: String, future: Future[AnyRef]): Route = onComplete(future) {
     case Success(s) => completeRpc(requestId, s)
-    case Failure(_) => reject
+    case Failure(t) => reject(ExceptionRejection(requestId, t.getLocalizedMessage))
   }
   def completeRpc(requestId: String, result: AnyRef): Route = complete(JsonRPCRes(result, None, requestId))
 
@@ -91,14 +91,15 @@ trait Service extends Logging {
       complete(StatusCodes.NotFound, JsonRPCRes(null, Some(Error(StatusCodes.NotFound.intValue, "not found")), "-1"))
     }
     .handle {
-      case auth: AuthenticationFailedRejection ⇒ complete(StatusCodes.Unauthorized, JsonRPCRes(null, Some(Error(StatusCodes.Unauthorized.intValue, "Access restricted")), "-1"))
+      case _: AuthenticationFailedRejection ⇒ complete(StatusCodes.Unauthorized, JsonRPCRes(null, Some(Error(StatusCodes.Unauthorized.intValue, "Access restricted")), "-1"))
       case v: RpcValidationRejection ⇒ complete(StatusCodes.BadRequest, JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, v.message)), v.requestId))
-      case nf: NotFoundRejection ⇒ complete(StatusCodes.NotFound, JsonRPCRes(null, Some(Error(StatusCodes.NotFound.intValue, "not found")), nf.requestId))
       case ukm: UnknownMethodRejection ⇒ complete(StatusCodes.BadRequest, JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, "method not found")), ukm.requestId))
       case p: UnknownParamsRejection ⇒ complete(StatusCodes.BadRequest,
         JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, s"invalid parameters for this method, should be: ${p.message}")), p.requestId))
       case m: MalformedRequestContentRejection ⇒ complete(StatusCodes.BadRequest,
         JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, s"malformed parameters for this method: ${m.message}")), "-1"))
+      case e: ExceptionRejection ⇒ complete(StatusCodes.BadRequest,
+        JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, s"command failed: ${e.message}")), e.requestId))
       case r ⇒ logger.error(s"API call failed with cause=$r")
         complete(StatusCodes.BadRequest, JsonRPCRes(null, Some(Error(StatusCodes.BadRequest.intValue, r.toString)), "-1"))
     }
@@ -108,7 +109,7 @@ trait Service extends Logging {
     respondWithDefaultHeaders(customHeaders) {
       handleExceptions(myExceptionHandler) {
         handleRejections(myRejectionHandler) {
-          authenticateBasic(realm = "Access restricted", userPassAuthenticator) { userName =>
+          authenticateBasic(realm = "Access restricted", userPassAuthenticator) { _ =>
             pathSingleSlash {
               post {
                 entity(as[JsonRPCBody]) {
