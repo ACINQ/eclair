@@ -406,6 +406,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       sender ! (d.updates ++ d.privateUpdates).values
       stay
 
+    case Event('updatesMap, d) =>
+      sender ! (d.updates ++ d.privateUpdates)
+      stay
+
     case Event('dot, d) =>
       graph2dot(d.nodes, d.channels) pipeTo sender
       stay
@@ -549,7 +553,7 @@ object Router {
       override def getComponentAttributes(nodeId: PublicKey): java.util.Map[String, String] =
 
         nodes.get(nodeId) match {
-          case Some(ann) => Map("label" -> ann.alias, "color" -> f"#${ann.rgbColor._1}%02x${ann.rgbColor._2}%02x${ann.rgbColor._3}%02x")
+          case Some(ann) => Map("label" -> ann.alias, "color" -> ann.rgbColor.toString)
           case None => Map.empty[String, String]
         }
     }

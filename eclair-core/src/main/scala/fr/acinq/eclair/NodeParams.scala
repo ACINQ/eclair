@@ -14,6 +14,7 @@ import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
+import fr.acinq.eclair.wire.Color
 
 import scala.collection.JavaConversions._
 import scala.concurrent.duration.FiniteDuration
@@ -24,7 +25,7 @@ import scala.concurrent.duration.FiniteDuration
 case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       privateKey: PrivateKey,
                       alias: String,
-                      color: (Byte, Byte, Byte),
+                      color: Color,
                       publicAddresses: List[InetSocketAddress],
                       globalFeatures: BinaryData,
                       localFeatures: BinaryData,
@@ -131,7 +132,7 @@ object NodeParams {
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = config.getString("node-alias").take(32),
-      color = (color.data(0), color.data(1), color.data(2)),
+      color = Color(color.data(0), color.data(1), color.data(2)),
       publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port"))),
       globalFeatures = BinaryData(config.getString("global-features")),
       localFeatures = BinaryData(config.getString("local-features")),

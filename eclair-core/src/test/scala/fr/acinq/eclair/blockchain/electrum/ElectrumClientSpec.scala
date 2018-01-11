@@ -33,7 +33,7 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
   test("connect to an electrumx testnet server") {
     probe.send(client, AddStatusListener(probe.ref))
-    probe.expectMsg(5 seconds, ElectrumReady)
+    probe.expectMsg(15 seconds, ElectrumReady)
   }
 
   test("get transaction") {

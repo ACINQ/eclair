@@ -37,9 +37,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams = NodeParams.makeNodeParams(datadir, config)
-  val chain = config.getString("chain")
+  val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val chain: String = config.getString("chain")
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
@@ -172,30 +172,42 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       server = server,
       wallet = wallet)
 
-    val api = new Service {
-
-      override def getInfoResponse: Future[GetInfoResponse] = Future.successful(GetInfoResponse(nodeId = nodeParams.privateKey.publicKey, alias = nodeParams.alias, port = config.getInt("server.port"), chainHash = nodeParams.chainHash, blockHeight = Globals.blockCount.intValue()))
-
-      override def appKit = kit
-    }
-    val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
-      case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
-    }
-
     val zmqTimeout = after(5 seconds, using = system.scheduler)(Future.failed(BitcoinZMQConnectionTimeoutException))
     val tcpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("server.port"))))
-    val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
 
     for {
       _ <- Future.firstCompletedOf(zmqConnected.future :: zmqTimeout :: Nil)
       _ <- Future.firstCompletedOf(tcpBound.future :: tcpTimeout :: Nil)
-      _ <- Future.firstCompletedOf(httpBound :: httpTimeout :: Nil)
+      _ <- if (config.getBoolean("api.enabled")) {
+        logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
+        val api = new Service {
+          override val password = {
+            val p = config.getString("api.password")
+            if (p.isEmpty) throw EmptyAPIPasswordException else p
+          }
+
+          override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
+            GetInfoResponse(nodeId = nodeParams.privateKey.publicKey,
+              alias = nodeParams.alias,
+              port = config.getInt("server.port"),
+              chainHash = nodeParams.chainHash,
+              blockHeight = Globals.blockCount.intValue()))
+
+          override def appKit: Kit = kit
+        }
+        val httpBound = Http().bindAndHandle(api.route, config.getString("api.binding-ip"), config.getInt("api.port")).recover {
+          case _: BindFailedException => throw TCPBindException(config.getInt("api.port"))
+        }
+        val httpTimeout = after(5 seconds, using = system.scheduler)(Future.failed(TCPBindException(config.getInt("api.port"))))
+        Future.firstCompletedOf(httpBound :: httpTimeout :: Nil)
+      } else {
+        Future.successful(logger.info("json-rpc api is disabled"))
+      }
     } yield kit
 
   }
 
 }
-
 
 // @formatter:off
 sealed trait Bitcoin
@@ -219,3 +231,5 @@ case class Kit(nodeParams: NodeParams,
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 
 case object BitcoinRPCConnectionException extends RuntimeException("could not connect to bitcoind using json-rpc")
+
+case object EmptyAPIPasswordException extends RuntimeException("must set a user/password for the json-rpc api")

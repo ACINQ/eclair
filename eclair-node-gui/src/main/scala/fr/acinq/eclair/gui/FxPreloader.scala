@@ -59,7 +59,7 @@ class FxPreloader extends Preloader with Logging {
     info match {
       case n: ErrorNotification =>
         logger.debug(s"Preloader error notification => ${n.getDetails}")
-        logger.error("An error has occured", n.getCause)
+        logger.error("", n.getCause)
         controller.map(_.addError(n.getDetails))
         controller.map(_.showErrorBox)
       case n: AppNotification =>

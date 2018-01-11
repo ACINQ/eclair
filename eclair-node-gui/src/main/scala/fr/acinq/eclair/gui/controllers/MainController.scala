@@ -162,8 +162,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.alias)
     })
     networkNodesRGBColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
-      def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(
-        s"rgb(${new Integer(pn.getValue.rgbColor._1 & 0xFF)}, ${new Integer(pn.getValue.rgbColor._2 & 0xFF)}, ${new Integer(pn.getValue.rgbColor._3 & 0xFF)})")
+      def call(pn: CellDataFeatures[NodeAnnouncement, String]) = new SimpleStringProperty(pn.getValue.rgbColor.toString)
     })
     networkNodesIPColumn.setCellValueFactory(new Callback[CellDataFeatures[NodeAnnouncement, String], ObservableValue[String]]() {
       def call(pn: CellDataFeatures[NodeAnnouncement, String]) = {
@@ -313,7 +312,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     // init status bar
     labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
     labelAlias.setText(s"${setup.nodeParams.alias}")
-    rectRGB.setFill(Color.rgb(setup.nodeParams.color._1 & 0xFF, setup.nodeParams.color._2 & 0xFF, setup.nodeParams.color._3 & 0xFF))
+    rectRGB.setFill(Color.web(setup.nodeParams.color.toString))
     labelApi.setText(s"${setup.config.getInt("api.port")}")
     labelServer.setText(s"${setup.config.getInt("server.port")}")
     bitcoinVersion.setText(s"v0.0.0")
