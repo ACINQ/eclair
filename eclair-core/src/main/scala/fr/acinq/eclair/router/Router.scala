@@ -388,6 +388,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       sender ! (d.updates ++ d.privateUpdates).values
       stay
 
+    case Event('updatesMap, d) =>
+      sender ! (d.updates ++ d.privateUpdates)
+      stay
+
     case Event('dot, d) =>
       graph2dot(d.nodes, d.channels) pipeTo sender
       stay

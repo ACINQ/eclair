@@ -19,7 +19,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment, _}
-import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
+import fr.acinq.eclair.router.ChannelDesc
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -176,6 +177,13 @@ trait Service extends Logging {
                       // global network methods
                       case "allnodes"     => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
                       case "allchannels"  => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelInfo(c.shortChannelId.toHexString, c.nodeId1, c.nodeId2))))
+                      case "allupdates"   => req.params match {
+                        case JString(nodeId) :: Nil => Try(PublicKey(nodeId)) match {
+                          case Success(pk) => completeRpcFuture(req.id, (router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values))
+                          case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$nodeId'"))
+                        }
+                        case _ => completeRpcFuture(req.id, (router ? 'updates).mapTo[Iterable[ChannelUpdate]])
+                      }
 
                       // payment methods
                       case "receive"      => req.params match {
@@ -255,6 +263,8 @@ trait Service extends Logging {
     "channel (channelId): retrieve detailed information about a given channel",
     "allnodes: list all known nodes",
     "allchannels: list all known channels",
+    "allupdates: list all channels updates",
+    "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",

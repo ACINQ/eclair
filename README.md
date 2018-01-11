@@ -136,6 +136,8 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   channel      | channelId                                                  | retrieve detailed information about a given channel
   allnodes     |                                                            | list all known nodes
   allchannels  |                                                            | list all known channels
+  allupdates   |                                                            | list all channels updates
+  allupdates   | nodeId                                                     | list all channels updates for this nodeId
   receive      | description                                                | generate a payment request without a required amount (can be useful for donations)
   receive      | amountMsat, description                                    | generate a payment request for a given amount
   send         | amountMsat, paymentHash, nodeId                            | send a payment to a lightning node
