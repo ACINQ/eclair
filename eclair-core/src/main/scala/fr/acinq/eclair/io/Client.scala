@@ -15,7 +15,7 @@ import scala.concurrent.duration._
   * Created by PM on 27/10/2015.
   *
   */
-class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef) extends Actor with ActorLogging {
+class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]) extends Actor with ActorLogging {
 
   import Tcp._
   import context.system
@@ -25,14 +25,14 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
 
   def receive = {
     case CommandFailed(_: Connect) =>
-      origin ! Status.Failure(ConnectionFailed(address))
+      log.info(s"connection failed to $remoteNodeId@${address.getHostString}:${address.getPort}")
+      origin_opt.map(_ ! Status.Failure(ConnectionFailed(address)))
       context stop self
 
     case Connected(remote, _) =>
       log.info(s"connected to pubkey=$remoteNodeId host=${remote.getHostString} port=${remote.getPort}")
       val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, origin_opt = Some(origin), outgoingConnection_opt = Some(Authenticator.OutgoingConnection(remoteNodeId, address)))
-      // TODO: shutdown?
+      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = Some(remoteNodeId), address = address, origin_opt = origin_opt)
       context watch connection
       context become connected(connection)
   }
@@ -43,14 +43,11 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
-
-  // we should not restart a failing transport
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 }
 
 object Client extends App {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin: ActorRef): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocketAddress, remoteNodeId: PublicKey, origin_opt: Option[ActorRef]): Props = Props(new Client(nodeParams, authenticator, address, remoteNodeId, origin_opt))
 
   case class ConnectionFailed(address: InetSocketAddress) extends RuntimeException(s"connection failed to $address")
 

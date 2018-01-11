@@ -1,6 +1,6 @@
 package fr.acinq.eclair.io
 
-import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill}
+import akka.actor.{Actor, ActorLogging, ActorRef, PoisonPill, Terminated}
 import akka.io.Tcp
 import akka.util.ByteString
 
@@ -11,7 +11,8 @@ import akka.util.ByteString
   */
 class WriteAckSender(connection: ActorRef) extends Actor with ActorLogging {
 
-  // Note: this actor should be killed if connection dies
+  // this actor will kill itself if connection dies
+  context watch connection
 
   case object Ack extends Tcp.Event
 
@@ -28,7 +29,7 @@ class WriteAckSender(connection: ActorRef) extends Actor with ActorLogging {
       log.warning(s"buffer overrun, closing connection")
       connection ! PoisonPill
     case data: ByteString =>
-      log.debug(s"buffering write $data")
+      log.debug("buffering write {}", data)
       context become buffering(buffer :+ data)
     case Ack =>
       buffer.headOption match {
@@ -41,7 +42,11 @@ class WriteAckSender(connection: ActorRef) extends Actor with ActorLogging {
       }
   }
 
-  override def unhandled(message: Any): Unit = log.warning(s"unhandled message $message")
+  override def unhandled(message: Any): Unit = message match {
+    case _: Tcp.ConnectionClosed => context stop self
+    case _: Terminated => context stop self
+    case _ => log.warning(s"unhandled message $message")
+  }
 
   val MAX_BUFFERED = 100000L
 

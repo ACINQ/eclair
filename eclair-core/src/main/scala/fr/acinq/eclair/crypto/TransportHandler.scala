@@ -3,7 +3,7 @@ package fr.acinq.eclair.crypto
 import java.nio.ByteOrder
 
 import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
-import akka.io.Tcp.{PeerClosed, _}
+import akka.io.Tcp
 import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
@@ -65,13 +65,13 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   startWith(Handshake, HandshakeData(reader))
 
   when(Handshake) {
-    case Event(Received(data), HandshakeData(reader, buffer)) =>
-      log.debug(s"received ${BinaryData(data)}")
+    case Event(Tcp.Received(data), HandshakeData(reader, buffer)) =>
+      log.debug("received {}", BinaryData(data))
       val buffer1 = buffer ++ data
       if (buffer1.length < expectedLength(reader))
         stay using HandshakeData(reader, buffer1)
       else {
-        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix ${buffer1.head}")
+        require(buffer1.head == TransportHandler.prefix, s"invalid transport prefix first64=${BinaryData(buffer1.take(64))}")
         val (payload, remainder) = buffer1.tail.splitAt(expectedLength(reader) - 1)
 
         reader.read(payload) match {
@@ -104,8 +104,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   }
 
   when(WaitingForListener) {
-
-    case Event(Received(data), currentStateData@WaitingForListenerData(enc, dec, buffer)) =>
+    case Event(Tcp.Received(data), currentStateData@WaitingForListenerData(enc, dec, buffer)) =>
       stay using currentStateData.copy(buffer = buffer ++ data)
 
     case Event(Listener(listener), WaitingForListenerData(enc, dec, buffer)) =>
@@ -117,7 +116,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   }
 
   when(WaitingForCyphertext) {
-    case Event(Received(data), currentStateData@WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
+    case Event(Tcp.Received(data), currentStateData@WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
       val (nextStateData, plaintextMessages) = WaitingForCyphertextData.decrypt(currentStateData.copy(buffer = buffer ++ data))
       sendToListener(listener, plaintextMessages)
       stay using nextStateData
@@ -130,12 +129,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   }
 
   whenUnhandled {
-    case Event(ErrorClosed(cause), _) =>
-      log.info(s"tcp connection error: $cause")
-      stop(FSM.Normal)
-
-    case Event(PeerClosed, _) =>
-      log.info(s"connection closed")
+    case Event(closed: Tcp.ConnectionClosed, _) =>
+      log.info(s"connection closed: $closed")
       stop(FSM.Normal)
 
     case Event(Terminated(actor), _) if actor == connection =>
@@ -144,16 +139,19 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       stop(FSM.Normal)
   }
 
-  override def aroundPostStop(): Unit = connection ! Close
+  override def aroundPostStop(): Unit = connection ! Tcp.Close // attempts to gracefully close the connection when dying
 
   initialize()
 
 }
 
 object TransportHandler {
+
+  def props[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], connection: ActorRef, codec: Codec[T]): Props = Props(new TransportHandler(keyPair, rs, connection, codec))
+
   // see BOLT #8
-  // this prefix is prepended to all Noise messages sent during the hanshake phase
-  val prefix: Byte = 0
+  // this prefix is prepended to all Noise messages sent during the handshake phase
+  val prefix: Byte = 0x00
 
   val prologue = "lightning".getBytes("UTF-8")
 

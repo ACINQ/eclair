@@ -35,13 +35,10 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
       val connection = sender
-      authenticator ! Authenticator.PendingAuth(connection, origin_opt = None, outgoingConnection_opt = None)
+      authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
   }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")
-
-  // we should not restart a failing transport
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true) { case _ => SupervisorStrategy.Stop }
 }
 
 object Server {

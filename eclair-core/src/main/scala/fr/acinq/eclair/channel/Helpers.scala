@@ -293,7 +293,7 @@ object Helpers {
         htlcSuccessTxs = htlcTxes.collect { case c: HtlcSuccessTx => c.tx },
         htlcTimeoutTxs = htlcTxes.collect { case c: HtlcTimeoutTx => c.tx },
         claimHtlcDelayedTx = htlcDelayedTxes.map(_.tx),
-        spent = Map.empty)
+        irrevocablySpent = Map.empty)
     }
 
     /**
@@ -359,7 +359,7 @@ object Helpers {
         claimMainOutputTx = mainTx.map(_.tx),
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
         claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx },
-        spent = Map.empty
+        irrevocablySpent = Map.empty
       )
 
     }
@@ -424,7 +424,7 @@ object Helpers {
             claimHtlcTimeoutTxs = Nil,
             htlcTimeoutTxs = Nil,
             htlcPenaltyTxs = Nil,
-            spent = Map.empty
+            irrevocablySpent = Map.empty
           )
         }
     }
@@ -454,7 +454,7 @@ object Helpers {
         isCommitTx || spendsTheCommitTx || is3rdStageDelayedTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-      localCommitPublished.copy(spent = localCommitPublished.spent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
+      localCommitPublished.copy(irrevocablySpent = localCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
     }
 
     /**
@@ -480,7 +480,7 @@ object Helpers {
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-      remoteCommitPublished.copy(spent = remoteCommitPublished.spent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
+      remoteCommitPublished.copy(irrevocablySpent = remoteCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
     }
 
     /**
@@ -505,7 +505,7 @@ object Helpers {
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
-      revokedCommitPublished.copy(spent = revokedCommitPublished.spent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
+      revokedCommitPublished.copy(irrevocablySpent = revokedCommitPublished.irrevocablySpent ++ relevantOutpoints.map(o => (o -> tx.txid)).toMap)
     }
 
     /**
@@ -518,14 +518,14 @@ object Helpers {
       */
     def isLocalCommitDone(localCommitPublished: LocalCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have nay outputs)
-      val isCommitTxConfirmed = localCommitPublished.spent.values.toSet.contains(localCommitPublished.commitTx.txid)
+      val isCommitTxConfirmed = localCommitPublished.irrevocablySpent.values.toSet.contains(localCommitPublished.commitTx.txid)
       // are there remaining spendable outputs from the commitment tx? we just substract all known spent outputs from the ones we control
       val commitOutputsSpendableByUs = (localCommitPublished.claimMainDelayedOutputTx.toSeq ++ localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs)
-        .flatMap(_.txIn.map(_.outPoint)).toSet -- localCommitPublished.spent.keys
+        .flatMap(_.txIn.map(_.outPoint)).toSet -- localCommitPublished.irrevocablySpent.keys
       // which htlc delayed txes can we expect to be confirmed?
       val unconfirmedHtlcDelayedTxes = localCommitPublished.claimHtlcDelayedTx
-        .filter(tx => (tx.txIn.map(_.outPoint.txid).toSet -- localCommitPublished.spent.values).isEmpty) // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
-        .filterNot(tx => localCommitPublished.spent.values.toSet.contains(tx.txid)) // has the tx already been confirmed?
+        .filter(tx => (tx.txIn.map(_.outPoint.txid).toSet -- localCommitPublished.irrevocablySpent.values).isEmpty) // only the txes which parents are already confirmed may get confirmed (note that this also eliminates outputs that have been double-spent by a competing tx)
+        .filterNot(tx => localCommitPublished.irrevocablySpent.values.toSet.contains(tx.txid)) // has the tx already been confirmed?
       isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty && unconfirmedHtlcDelayedTxes.isEmpty
     }
 
@@ -538,10 +538,10 @@ object Helpers {
       */
     def isRemoteCommitDone(remoteCommitPublished: RemoteCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have nay outputs)
-      val isCommitTxConfirmed = remoteCommitPublished.spent.values.toSet.contains(remoteCommitPublished.commitTx.txid)
+      val isCommitTxConfirmed = remoteCommitPublished.irrevocablySpent.values.toSet.contains(remoteCommitPublished.commitTx.txid)
       // are there remaining spendable outputs from the commitment tx?
       val commitOutputsSpendableByUs = (remoteCommitPublished.claimMainOutputTx.toSeq ++ remoteCommitPublished.claimHtlcSuccessTxs ++ remoteCommitPublished.claimHtlcTimeoutTxs)
-        .flatMap(_.txIn.map(_.outPoint)).toSet -- remoteCommitPublished.spent.keys
+        .flatMap(_.txIn.map(_.outPoint)).toSet -- remoteCommitPublished.irrevocablySpent.keys
       isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty
     }
 
@@ -554,12 +554,30 @@ object Helpers {
       */
     def isRevokedCommitDone(revokedCommitPublished: RevokedCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have nay outputs)
-      val isCommitTxConfirmed = revokedCommitPublished.spent.values.toSet.contains(revokedCommitPublished.commitTx.txid)
+      val isCommitTxConfirmed = revokedCommitPublished.irrevocablySpent.values.toSet.contains(revokedCommitPublished.commitTx.txid)
       // are there remaining spendable outputs from the commitment tx?
       val commitOutputsSpendableByUs = (revokedCommitPublished.claimMainOutputTx.toSeq ++ revokedCommitPublished.mainPenaltyTx)
-        .flatMap(_.txIn.map(_.outPoint)).toSet -- revokedCommitPublished.spent.keys
+        .flatMap(_.txIn.map(_.outPoint)).toSet -- revokedCommitPublished.irrevocablySpent.keys
       // TODO: we don't currently spend htlc transactions
       isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty
+    }
+
+    /**
+      * This helper function tells if the utxo consumed by the given transaction has already been irrevocably spent (possibly by this very transaction)
+      *
+      * It can be useful to:
+      *   - not attempt to publish this tx when we know this will fail
+      *   - not watch for confirmations if we know the tx is already confirmed
+      *   - not watch the corresponding utxo when we already know the final spending tx
+      *
+      * @param tx a tx with only one input
+      * @param irrevocablySpent a map of known spent outpoints
+      * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
+      */
+    def inputsAlreadySpent(tx: Transaction, irrevocablySpent: Map[OutPoint, BinaryData]): Boolean = {
+      require(tx.txIn.size == 1, "only tx with one input is supported")
+      val outPoint = tx.txIn.head.outPoint
+      irrevocablySpent.contains(outPoint)
     }
 
   }

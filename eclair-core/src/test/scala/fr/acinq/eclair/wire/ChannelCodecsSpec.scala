@@ -1,6 +1,6 @@
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, OutPoint}
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
@@ -134,6 +134,16 @@ class ChannelCodecsSpec extends FunSuite {
       -32L -> Relayed(randomBytes(32), 54, 15000000L, 14000000L),
       -4L -> Local(None))
     assert(originsMapCodec.decodeValue(originsMapCodec.encode(map).require).require === map)
+  }
+
+  test("encode/decode map of spending txes") {
+    val map = Map(
+      OutPoint(randomBytes(32), 42) -> randomBytes(32),
+      OutPoint(randomBytes(32), 14502) -> randomBytes(32),
+      OutPoint(randomBytes(32), 0) -> randomBytes(32),
+      OutPoint(randomBytes(32), 454513) -> randomBytes(32)
+      )
+    assert(spentMapCodec.decodeValue(spentMapCodec.encode(map).require).require === map)
   }
 
 }
