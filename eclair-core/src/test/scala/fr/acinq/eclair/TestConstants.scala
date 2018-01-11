@@ -62,7 +62,8 @@ object TestConstants {
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND,
-      paymentRequestExpiry = 3600)
+      paymentRequestExpiry = 3600,
+      maxPendingRequests = 10000000)
 
     def id = nodeParams.privateKey.publicKey
 
@@ -117,7 +118,8 @@ object TestConstants {
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND,
-      paymentRequestExpiry = 3600)
+      paymentRequestExpiry = 3600,
+      maxPendingRequests = 10000000)
 
     def id = nodeParams.privateKey.publicKey
 

@@ -58,7 +58,7 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
   }
 
-  lazy val routingInfo(): Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
+  lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
 
   lazy val expiry: Option[Long] = tags.collectFirst {
     case PaymentRequest.ExpiryTag(seconds) => seconds
