@@ -3,6 +3,7 @@ package fr.acinq.eclair.blockchain.bitcoind.rpc
 import java.io.IOException
 
 import akka.actor.ActorSystem
+import akka.event.Logging
 import akka.http.scaladsl.Http
 import akka.http.scaladsl.marshalling.Marshal
 import akka.http.scaladsl.model._
@@ -31,11 +32,12 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
   val uri = Uri(s"$scheme://$host:$port")
   implicit val serialization = jackson.Serialization
   implicit val formats = DefaultFormats
+  val log = Logging(system, classOf[BitcoinJsonRPCClient])
 
   implicit val materializer = ActorMaterializer()
   val httpClientFlow = Http().cachedHostConnectionPool[Promise[HttpResponse]](host, port)
 
-  val queueSize = 512
+  val queueSize = 32768
   val queue = Source.queue[(HttpRequest, Promise[HttpResponse])](queueSize, OverflowStrategy.dropNew)
       .via(httpClientFlow)
       .toMat(Sink.foreach({
@@ -57,6 +59,7 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
   def invoke(method: String, params: Any*)(implicit ec: ExecutionContext): Future[JValue] =
     for {
       entity <- Marshal(JsonRPCRequest(method = method, params = params)).to[RequestEntity]
+      _ = log.debug("sending rpc request with body={}", entity)
       httpRes <- queueRequest(HttpRequest(uri = "/", method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
       jsonRpcRes <- Unmarshal(httpRes).to[JsonRPCResponse].map {
         case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
@@ -69,6 +72,7 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
   def invoke(request: Seq[(String, Seq[Any])])(implicit ec: ExecutionContext): Future[Seq[JValue]] =
     for {
       entity <- Marshal(request.map(r => JsonRPCRequest(method = r._1, params = r._2))).to[RequestEntity]
+      _ = log.debug("sending rpc request with body={}", entity)
       httpRes <- queueRequest(HttpRequest(uri = "/", method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
       jsonRpcRes <- Unmarshal(httpRes).to[Seq[JsonRPCResponse]].map {
         //case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
