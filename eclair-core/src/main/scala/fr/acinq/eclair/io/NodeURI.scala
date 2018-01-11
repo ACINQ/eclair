@@ -2,7 +2,6 @@ package fr.acinq.eclair.io
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
-import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
 
@@ -10,7 +9,7 @@ case class NodeURI(nodeId: PublicKey, address: HostAndPort) {
   override def toString: String = s"$nodeId@$address"
 }
 
-object NodeURI extends Logging {
+object NodeURI {
 
   val DEFAULT_PORT = 9735
 
