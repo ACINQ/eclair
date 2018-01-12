@@ -37,8 +37,8 @@ Run bitcoind with the following minimal `bitcoin.conf`:
 ```
 testnet=1
 server=1
-rpcuser=XXX
-rpcpassword=XXX
+rpcuser=foo
+rpcpassword=bar
 txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
