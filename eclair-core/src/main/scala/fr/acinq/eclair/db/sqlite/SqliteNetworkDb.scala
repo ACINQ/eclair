@@ -5,7 +5,7 @@ import java.sql.Connection
 import fr.acinq.bitcoin.Crypto
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
+import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelAnnouncementNOSIGCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
@@ -18,6 +18,20 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+  }
+
+  def migrate = {
+    val channels = using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT data FROM channels")
+      codecList(rs, channelAnnouncementCodec)
+    }
+    channels.foreach { c =>
+      using(sqlite.prepareStatement("UPDATE channels SET data=? WHERE short_channel_id=?")) { statement =>
+        statement.setLong(1, c.shortChannelId)
+        statement.setBytes(2, channelAnnouncementNOSIGCodec.encode(c).require.toByteArray)
+        statement.executeUpdate()
+      }
+    }
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
@@ -53,7 +67,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannel(c: ChannelAnnouncement): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId)
-      statement.setBytes(2, channelAnnouncementCodec.encode(c).require.toByteArray)
+      statement.setBytes(2, channelAnnouncementNOSIGCodec.encode(c).require.toByteArray)
       statement.executeUpdate()
     }
   }

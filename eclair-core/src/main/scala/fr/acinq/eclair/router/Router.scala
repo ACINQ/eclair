@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
@@ -78,6 +79,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
   // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
   {
+    log.info(s"migrating db...")
+    db.asInstanceOf[SqliteNetworkDb].migrate
     log.info(s"loading network announcements from db...")
     // On Android, we discard the node announcements
     val channels = db.listChannels()

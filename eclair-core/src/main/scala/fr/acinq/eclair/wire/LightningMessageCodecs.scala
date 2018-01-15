@@ -238,6 +238,19 @@ object LightningMessageCodecs {
       ("bitcoinSignature2" | signature) ::
       channelAnnouncementWitnessCodec).as[ChannelAnnouncement]
 
+  val channelAnnouncementNOSIGCodec: Codec[ChannelAnnouncement] = (
+    ("nodeSignature1" | provide(BinaryData(""))) ::
+      ("nodeSignature2" | provide(BinaryData(""))) ::
+      ("bitcoinSignature1" | provide(BinaryData(""))) ::
+      ("bitcoinSignature2" | provide(BinaryData(""))) ::
+      ("features" | varsizebinarydata) ::
+      ("chainHash" | binarydata(32)) ::
+      ("shortChannelId" | int64) ::
+      ("nodeId1" | publicKey) ::
+      ("nodeId2" | publicKey) ::
+      ("bitcoinKey1" | publicKey) ::
+      ("bitcoinKey2" | publicKey)).as[ChannelAnnouncement]
+
   val nodeAnnouncementWitnessCodec = (
     ("features" | varsizebinarydata) ::
       ("timestamp" | uint32) ::
