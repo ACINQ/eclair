@@ -6,6 +6,7 @@ import java.sql.DriverManager
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
+import fr.acinq.eclair.crypto.KeyManagement
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.Color
@@ -22,15 +23,13 @@ object TestConstants {
 
   object Alice {
     val seed = BinaryData("01" * 32)
-    val master = DeterministicWallet.generate(seed)
-    val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+    val extendedPrivateKey = KeyManagement.NodeKeys.extendedPrivateKey(seed)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     // This is a function, and not a val! When called will return a new NodeParams
     def nodeParams = NodeParams(
-      extendedPrivateKey = extendedPrivateKey,
-      privateKey = extendedPrivateKey.privateKey,
+      nodeKey = extendedPrivateKey,
       alias = "alice",
       color = Color(1, 2, 3),
       publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
@@ -79,14 +78,12 @@ object TestConstants {
 
   object Bob {
     val seed = BinaryData("02" * 32)
-    val master = DeterministicWallet.generate(seed)
-    val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
+    val extendedPrivateKey = KeyManagement.NodeKeys.extendedPrivateKey(seed)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
     def nodeParams = NodeParams(
-      extendedPrivateKey = extendedPrivateKey,
-      privateKey = extendedPrivateKey.privateKey,
+      nodeKey = extendedPrivateKey,
       alias = "bob",
       color = Color(4, 5, 6),
       publicAddresses = new InetSocketAddress("localhost", 9732) :: Nil,

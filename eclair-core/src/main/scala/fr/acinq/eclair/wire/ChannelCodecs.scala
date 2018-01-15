@@ -1,7 +1,9 @@
 package fr.acinq.eclair.wire
 
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.channel.{DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, _}
+import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.KeyManagement.ChannelKeys
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._
@@ -16,25 +18,48 @@ import scodec.{Attempt, Codec, DecodeResult}
   * Created by PM on 02/06/2017.
   */
 object ChannelCodecs extends Logging {
+  /*
+  final case class LocalParams(nodeKey: DeterministicWallet.ExtendedPrivateKey,
+                             dustLimitSatoshis: Long,
+                             maxHtlcValueInFlightMsat: UInt64,
+                             channelReserveSatoshis: Long,
+                             htlcMinimumMsat: Long,
+                             toSelfDelay: Int,
+                             maxAcceptedHtlcs: Int,
+                             isFunder: Boolean,
+                             globalFeatures: BinaryData,
+                             localFeatures: BinaryData,
+                             defaultFinalScriptPubKey: BinaryData,
+                             channelNumber: Long) {
+
+   */
+
+  def list2keypath(input: List[Long]) : KeyPath = new KeyPath(input)
+  def keypath2list(input: KeyPath): List[Long] = input.path.toList
+
+  val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap(list2keypath, keypath2list).as[KeyPath]
+
+  val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
+    ("secretkeybytes" | binarydata(32)) ::
+      ("chaincode" | binarydata(32)) ::
+      ("depth" | uint16) ::
+      ("path" | keyPathCodec) ::
+      ("parent" | int64)).as[ExtendedPrivateKey]
+
 
   val localParamsCodec: Codec[LocalParams] = (
-    ("nodeId" | publicKey) ::
+    ("nodeKey" | extendedPrivateKeyCodec) ::
+      ("channelNumber" | uint64) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::
       ("htlcMinimumMsat" | uint64) ::
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
-      ("fundingPrivKey" | privateKey) ::
-      ("revocationSecret" | scalar) ::
-      ("paymentKey" | scalar) ::
-      ("delayedPaymentKey" | scalar) ::
-      ("htlcKey" | scalar) ::
-      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
-      ("shaSeed" | varsizebinarydata) ::
       ("isFunder" | bool) ::
       ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata)).as[LocalParams]
+      ("localFeatures" | varsizebinarydata) ::
+      ("defaultFinalScriptPubKey" | varsizebinarydata)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::

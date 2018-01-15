@@ -5,12 +5,13 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.{KeyManagement, Sphinx}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
 import scodec.Attempt
+import sun.awt.AWTAccessor.KeyboardFocusManagerAccessor
 
 import scala.util.{Failure, Success}
 

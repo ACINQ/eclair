@@ -2,10 +2,10 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Transaction}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.crypto.{KeyManagement, Sphinx}
+import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
@@ -92,6 +92,14 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
  */
 
 sealed trait Command
+case class UpstreamHtlc(add: UpdateAddHtlc, commitTx: CommitTx, channelNumber: Long) {
+  def id = add.id
+  def paymentHash = add.paymentHash
+  def amountMsat = add.amountMsat
+  def channelId = add.channelId
+  def expiry = add.expiry
+  def onionRoutingPacket = add.onionRoutingPacket
+}
 final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = Sphinx.LAST_PACKET.serialize, upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[BinaryData, FailureMessage], commit: Boolean = false) extends Command
@@ -167,23 +175,26 @@ final case class DATA_CLOSING(commitments: Commitments,
 
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
-final case class LocalParams(nodeId: PublicKey,
+final case class LocalParams(nodeKey: DeterministicWallet.ExtendedPrivateKey,
+                             channelNumber: Long,
                              dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: UInt64,
                              channelReserveSatoshis: Long,
                              htlcMinimumMsat: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             fundingPrivKey: PrivateKey,
-                             revocationSecret: Scalar,
-                             paymentKey: Scalar,
-                             delayedPaymentKey: Scalar,
-                             htlcKey: Scalar,
-                             defaultFinalScriptPubKey: BinaryData,
-                             shaSeed: BinaryData,
                              isFunder: Boolean,
                              globalFeatures: BinaryData,
-                             localFeatures: BinaryData) {
+                             localFeatures: BinaryData,
+                             defaultFinalScriptPubKey: BinaryData) {
+  val nodeId = nodeKey.publicKey
+  val channelKeys = new KeyManagement.ChannelKeys(nodeKey, channelNumber)
+  val fundingPrivKey = channelKeys.fundingKey
+  val revocationSecret = channelKeys.revocationSecret
+  val paymentKey = channelKeys.paymentKey
+  val delayedPaymentKey = channelKeys.delayedPaymentKey
+  val htlcKey = channelKeys.htlcKey
+  val shaSeed = channelKeys.shaSeed
   // precomputed for performance reasons
   val paymentBasepoint = paymentKey.toPoint
   val delayedPaymentBasepoint = delayedPaymentKey.toPoint

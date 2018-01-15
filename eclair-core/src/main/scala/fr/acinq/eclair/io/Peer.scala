@@ -9,6 +9,7 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
+import fr.acinq.eclair.crypto.KeyManagement
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire
@@ -347,31 +348,24 @@ object Peer {
 
   // @formatter:on
 
-
-  def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
-
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    // all secrets are generated from the main seed
-    // TODO: check this
-    val keyIndex = secureRandom.nextInt(1000).toLong
+    val channelNumber = secureRandom.nextInt(1000).toLong
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelNumber)
+  }
+
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long, channelNumber: Long): LocalParams = {
     LocalParams(
-      nodeId = nodeParams.privateKey.publicKey,
+      nodeKey = nodeParams.nodeKey,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,
       toSelfDelay = nodeParams.delayBlocks,
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-      fundingPrivKey = generateKey(nodeParams, keyIndex :: 0L :: Nil),
-      revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
-      paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
-      delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
-      htlcKey = generateKey(nodeParams, keyIndex :: 4L :: Nil),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 5L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
-      localFeatures = nodeParams.localFeatures)
+      localFeatures = nodeParams.localFeatures,
+      channelNumber = channelNumber)
   }
-
 }

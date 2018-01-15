@@ -1,6 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.eclair.randomExtendedPrivateKey
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
@@ -27,20 +28,15 @@ class ChannelCodecsSpec extends FunSuite {
 
   test("encode/decode localparams") {
     val o = LocalParams(
-      nodeId = randomKey.publicKey,
+      nodeKey = randomExtendedPrivateKey,
+      channelNumber = 42,
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),
       htlcMinimumMsat = Random.nextInt(Int.MaxValue),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      fundingPrivKey = randomKey,
-      revocationSecret = randomKey.value,
-      paymentKey = randomKey,
-      delayedPaymentKey = randomKey.value,
-      htlcKey = randomKey,
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-      shaSeed = randomBytes(32),
       isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))

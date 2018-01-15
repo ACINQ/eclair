@@ -10,7 +10,8 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelCodecs, ChannelUpdate, UpdateAddHtlc}
-import fr.acinq.eclair.{UInt64, randomKey}
+import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.{randomKey, randomExtendedPrivateKey}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -34,20 +35,15 @@ class ChannelStateSpec extends FunSuite {
 
 object ChannelStateSpec {
   val localParams = LocalParams(
-    nodeId = randomKey.publicKey,
+    nodeKey = randomExtendedPrivateKey,
+    channelNumber = 42,
     dustLimitSatoshis = Satoshi(546).toLong,
     maxHtlcValueInFlightMsat = UInt64(50),
     channelReserveSatoshis = 10000,
     htlcMinimumMsat = 50000,
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
-    fundingPrivKey = PrivateKey(BinaryData("01" * 32) :+ 1.toByte),
-    revocationSecret = Scalar(BinaryData("02" * 32)),
-    paymentKey = PrivateKey(BinaryData("03" * 32) :+ 1.toByte),
-    delayedPaymentKey = Scalar(BinaryData("04" * 32)),
-    htlcKey = PrivateKey(BinaryData("06" * 32) :+ 1.toByte),
     defaultFinalScriptPubKey = Nil,
-    shaSeed = BinaryData("05" * 32),
     isFunder = true,
     globalFeatures = "foo".getBytes(),
     localFeatures = "bar".getBytes())
