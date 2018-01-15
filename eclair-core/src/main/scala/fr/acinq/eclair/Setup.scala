@@ -232,4 +232,4 @@ case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could
 
 case object BitcoinRPCConnectionException extends RuntimeException("could not connect to bitcoind using json-rpc")
 
-case object EmptyAPIPasswordException extends RuntimeException("must set a user/password for the json-rpc api")
+case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
