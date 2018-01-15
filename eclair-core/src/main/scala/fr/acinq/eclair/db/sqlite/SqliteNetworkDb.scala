@@ -27,8 +27,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
     channels.foreach { c =>
       using(sqlite.prepareStatement("UPDATE channels SET data=? WHERE short_channel_id=?")) { statement =>
-        statement.setLong(1, c.shortChannelId)
-        statement.setBytes(2, channelAnnouncementNOSIGCodec.encode(c).require.toByteArray)
+        statement.setBytes(1, channelAnnouncementNOSIGCodec.encode(c).require.toByteArray)
+        statement.setLong(2, c.shortChannelId)
         statement.executeUpdate()
       }
     }
