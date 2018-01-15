@@ -13,7 +13,7 @@ import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
-import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
+import fr.acinq.eclair.io.{Authenticator, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
@@ -31,9 +31,9 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
-  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams = NodeParams.makeNodeParams(datadir, config)
-  val chain = config.getString("chain")
+  val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val chain: String = config.getString("chain")
 
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
@@ -112,7 +112,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     val register = system.actorOf(SimpleSupervisor.props(Props(new Register), "register", SupervisorStrategy.Resume))
     val relayer = system.actorOf(SimpleSupervisor.props(Relayer.props(nodeParams, register, paymentHandler), "relayer", SupervisorStrategy.Resume))
     val router = system.actorOf(SimpleSupervisor.props(Router.props(nodeParams, watcher), "router", SupervisorStrategy.Resume))
-    val authenticator = system.actorOf(Authenticator.props(nodeParams), "authenticator")
+    val authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
     val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
     val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
@@ -133,11 +133,11 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
 }
 
+// @formatter:off
 sealed trait Bitcoin
-
 case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
-
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
+// @formatter:on
 
 case class Kit(nodeParams: NodeParams,
                system: ActorSystem,
@@ -151,3 +151,5 @@ case class Kit(nodeParams: NodeParams,
                wallet: EclairWallet)
 
 
+
+case object EmptyAPIPasswordException extends RuntimeException("must set a user/password for the json-rpc api")

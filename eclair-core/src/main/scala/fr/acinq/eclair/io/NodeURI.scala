@@ -1,20 +1,34 @@
 package fr.acinq.eclair.io
 
-import java.net.InetSocketAddress
-
+import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.PublicKey
 
-case class NodeURI(nodeId: PublicKey, address: InetSocketAddress) {
-  override def toString: String = s"$nodeId@${address.getHostString}:${address.getPort}"
+import scala.util.{Failure, Success, Try}
+
+case class NodeURI(nodeId: PublicKey, address: HostAndPort) {
+  override def toString: String = s"$nodeId@$address"
 }
 
 object NodeURI {
 
-  val regex = """([a-fA-F0-9]{66})@([a-zA-Z0-9:\.\-_]+):([0-9]+)""".r
+  val DEFAULT_PORT = 9735
 
-
+  /**
+    * Extracts the PublicKey and InetAddress from a string URI (format pubkey@host:port). Port is optional, default is 9735.
+    *
+    * @param uri uri of a node, as a String
+    * @throws IllegalArgumentException if the uri is not valid and can not be read
+    * @return a NodeURI
+    */
+  @throws[IllegalArgumentException]
   def parse(uri: String): NodeURI = {
-    val regex(nodeid, host, port) = uri
-    NodeURI(PublicKey(nodeid), new InetSocketAddress(host, port.toInt))
+    uri.split("@") match {
+      case Array(nodeId, address) => (Try(PublicKey(nodeId)), Try(HostAndPort.fromString(address).withDefaultPort(DEFAULT_PORT))) match {
+        case (Success(pk), Success(hostAndPort)) => NodeURI(pk, hostAndPort)
+        case (Failure(_), _) => throw new IllegalArgumentException("Invalid node id")
+        case (_, Failure(_)) => throw new IllegalArgumentException("Invalid host:port")
+      }
+      case _ => throw new IllegalArgumentException("Invalid uri, should be nodeId@host:port")
+    }
   }
 }

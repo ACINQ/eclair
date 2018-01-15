@@ -34,12 +34,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
 
   //val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
-  val ann_a = makeNodeAnnouncement(priv_a, "node-A", (15, 10, -70), Nil)
-  val ann_b = makeNodeAnnouncement(priv_b, "node-B", (50, 99, -80), Nil)
-  val ann_c = makeNodeAnnouncement(priv_c, "node-C", (123, 100, -40), Nil)
-  val ann_d = makeNodeAnnouncement(priv_d, "node-D", (-120, -20, 60), Nil)
-  val ann_e = makeNodeAnnouncement(priv_e, "node-E", (-50, 0, 10), Nil)
-  val ann_f = makeNodeAnnouncement(priv_f, "node-F", (30, 10, -50), Nil)
+  val ann_a = makeNodeAnnouncement(priv_a, "node-A", Color(15, 10, -70), Nil)
+  val ann_b = makeNodeAnnouncement(priv_b, "node-B", Color(50, 99, -80), Nil)
+  val ann_c = makeNodeAnnouncement(priv_c, "node-C", Color(123, 100, -40), Nil)
+  val ann_d = makeNodeAnnouncement(priv_d, "node-D", Color(-120, -20, 60), Nil)
+  val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil)
+  val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil)
 
   val channelId_ab = toShortId(420000, 1, 0)
   val channelId_bc = toShortId(420000, 2, 0)
@@ -105,7 +105,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       // we manually trigger a validation
       router ! TickValidate
       // watcher receives the get tx requests
-      watcher.expectMsg(ParallelGetRequest(chan_ab :: chan_bc :: chan_cd :: chan_ef :: Nil))
+      assert(watcher.expectMsgType[ParallelGetRequest].ann.toSet === Set(chan_ab, chan_bc, chan_cd, chan_ef))
       // and answers with valid scripts
       watcher.send(router, ParallelGetResponse(
         IndividualResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true) ::

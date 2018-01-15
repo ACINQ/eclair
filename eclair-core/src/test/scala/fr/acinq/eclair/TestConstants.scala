@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
+import fr.acinq.eclair.wire.Color
 
 import scala.concurrent.duration._
 
@@ -31,7 +32,7 @@ object TestConstants {
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = "alice",
-      color = (1: Byte, 2: Byte, 3: Byte),
+      color = Color(1, 2, 3),
       publicAddresses = new InetSocketAddress("localhost", 9731) :: Nil,
       globalFeatures = "",
       localFeatures = "00",
@@ -85,7 +86,7 @@ object TestConstants {
       extendedPrivateKey = extendedPrivateKey,
       privateKey = extendedPrivateKey.privateKey,
       alias = "bob",
-      color = (4: Byte, 5: Byte, 6: Byte),
+      color = Color(4, 5, 6),
       publicAddresses = new InetSocketAddress("localhost", 9732) :: Nil,
       globalFeatures = "",
       localFeatures = "00", // no announcement

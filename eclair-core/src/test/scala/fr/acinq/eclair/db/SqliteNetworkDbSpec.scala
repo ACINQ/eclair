@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.{Block, Crypto}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Announcements
-import fr.acinq.eclair.wire.LightningMessageCodecs.channelAnnouncementCodec
+import fr.acinq.eclair.wire.Color
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -28,9 +28,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     val sqlite = inmem
     val db = new SqliteNetworkDb(sqlite)
 
-    val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", (100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
-    val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", (100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
-    val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", (100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
+    val node_1 = Announcements.makeNodeAnnouncement(randomKey, "node-alice", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
+    val node_2 = Announcements.makeNodeAnnouncement(randomKey, "node-bob", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
+    val node_3 = Announcements.makeNodeAnnouncement(randomKey, "node-charlie", Color(100.toByte, 200.toByte, 300.toByte), new InetSocketAddress(InetAddress.getByAddress(Array[Byte](192.toByte, 168.toByte, 1.toByte, 42.toByte)), 42000) :: Nil)
 
     assert(db.listNodes().toSet === Set.empty)
     db.addNode(node_1)

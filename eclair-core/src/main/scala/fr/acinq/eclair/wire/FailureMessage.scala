@@ -39,6 +39,7 @@ case object IncorrectPaymentAmount extends Perm
 case object FinalExpiryTooSoon extends FailureMessage
 case class FinalIncorrectCltvExpiry(expiry: Long) extends FailureMessage
 case class FinalIncorrectHtlcAmount(amountMsat: Long) extends FailureMessage
+case object ExpiryTooFar extends FailureMessage
 // @formatter:on
 
 object FailureMessageCodecs {
@@ -49,6 +50,8 @@ object FailureMessageCodecs {
 
   val sha256Codec: Codec[BinaryData] = ("sha256Codec" | binarydata(32))
 
+  val channelUpdateWithLengthCodec = variableSizeBytes(uint16, channelUpdateCodec)
+
   val failureMessageCodec = discriminated[FailureMessage].by(uint16)
     .typecase(PERM | 1, provide(InvalidRealm))
     .typecase(NODE | 2, provide(TemporaryNodeFailure))
@@ -57,18 +60,19 @@ object FailureMessageCodecs {
     .typecase(BADONION | PERM | 4, sha256Codec.as[InvalidOnionVersion])
     .typecase(BADONION | PERM | 5, sha256Codec.as[InvalidOnionHmac])
     .typecase(BADONION | PERM | 6, sha256Codec.as[InvalidOnionKey])
-    .typecase(UPDATE | 7, (("channelUpdate" | channelUpdateCodec)).as[TemporaryChannelFailure])
+    .typecase(UPDATE | 7, (("channelUpdate" | channelUpdateWithLengthCodec)).as[TemporaryChannelFailure])
     .typecase(PERM | 8, provide(PermanentChannelFailure))
     .typecase(PERM | 9, provide(RequiredChannelFeatureMissing))
     .typecase(PERM | 10, provide(UnknownNextPeer))
-    .typecase(UPDATE | 11, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateCodec)).as[AmountBelowMinimum])
-    .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateCodec)).as[FeeInsufficient])
-    .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate" | channelUpdateCodec)).as[IncorrectCltvExpiry])
-    .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateCodec)).as[ExpiryTooSoon])
-    .typecase(UPDATE | 20, (("flags" | binarydata(2)) :: ("channelUpdate" | channelUpdateCodec)).as[ChannelDisabled])
+    .typecase(UPDATE | 11, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[AmountBelowMinimum])
+    .typecase(UPDATE | 12, (("amountMsat" | uint64) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[FeeInsufficient])
+    .typecase(UPDATE | 13, (("expiry" | uint32) :: ("channelUpdate"  | channelUpdateWithLengthCodec)).as[IncorrectCltvExpiry])
+    .typecase(UPDATE | 14, (("channelUpdate" | channelUpdateWithLengthCodec)).as[ExpiryTooSoon])
+    .typecase(UPDATE | 20, (("flags" | binarydata(2)) :: ("channelUpdate" | channelUpdateWithLengthCodec)).as[ChannelDisabled])
     .typecase(PERM | 15, provide(UnknownPaymentHash))
     .typecase(PERM | 16, provide(IncorrectPaymentAmount))
     .typecase(17, provide(FinalExpiryTooSoon))
     .typecase(18, (("expiry" | uint32)).as[FinalIncorrectCltvExpiry])
     .typecase(19, (("amountMsat" | uint32)).as[FinalIncorrectHtlcAmount])
+    .typecase(21, provide(ExpiryTooFar))
 }

@@ -131,12 +131,21 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(INPUT_RESTORED(data), _) =>
       log.info(s"restoring channel channelId=${data.channelId}")
       context.system.eventStream.publish(ChannelRestored(self, context.parent, remoteNodeId, data.commitments.localParams.isFunder, data.channelId, data))
-      // TODO: should we wait for an acknowledgment from the watcher?
-      blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
-      blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
       data match {
         //NB: order matters!
         case closing: DATA_CLOSING =>
+          // we don't put back the WatchSpent if the commitment tx has already been published and the spending tx already reached mindepth
+          val commitTxOutpoint = closing.commitments.commitInput.outPoint
+          if (closing.localCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.remoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.nextRemoteCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint)) ||
+            closing.revokedCommitPublished.exists(_.irrevocablySpent.contains(commitTxOutpoint))) {
+            log.info(s"funding tx has already been spent and spending tx reached mindepth, no need to put back the watch-spent")
+          } else {
+            // TODO: should we wait for an acknowledgment from the watcher?
+            blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+            blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          }
           closing.mutualClosePublished.map(doPublish(_))
           closing.localCommitPublished.foreach(doPublish(_))
           closing.remoteCommitPublished.foreach(doPublish(_))
@@ -146,6 +155,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(CLOSING) using closing
 
         case normal: DATA_NORMAL =>
+          // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           context.system.eventStream.publish(ShortChannelIdAssigned(self, normal.channelId, normal.channelUpdate.shortChannelId))
           // we rebuild a channel_update for two reasons:
           // - we want to reload values from configuration
@@ -153,7 +165,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           val channelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, normal.channelUpdate.shortChannelId, nodeParams.expiryDeltaBlocks, normal.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = false)
           goto(OFFLINE) using normal.copy(channelUpdate = channelUpdate)
 
-        case _ => goto(OFFLINE) using data
+        case _ =>
+          // TODO: should we wait for an acknowledgment from the watcher?
+          blockchain ! WatchSpent(self, data.commitments.commitInput.outPoint.txid, data.commitments.commitInput.outPoint.index.toInt, data.commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT)
+          blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
+          goto(OFFLINE) using data
       }
   })
 
@@ -736,16 +752,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             stay sending localAnnSigs
         }
       } else {
-          // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
-          // note: no need to persist their message, in case of disconnection they will resend it
-          log.debug(s"received remote announcement signatures, delaying")
-          context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
-          if (nodeParams.watcherType == BITCOINJ) {
-            log.warning(s"HACK: since we cannot get the tx index with bitcoinj, we copy the value sent by remote")
-            val (blockHeight, txIndex, _) = fromShortId(remoteAnnSigs.shortChannelId)
-            self ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex)
-          }
-          stay
+        // our watcher didn't notify yet that the tx has reached ANNOUNCEMENTS_MINCONF confirmations, let's delay remote's message
+        // note: no need to persist their message, in case of disconnection they will resend it
+        log.debug(s"received remote announcement signatures, delaying")
+        context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
+        if (nodeParams.watcherType == BITCOINJ) {
+          log.warning(s"HACK: since we cannot get the tx index with bitcoinj, we copy the value sent by remote")
+          val (blockHeight, txIndex, _) = fromShortId(remoteAnnSigs.shortChannelId)
+          self ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex)
+        }
+        stay
       }
 
     case Event(TickRefreshChannelUpdate, d: DATA_NORMAL) =>
@@ -1079,6 +1095,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       stay
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
+      log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
       // first we check if this tx belongs to a one of the current local/remote commits and update it
       val localCommitPublished1 = d.localCommitPublished.map(Closing.updateLocalCommitPublished(_, tx))
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
@@ -1105,10 +1122,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
       closeType_opt match {
         case Some(closeType) =>
-          log.info(s"channel closed type=$closeType")
-          goto(CLOSED) using d1
+          log.info(s"channel closed (type=$closeType)")
+          goto(CLOSED) using store(d1)
         case None =>
-          stay using d1
+          stay using store(d1)
       }
 
     case Event(_: ChannelReestablish, d: DATA_CLOSING) =>
@@ -1437,21 +1454,58 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     goto(CLOSING) using store(nextData)
   }
 
-  def doPublish(localCommitPublished: LocalCommitPublished) = {
-    blockchain ! PublishAsap(localCommitPublished.commitTx)
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
-    localCommitPublished.htlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))
-    localCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
-    localCommitPublished.claimHtlcDelayedTx.foreach(tx => blockchain ! PublishAsap(tx))
+  /**
+    * This helper method will publish txes only if they haven't yet reached minDepth
+    *
+    * @param txes
+    * @param irrevocablySpent
+    */
+  def publishIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
+    val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
+    process.foreach(tx => blockchain ! PublishAsap(tx))
+    skip.foreach(tx => log.info(s"no need to republish txid=${tx.txid}, it has already been confirmed"))
+  }
 
-    // we watch the commitment tx itself, so that we can handle the case where we don't have any outputs
-    blockchain ! WatchConfirmed(self, localCommitPublished.commitTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(localCommitPublished.commitTx))
-    // we watch 'final txes' that send funds to our wallet and that spend outputs that only us control
-    localCommitPublished.claimMainDelayedOutputTx.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
-    localCommitPublished.claimHtlcDelayedTx.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
+  /**
+    * This helper method will watch txes only if they haven't yet reached minDepth
+    *
+    * @param txes
+    * @param irrevocablySpent
+    */
+  def watchConfirmedIfNeeded(txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
+    val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
+    process.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
+    skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
+  }
+
+  /**
+    * This helper method will watch txes only if the utxo they spend hasn't already been irrevocably spent
+    *
+    * @param parentTx
+    * @param txes
+    * @param irrevocablySpent
+    */
+  def watchSpentIfNeeded(parentTx: Transaction, txes: Iterable[Transaction], irrevocablySpent: Map[OutPoint, BinaryData]) = {
+    val (skip, process) = txes.partition(Closing.inputsAlreadySpent(_, irrevocablySpent))
+    process.foreach(tx => blockchain ! WatchSpent(self, parentTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+    skip.foreach(tx => log.info(s"no need to watch txid=${tx.txid}, it has already been confirmed"))
+  }
+
+  def doPublish(localCommitPublished: LocalCommitPublished) = {
+    import localCommitPublished._
+
+    val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTx
+    publishIfNeeded(publishQueue, irrevocablySpent)
+
+    // we watch:
+    // - the commitment tx itself, so that we can handle the case where we don't have any outputs
+    // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTx
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
+
     // we watch outputs of the commitment tx that both parties may spend
-    localCommitPublished.htlcSuccessTxs.foreach(tx => blockchain ! WatchSpent(self, localCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
-    localCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! WatchSpent(self, localCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+    val watchSpentQueue = htlcSuccessTxs ++ htlcTimeoutTxs
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
   def handleRemoteSpentCurrent(commitTx: Transaction, d: HasCommitments) = {
@@ -1489,17 +1543,20 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def doPublish(remoteCommitPublished: RemoteCommitPublished) = {
-    remoteCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
-    remoteCommitPublished.claimHtlcSuccessTxs.foreach(tx => blockchain ! PublishAsap(tx))
-    remoteCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
+    import remoteCommitPublished._
 
-    // we watch the commitment tx itself, so that we can handle the case where we don't have any outputs
-    blockchain ! WatchConfirmed(self, remoteCommitPublished.commitTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(remoteCommitPublished.commitTx))
-    // we watch 'final txes' that send funds to our wallet and that spend outputs that only us control
-    remoteCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
+    val publishQueue = claimMainOutputTx ++ claimHtlcSuccessTxs ++ claimHtlcTimeoutTxs
+    publishIfNeeded(publishQueue, irrevocablySpent)
+
+    // we watch:
+    // - the commitment tx itself, so that we can handle the case where we don't have any outputs
+    // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
+
     // we watch outputs of the commitment tx that both parties may spend
-    remoteCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! WatchSpent(self, remoteCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
-    remoteCommitPublished.claimHtlcSuccessTxs.foreach(tx => blockchain ! WatchSpent(self, remoteCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+    val watchSpentQueue = claimHtlcTimeoutTxs ++ claimHtlcSuccessTxs
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
@@ -1527,21 +1584,20 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
-    revokedCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! PublishAsap(tx))
-    revokedCommitPublished.mainPenaltyTx.foreach(tx => blockchain ! PublishAsap(tx))
-    revokedCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
-    revokedCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! PublishAsap(tx))
-    revokedCommitPublished.htlcPenaltyTxs.foreach(tx => blockchain ! PublishAsap(tx))
+    import revokedCommitPublished._
 
-    // we watch the commitment tx itself, so that we can handle the case where we don't have any outputs
-    blockchain ! WatchConfirmed(self, revokedCommitPublished.commitTx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(revokedCommitPublished.commitTx))
-    // we watch 'final txes' that send funds to our wallet and that spend outputs that only us control
-    revokedCommitPublished.claimMainOutputTx.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
-    revokedCommitPublished.htlcPenaltyTxs.foreach(tx => blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx)))
-    // we watch outputs of the commitment tx that both parties may spend (remember that we need to publish their htlc-timeout txes, because penalty transactions spend their outputs)
-    revokedCommitPublished.mainPenaltyTx.foreach(tx => blockchain ! WatchSpent(self, revokedCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
-    revokedCommitPublished.claimHtlcTimeoutTxs.foreach(tx => blockchain ! WatchSpent(self, revokedCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
-    revokedCommitPublished.htlcTimeoutTxs.foreach(tx => blockchain ! WatchSpent(self, revokedCommitPublished.commitTx, tx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs ++ htlcPenaltyTxs
+    publishIfNeeded(publishQueue, irrevocablySpent)
+
+    // we watch:
+    // - the commitment tx itself, so that we can handle the case where we don't have any outputs
+    // - 'final txes' that send funds to our wallet and that spend outputs that only us control
+    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx ++ htlcPenaltyTxs
+    watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
+
+    // we watch outputs of the commitment tx that both parties may spend
+    val watchSpentQueue = mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs
+    watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
   def handleInformationLeak(tx: Transaction, d: HasCommitments) = {
