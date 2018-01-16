@@ -111,6 +111,8 @@
                                                                          maxWidth="150.0"/>
                                                             <TableColumn fx:id="paymentSentHashColumn"
                                                                          text="Payment Hash"/>
+                                                            <TableColumn fx:id="paymentSentPreimageColumn"
+                                                                         text="Payment Preimage"/>
                                                         </columns>
                                                     </TableView>
                                                 </Tab>
