@@ -42,7 +42,6 @@ rpcpassword=bar
 txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
-rpcport=18332
 ```
 
 On **__testnet__**, you also need to make sure that all your UTXOs are `p2sh-of-p2wpkh`.
