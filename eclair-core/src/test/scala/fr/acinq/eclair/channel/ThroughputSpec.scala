@@ -59,8 +59,8 @@ class ThroughputSpec extends FunSuite {
     val relayerA = system.actorOf(Relayer.props(Alice.nodeParams, registerA.ref, paymentHandler))
     val relayerB = system.actorOf(Relayer.props(Bob.nodeParams, registerB.ref, paymentHandler))
     val wallet = new TestWallet
-    val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.id, blockchain, ???, relayerA), "a")
-    val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.id, blockchain, ???, relayerB), "b")
+    val alice = system.actorOf(Channel.props(Alice.nodeParams, wallet, Bob.id, blockchain, ???, relayerA, Alice.keyManager), "a")
+    val bob = system.actorOf(Channel.props(Bob.nodeParams, wallet, Alice.id, blockchain, ???, relayerB, Bob.keyManager), "b")
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, ChannelFlags.Empty)

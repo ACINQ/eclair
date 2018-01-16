@@ -3,7 +3,6 @@ package fr.acinq.eclair.wire
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.KeyManagement.ChannelKeys
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._
@@ -12,28 +11,12 @@ import fr.acinq.eclair.wire.LightningMessageCodecs._
 import grizzled.slf4j.Logging
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
-import scodec.{Attempt, Codec, DecodeResult}
+import scodec.{Attempt, Codec}
 
 /**
   * Created by PM on 02/06/2017.
   */
 object ChannelCodecs extends Logging {
-  /*
-  final case class LocalParams(nodeKey: DeterministicWallet.ExtendedPrivateKey,
-                             dustLimitSatoshis: Long,
-                             maxHtlcValueInFlightMsat: UInt64,
-                             channelReserveSatoshis: Long,
-                             htlcMinimumMsat: Long,
-                             toSelfDelay: Int,
-                             maxAcceptedHtlcs: Int,
-                             isFunder: Boolean,
-                             globalFeatures: BinaryData,
-                             localFeatures: BinaryData,
-                             defaultFinalScriptPubKey: BinaryData,
-                             channelNumber: Long) {
-
-   */
-
   def list2keypath(input: List[Long]) : KeyPath = new KeyPath(input)
   def keypath2list(input: KeyPath): List[Long] = input.path.toList
 
@@ -48,7 +31,6 @@ object ChannelCodecs extends Logging {
 
 
   val localParamsCodec: Codec[LocalParams] = (
-    ("nodeKey" | extendedPrivateKeyCodec) ::
       ("channelNumber" | uint64) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64ex) ::

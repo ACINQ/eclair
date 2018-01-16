@@ -12,7 +12,7 @@ import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
-import fr.acinq.eclair.crypto.KeyManagement
+import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.wire.Color
@@ -83,23 +83,9 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config, seed_opt: Option[BinaryData] = None): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, nodeKey: ExtendedPrivateKey): NodeParams = {
 
     datadir.mkdirs()
-
-    val seed: BinaryData = seed_opt match {
-      case Some(s) => s
-      case None =>
-        val seedPath = new File(datadir, "seed.dat")
-        seedPath.exists() match {
-          case true => Files.readAllBytes(seedPath.toPath)
-          case false =>
-            val seed = randomKey.toBin
-            Files.write(seedPath.toPath, seed)
-            seed
-        }
-    }
-    val nodeKey = KeyManagement.NodeKeys.extendedPrivateKey(seed)
 
     val chain = config.getString("chain")
     val chainHash = chain match {
