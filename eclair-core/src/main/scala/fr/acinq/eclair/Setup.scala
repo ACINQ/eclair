@@ -67,6 +67,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         port = config.getInt("bitcoind.rpcport")))
       val future = for {
         json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
+        // Make sure wallet support is enabled in bitcoind.
+        _ <- bitcoinClient.rpcClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
         chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
         bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
@@ -231,5 +233,7 @@ case class Kit(nodeParams: NodeParams,
 case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could not connect to bitcoind using zeromq")
 
 case object BitcoinRPCConnectionException extends RuntimeException("could not connect to bitcoind using json-rpc")
+
+case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
