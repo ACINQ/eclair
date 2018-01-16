@@ -62,12 +62,7 @@ class BitcoinJsonRPCClient(user: String, password: String, host: String = "127.0
       _ = log.debug("sending rpc request with body={}", entity)
       httpRes <- queueRequest(HttpRequest(uri = "/", method = HttpMethods.POST).addHeader(Authorization(BasicHttpCredentials(user, password))).withEntity(entity))
       jsonRpcRes <- Unmarshal(httpRes).to[JsonRPCResponse].map {
-        case JsonRPCResponse(_, Some(error), _) =>
-          if (method == "listunspent" && error.code == -32601) {
-            throw JsonRPCError(new Error(error.code, s"Bitcoind must have wallet mode enabled.\n\n${error.message}"))
-          } else {
-            throw JsonRPCError(error)
-          }
+        case JsonRPCResponse(_, Some(error), _) => throw JsonRPCError(error)
         case o => o
       } recover {
         case t: Throwable if httpRes.status == StatusCodes.Unauthorized => throw new RuntimeException("bitcoind replied with 401/Unauthorized (bad user/password?)", t)
