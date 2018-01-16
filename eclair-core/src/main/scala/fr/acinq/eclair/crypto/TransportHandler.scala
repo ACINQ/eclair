@@ -32,7 +32,8 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   import TransportHandler._
 
-  connection ! akka.io.Tcp.Register(self)
+  connection ! Tcp.Register(self)
+  connection ! Tcp.ResumeReading
 
   val out = context.actorOf(Props(new WriteAckSender(connection)))
 
@@ -53,11 +54,15 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     makeReader(keyPair)
   }
 
-  def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]) = {
-    plaintextMessages.map(plaintext => {
+  def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]): Seq[T] = {
+    plaintextMessages.flatMap(plaintext => {
       codec.decode(BitVector(plaintext.data)) match {
-        case Attempt.Successful(DecodeResult(message, _)) => listener ! message
-        case Attempt.Failure(err) => log.error(s"cannot deserialize $plaintext: $err")
+        case Attempt.Successful(DecodeResult(message, _)) =>
+          listener ! message
+          Some(message)
+        case Attempt.Failure(err) =>
+          log.error(s"cannot deserialize $plaintext: $err")
+          None
       }
     })
   }
@@ -66,6 +71,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   when(Handshake) {
     case Event(Tcp.Received(data), HandshakeData(reader, buffer)) =>
+      connection ! Tcp.ResumeReading
       log.debug("received {}", BinaryData(data))
       val buffer1 = buffer ++ data
       if (buffer1.length < expectedLength(reader))
@@ -104,28 +110,57 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
   }
 
   when(WaitingForListener) {
-    case Event(Tcp.Received(data), currentStateData@WaitingForListenerData(enc, dec, buffer)) =>
-      stay using currentStateData.copy(buffer = buffer ++ data)
+    case Event(Tcp.Received(data), d: WaitingForListenerData) =>
+      stay using d.copy(buffer = d.buffer ++ data)
 
-    case Event(Listener(listener), WaitingForListenerData(enc, dec, buffer)) =>
-      val (nextStateData, plaintextMessages) = WaitingForCyphertextData(enc, dec, None, buffer, listener).decrypt
+    case Event(Listener(listener), d: WaitingForListenerData) =>
       context.watch(listener)
-      sendToListener(listener, plaintextMessages)
-      goto(WaitingForCyphertext) using nextStateData
-
+      val (nextData, plaintextMessages) = WaitingForCyphertextData(d.enc, d.dec, None, d.buffer, listener).decrypt
+      if (plaintextMessages.isEmpty) {
+        connection ! Tcp.ResumeReading
+        goto(WaitingForCyphertext) using WaitingForCyphertextData(nextData.enc, nextData.dec, nextData.ciphertextLength, nextData.buffer, nextData.listener)
+      } else {
+        log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
+        val unacked = sendToListener(listener, plaintextMessages)
+        goto(WaitingForReadAck) using WaitingForReadAckData(nextData.enc, nextData.dec, nextData.ciphertextLength, nextData.buffer, nextData.listener, unacked)
+      }
   }
 
   when(WaitingForCyphertext) {
-    case Event(Tcp.Received(data), currentStateData@WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
-      val (nextStateData, plaintextMessages) = WaitingForCyphertextData.decrypt(currentStateData.copy(buffer = buffer ++ data))
-      sendToListener(listener, plaintextMessages)
-      stay using nextStateData
+    case Event(Tcp.Received(data), d: WaitingForCyphertextData) =>
+      val (nextData, plaintextMessages) = WaitingForCyphertextData.decrypt(d.copy(buffer = d.buffer ++ data))
+      if (plaintextMessages.isEmpty) {
+        connection ! Tcp.ResumeReading
+        stay using nextData
+      } else {
+        log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
+        val unacked = sendToListener(d.listener, plaintextMessages)
+        goto(WaitingForReadAck) using WaitingForReadAckData(nextData.enc, nextData.dec, nextData.ciphertextLength, nextData.buffer, nextData.listener, unacked)
+      }
 
-    case Event(t: T, WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
+    case Event(t: T, d: WaitingForCyphertextData) =>
       val blob = codec.encode(t).require.toByteArray
-      val (enc1, ciphertext) = TransportHandler.encrypt(enc, blob)
+      val (enc1, ciphertext) = TransportHandler.encrypt(d.enc, blob)
       out ! buf(ciphertext)
-      stay using WaitingForCyphertextData(enc1, dec, length, buffer, listener)
+      stay using d.copy(enc = enc1)
+  }
+
+  when(WaitingForReadAck) {
+    case Event(ReadAck(msg: T), d: WaitingForReadAckData[T]) =>
+      val unacked1 = d.unackedMessages diff List(msg) // TODO: NOT OPTIMAL!! but can't use a set because there might be duplicate messages
+      if (unacked1.isEmpty) {
+        log.debug("last incoming message was acked, resuming reading")
+        connection ! Tcp.ResumeReading
+        goto(WaitingForCyphertext) using WaitingForCyphertextData(d.enc, d.dec, d.ciphertextLength, d.buffer, d.listener)
+      } else {
+        stay using d.copy(unackedMessages = unacked1)
+      }
+
+    case Event(t: T, d: WaitingForReadAckData[T]) =>
+      val blob = codec.encode(t).require.toByteArray
+      val (enc1, ciphertext) = TransportHandler.encrypt(d.enc, blob)
+      out ! buf(ciphertext)
+      stay using d.copy(enc = enc1)
   }
 
   whenUnhandled {
@@ -209,11 +244,14 @@ object TransportHandler {
   case object Handshake extends State
   case object WaitingForListener extends State
   case object WaitingForCyphertext extends State
+  case object WaitingForReadAck extends State
   // @formatter:on
 
   case class Listener(listener: ActorRef)
 
   case class HandshakeCompleted(connection: ActorRef, transport: ActorRef, remoteNodeId: PublicKey)
+
+  case class ReadAck(msg: Any)
 
   sealed trait Data
 
@@ -266,6 +304,8 @@ object TransportHandler {
   case class WaitingForCyphertextData(enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef) extends Data {
     def decrypt: (WaitingForCyphertextData, Seq[BinaryData]) = WaitingForCyphertextData.decrypt(this)
   }
+
+  case class WaitingForReadAckData[T](enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef, unackedMessages: Seq[T]) extends Data
 
   object WaitingForCyphertextData {
     @tailrec

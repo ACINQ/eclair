@@ -10,6 +10,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
@@ -114,6 +115,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (staleChannels.size > 0) {
         log.info(s"dropping ${staleChannels.size} stale channels pre-validation, stash channels: ${d.stash.channels.size} -> ${stash1.channels.size} updates: ${d.stash.updates.size} -> ${stash1.updates.size} nodes: ${stash1.nodes.size}")
       }
+//      droppedChannels.foreach(c => sender ! TransportHandler.ReadAck(c))
       if (batch.size > 0) {
         log.info(s"validating a batch of ${batch.size} channels")
         watcher ! ParallelGetRequest(batch.toSeq)
@@ -124,6 +126,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   when(WAITING_FOR_VALIDATION) {
     case Event(ParallelGetResponse(results), d) =>
+      // now we can acknowledge channels
+//      d.awaiting.keys.foreach(c => sender ! TransportHandler.ReadAck(c))
       log.info(s"got validation results for ${results.size} channels")
       val validated = results.flatMap {
         case IndividualResult(c, Some(tx), true) =>
@@ -237,6 +241,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(sendingState = d.sendingState - actor)
 
     case Event(c: ChannelAnnouncement, d) =>
+      sender ! TransportHandler.ReadAck(c)
       log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId.toHexString} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2} from $sender")
       if (d.channels.containsKey(c.shortChannelId) || d.awaiting.keys.exists(_.shortChannelId == c.shortChannelId) || d.stash.channels.contains(c)) {
         log.debug("ignoring {} (duplicate)", c)
@@ -247,10 +252,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay
       } else {
         log.debug("stashing {}", c)
+        // we don't acknowledge the message just yet
         stay using d.copy(stash = d.stash.copy(channels = d.stash.channels + (c -> sender)))
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
+      if (sender != self) sender ! TransportHandler.ReadAck(n)
       log.debug(s"received node announcement for nodeId=${n.nodeId} from $sender")
       if (d.nodes.containsKey(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
         log.debug("ignoring {} (old timestamp or duplicate)", n)
@@ -280,6 +287,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
 
     case Event(u: ChannelUpdate, d: Data) =>
+      if (sender != self) sender ! TransportHandler.ReadAck(u)
       log.debug(s"received channel update for shortChannelId=${u.shortChannelId.toHexString} from $sender")
       if (d.channels.contains(u.shortChannelId)) {
         val publicChannel = true

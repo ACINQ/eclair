@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, MilliSatoshi, 
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
 import fr.acinq.eclair.wire
@@ -64,6 +65,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt)) =>
+      transport ! TransportHandler.ReadAck(remoteInit)
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
@@ -112,14 +114,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       transport ! wire.Ping(pongSize, BinaryData("00" * pingSize))
       stay
 
-    case Event(wire.Ping(pongLength, _), ConnectedData(_, transport, _, _)) =>
+    case Event(ping@wire.Ping(pongLength, _), ConnectedData(_, transport, _, _)) =>
+      transport ! TransportHandler.ReadAck(ping)
       // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
       if (pongLength > 0) {
         transport ! wire.Pong(BinaryData("00" * pongLength))
       }
       stay
 
-    case Event(wire.Pong(data), ConnectedData(_, _, _, _)) =>
+    case Event(pong@wire.Pong(data), ConnectedData(_, transport, _, _)) =>
+      transport ! TransportHandler.ReadAck(pong)
       // TODO: compute latency for remote peer ?
       log.debug(s"received pong with ${data.length} bytes")
       stay
@@ -148,6 +152,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: wire.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels)) =>
+      transport ! TransportHandler.ReadAck(msg)
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
           log.info(s"accepting a new channel to $remoteNodeId")
@@ -162,6 +167,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       }
 
     case Event(msg: wire.HasChannelId, ConnectedData(_, transport, _, channels)) =>
+      transport ! TransportHandler.ReadAck(msg)
       channels.get(FinalChannelId(msg.channelId)) match {
         case Some(channel) => channel forward msg
         case None => transport ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
@@ -169,6 +175,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay
 
     case Event(msg: wire.HasTemporaryChannelId, ConnectedData(_, transport, _, channels)) =>
+      transport ! TransportHandler.ReadAck(msg)
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case Some(channel) => channel forward msg
         case None => transport ! wire.Error(msg.temporaryChannelId, UNKNOWN_CHANNEL_MESSAGE)
@@ -190,7 +197,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay
 
     case Event(msg: wire.RoutingMessage, _) =>
+      // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
       router ! msg
+      stay
+
+    case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _)) =>
+      // we just forward acks from router to transport
+      transport forward readAck
       stay
 
     case Event(Disconnect, ConnectedData(_, transport, _, _)) =>
@@ -235,6 +248,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay
 
     case Event(_: Rebroadcast, _) => stay // ignored
+
+    case Event(_: TransportHandler.ReadAck, _) => stay // ignored
   }
 
   onTransition {
