@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet._
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, MnemonicCode}
 import DeterministicWallet.derivePrivateKey
+import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.eclair.{NodeParams, randomKey}
 import fr.acinq.eclair.channel.Commitments
 import fr.acinq.eclair.router.Announcements
@@ -48,19 +49,26 @@ class KeyManager(entropy: BinaryData) {
   val nodeKey = DeterministicWallet.derivePrivateKey(master, KeyManager.nodeKeyPath)
   val nodeId = nodeKey.publicKey
 
-  private def channelKey(channelNumber: Long) = derivePrivateKey(nodeKey, channelNumber)
+  val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()
+    .maximumSize(6 * 200) // 6 keys per channel * 200 channels
+    .build[KeyPath, ExtendedPrivateKey](new CacheLoader[KeyPath, ExtendedPrivateKey] {
+    override def load(keyPath: KeyPath): ExtendedPrivateKey = derivePrivateKey(master, keyPath)
+  })
 
-  private def fundingPrivateKey(channelNumber: Long) = derivePrivateKey(channelKey(channelNumber), 0)
+  def channelKeyPath(channelNumber: Long, index: Long): List[Long] = KeyManager.nodeKeyPath ::: channelNumber :: index :: Nil
 
-  private def revocationSecret(channelNumber: Long) = derivePrivateKey(channelKey(channelNumber), 1)
 
-  private def paymentSecret(channelNumber: Long) = derivePrivateKey(channelKey(channelNumber), 2)
+  private def fundingPrivateKey(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 0))
 
-  private def delayedPaymentSecret(channelNumber: Long) = derivePrivateKey(channelKey(channelNumber), 3)
+  private def revocationSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 1))
 
-  private def htlcSecret(channelNumber: Long) = derivePrivateKey(channelKey(channelNumber), 4)
+  private def paymentSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 2))
 
-  private def shaSeed(channelNumber: Long) = Crypto.sha256(derivePrivateKey(channelKey(channelNumber), 5).privateKey.toBin)
+  private def delayedPaymentSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 3))
+
+  private def htlcSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 4))
+
+  private def shaSeed(channelNumber: Long) = Crypto.sha256(privateKeys.get(channelKeyPath(channelNumber, 5)).privateKey.toBin)
 
   def fundingPublicKey(channelNumber: Long) = publicKey(fundingPrivateKey(channelNumber))
 
@@ -78,40 +86,42 @@ class KeyManager(entropy: BinaryData) {
 
   /**
     *
-    * @param tx input transaction
+    * @param tx        input transaction
     * @param publicKey extended public key
     * @return a signature generated with the private key that matches the input
     *         extended public key
     */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey): BinaryData = {
-    val privateKey = DeterministicWallet.derivePrivateKey(master, publicKey.path)
+    val privateKey = privateKeys.get(publicKey.path)
     Transactions.sign(tx, privateKey.privateKey)
   }
 
   /**
     * This method is used to spend funds send to htlc keys/delayed keys
-    * @param tx input transaction
-    * @param publicKey extended public key
+    *
+    * @param tx          input transaction
+    * @param publicKey   extended public key
     * @param remotePoint remote point
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote point.
     */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remotePoint: Point): BinaryData = {
-    val privateKey = DeterministicWallet.derivePrivateKey(master, publicKey.path)
+    val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.derivePrivKey(privateKey.privateKey, remotePoint)
     Transactions.sign(tx, currentKey)
   }
 
   /**
     * Ths method is used to spend revoked transactions, with the corresponding revocation key
-    * @param tx input transaction
-    * @param publicKey extended public key
+    *
+    * @param tx           input transaction
+    * @param publicKey    extended public key
     * @param remoteSecret remote secret
     * @return a signature generated with a private key generated from the input keys's matching
     *         private key and the remote secret.
     */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): BinaryData = {
-    val privateKey = DeterministicWallet.derivePrivateKey(master, publicKey.path)
+    val privateKey = privateKeys.get(publicKey.path)
     val currentKey = Generators.revocationPrivKey(privateKey.privateKey, remoteSecret)
     Transactions.sign(tx, currentKey)
   }
