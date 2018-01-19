@@ -55,6 +55,12 @@ class KeyManager(entropy: BinaryData) {
     override def load(keyPath: KeyPath): ExtendedPrivateKey = derivePrivateKey(master, keyPath)
   })
 
+  val publicKeys: LoadingCache[KeyPath, ExtendedPublicKey] = CacheBuilder.newBuilder()
+    .maximumSize(6 * 200) // 6 keys per channel * 200 channels
+    .build[KeyPath, ExtendedPublicKey](new CacheLoader[KeyPath, ExtendedPublicKey] {
+    override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
+  })
+
   def channelKeyPath(channelNumber: Long, index: Long): List[Long] = KeyManager.nodeKeyPath ::: channelNumber :: index :: Nil
 
 
@@ -70,15 +76,15 @@ class KeyManager(entropy: BinaryData) {
 
   private def shaSeed(channelNumber: Long) = Crypto.sha256(privateKeys.get(channelKeyPath(channelNumber, 5)).privateKey.toBin)
 
-  def fundingPublicKey(channelNumber: Long) = publicKey(fundingPrivateKey(channelNumber))
+  def fundingPublicKey(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 0))
 
-  def revocationPoint(channelNumber: Long) = publicKey(revocationSecret(channelNumber))
+  def revocationPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 1))
 
-  def paymentPoint(channelNumber: Long) = publicKey(paymentSecret(channelNumber))
+  def paymentPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 2))
 
-  def delayedPaymentPoint(channelNumber: Long) = publicKey(delayedPaymentSecret(channelNumber))
+  def delayedPaymentPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 3))
 
-  def htlcPoint(channelNumber: Long) = publicKey(htlcSecret(channelNumber))
+  def htlcPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 4))
 
   def commitmentSecret(channelNumber: Long, index: Long) = Generators.perCommitSecret(shaSeed(channelNumber), index)
 
