@@ -468,10 +468,14 @@ object PaymentRequest {
     * @return a payment request
     */
   def read(input: String): PaymentRequest = {
-    // payment requests starting with "lightning:" should be accepted
-    val paymentString = input.replace("lightning:", "")
+    // payment requests starting with "lightning:" or "lightning://" should be accepted
+    val prString: String = input match {
+      case s if s.startsWith("lightning://") => s.replaceAll("lightning://", "")
+      case s if s.startsWith("lightning:") => s.replaceAll("lightning:", "")
+      case s => s
+    }
 
-    val (hrp, data) = Bech32.decode(paymentString)
+    val (hrp, data) = Bech32.decode(prString)
     val stream = data.foldLeft(BitStream.empty)(write5)
     require(stream.bitCount >= 65 * 8, "data is too short to contain a 65 bytes signature")
     val (stream1, sig) = stream.popBytes(65)
