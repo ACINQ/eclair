@@ -24,6 +24,7 @@ case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
 case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
 
 case class AckFulfillCmd(channelId: BinaryData, htlcId: Long)
+case class AckFailCmd(channelId: BinaryData, htlcId: Long)
 
 // @formatter:on
 
@@ -33,7 +34,7 @@ case class AckFulfillCmd(channelId: BinaryData, htlcId: Long)
   */
 class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorRef) extends Actor with ActorLogging {
 
-  import nodeParams.preimagesDb
+  import nodeParams.pendingRelayDb
 
   context.system.eventStream.subscribe(self, classOf[ChannelStateChanged])
   context.system.eventStream.subscribe(self, classOf[LocalChannelUpdate])
@@ -43,16 +44,20 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   def main(channelUpdates: Map[Long, ChannelUpdate]): Receive = {
 
-    case ChannelStateChanged(channel, _, _, _, nextState, d: HasCommitments) =>
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE, nextState, d: HasCommitments) =>
       import d.channelId
       // if channel is in a state where it can have pending htlcs, we send them the fulfills we know of
       nextState match {
         case NORMAL | SHUTDOWN | CLOSING =>
-          preimagesDb.listPreimages(channelId) match {
+          pendingRelayDb.listPendingRelay(channelId) match {
             case Nil => ()
-            case preimages =>
-              log.info(s"re-sending ${preimages.size} unacked fulfills to channel $channelId")
-              preimages.map(p => CMD_FULFILL_HTLC(p._2, p._3, commit = false)).foreach(channel ! _)
+            case msgs =>
+              log.info(s"re-sending ${msgs.size} unacked fulfills/fails to channel $channelId")
+              msgs.collect {
+                case (_, originHtlcId, fulfill: UpdateFulfillHtlc) => CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = false)
+                case (_, originHtlcId, fail: UpdateFailHtlc) => CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = false)
+                case (_, originHtlcId, fail: UpdateFailMalformedHtlc) => CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = false)
+              }.foreach(channel ! _)
               // better to sign once instead of after each fulfill
               channel ! CMD_SIGN
           }
@@ -157,11 +162,11 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       register ! Register.Forward(originChannelId, cmd)
       context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
       // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
-      preimagesDb.addPreimage(originChannelId, originHtlcId, fulfill.paymentPreimage)
+      pendingRelayDb.addPendingRelay(originChannelId, originHtlcId, fulfill)
 
     case AckFulfillCmd(channelId, htlcId) =>
       log.debug(s"fulfill acked for channelId=$channelId htlcId=$htlcId")
-      preimagesDb.removePreimage(channelId, htlcId)
+      pendingRelayDb.removePendingRelay(channelId, htlcId)
 
     case ForwardFail(fail, Local(Some(sender))) =>
       sender ! fail
@@ -169,6 +174,8 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
       val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
       register ! Register.Forward(originChannelId, cmd)
+      // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
+      pendingRelayDb.addPendingRelay(originChannelId, originHtlcId, fail)
 
     case ForwardFailMalformed(fail, Local(Some(sender))) =>
       sender ! fail
@@ -176,6 +183,12 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
     case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
       val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
       register ! Register.Forward(originChannelId, cmd)
+      // we also store the preimage in a db (note that this happens *after* forwarding the fulfill to the channel, so we don't add latency)
+      pendingRelayDb.addPendingRelay(originChannelId, originHtlcId, fail)
+
+    case AckFailCmd(channelId, htlcId) =>
+      log.debug(s"fail acked for channelId=$channelId htlcId=$htlcId")
+      pendingRelayDb.removePendingRelay(channelId, htlcId)
 
     case "ok" => () // ignoring responses from channels
   }
