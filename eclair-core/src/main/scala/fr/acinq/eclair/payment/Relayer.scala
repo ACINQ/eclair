@@ -44,7 +44,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   def main(channelUpdates: Map[Long, ChannelUpdate]): Receive = {
 
-    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE, nextState, d: HasCommitments) =>
+    case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, nextState, d: HasCommitments) =>
       import d.channelId
       // if channel is in a state where it can have pending htlcs, we send them the fulfills we know of
       nextState match {
