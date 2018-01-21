@@ -27,8 +27,8 @@ class Textui(kit: Kit) extends Logging {
   import com.googlecode.lanterna.gui2._
   import com.googlecode.lanterna.screen.TerminalScreen
   import com.googlecode.lanterna.terminal.DefaultTerminalFactory
-  // Setup terminal and screen layers// Setup terminal and screen layers
 
+  // Setup terminal and screen layers
   val terminal = new DefaultTerminalFactory().createTerminal
   val screen = new TerminalScreen(terminal)
   screen.startScreen()
