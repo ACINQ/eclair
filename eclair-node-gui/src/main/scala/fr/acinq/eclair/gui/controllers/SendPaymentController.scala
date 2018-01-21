@@ -66,7 +66,11 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
     */
   private def readPaymentRequest(): Try[PaymentRequest] = {
     clearErrors()
-    val prString: String = paymentRequest.getText.trim
+    val prString: String = paymentRequest.getText.trim match {
+      case s if s.startsWith("lightning://") => s.replaceAll("lightning://", "")
+      case s if s.startsWith("lightning:") => s.replaceAll("lightning:", "")
+      case s => s
+    }
     Try(PaymentRequest.read(prString))
   }
 
