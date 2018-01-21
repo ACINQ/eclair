@@ -80,8 +80,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       Sphinx.parseErrorPacket(fail.reason, sharedSecrets) match {
         case Failure(t) =>
           log.warning(s"cannot parse returned error: ${t.getMessage}")
-          // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to and the destination node
-          val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(1)
+          // in that case we don't know which node is sending garbage, let's try to blacklist all nodes except the one we are directly connected to, the destination node and their peer
+          val blacklist = hops.map(_.nextNodeId).drop(1).dropRight(2)
           log.warning(s"blacklisting intermediate nodes=${blacklist.mkString(",")}")
           router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes ++ blacklist, ignoreChannels)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ UnreadableRemoteFailure(hops))
