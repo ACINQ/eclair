@@ -107,6 +107,8 @@
                         <arg>-language:implicitConversions</arg>
                         <arg>-Xfatal-warnings</arg>
                         <arg>-unchecked</arg>
+                        <arg>-Xmax-classfile-name</arg>
+                        <arg>140</arg>
                     </args>
                     <scalaCompatVersion>${scala.version.short}</scalaCompatVersion>
                 </configuration>
