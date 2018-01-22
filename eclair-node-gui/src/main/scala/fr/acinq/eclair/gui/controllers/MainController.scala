@@ -342,8 +342,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
           nodeInfoStage.show()
         }
       })
-      contextMenu.getItems.add(nodeInfoAction)
       contextMenu.getItems.add(ContextMenuUtils.buildCopyMenuItem(CopyAction("Copy URI", nodeURI)))
+      contextMenu.getItems.add(nodeInfoAction)
     })
   }
 
