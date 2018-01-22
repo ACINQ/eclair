@@ -64,7 +64,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case _ => ()
       }
 
-    case _: ChannelStateChanged => ()
+    case s: ChannelStateChanged => log.info(s"unhandled state change ${s.previousState} -> ${s.currentState}")
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate) =>
       log.debug(s"updating channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString} remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
@@ -139,10 +139,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.warning(s"couldn't resolve downstream channel ${shortChannelId.toHexString}, failing htlc #${add.id}")
       register ! Register.Forward(add.channelId, CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true))
 
-    case Status.Failure(AddHtlcFailed(_, error, Local(Some(sender)), _)) =>
+    case Status.Failure(AddHtlcFailed(_, _, error, Local(Some(sender)), _)) =>
       sender ! Status.Failure(error)
 
-    case Status.Failure(AddHtlcFailed(_, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt)) =>
+    case Status.Failure(AddHtlcFailed(_, paymentHash, error, Relayed(originChannelId, originHtlcId, _, _), channelUpdate_opt)) =>
       val failure = (error, channelUpdate_opt) match {
         case (_: InsufficientFunds, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
         case (_: TooManyAcceptedHtlcs, Some(channelUpdate)) => TemporaryChannelFailure(channelUpdate)
@@ -152,6 +152,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
         case _ => TemporaryNodeFailure
       }
       val cmd = CMD_FAIL_HTLC(originHtlcId, Right(failure), commit = true)
+      log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmd.reason}")
       register ! Register.Forward(originChannelId, cmd)
 
     case ForwardFulfill(fulfill, Local(Some(sender))) =>

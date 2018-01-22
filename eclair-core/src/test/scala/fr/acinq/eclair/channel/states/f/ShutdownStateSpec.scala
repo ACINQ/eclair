@@ -85,7 +85,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
       sender.send(alice, add)
       val error = ChannelUnavailable(channelId(alice))
-      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), error, Local(Some(sender.ref)), None)))
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), None)))
       alice2bob.expectNoMsg(200 millis)
     }
   }
