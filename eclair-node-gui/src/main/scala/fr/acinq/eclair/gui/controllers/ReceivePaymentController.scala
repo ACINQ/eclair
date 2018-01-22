@@ -1,7 +1,6 @@
 package fr.acinq.eclair.gui.controllers
 
 import javafx.application.Platform
-import javafx.collections.FXCollections
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
@@ -10,8 +9,8 @@ import javafx.scene.layout.GridPane
 import javafx.stage.Stage
 
 import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, GUIValidators, QRCodeUtils}
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.gui.utils._
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
@@ -35,8 +34,8 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML var paymentRequestQRCode: ImageView = _
 
   @FXML def initialize = {
-    unit.setItems(FXCollections.observableArrayList(CoinUtils.MILLI_SATOSHI_LABEL, CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL))
-    unit.setValue(CoinUtils.MILLI_BTC_LABEL)
+    unit.setItems(CoinUtils.FX_UNITS_ARRAY)
+    unit.setValue(FxApp.getUnit.label)
     resultBox.managedProperty().bind(resultBox.visibleProperty())
     stage.sizeToScene()
   }

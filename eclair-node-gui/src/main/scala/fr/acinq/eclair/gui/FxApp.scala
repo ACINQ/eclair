@@ -15,13 +15,13 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
+import fr.acinq.eclair.gui.utils.{BtcUnit, CoinUnit, CoinUtils}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 
 import scala.concurrent.Promise
-import scala.util.{Failure, Success}
-
+import scala.util.{Failure, Success, Try}
 import scala.concurrent.ExecutionContext.Implicits.global
 
 
@@ -66,6 +66,14 @@ class FxApp extends Application with Logging {
           val datadir = new File(getParameters.getUnnamed.get(0))
           implicit val system = ActorSystem("system")
           val setup = new Setup(datadir)
+
+          val unitConf = setup.config.getString("gui.unit")
+          FxApp.unit = Try(CoinUtils.getUnitFromString(unitConf, accept_msat = false)) match {
+            case Failure(_) => logger.warn(s"$unitConf is not a valid gui unit, must be sat, mbtc or btc. Defaulting to btc.")
+              BtcUnit
+            case Success(u) => u
+          }
+
           val guiUpdater = setup.system.actorOf(SimpleSupervisor.props(Props(classOf[GUIUpdater], controller), "gui-updater", SupervisorStrategy.Resume))
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
@@ -135,4 +143,9 @@ class FxApp extends Application with Logging {
       }
     })
   }
+}
+
+object FxApp {
+  private var unit: CoinUnit = BtcUnit
+  def getUnit = FxApp.unit
 }

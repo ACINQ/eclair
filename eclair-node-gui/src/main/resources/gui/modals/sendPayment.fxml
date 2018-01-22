@@ -46,7 +46,7 @@
                   styleClass="noteditable, description-text" text="N/A"
                   prefHeight="80.0" maxHeight="80.0" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
 
-        <Label text="Amount (msat)" GridPane.halignment="RIGHT" GridPane.valignment="BASELINE" GridPane.rowIndex="6"/>
+        <Label fx:id="amountFieldLabel" text="Amount" GridPane.halignment="RIGHT" GridPane.valignment="BASELINE" GridPane.rowIndex="6"/>
         <VBox GridPane.columnIndex="1" GridPane.rowIndex="6">
             <children>
                 <TextField fx:id="amountField"/>
