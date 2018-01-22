@@ -94,7 +94,7 @@ object CoinUtils extends Logging {
     case u if accept_msat && (u == MSatUnit.code || u == MSatUnit.label.toLowerCase()) => MSatUnit
     case u if u == SatUnit.code || u == SatUnit.label.toLowerCase() => SatUnit
     case u if u == MBtcUnit.code || u == MBtcUnit.label.toLowerCase() => MBtcUnit
-    case u if u == BtcUnit.code.toLowerCase() || u == BtcUnit.label => BtcUnit
+    case u if u == BtcUnit.code || u == BtcUnit.label.toLowerCase() => BtcUnit
     case u => throw new IllegalArgumentException(s"unhandled unit=$u")
   }
 
