@@ -34,13 +34,13 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     *
     * @return the payment hash
     */
-  def paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHashTag => p }.get.hash
+  lazy val paymentHash = tags.collectFirst { case p: PaymentRequest.PaymentHashTag => p }.get.hash
 
   /**
     *
     * @return the description of the payment, or its hash
     */
-  def description: Either[String, BinaryData] = tags.collectFirst {
+  lazy val description: Either[String, BinaryData] = tags.collectFirst {
     case PaymentRequest.DescriptionTag(d) => Left(d)
     case PaymentRequest.DescriptionHashTag(h) => Right(h)
   }.get
@@ -58,13 +58,13 @@ case class PaymentRequest(prefix: String, amount: Option[MilliSatoshi], timestam
     case PaymentRequest.FallbackAddressTag(version, hash) if prefix == "lntb" => Bech32.encodeWitnessAddress("tb", version, hash)
   }
 
-  def routingInfo(): Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
+  lazy val routingInfo: Seq[Seq[ExtraHop]] = tags.collect { case t: RoutingInfoTag => t.path }
 
-  def expiry: Option[Long] = tags.collectFirst {
+  lazy val expiry: Option[Long] = tags.collectFirst {
     case PaymentRequest.ExpiryTag(seconds) => seconds
   }
 
-  def minFinalCltvExpiry: Option[Long] = tags.collectFirst {
+  lazy val minFinalCltvExpiry: Option[Long] = tags.collectFirst {
     case PaymentRequest.MinFinalCltvExpiryTag(expiry) => expiry
   }
 
@@ -122,7 +122,7 @@ object PaymentRequest {
       tags = List(
         Some(PaymentHashTag(paymentHash)),
         Some(DescriptionTag(description)),
-        expirySeconds.map(ExpiryTag(_))
+        expirySeconds.map(ExpiryTag)
       ).flatten ++ extraHops.map(RoutingInfoTag(_)),
       signature = BinaryData.empty)
       .sign(privateKey)

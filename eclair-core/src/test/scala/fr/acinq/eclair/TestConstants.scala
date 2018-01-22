@@ -62,7 +62,9 @@ object TestConstants {
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
-      watcherType = BITCOIND)
+      watcherType = BITCOIND,
+      paymentRequestExpiry = 1 hour,
+      maxPendingPaymentRequests = 10000000)
 
     def id = nodeParams.privateKey.publicKey
 
@@ -116,7 +118,9 @@ object TestConstants {
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
-      watcherType = BITCOIND)
+      watcherType = BITCOIND,
+      paymentRequestExpiry = 1 hour,
+      maxPendingPaymentRequests = 10000000)
 
     def id = nodeParams.privateKey.publicKey
 
