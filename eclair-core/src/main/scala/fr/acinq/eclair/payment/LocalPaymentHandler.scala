@@ -29,8 +29,11 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
         case e@(_, (_, pr)) if pr.timestamp + pr.expiry.get > currentSeconds => e // clean up expired requests
       }))
 
-    case ReceivePayment(amount_opt, desc) if h2r.size < nodeParams.maxPendingRequests =>
+    case ReceivePayment(amount_opt, desc) =>
       Try {
+        if (h2r.size > nodeParams.maxPendingPaymentRequests) {
+          throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
+        }
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
         (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(nodeParams.paymentRequestExpiry.toSeconds)))
