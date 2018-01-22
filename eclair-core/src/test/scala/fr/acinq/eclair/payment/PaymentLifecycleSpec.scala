@@ -56,11 +56,22 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     val WaitingForComplete(_, _, cmd1, Nil, _, _, _, hops) = paymentFSM.stateData
 
     relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
-    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, "42" * 32))
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, "42" * 32)) // unparseable message
 
     // then the payment lifecycle will ask for a new route excluding all intermediate nodes
     routerForwarder.expectMsg(RouteRequest(a, d, ignoreNodes = Set(c), ignoreChannels = Set.empty))
-    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
+
+    // let's simulate a response by the router with another route
+    sender.send(paymentFSM, RouteResponse(hops, Set(c), Set.empty))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd2, _, _, _, _, _) = paymentFSM.stateData
+    // and reply a 2nd time with an unparseable failure
+    relayer.expectMsg(ForwardShortId(channelId_ab, cmd2))
+    sender.send(paymentFSM, UpdateFailHtlc("00" * 32, 0, "42" * 32)) // unparseable message
+
+    // we allow 2 tries, so we send a 2nd request to the router
+    sender.expectMsg(PaymentFailed(request.paymentHash, UnreadableRemoteFailure(hops) :: UnreadableRemoteFailure(hops) :: Nil))
+
   }
 
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { case (router, _) =>
