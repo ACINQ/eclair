@@ -99,6 +99,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var paymentSentAmountColumn: TableColumn[PaymentSentRecord, Number] = _
   @FXML var paymentSentFeesColumn: TableColumn[PaymentSentRecord, Number] = _
   @FXML var paymentSentHashColumn: TableColumn[PaymentSentRecord, String] = _
+  @FXML var paymentSentPreimageColumn: TableColumn[PaymentSentRecord, String] = _
   @FXML var paymentSentDateColumn: TableColumn[PaymentSentRecord, String] = _
 
   // payment received table
@@ -270,8 +271,11 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       def call(record: TableColumn[PaymentSentRecord, Number]) = buildMoneyTableCell
     })
     paymentSentHashColumn.setCellValueFactory(paymentHashCellValueFactory)
+    paymentSentPreimageColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, String], ObservableValue[String]]() {
+      def call(p: CellDataFeatures[PaymentSentRecord, String]) = new SimpleStringProperty(p.getValue.event.paymentPreimage.toString())
+    })
     paymentSentDateColumn.setCellValueFactory(paymentDateCellValueFactory)
-    paymentSentTable.setRowFactory(paymentRowFactory)
+    paymentSentTable.setRowFactory(paymentSentRowFactory)
 
     // init payment received
     paymentReceivedTable.setItems(paymentReceivedList)
@@ -369,6 +373,30 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
   private def paymentDateCellValueFactory[T <: Record] = new Callback[CellDataFeatures[T, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[T, String]) = new SimpleStringProperty(p.getValue.date.format(PAYMENT_DATE_FORMAT))
+  }
+
+  private def paymentSentRowFactory = new Callback[TableView[PaymentSentRecord], TableRow[PaymentSentRecord]]() {
+    override def call(table: TableView[PaymentSentRecord]): TableRow[PaymentSentRecord] = {
+      val row = new TableRow[PaymentSentRecord]
+      val rowContextMenu = new ContextMenu
+      val copyHash = new MenuItem("Copy Payment Hash")
+      copyHash.setOnAction(new EventHandler[ActionEvent] {
+        override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
+          case Some(p) => ContextMenuUtils.copyToClipboard(p.event.paymentHash.toString)
+          case None =>
+        }
+      })
+      val copyPreimage = new MenuItem("Copy Payment Preimage")
+      copyPreimage.setOnAction(new EventHandler[ActionEvent] {
+        override def handle(event: ActionEvent): Unit = Option(row.getItem) match {
+          case Some(p) => ContextMenuUtils.copyToClipboard(p.event.paymentPreimage.toString)
+          case None =>
+        }
+      })
+      rowContextMenu.getItems.addAll(copyHash, copyPreimage)
+      row.setContextMenu(rowContextMenu)
+      row
+    }
   }
 
   private def paymentRowFactory[T <: Record] = new Callback[TableView[T], TableRow[T]]() {
