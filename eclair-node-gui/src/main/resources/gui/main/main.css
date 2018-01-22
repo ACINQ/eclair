@@ -50,10 +50,10 @@
 }
 
 .channel .grid {
-	-fx-padding: .5em;
-    -fx-vgap: .5em;
-    -fx-hgap: .25em;
-    -fx-font-size: 12px;
+    -fx-padding: 5px;
+    -fx-vgap: 5px;
+    -fx-hgap: 5px;
+    -fx-font-size: 11px;
 }
 
 .channel-separator {

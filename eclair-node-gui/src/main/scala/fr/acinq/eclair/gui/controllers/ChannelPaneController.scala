@@ -17,6 +17,7 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
 
   @FXML var root: VBox = _
   @FXML var channelId: TextField = _
+  @FXML var txId: TextField = _
   @FXML var balanceBar: ProgressBar = _
   @FXML var amountUs: TextField = _
   @FXML var nodeId: TextField = _
@@ -32,7 +33,8 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
       override def run = {
         contextMenu = ContextMenuUtils.buildCopyContext(List(
           new CopyAction("Copy Channel Id", channelId.getText),
-          new CopyAction("Copy Peer Pubkey", theirNodeIdValue)
+          new CopyAction("Copy Peer Pubkey", theirNodeIdValue),
+          new CopyAction("Copy Tx Id", txId.getText())
         ))
         contextMenu.getStyleClass.add("context-channel")
         channelId.setContextMenu(contextMenu)

@@ -35,8 +35,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     val channelPaneController = new ChannelPaneController(s"$remoteNodeId")
     loader.setController(channelPaneController)
     val root = loader.load[VBox]
-    channelPaneController.nodeId.setText(s"$remoteNodeId")
-    channelPaneController.channelId.setText(s"$temporaryChannelId")
+    channelPaneController.nodeId.setText(remoteNodeId.toString())
+    channelPaneController.channelId.setText(temporaryChannelId.toString())
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
     channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
       override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
@@ -71,7 +71,9 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, channelId)
       currentData match {
-        case d: HasCommitments => updateBalance(channelPaneController, d.commitments)
+        case d: HasCommitments =>
+          updateBalance(channelPaneController, d.commitments)
+          channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toString())
         case _ => {}
       }
       Platform.runLater(new Runnable() {
