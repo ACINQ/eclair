@@ -61,7 +61,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
 
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     val sendPayment = req.minFinalCltvExpiry match {
-      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo())
+      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo(), maxAttempts = 1)
       case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo(), minFinalCltvExpiry = minFinalCltvExpiry)
     }
     (for {
