@@ -95,6 +95,11 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(channel)
       Platform.runLater(new Runnable() {
         override def run = {
+          if (currentState == CLOSING || currentState == CLOSED) {
+            channelPaneController.close.setVisible(false)
+          } else {
+            channelPaneController.close.setVisible(true)
+          }
           channelPaneController.close.setText(if (OFFLINE == currentState) "Force close" else "Close")
           channelPaneController.state.setText(currentState.toString)
         }
