@@ -1,6 +1,6 @@
 package fr.acinq.eclair.gui.utils
 
-import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -58,6 +58,35 @@ class CoinUtilsSpec  extends FunSuite {
     intercept[IllegalArgumentException](CoinUtils.convertStringAmountToMsat("-1", MBtcUnit.code))
   }
 
+  test("Convert any BtcAmount to a raw BigDecimal in a given unit") {
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(-1234), BtcUnit) == BigDecimal(-0.00000001234))
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(0), BtcUnit) == BigDecimal(0))
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(123), BtcUnit) == BigDecimal(0.00000000123))
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(123), MBtcUnit) == BigDecimal(0.00000123))
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(123), SatUnit) == BigDecimal(0.123))
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(123), MSatUnit) == BigDecimal(123))
+    assert(CoinUtils.rawAmountInUnit(MilliSatoshi(12345678), BtcUnit) == BigDecimal(0.00012345678))
+
+    assert(CoinUtils.rawAmountInUnit(Satoshi(123), BtcUnit) == BigDecimal(0.00000123))
+    assert(CoinUtils.rawAmountInUnit(Satoshi(123), MBtcUnit) == BigDecimal(0.00123))
+    assert(CoinUtils.rawAmountInUnit(Satoshi(123), SatUnit) == BigDecimal(123))
+    assert(CoinUtils.rawAmountInUnit(Satoshi(123), MSatUnit) == BigDecimal(123000))
+
+    assert(CoinUtils.rawAmountInUnit(MilliBtc(123.456), BtcUnit) == BigDecimal(0.123456))
+    assert(CoinUtils.rawAmountInUnit(MilliBtc(123.456), MBtcUnit) == BigDecimal(123.456))
+    assert(CoinUtils.rawAmountInUnit(MilliBtc(123.456789), SatUnit) == BigDecimal(12345678.9))
+    assert(CoinUtils.rawAmountInUnit(MilliBtc(123.45678987), MSatUnit) == BigDecimal(12345678987L))
+
+    assert(CoinUtils.rawAmountInUnit(Btc(123.456), BtcUnit) == BigDecimal(123.456))
+    assert(CoinUtils.rawAmountInUnit(Btc(123.45678987654), MBtcUnit) == BigDecimal(123456.78987654))
+    assert(CoinUtils.rawAmountInUnit(Btc(1.22233333444), SatUnit) == BigDecimal(122233333.444))
+    assert(CoinUtils.rawAmountInUnit(Btc(0.00011111222), MSatUnit) == BigDecimal(11111222L))
+  }
+
+  test("Format any BtcAmount to a String with a given unit") {
+    assert(CoinUtils.formatAmountInUnit(MilliSatoshi(123456789), BtcUnit, withUnit = true) == "0.00123456789 BTC"
+    || CoinUtils.formatAmountInUnit(MilliSatoshi(123456789), BtcUnit, withUnit = true) == "0,00123456789 BTC")
+  }
 }
 
 

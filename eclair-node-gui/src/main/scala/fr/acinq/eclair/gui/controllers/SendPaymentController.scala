@@ -35,7 +35,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML def initialize(): Unit = {
 
     // set the user preferred unit
-    amountFieldLabel.setText(s"Amount (${FxApp.getUnit.label})")
+    amountFieldLabel.setText(s"Amount (${FxApp.getUnit.shortLabel})")
 
     // ENTER or TAB events in the paymentRequest textarea instead fire or focus sendButton
     paymentRequest.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent] {
@@ -81,7 +81,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
   }
 
   private def setUIFields(pr: PaymentRequest) = {
-    pr.amount.foreach(amount => amountField.setText(CoinUtils.rawAmountInUserUnit(amount).bigDecimal.toPlainString))
+    pr.amount.foreach(amount => amountField.setText(CoinUtils.rawAmountInUnit(amount, FxApp.getUnit).bigDecimal.toPlainString))
     pr.description match {
       case Left(s) => descriptionField.setText(s)
       case Right(hash) =>

@@ -32,7 +32,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var button: Button = _
 
   @FXML def initialize = {
-    unit.setItems(CoinUtils.FX_UNITS_ARRAY)
+    unit.setItems(CoinUtils.FX_UNITS_ARRAY_NO_MSAT)
     unit.setValue(FxApp.getUnit.label)
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {

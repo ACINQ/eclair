@@ -10,7 +10,7 @@
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.RowConstraints?>
 
-<GridPane fx:id="rootPane" maxWidth="300.0" minWidth="300.0" onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit" prefWidth="300.0" xmlns="http://javafx.com/javafx/8.0.112" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane fx:id="rootPane" maxWidth="300.0" minWidth="300.0" onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit" prefWidth="300.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="25.0" prefWidth="25.0" />
         <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="220.0" />

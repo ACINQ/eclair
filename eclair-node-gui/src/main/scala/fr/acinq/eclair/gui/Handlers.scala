@@ -70,7 +70,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     } yield res)
       .onComplete {
         case Success(_: PaymentSucceeded) =>
-          val message = CoinUtils.formatAmountInUserUnit(MilliSatoshi(amountMsat), withUnit = true)
+          val message = CoinUtils.formatAmountInUnit(MilliSatoshi(amountMsat), FxApp.getUnit, withUnit = true)
           notification("Payment Sent", message, NOTIFICATION_SUCCESS)
         case Success(PaymentFailed(_, failures)) =>
           val message = s"${

@@ -25,11 +25,12 @@ import javafx.stage._
 import javafx.util.{Callback, Duration}
 
 import com.google.common.net.HostAndPort
+import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
 import fr.acinq.eclair.Setup
-import fr.acinq.eclair.gui.Handlers
+import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.gui.stages._
-import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
@@ -96,8 +97,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   val paymentSentList = FXCollections.observableArrayList[PaymentSentRecord]()
   @FXML var paymentSentTab: Tab = _
   @FXML var paymentSentTable: TableView[PaymentSentRecord] = _
-  @FXML var paymentSentAmountColumn: TableColumn[PaymentSentRecord, Number] = _
-  @FXML var paymentSentFeesColumn: TableColumn[PaymentSentRecord, Number] = _
+  @FXML var paymentSentAmountColumn: TableColumn[PaymentSentRecord, String] = _
+  @FXML var paymentSentFeesColumn: TableColumn[PaymentSentRecord, String] = _
   @FXML var paymentSentHashColumn: TableColumn[PaymentSentRecord, String] = _
   @FXML var paymentSentDateColumn: TableColumn[PaymentSentRecord, String] = _
 
@@ -105,7 +106,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   val paymentReceivedList = FXCollections.observableArrayList[PaymentReceivedRecord]()
   @FXML var paymentReceivedTab: Tab = _
   @FXML var paymentReceivedTable: TableView[PaymentReceivedRecord] = _
-  @FXML var paymentReceivedAmountColumn: TableColumn[PaymentReceivedRecord, Number] = _
+  @FXML var paymentReceivedAmountColumn: TableColumn[PaymentReceivedRecord, String] = _
   @FXML var paymentReceivedHashColumn: TableColumn[PaymentReceivedRecord, String] = _
   @FXML var paymentReceivedDateColumn: TableColumn[PaymentReceivedRecord, String] = _
 
@@ -113,8 +114,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   val paymentRelayedList = FXCollections.observableArrayList[PaymentRelayedRecord]()
   @FXML var paymentRelayedTab: Tab = _
   @FXML var paymentRelayedTable: TableView[PaymentRelayedRecord] = _
-  @FXML var paymentRelayedAmountColumn: TableColumn[PaymentRelayedRecord, Number] = _
-  @FXML var paymentRelayedFeesColumn: TableColumn[PaymentRelayedRecord, Number] = _
+  @FXML var paymentRelayedAmountColumn: TableColumn[PaymentRelayedRecord, String] = _
+  @FXML var paymentRelayedFeesColumn: TableColumn[PaymentRelayedRecord, String] = _
   @FXML var paymentRelayedHashColumn: TableColumn[PaymentRelayedRecord, String] = _
   @FXML var paymentRelayedDateColumn: TableColumn[PaymentRelayedRecord, String] = _
 
@@ -257,17 +258,11 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     paymentSentList.addListener(new ListChangeListener[PaymentSentRecord] {
       override def onChanged(c: Change[_ <: PaymentSentRecord]) = updateTabHeader(paymentSentTab, "Sent", paymentSentList)
     })
-    paymentSentAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, Number], ObservableValue[Number]]() {
-      def call(record: CellDataFeatures[PaymentSentRecord, Number]) = new SimpleLongProperty(record.getValue.event.amount.amount)
+    paymentSentAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, String], ObservableValue[String]]() {
+      def call(record: CellDataFeatures[PaymentSentRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(record.getValue.event.amount, FxApp.getUnit, withUnit = true))
     })
-    paymentSentAmountColumn.setCellFactory(new Callback[TableColumn[PaymentSentRecord, Number], TableCell[PaymentSentRecord, Number]]() {
-      def call(record: TableColumn[PaymentSentRecord, Number]) = buildMoneyTableCell
-    })
-    paymentSentFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, Number], ObservableValue[Number]]() {
-      def call(record: CellDataFeatures[PaymentSentRecord, Number]) = new SimpleLongProperty(record.getValue.event.feesPaid.amount)
-    })
-    paymentSentFeesColumn.setCellFactory(new Callback[TableColumn[PaymentSentRecord, Number], TableCell[PaymentSentRecord, Number]]() {
-      def call(record: TableColumn[PaymentSentRecord, Number]) = buildMoneyTableCell
+    paymentSentFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentSentRecord, String], ObservableValue[String]]() {
+      def call(record: CellDataFeatures[PaymentSentRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(record.getValue.event.feesPaid, FxApp.getUnit, withUnit = true))
     })
     paymentSentHashColumn.setCellValueFactory(paymentHashCellValueFactory)
     paymentSentDateColumn.setCellValueFactory(paymentDateCellValueFactory)
@@ -278,11 +273,8 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     paymentReceivedList.addListener(new ListChangeListener[PaymentReceivedRecord] {
       override def onChanged(c: Change[_ <: PaymentReceivedRecord]) = updateTabHeader(paymentReceivedTab, "Received", paymentReceivedList)
     })
-    paymentReceivedAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentReceivedRecord, Number], ObservableValue[Number]]() {
-      def call(p: CellDataFeatures[PaymentReceivedRecord, Number]) = new SimpleLongProperty(p.getValue.event.amount.amount)
-    })
-    paymentReceivedAmountColumn.setCellFactory(new Callback[TableColumn[PaymentReceivedRecord, Number], TableCell[PaymentReceivedRecord, Number]]() {
-      def call(pn: TableColumn[PaymentReceivedRecord, Number]) = buildMoneyTableCell
+    paymentReceivedAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentReceivedRecord, String], ObservableValue[String]]() {
+      def call(p: CellDataFeatures[PaymentReceivedRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(p.getValue.event.amount, FxApp.getUnit, withUnit = true))
     })
     paymentReceivedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
     paymentReceivedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
@@ -293,17 +285,12 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     paymentRelayedList.addListener(new ListChangeListener[PaymentRelayedRecord] {
       override def onChanged(c: Change[_ <: PaymentRelayedRecord]) = updateTabHeader(paymentRelayedTab, "Relayed", paymentRelayedList)
     })
-    paymentRelayedAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayedRecord, Number], ObservableValue[Number]]() {
-      def call(p: CellDataFeatures[PaymentRelayedRecord, Number]) = new SimpleLongProperty(p.getValue.event.amountIn.amount)
+    paymentRelayedAmountColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayedRecord, String], ObservableValue[String]]() {
+      def call(p: CellDataFeatures[PaymentRelayedRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(p.getValue.event.amountIn, FxApp.getUnit, withUnit = true))
     })
-    paymentRelayedAmountColumn.setCellFactory(new Callback[TableColumn[PaymentRelayedRecord, Number], TableCell[PaymentRelayedRecord, Number]]() {
-      def call(pn: TableColumn[PaymentRelayedRecord, Number]) = buildMoneyTableCell
-    })
-    paymentRelayedFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayedRecord, Number], ObservableValue[Number]]() {
-      def call(p: CellDataFeatures[PaymentRelayedRecord, Number]) = new SimpleLongProperty(p.getValue.event.amountIn.amount - p.getValue.event.amountOut.amount)
-    })
-    paymentRelayedFeesColumn.setCellFactory(new Callback[TableColumn[PaymentRelayedRecord, Number], TableCell[PaymentRelayedRecord, Number]]() {
-      def call(pn: TableColumn[PaymentRelayedRecord, Number]) = buildMoneyTableCell
+    paymentRelayedFeesColumn.setCellValueFactory(new Callback[CellDataFeatures[PaymentRelayedRecord, String], ObservableValue[String]]() {
+      def call(p: CellDataFeatures[PaymentRelayedRecord, String]) = new SimpleStringProperty(CoinUtils.formatAmountInUnit(
+        MilliSatoshi(p.getValue.event.amountIn.amount - p.getValue.event.amountOut.amount), FxApp.getUnit, withUnit = true))
     })
     paymentRelayedHashColumn.setCellValueFactory(paymentHashCellValueFactory)
     paymentRelayedDateColumn.setCellValueFactory(paymentDateCellValueFactory)
@@ -353,18 +340,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
   private def paymentHashCellValueFactory[T <: Record] = new Callback[CellDataFeatures[T, String], ObservableValue[String]]() {
     def call(p: CellDataFeatures[T, String]) = new SimpleStringProperty(p.getValue.event.paymentHash.toString)
-  }
-
-  private def buildMoneyTableCell[T <: Record] = new TableCell[T, Number]() {
-    override def updateItem(item: Number, empty: Boolean): Unit = {
-      super.updateItem(item, empty)
-      if (empty || item == null) {
-        setText(null)
-        setGraphic(null)
-      } else {
-        setText(moneyFormatter.format(item))
-      }
-    }
   }
 
   private def paymentDateCellValueFactory[T <: Record] = new Callback[CellDataFeatures[T, String], ObservableValue[String]]() {
