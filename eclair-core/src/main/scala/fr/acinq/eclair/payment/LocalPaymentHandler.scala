@@ -33,7 +33,7 @@ class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext 
       Try {
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
-        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, None, Some(nodeParams.paymentRequestExpiry)))
+        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(nodeParams.paymentRequestExpiry.toSeconds)))
       } match {
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount_opt")
