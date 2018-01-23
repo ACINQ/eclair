@@ -94,7 +94,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
     handlers.receive(amount_opt, description.getText) onComplete {
       case Success(s) =>
         val pr = if (prependPrefixCheckbox.isSelected) s"lightning:$s" else s
-        Try(QRCodeUtils.createQRCode(pr, margin = -1)) match {
+        Try(QRCodeUtils.createQRCode(pr.toUpperCase, margin = -1)) match {
           case Success(wImage) => displayPaymentRequestQR(pr, Some(wImage))
           case Failure(t) => displayPaymentRequestQR(pr, None)
         }
