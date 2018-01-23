@@ -1,7 +1,6 @@
 package fr.acinq.eclair.gui.controllers
 
 import javafx.application.Platform
-import javafx.collections.FXCollections
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
@@ -10,8 +9,8 @@ import javafx.scene.layout.GridPane
 import javafx.stage.Stage
 
 import fr.acinq.bitcoin.MilliSatoshi
-import fr.acinq.eclair.gui.Handlers
-import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, GUIValidators, QRCodeUtils}
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.gui.utils._
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
@@ -35,8 +34,8 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML var paymentRequestQRCode: ImageView = _
 
   @FXML def initialize = {
-    unit.setItems(FXCollections.observableArrayList(CoinUtils.MILLI_SATOSHI_LABEL, CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL))
-    unit.setValue(CoinUtils.MILLI_BTC_LABEL)
+    unit.setItems(CoinUtils.FX_UNITS_ARRAY)
+    unit.setValue(FxApp.getUnit.label)
     resultBox.managedProperty().bind(resultBox.visibleProperty())
     stage.sizeToScene()
   }
@@ -58,7 +57,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
           case Success(amountMsat) if amountMsat.amount < 0 =>
             handleError("Amount must be greater than 0")
           case Success(amountMsat) if amountMsat.amount >= PaymentRequest.MAX_AMOUNT.amount =>
-            handleError(f"Amount must be less than ${PaymentRequest.MAX_AMOUNT.amount}%,d msat (~${PaymentRequest.MAX_AMOUNT.amount / 1e11}%.3f BTC)")
+            handleError(s"Amount must be less than ${CoinUtils.formatAmountInUnit(PaymentRequest.MAX_AMOUNT, FxApp.getUnit, withUnit = true)}")
           case Failure(_) =>
             handleError("Amount is incorrect")
           case Success(amountMsat) => createPaymentRequest(Some(amountMsat))
@@ -95,7 +94,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
     handlers.receive(amount_opt, description.getText) onComplete {
       case Success(s) =>
         val pr = if (prependPrefixCheckbox.isSelected) s"lightning:$s" else s
-        Try(QRCodeUtils.createQRCode(pr, margin = -1)) match {
+        Try(QRCodeUtils.createQRCode(pr.toUpperCase, margin = -1)) match {
           case Success(wImage) => displayPaymentRequestQR(pr, Some(wImage))
           case Failure(t) => displayPaymentRequestQR(pr, None)
         }

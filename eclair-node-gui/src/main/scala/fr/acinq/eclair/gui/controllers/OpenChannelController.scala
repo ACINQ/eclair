@@ -2,14 +2,14 @@ package fr.acinq.eclair.gui.controllers
 
 import java.lang.Boolean
 import javafx.beans.value.{ChangeListener, ObservableValue}
-import javafx.collections.FXCollections
 import javafx.event.ActionEvent
 import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
-import fr.acinq.eclair.gui.Handlers
+import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.gui.utils.{CoinUtils, GUIValidators}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import grizzled.slf4j.Logging
@@ -33,14 +33,35 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var button: Button = _
 
   @FXML def initialize = {
-    unit.setItems(FXCollections.observableArrayList(CoinUtils.SATOSHI_LABEL, CoinUtils.MILLI_BTC_LABEL, CoinUtils.BTC_LABEL))
-    unit.setValue(CoinUtils.MILLI_BTC_LABEL)
+    unit.setItems(CoinUtils.FX_UNITS_ARRAY_NO_MSAT)
+    unit.setValue(FxApp.getUnit.label)
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {
       override def changed(observable: ObservableValue[_ <: Boolean], oldValue: Boolean, newValue: Boolean) = {
         fundingSatoshis.setDisable(newValue)
         pushMsatField.setDisable(newValue)
         unit.setDisable(newValue)
+      }
+    })
+
+    host.textProperty.addListener(new ChangeListener[String] {
+      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+        GUIValidators.validate(newValue, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)
+      }
+    })
+
+    fundingSatoshis.textProperty.addListener(new ChangeListener[String] {
+      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+        Try(CoinUtils.convertStringAmountToSat(newValue, unit.getValue)) match {
+          case Success(capacitySat) if capacitySat.amount <= 0 =>
+            fundingSatoshisError.setText("Capacity must be greater than 0")
+          case Success(capacitySat) if capacitySat.amount < 50000 =>
+            fundingSatoshisError.setText("Capacity is low and the channel may not be able to open")
+          case Success(capacitySat) if capacitySat.amount >= Channel.MAX_FUNDING_SATOSHIS =>
+            fundingSatoshisError.setText(s"Capacity must be less than ${CoinUtils.formatAmountInUnit(Satoshi(Channel.MAX_FUNDING_SATOSHIS), FxApp.getUnit, withUnit = true)}")
+          case Success(_) => fundingSatoshisError.setText("")
+          case _ => fundingSatoshisError.setText("Capacity is not valid")
+        }
       }
     })
   }
@@ -57,10 +78,10 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
         fundingSatoshis.getText match {
           case GUIValidators.amountDecRegex(_*) =>
             Try(CoinUtils.convertStringAmountToSat(fundingSatoshis.getText, unit.getValue)) match {
-              case Success(capacitySat) if capacitySat.amount < 0 =>
+              case Success(capacitySat) if capacitySat.amount <= 0 =>
                 fundingSatoshisError.setText("Capacity must be greater than 0")
               case Success(capacitySat) if capacitySat.amount >= Channel.MAX_FUNDING_SATOSHIS =>
-                fundingSatoshisError.setText(f"Capacity must be less than ${Channel.MAX_FUNDING_SATOSHIS}%,d sat")
+                fundingSatoshisError.setText(s"Capacity must be less than ${CoinUtils.formatAmountInUnit(Satoshi(Channel.MAX_FUNDING_SATOSHIS), FxApp.getUnit, withUnit = true)}")
               case Success(capacitySat) =>
                 pushMsatField.getText match {
                   case "" =>
@@ -96,5 +117,5 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
     pushMsatError.setText("")
   }
 
-  @FXML def handleClose(event: ActionEvent) = stage.close
+  @FXML def handleClose(event: ActionEvent) = stage.close()
 }
