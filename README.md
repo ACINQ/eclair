@@ -90,15 +90,16 @@ eclair.node-color=49daaa
 
 Here are some of the most common options:
 
-name                         | description               | default value
------------------------------|---------------------------|--------------
- eclair.server.port          | Lightning TCP port        | 9735
- eclair.api.enabled          | Enable/disable the API    | false. By default the API is disabled. If you want to enable it, you must set a password.
- eclair.api.port             | API HTTP port             | 8080
- eclair.api.password         | API password (BASIC)      | "" (must be set if the API is enabled)
- eclair.bitcoind.rpcuser     | Bitcoin Core RPC user     | foo
- eclair.bitcoind.rpcpassword | Bitcoin Core RPC password | bar
- eclair.bitcoind.zmq         | Bitcoin Core ZMQ address  | tcp://127.0.0.1:29000
+name                         | description                                                                           | default value
+-----------------------------|---------------------------------------------------------------------------------------|--------------
+ eclair.server.port          | Lightning TCP port                                                                    | 9735
+ eclair.api.enabled          | Enable/disable the API                                                                | false. By default the API is disabled. If you want to enable it, you must set a password.
+ eclair.api.port             | API HTTP port                                                                         | 8080
+ eclair.api.password         | API password (BASIC)                                                                  | "" (must be set if the API is enabled)
+ eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                                                 | foo
+ eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
+ eclair.bitcoind.zmq         | Bitcoin Core ZMQ address                                                              | tcp://127.0.0.1:29000
+ eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, mbtc, btc)           | btc 
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
 
