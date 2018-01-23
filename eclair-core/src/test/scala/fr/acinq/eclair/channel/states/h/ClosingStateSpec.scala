@@ -7,7 +7,7 @@ import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.payment.{AckFulfillCmd, ForwardAdd, ForwardFulfill, Local}
+import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
@@ -36,7 +36,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
         fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
         relayer.expectMsgType[ForwardFulfill]
         crossSign(bob, alice, bob2alice, alice2bob)
-        relayer.expectMsgType[AckFulfillCmd]
+        relayer.expectMsgType[CommandBuffer.CommandAck]
         val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
         bobCommitTx1 :: bobCommitTx2 :: Nil
       }).flatten
