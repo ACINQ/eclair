@@ -27,6 +27,12 @@ Note: Uses the json-rpc api exposed by the node on localhost:8080. Make sure the
 Full documentation at: <https://github.com/ACINQ/eclair>"
 }
 
+closeall() {
+    for row in $(call channels [] | jq -r '.[]'); do
+        call close "'$(printf '["%s"]' "${row}")'" | jq -r '.' | echo $row
+    done
+}
+
 # Executes a JSON RPC call to a node listening on ${URL}
 call() {
     jqexp='if .error == null then .result else .error.message end'
@@ -84,6 +90,8 @@ case ${METHOD}_${#} in
 
     "send_3")       call ${METHOD} "'$(printf '[%s,"%s","%s"]' "${1}" "${2}" "${3}")'" ;; # ${1} is numeric (amount of the payment)
     "send_2")       call ${METHOD} "'$(printf '["%s",%s]' "${1}" "${2}")'" ;; # ${2} is numeric (amount overriding the payment request)
+
+    "closeall"*)    closeall ;;
 
     *)              # Default case.
                     # Sends the method and, for parameters, use the JSON table containing the remaining args.
