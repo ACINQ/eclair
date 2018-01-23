@@ -57,7 +57,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
           case Success(amountMsat) if amountMsat.amount < 0 =>
             handleError("Amount must be greater than 0")
           case Success(amountMsat) if amountMsat.amount >= PaymentRequest.MAX_AMOUNT.amount =>
-            handleError(f"Amount must be less than ${PaymentRequest.MAX_AMOUNT.amount}%,d msat (~${PaymentRequest.MAX_AMOUNT.amount / 1e11}%.3f BTC)")
+            handleError(s"Amount must be less than ${CoinUtils.formatAmountInUnit(PaymentRequest.MAX_AMOUNT, FxApp.getUnit, withUnit = true)}")
           case Failure(_) =>
             handleError("Amount is incorrect")
           case Success(amountMsat) => createPaymentRequest(Some(amountMsat))
