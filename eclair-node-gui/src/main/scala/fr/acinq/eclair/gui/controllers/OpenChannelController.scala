@@ -7,6 +7,7 @@ import javafx.fxml.FXML
 import javafx.scene.control._
 import javafx.stage.Stage
 
+import fr.acinq.bitcoin.Satoshi
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.gui.utils.{CoinUtils, GUIValidators}
@@ -42,6 +43,27 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
         unit.setDisable(newValue)
       }
     })
+
+    host.textProperty.addListener(new ChangeListener[String] {
+      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+        GUIValidators.validate(newValue, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)
+      }
+    })
+
+    fundingSatoshis.textProperty.addListener(new ChangeListener[String] {
+      def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
+        Try(CoinUtils.convertStringAmountToSat(newValue, unit.getValue)) match {
+          case Success(capacitySat) if capacitySat.amount <= 0 =>
+            fundingSatoshisError.setText("Capacity must be greater than 0")
+          case Success(capacitySat) if capacitySat.amount < 50000 =>
+            fundingSatoshisError.setText("Capacity is low and the channel may not be able to open")
+          case Success(capacitySat) if capacitySat.amount >= Channel.MAX_FUNDING_SATOSHIS =>
+            fundingSatoshisError.setText(s"Capacity must be less than ${CoinUtils.formatAmountInUnit(Satoshi(Channel.MAX_FUNDING_SATOSHIS), FxApp.getUnit, withUnit = true)}")
+          case Success(_) => fundingSatoshisError.setText("")
+          case _ => fundingSatoshisError.setText("Capacity is not valid")
+        }
+      }
+    })
   }
 
   @FXML def handleOpen(event: ActionEvent) = {
@@ -56,10 +78,10 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
         fundingSatoshis.getText match {
           case GUIValidators.amountDecRegex(_*) =>
             Try(CoinUtils.convertStringAmountToSat(fundingSatoshis.getText, unit.getValue)) match {
-              case Success(capacitySat) if capacitySat.amount < 0 =>
+              case Success(capacitySat) if capacitySat.amount <= 0 =>
                 fundingSatoshisError.setText("Capacity must be greater than 0")
               case Success(capacitySat) if capacitySat.amount >= Channel.MAX_FUNDING_SATOSHIS =>
-                fundingSatoshisError.setText(f"Capacity must be less than ${Channel.MAX_FUNDING_SATOSHIS}%,d sat")
+                fundingSatoshisError.setText(s"Capacity must be less than ${CoinUtils.formatAmountInUnit(Satoshi(Channel.MAX_FUNDING_SATOSHIS), FxApp.getUnit, withUnit = true)}")
               case Success(capacitySat) =>
                 pushMsatField.getText match {
                   case "" =>
