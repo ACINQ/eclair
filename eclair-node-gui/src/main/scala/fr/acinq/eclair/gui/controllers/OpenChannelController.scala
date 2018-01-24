@@ -46,7 +46,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
 
     host.textProperty.addListener(new ChangeListener[String] {
       def changed(observable: ObservableValue[_ <: String], oldValue: String, newValue: String): Unit = {
-        GUIValidators.validate(newValue, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)
+        GUIValidators.validate(newValue, hostError, "Please use a valid uri (pubkey@host:port)", GUIValidators.hostRegex)
       }
     })
 
@@ -68,7 +68,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
 
   @FXML def handleOpen(event: ActionEvent) = {
     clearErrors()
-    if (GUIValidators.validate(host.getText, hostError, "Please use a valid url (pubkey@host:port)", GUIValidators.hostRegex)) {
+    if (GUIValidators.validate(host.getText, hostError, "Please use a valid uri (pubkey@host:port)", GUIValidators.hostRegex)) {
       val nodeUri = NodeURI.parse(host.getText)
       if (simpleConnection.isSelected) {
         handlers.open(nodeUri, None)
