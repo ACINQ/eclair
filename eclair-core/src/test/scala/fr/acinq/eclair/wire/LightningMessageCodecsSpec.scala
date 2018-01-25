@@ -213,6 +213,14 @@ class LightningMessageCodecsSpec extends FunSuite {
       assert(payload2 === payload1)
     }
   }
+
+  test("encode/decode bucket counters") {
+    val counters = for (i <- 100000 to 100200) yield BucketCounter(i, i % 37)
+    val msg = BucketCounters(counters.toList)
+    val encoded = lightningMessageCodec.encode(msg).require
+    val decoded = lightningMessageCodec.decode(encoded).require
+    assert(msg === decoded.value)
+  }
 }
 
 object LightningMessageCodecsSpec {

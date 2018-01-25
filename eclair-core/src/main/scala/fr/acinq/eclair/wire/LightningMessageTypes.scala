@@ -159,6 +159,12 @@ case class ChannelUpdate(signature: BinaryData,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
 
+case class BucketCounter(height: Int, count: Int) extends RoutingMessage {
+  require(height >= 0 && count >= 0)
+}
+
+case class BucketCounters(counters: List[BucketCounter]) extends RoutingMessage
+
 case class PerHopPayload(channel_id: Long,
                          amtToForward: Long,
                          outgoingCltvValue: Long)

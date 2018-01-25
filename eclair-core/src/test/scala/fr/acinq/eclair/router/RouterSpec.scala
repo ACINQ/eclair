@@ -209,5 +209,4 @@ class RouterSpec extends BaseRouterSpec {
     for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
     for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
   }
-
 }

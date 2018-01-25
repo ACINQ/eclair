@@ -18,6 +18,7 @@ import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
+import scala.annotation.tailrec
 import scala.collection.JavaConversions._
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -587,4 +588,57 @@ object Router {
   }
 
 
+  def makeBucketCounters(channelAnnouncements: Seq[ChannelAnnouncement], currentHeight: Long) : BucketCounters = makeBucketCountersFromHeights(channelAnnouncements.map(ca => fromShortId(ca.shortChannelId)._1), currentHeight)
+
+  def makeBucketCountersFromHeights(channelAnnouncementHeights: Seq[Int], currentHeight: Long) : BucketCounters = {
+    // we use x / 144 * 144 to get a maker that is a multiple of 144
+    // so that nodes at different current height will compute the same marker
+    // we then use:
+    // - one counter per block for all  blocks >= marker
+    // - one counter per day (144 blocks) fo all other blocks
+    // worst case scenario after one year:
+    // (358 + 8 * 144) counters = 11 Kb
+
+    // marker = now - 1 week
+    val marker = (currentHeight / 144) * 144 - 7 * 144
+
+    val (before, after) = channelAnnouncementHeights.sorted.partition(_ < marker)
+    var map = collection.mutable.HashMap.empty[Int, Int]
+    before.foreach(h => {
+      // one key per group of 144 blocks
+      val k = (h / 144) * 144
+      map.put(k, map.getOrElse(k, 0) + 1)
+    })
+    after.foreach(h => {
+      // one key per block
+      val k = h
+      map.put(k, map.getOrElse(k, 0) + 1)
+    })
+    val counters = map.keys.toList.sorted.map(h => BucketCounter(h, map(h)))
+    BucketCounters(counters)
+  }
+
+  /**
+    *
+    * @param height block height to be checked
+    * @param ourCounters our bucket counters
+    * @param theirCounters their bucket counters
+    * @return true if our counters and their counters are consistent for this specific height
+    */
+  def checkBucketCounters(height: Int, ourCounters: BucketCounters, theirCounters: BucketCounters): Boolean = {
+
+    @tailrec
+    def filter(input: List[BucketCounter]): List[BucketCounter] = input match {
+      case a :: b :: tail if a.height <= height && b.height <= height => filter(b :: tail)
+      case _ => input
+    }
+    val ourCounters1 = filter(ourCounters.counters)
+    val theirCounters1 = filter(theirCounters.counters)
+    (ourCounters1, theirCounters1) match {
+      case (ourFirst :: Nil, theirFirst :: Nil) if ourFirst == theirFirst => true
+      case (ourFirst :: ourNext :: _, theirFirst :: theirNext :: _) if ourFirst == theirFirst && ourNext.height == theirNext.height => true
+      case _ =>
+        false
+    }
+  }
 }
