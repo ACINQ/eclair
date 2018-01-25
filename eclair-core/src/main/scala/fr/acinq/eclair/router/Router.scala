@@ -34,7 +34,8 @@ case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Se
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-case class SendRoutingState(to: ActorRef)
+case class SendBucketCounters(to: ActorRef)
+case class SendRoutingState(to: ActorRef, filter: Option[BucketCounters] = None)
 case class Stash(channels: Map[ChannelAnnouncement, ActorRef], updates: Map[ChannelUpdate, ActorRef], nodes: Map[NodeAnnouncement, ActorRef])
 case class Rebroadcast(ann: Queue[(RoutingMessage, ActorRef)])
 
@@ -237,10 +238,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString}")
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
-    case Event(s@SendRoutingState(remote), d: Data) =>
+    case Event(SendBucketCounters(remote), d: Data) =>
+      val counters = Router.makeBucketCounters(d.channels.values.toSeq, Globals.blockCount.get())
+      log.info(s"sending bucket counters to $remote")
+      remote ! counters
+      stay
+
+    case Event(SendRoutingState(remote, None), d: Data) =>
       if (d.sendingState.size > 3) {
         log.info(s"received request to send announcements to $remote, already sending state to ${d.sendingState.size} peers, delaying...")
-        context.system.scheduler.scheduleOnce(3 seconds, self, s)
+        context.system.scheduler.scheduleOnce(3 seconds, self, SendRoutingState(remote, None))
         stay
       } else {
         log.info(s"info sending all announcements to $remote: channels=${d.channels.size} nodes=${d.nodes.size} updates=${d.updates.size}")
@@ -250,6 +257,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         context watch actor
         stay using d.copy(sendingState = d.sendingState + actor)
       }
+
+    case Event(SendRoutingState(remote, Some(theirCounters)), d: Data) =>
+      val ourCounters = Router.makeBucketCounters(d.channels.values.toSeq, Globals.blockCount.get())
+      // compare our bucket counters and filter out channels
+      val channels = d.channels.values.toSeq
+      val channels1 = channels.filterNot(channel => Router.checkBucketCounters(channel, ourCounters, theirCounters))
+      val updates = d.updates.values
+      val updates1 = updates.filter(update => channels1.exists(_.shortChannelId == update.shortChannelId))
+      log.info(s"info sending filtered announcements to $remote: channels=${channels1.size} nodes=${d.nodes.size} updates=${updates1.size}")
+      val batch = channels1 ++ d.nodes.values ++ updates1
+      val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+      context watch actor
+      stay using d.copy(sendingState = d.sendingState + actor)
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
       log.info(s"done sending announcements to a peer, freeing slot")
@@ -627,18 +647,23 @@ object Router {
     */
   def checkBucketCounters(height: Int, ourCounters: BucketCounters, theirCounters: BucketCounters): Boolean = {
 
-    @tailrec
-    def filter(input: List[BucketCounter]): List[BucketCounter] = input match {
-      case a :: b :: tail if a.height <= height && b.height <= height => filter(b :: tail)
-      case _ => input
-    }
-    val ourCounters1 = filter(ourCounters.counters)
-    val theirCounters1 = filter(theirCounters.counters)
-    (ourCounters1, theirCounters1) match {
-      case (ourFirst :: Nil, theirFirst :: Nil) if ourFirst == theirFirst => true
-      case (ourFirst :: ourNext :: _, theirFirst :: theirNext :: _) if ourFirst == theirFirst && ourNext.height == theirNext.height => true
-      case _ =>
-        false
+    if (theirCounters.counters.isEmpty || height < theirCounters.counters.head.height) false else {
+      @tailrec
+      def filter(input: List[BucketCounter]): List[BucketCounter] = input match {
+        case a :: b :: tail if a.height <= height && b.height <= height => filter(b :: tail)
+        case _ => input
+      }
+
+      val ourCounters1 = filter(ourCounters.counters)
+      val theirCounters1 = filter(theirCounters.counters)
+      (ourCounters1, theirCounters1) match {
+        case (ourFirst :: Nil, theirFirst :: Nil) if ourFirst == theirFirst => true
+        case (ourFirst :: ourNext :: _, theirFirst :: theirNext :: _) if ourFirst == theirFirst && ourNext.height == theirNext.height => true
+        case _ =>
+          false
+      }
     }
   }
+
+  def checkBucketCounters(ca: ChannelAnnouncement, ourCounters: BucketCounters, theirCounters: BucketCounters): Boolean = checkBucketCounters(fromShortId(ca.shortChannelId)._1, ourCounters, theirCounters)
 }
