@@ -23,7 +23,7 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
 
     case CommandAck(channelId, htlcId) =>
       //delete from db
-      log.info(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
+      log.debug(s"fulfill/fail acked for channelId=$channelId htlcId=$htlcId")
       pendingRelayDb.removePendingRelay(channelId, htlcId)
 
     case ChannelStateChanged(channel, _, _, WAIT_FOR_INIT_INTERNAL | OFFLINE | SYNCING, nextState, d: HasCommitments) =>
@@ -42,7 +42,7 @@ class CommandBuffer(nodeParams: NodeParams, register: ActorRef) extends Actor wi
         case _ => ()
       }
 
-    case s: ChannelStateChanged => log.info(s"unhandled state change ${s.previousState} -> ${s.currentState}")
+    case _: ChannelStateChanged => () // ignored
 
   }
 
