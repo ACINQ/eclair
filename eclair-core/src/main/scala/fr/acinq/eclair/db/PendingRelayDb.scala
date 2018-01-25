@@ -1,7 +1,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.BinaryData
-import fr.acinq.eclair.wire.UpdateMessage
+import fr.acinq.eclair.channel.Command
 
 /**
   * This database stores the preimages that we have received from downstream
@@ -17,10 +17,10 @@ import fr.acinq.eclair.wire.UpdateMessage
   */
 trait PendingRelayDb {
 
-  def addPendingRelay(channelId: BinaryData, htlcId: Long, message: UpdateMessage)
+  def addPendingRelay(channelId: BinaryData, htlcId: Long, cmd: Command)
 
   def removePendingRelay(channelId: BinaryData, htlcId: Long)
 
-  def listPendingRelay(channelId: BinaryData): List[(BinaryData, Long, UpdateMessage)]
+  def listPendingRelay(channelId: BinaryData): List[Command]
 
 }
