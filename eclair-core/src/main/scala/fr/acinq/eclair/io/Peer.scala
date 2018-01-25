@@ -71,7 +71,6 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
           router ! SendRoutingState(transport)
         }
         // let's bring existing/requested channels online
-        log.info(s"sending INPUT_RECONNECTED to ${channels.values.mkString(",")}")
         channels.values.foreach(_ ! INPUT_RECONNECTED(transport))
         goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels)
       } else {
