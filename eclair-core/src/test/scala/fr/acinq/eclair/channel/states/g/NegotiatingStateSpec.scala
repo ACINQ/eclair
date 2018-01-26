@@ -154,7 +154,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
       assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTx))
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
-      alice2blockchain.expectNoMsg(1 second)
+      alice2blockchain.expectMsgType[PublishAsap]
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectNoMsg(100 millis)
       assert(alice.stateName == CLOSING)
     }
   }
@@ -173,7 +175,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val Success(bobClosingTx) = Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(aliceClose1.feeSatoshis), aliceClose1.signature)
 
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
-      alice2blockchain.expectNoMsg(1 second)
+      alice2blockchain.expectMsgType[PublishAsap]
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectNoMsg(100 millis)
       assert(alice.stateName == CLOSING)
     }
   }
