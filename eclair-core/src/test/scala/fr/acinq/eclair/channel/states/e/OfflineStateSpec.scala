@@ -5,6 +5,7 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
+import fr.acinq.eclair.crypto.Generators
 import fr.acinq.eclair.wire._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -52,10 +53,17 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
     sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
 
+    val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
+    val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
+
+    val bobCurrentPerCommitmentPoint = Generators.perCommitPoint(bobCommitments.localParams.shaSeed, bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = Generators.perCommitPoint(aliceCommitments.localParams.shaSeed, aliceCommitments.localCommit.index)
+
+
     // a didn't receive any update or sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, None, Some(aliceCurrentPerCommitmentPoint)))
     // b didn't receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, None, Some(bobCurrentPerCommitmentPoint)))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)
@@ -128,10 +136,16 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
     sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
 
+    val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
+    val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
+
+    val bobCurrentPerCommitmentPoint = Generators.perCommitPoint(bobCommitments.localParams.shaSeed, bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = Generators.perCommitPoint(aliceCommitments.localParams.shaSeed, aliceCommitments.localCommit.index)
+
     // a didn't receive the sig
-    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0))
+    val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, None, Some(aliceCurrentPerCommitmentPoint)))
     // b did receive the sig
-    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0))
+    val ba_reestablish = bob2alice.expectMsg(ChannelReestablish(ab_add_0.channelId, 2, 0, None, Some(bobCurrentPerCommitmentPoint)))
 
     // reestablish ->b
     alice2bob.forward(bob, ab_reestablish)

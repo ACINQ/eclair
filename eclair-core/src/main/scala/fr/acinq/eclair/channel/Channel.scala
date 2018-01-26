@@ -5,7 +5,7 @@ import java.nio.charset.StandardCharsets
 import akka.actor.{ActorRef, FSM, LoggingFSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PublicKey, ripemd160, sha256}
+import fr.acinq.bitcoin.Crypto.{PublicKey, Scalar, ripemd160, sha256}
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.NodeParams.BITCOINJ
 import fr.acinq.eclair._
@@ -1165,11 +1165,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   when(OFFLINE)(handleExceptions {
     case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
       forwarder ! r
+
+      val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).map(Scalar(_))
+      val myCurrentPerCommitmentPoint = Some(Generators.perCommitPoint(d.commitments.localParams.shaSeed, d.commitments.localCommit.index))
+
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
-        nextRemoteRevocationNumber = d.commitments.remoteCommit.index
+        nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
+        yourLastPerCommitmentSecret = yourLastPerCommitmentSecret,
+        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
       )
+
       goto(SYNCING) sending channelReestablish
 
     case Event(c: CMD_CLOSE, d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while disconnected"), d, Some(c)) replying "ok"
@@ -1200,8 +1207,26 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
-    case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
+    // We have started a channel with DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT and wait for their ChannelReestablish
+    case Event(ChannelReestablish(channelId, _, _, _, Some(myCurrentPerCommitmentPoint)), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
+      val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
+      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d.copy(commitments = commitments1) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
 
+    // We have started a channel with DATA_NORMAL and wait for their ChannelReestablish but suddenly their `nextRemoteRevocationNumber` is greater than expected
+    case Event(ChannelReestablish(channelId, _, nextRemoteRevocationNumber, yourLastPerCommitmentSecret, Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
+      // if next_remote_revocation_number is greater than expected above
+      if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
+
+      // AND your_last_per_commitment_secret is correct for that next_remote_revocation_number minus 1
+      // yourLastPerCommitmentSecret may be None if this is our first commitment
+      if (yourLastPerCommitmentSecret.contains(Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1))) {
+        val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
+        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1, System.currentTimeMillis) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+      } else {
+        throw CommitmentSyncError(d.channelId)
+      }
+
+    case Event(channelReestablish: ChannelReestablish, d: DATA_NORMAL) =>
       if (channelReestablish.nextLocalCommitmentNumber == 1 && d.commitments.localCommit.index == 0) {
         // If next_local_commitment_number is 1 in both the channel_reestablish it sent and received, then the node MUST retransmit funding_locked, otherwise it MUST NOT
         log.debug(s"re-sending fundingLocked")
@@ -1212,8 +1237,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
       val commitments1 = handleSync(channelReestablish, d)
 
-      d.localShutdown.map {
-        case localShutdown =>
+      d.localShutdown.foreach {
+        localShutdown =>
           log.debug(s"re-sending localShutdown")
           forwarder ! localShutdown
       }
@@ -1262,11 +1287,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid).contains(tx.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) => handleRemoteSpentOther(tx, d)
 
     case Event(e: Error, d: HasCommitments) => handleRemoteError(e, d)
+  })
+
+  when(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)(handleExceptions {
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentCurrentLost(tx, d)
   })
 
   def errorStateHandler: StateFunction = {
@@ -1515,6 +1544,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     goto(CLOSING) using store(nextData)
   }
 
+  def handleRemoteSpentCurrentLost(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
+    log.warning(s"they published their current commit because we asked them to in txid=${commitTx.txid}")
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(d.commitments, d.commitments.remoteCommit, commitTx)
+    val nextData = DATA_CLOSING(d.commitments, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
+
+    doPublish(remoteCommitPublished)
+    goto(CLOSING) using store(nextData)
+  }
+
   def handleRemoteSpentNext(commitTx: Transaction, d: HasCommitments) = {
     log.warning(s"they published their next commit in txid=${commitTx.txid}")
     require(d.commitments.remoteNextCommitInfo.isLeft, "next remote commit must be defined")
@@ -1665,13 +1703,10 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     // let's now fail all pending htlc for which we are the final payee
     val htlcsToFail = commitments1.remoteCommit.spec.htlcs.collect {
-      case DirectedHtlc(OUT, add) => add
-    }.filter {
-      case add =>
-        Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
-          .map(_.nextPacket.isLastPacket)
-          .getOrElse(true) // we also fail htlcs which onion we can't decode (message won't be precise)
+      case DirectedHtlc(OUT, add) if Sphinx.parsePacket(nodeParams.privateKey, add.paymentHash, add.onionRoutingPacket)
+        .map(_.nextPacket.isLastPacket).getOrElse(true) => add // we also fail htlcs which onion we can't decode (message won't be precise)
     }
+
     log.debug(s"failing htlcs=${htlcsToFail.map(Commitments.msg2String(_)).mkString(",")}")
     htlcsToFail.foreach(add => self ! CMD_FAIL_HTLC(add.id, Right(TemporaryNodeFailure), commit = true))
 
@@ -1692,7 +1727,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         s(event)
       } catch {
         case t: Throwable => event.stateData match {
-          case d: HasCommitments => handleLocalError(t, d, None)
+          case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
+            log.error(t, "not going to CLOSED and not spending a local commit")
+            val error = Error(d.channelId, t.getMessage.getBytes)
+            stay sending error
+          case d: HasCommitments =>
+            handleLocalError(t, d, None)
           case d: Data =>
             log.error(t, "")
             val error = Error(Helpers.getChannelId(d), t.getMessage.getBytes)

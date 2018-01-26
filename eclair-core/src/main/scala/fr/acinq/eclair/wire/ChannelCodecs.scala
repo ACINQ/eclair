@@ -234,6 +234,7 @@ object ChannelCodecs extends Logging {
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
 
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
