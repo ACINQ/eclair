@@ -959,14 +959,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.info(s"received closingFeeSatoshis=$remoteClosingFee")
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
         case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.last.feeSatoshis =>
-          doPublish(signedClosingTx)
           handleMutualClose(signedClosingTx, Left(d))
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.last.feeSatoshis), Satoshi(remoteClosingFee))
           val (_, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
           log.info(s"proposing closingFeeSatoshis=${closingSigned.feeSatoshis}")
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
-            doPublish(signedClosingTx)
             handleMutualClose(signedClosingTx, Left(store(d))) sending closingSigned
           } else {
             stay using store(d.copy(localClosingSigned = d.localClosingSigned :+ closingSigned)) sending closingSigned
@@ -1417,6 +1415,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     if (index != closingSigned.size - 1) {
       log.warning(s"closing tx was published before end of negotiation: closingTxId=${closingTx.txid} index=$index signatures=${closingSigned.size}")
     }
+    doPublish(closingTx)
 
     val nextData = d match {
       case Left(negotiating) => DATA_CLOSING(negotiating.commitments, negotiating.localClosingSigned, mutualClosePublished = closingTx :: Nil)
