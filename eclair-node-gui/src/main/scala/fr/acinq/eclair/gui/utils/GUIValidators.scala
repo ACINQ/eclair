@@ -8,7 +8,7 @@ import scala.util.matching.Regex
   * Created by DPA on 27/09/2016.
   */
 object GUIValidators {
-  val hostRegex = """([a-fA-F0-9]{66})@([a-zA-Z0-9:\[\]%\/\.\-_]+)(:([0-9]+))?""".r
+  val hostRegex = """([a-fA-F0-9]{66})@([a-zA-Z0-9:\[\]%\/\.\-_]+)""".r
   val amountRegex = """\d+""".r
   val amountDecRegex = """(\d+)|(\d*\.[\d]{1,})""".r
   val hexRegex = """[0-9a-fA-F]+""".r
