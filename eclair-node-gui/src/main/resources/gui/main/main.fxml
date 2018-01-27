@@ -75,6 +75,9 @@
                                                 <TableColumn fx:id="networkChannelsDirectionsColumn" minWidth="30.0"
                                                              prefWidth="30.0" maxWidth="30.0"/>
                                                 <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
+                                                <TableColumn fx:id="networkChannelsCapacityColumn" text="Capacity Sat"/>
+                                                <TableColumn fx:id="networkChannelsFeeBaseMsatColumn" text="Fee per Tx"/>
+                                                <TableColumn fx:id="networkChannelsFeeProportionalMillionthsColumn" text="Fee Sat / 0.01BTC"/>
                                             </columns>
                                         </TableView>
                                     </children>

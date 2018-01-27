@@ -35,7 +35,8 @@ import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, P
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
-case class ChannelInfo(announcement: ChannelAnnouncement, var isNode1Enabled: Option[Boolean], var isNode2Enabled: Option[Boolean])
+case class ChannelInfo(announcement: ChannelAnnouncement,var feeBaseMsat: Long, var feeProportionalMillionths: Long,
+    var capacity: Long, var isNode1Enabled: Option[Boolean], var isNode2Enabled: Option[Boolean])
 
 sealed trait Record {
   val event: PaymentEvent
@@ -92,6 +93,9 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var networkChannelsNode1Column: TableColumn[ChannelInfo, String] = _
   @FXML var networkChannelsDirectionsColumn: TableColumn[ChannelInfo, ChannelInfo] = _
   @FXML var networkChannelsNode2Column: TableColumn[ChannelInfo, String] = _
+  @FXML var networkChannelsFeeBaseMsatColumn: TableColumn[ChannelInfo, Number] = _
+  @FXML var networkChannelsFeeProportionalMillionthsColumn: TableColumn[ChannelInfo, Number] = _
+  @FXML var networkChannelsCapacityColumn: TableColumn[ChannelInfo, Number] = _
 
   // payment sent table
   val paymentSentList = FXCollections.observableArrayList[PaymentSentRecord]()
@@ -208,6 +212,17 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     networkChannelsNode2Column.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(pc.getValue.announcement.nodeId2.toString)
     })
+
+    networkChannelsFeeBaseMsatColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, Number], ObservableValue[Number]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, Number]) = new SimpleLongProperty(pc.getValue.feeBaseMsat)
+    })
+    networkChannelsFeeProportionalMillionthsColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, Number], ObservableValue[Number]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, Number]) = new SimpleLongProperty(pc.getValue.feeProportionalMillionths)
+    })
+    networkChannelsCapacityColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, Number], ObservableValue[Number]]() {
+      def call(pc: CellDataFeatures[ChannelInfo, Number]) = new SimpleLongProperty(pc.getValue.capacity)
+    })
+
     networkChannelsTable.setRowFactory(new Callback[TableView[ChannelInfo], TableRow[ChannelInfo]]() {
       override def call(table: TableView[ChannelInfo]): TableRow[ChannelInfo] = setupPeerChannelContextMenu()
     })
@@ -228,19 +243,19 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
               setText(null)
             } else {
               item match {
-                case ChannelInfo(_, Some(true), Some(true)) =>
+                case ChannelInfo(_,_,_,_, Some(true), Some(true)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-11.png", false))
                   setTooltip(new Tooltip("Both Node 1 and Node 2 are enabled"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, Some(true), Some(false)) =>
+                case ChannelInfo(_,_,_,_, Some(true), Some(false)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-10.png", false))
                   setTooltip(new Tooltip("Node 1 is enabled, but not Node 2"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, Some(false), Some(true)) =>
+                case ChannelInfo(_,_,_,_, Some(false), Some(true)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-01.png", false))
                   setTooltip(new Tooltip("Node 2 is enabled, but not Node 1"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, Some(false), Some(false)) =>
+                case ChannelInfo(_,_,_,_, Some(false), Some(false)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-00.png", false))
                   setTooltip(new Tooltip("Neither Node 1 nor Node 2 is enabled"))
                   setGraphic(directionImage)
