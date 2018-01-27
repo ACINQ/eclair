@@ -47,7 +47,7 @@ zmqpubrawtx=tcp://127.0.0.1:29000
 On **__testnet__**, you also need to make sure that all your UTXOs are `p2sh-of-p2wpkh`.
 To do this, use the debug console, create a new address with `getnewaddress`, import it as a witness address with `addwitnessaddress`, and
 send all your balance to this witness address. 
-If you need to create and send funds manually, don't forget to create and specify a witness address for the change output (this option is avaliable on the GUI once you set the `Enable coin control features` wallet option).
+If you need to create and send funds manually, don't forget to create and specify a witness address for the change output (this option is available on the GUI once you set the `Enable coin control features` wallet option).
 
 
 ### Installing Eclair
