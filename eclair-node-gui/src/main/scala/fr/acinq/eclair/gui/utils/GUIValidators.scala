@@ -45,7 +45,7 @@ object GUIValidators {
   }
 
   /**
-    * Validate host field against a hostRegex.
+    * Validate host field against a regex.
     *
     * @param field            String content of the field to validate
     * @param validatorLabel   JFX label associated to the field.
