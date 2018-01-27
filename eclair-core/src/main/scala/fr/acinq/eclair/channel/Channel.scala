@@ -1166,15 +1166,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(INPUT_RECONNECTED(r), d: HasCommitments) =>
       forwarder ! r
 
-      val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).map(Scalar(_))
-      val myCurrentPerCommitmentPoint = Some(Generators.perCommitPoint(d.commitments.localParams.shaSeed, d.commitments.localCommit.index))
+      val yourLastPerCommitmentSecret = d.commitments.remotePerCommitmentSecrets.lastIndex.flatMap(d.commitments.remotePerCommitmentSecrets.getHash).getOrElse(Sphinx zeroes 32)
+      val myCurrentPerCommitmentPoint = Generators.perCommitPoint(d.commitments.localParams.shaSeed, d.commitments.localCommit.index)
 
       val channelReestablish = ChannelReestablish(
         channelId = d.channelId,
         nextLocalCommitmentNumber = d.commitments.localCommit.index + 1,
         nextRemoteRevocationNumber = d.commitments.remoteCommit.index,
-        yourLastPerCommitmentSecret = yourLastPerCommitmentSecret,
-        myCurrentPerCommitmentPoint = myCurrentPerCommitmentPoint
+        yourLastPerCommitmentSecret = Some(Scalar(yourLastPerCommitmentSecret)),
+        myCurrentPerCommitmentPoint = Some(myCurrentPerCommitmentPoint)
       )
 
       goto(SYNCING) sending channelReestablish
@@ -1189,7 +1189,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if tx.txid == d.commitments.remoteCommit.txid => handleRemoteSpentCurrent(tx, d)
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if Some(tx.txid) == d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid) => handleRemoteSpentNext(tx, d)
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) if d.commitments.remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.txid).contains(tx.txid) => handleRemoteSpentNext(tx, d)
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: HasCommitments) => handleRemoteSpentOther(tx, d)
 
@@ -1213,13 +1213,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d.copy(commitments = commitments1) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
 
     // We have started a channel with DATA_NORMAL and wait for their ChannelReestablish but suddenly their `nextRemoteRevocationNumber` is greater than expected
-    case Event(ChannelReestablish(channelId, _, nextRemoteRevocationNumber, yourLastPerCommitmentSecret, Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
+    case Event(ChannelReestablish(channelId, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
       // if next_remote_revocation_number is greater than expected above
       if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
 
       // AND your_last_per_commitment_secret is correct for that next_remote_revocation_number minus 1
       // yourLastPerCommitmentSecret may be None if this is our first commitment
-      if (yourLastPerCommitmentSecret.contains(Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1))) {
+      if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
         val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
         goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1, System.currentTimeMillis) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
       } else {
