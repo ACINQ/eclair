@@ -77,28 +77,41 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   val db = nodeParams.networkDb
 
-  // Note: We go through the whole validation process instead of directly loading into memory, because the channels
-  // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
-  // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
+  // Note: It is possible that some channels have been closed while we were shutdown. Since we are directly loading channels
+  // in memory without checking they are still alive, we may advertise closed channels if someone connects to us right after
+  // startup. That being said, if we stay down long enough that a significant numbers of channels are closed, there is a chance
+  // other peers forgot about us in the meantime.
   {
     log.info(s"loading network announcements from db...")
     val channels = db.listChannels()
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
-    val staleChannels = getStaleChannels(channels.map(_._1), updates)
+    // let's prune the db (maybe eclair was stopped for a long time)
+    val staleChannels = getStaleChannels(channels.keys, updates)
     if (staleChannels.size > 0) {
       log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
     }
-    val remainingChannels = channels.filterNot(c => staleChannels.contains(c._1.shortChannelId))
+    val remainingChannels = channels.keys.filterNot(c => staleChannels.contains(c.shortChannelId))
     val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
-    remainingChannels.map(self ! _)
-    nodes.map(self ! _)
-    remainingUpdates.map(self ! _)
-    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
-  }
+    val remainingNodes = nodes.filter(n => remainingChannels.exists(c => isRelatedTo(c, n.nodeId)))
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Stash(Map.empty, Map.empty, Map.empty), Queue.empty, Map.empty, Map.empty, Map.empty, Set.empty, Set.empty))
+    val initChannels = remainingChannels.map(c => (c.shortChannelId -> c)).toMap
+    val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    val initNodes = remainingNodes.map(n => (n.nodeId -> n)).toMap
+
+    // we watches the funding tx of all these channels
+    // note: some of them may already have been spent, in that case we will receive the watchh event immediately
+    remainingChannels.foreach { c =>
+      val txid = channels(c)
+      val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+    }
+
+    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty, Map.empty), Queue.empty, awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendingState = Set.empty))
+  }
 
   when(NORMAL) {
     case Event(TickValidate, d) =>
