@@ -365,7 +365,7 @@ object PaymentRequest {
   object Signature {
     /**
       *
-      * @param signature 65-bytes signatyre: r (32 bytes) | s (32 bytes) | recid (1 bytes)
+      * @param signature 65-bytes signature: r (32 bytes) | s (32 bytes) | recid (1 bytes)
       * @return a (r, s, recoveryId)
       */
     def decode(signature: BinaryData): (BigInteger, BigInteger, Byte) = {
@@ -392,7 +392,7 @@ object PaymentRequest {
     *
     * @param stream stream to write to
     * @param value  a 5bits value
-    * @return an upated stream
+    * @return an updated stream
     */
   def write5(stream: BitStream, value: Int5): BitStream = stream.writeBits(toBits(value))
 
