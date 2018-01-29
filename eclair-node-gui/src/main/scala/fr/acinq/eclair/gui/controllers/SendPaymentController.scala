@@ -8,7 +8,8 @@ import javafx.scene.input.KeyCode.{ENTER, TAB}
 import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
 
-import fr.acinq.eclair.gui.Handlers
+import fr.acinq.eclair.gui.{FxApp, Handlers}
+import fr.acinq.eclair.gui.utils.CoinUtils
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
@@ -25,22 +26,27 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var nodeIdField: TextField = _
   @FXML var descriptionLabel: Label = _
   @FXML var descriptionField: TextArea = _
+  @FXML var amountFieldLabel: Label = _
   @FXML var amountField: TextField = _
   @FXML var amountFieldError: Label = _
   @FXML var paymentHashField: TextField = _
   @FXML var sendButton: Button = _
 
   @FXML def initialize(): Unit = {
+
+    // set the user preferred unit
+    amountFieldLabel.setText(s"Amount (${FxApp.getUnit.shortLabel})")
+
     // ENTER or TAB events in the paymentRequest textarea instead fire or focus sendButton
     paymentRequest.addEventFilter(KeyEvent.KEY_PRESSED, new EventHandler[KeyEvent] {
       def handle(event: KeyEvent) = {
         event.getCode match {
           case ENTER =>
-            sendButton.fire
-            event.consume
+            sendButton.fire()
+            event.consume()
           case TAB =>
             sendButton.requestFocus()
-            event.consume
+            event.consume()
           case _ =>
         }
       }
@@ -75,7 +81,7 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
   }
 
   private def setUIFields(pr: PaymentRequest) = {
-    pr.amount.foreach(amount => amountField.setText(amount.amount.toString))
+    pr.amount.foreach(amount => amountField.setText(CoinUtils.rawAmountInUnit(amount, FxApp.getUnit).bigDecimal.toPlainString))
     pr.description match {
       case Left(s) => descriptionField.setText(s)
       case Right(hash) =>
@@ -87,10 +93,10 @@ class SendPaymentController(val handlers: Handlers, val stage: Stage) extends Lo
   }
 
   @FXML def handleSend(event: ActionEvent): Unit = {
-    (Try(amountField.getText().toLong), readPaymentRequest()) match {
+    (Try(CoinUtils.convertStringAmountToMsat(amountField.getText(), FxApp.getUnit.code)), readPaymentRequest()) match {
       case (Success(amountMsat), Success(pr)) =>
         // we always override the payment request amount with the one from the UI
-        Try(handlers.send(Some(amountMsat), pr)) match {
+        Try(handlers.send(Some(amountMsat.amount), pr)) match {
           case Success(_) => stage.close()
           case Failure(f) => paymentRequestError.setText(s"Invalid Payment Request: ${f.getMessage}")
         }

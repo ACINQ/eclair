@@ -5,25 +5,38 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
 import fr.acinq.eclair.db.Payment
 import fr.acinq.eclair.wire._
+import scala.concurrent.duration._
 import fr.acinq.eclair.{NodeParams, randomBytes}
 
 import scala.compat.Platform
+import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 
 /**
   * Created by PM on 17/06/2016.
   */
-class LocalPaymentHandler(nodeParams: NodeParams) extends Actor with ActorLogging {
+class LocalPaymentHandler(nodeParams: NodeParams)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Actor with ActorLogging {
+
+  context.system.scheduler.schedule(10 minutes, 10 minutes)(self ! Platform.currentTime / 1000)
 
   override def receive: Receive = run(Map())
 
   def run(h2r: Map[BinaryData, (BinaryData, PaymentRequest)]): Receive = {
 
+    case currentSeconds: Long =>
+      context.become(run(h2r.collect {
+        case e@(_, (_, pr)) if pr.expiry.isEmpty => e // requests that don't expire are kept forever
+        case e@(_, (_, pr)) if pr.timestamp + pr.expiry.get > currentSeconds => e // clean up expired requests
+      }))
+
     case ReceivePayment(amount_opt, desc) =>
       Try {
+        if (h2r.size > nodeParams.maxPendingPaymentRequests) {
+          throw new RuntimeException(s"too many pending payment requests (max=${nodeParams.maxPendingPaymentRequests})")
+        }
         val paymentPreimage = randomBytes(32)
         val paymentHash = Crypto.sha256(paymentPreimage)
-        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc))
+        (paymentPreimage, paymentHash, PaymentRequest(nodeParams.chainHash, amount_opt, paymentHash, nodeParams.privateKey, desc, fallbackAddress = None, expirySeconds = Some(nodeParams.paymentRequestExpiry.toSeconds)))
       } match {
         case Success((r, h, pr)) =>
           log.debug(s"generated payment request=${PaymentRequest.write(pr)} from amount=$amount_opt")

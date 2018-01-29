@@ -184,7 +184,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
 
     case ElectrumClient.ElectrumDisconnected =>
       // we remember watches and keep track of tx that have not yet been published
-      // we also re-send the txes that we previsouly sent but hadn't yet received the confirmation
+      // we also re-send the txes that we previously sent but hadn't yet received the confirmation
       context become disconnected(watches, sent.map(PublishAsap(_)), block2tx)
   }
 

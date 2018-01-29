@@ -9,7 +9,7 @@ sealed trait PaymentEvent {
   val paymentHash: BinaryData
 }
 
-case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
+case class PaymentSent(amount: MilliSatoshi, feesPaid: MilliSatoshi, paymentHash: BinaryData, paymentPreimage: BinaryData) extends PaymentEvent
 
 case class PaymentRelayed(amountIn: MilliSatoshi, amountOut: MilliSatoshi, paymentHash: BinaryData) extends PaymentEvent
 

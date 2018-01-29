@@ -418,12 +418,12 @@ object ElectrumWallet {
   }
 
   /**
-    * Wallet state, which stores data returned by EletrumX servers.
+    * Wallet state, which stores data returned by ElectrumX servers.
     * Most items are indexed by script hash (i.e. by pubkey script sha256 hash).
     * Height follow ElectrumX's conventions:
     * - h > 0 means that the tx was confirmed at block #h
     * - 0 means unconfirmed, but all input are confirmed
-    * < 0 means unconfirmed, and sonme inputs are unconfirmed as well
+    * < 0 means unconfirmed, and some inputs are unconfirmed as well
     *
     * @param tip                        current blockchain tip
     * @param accountKeys                account keys

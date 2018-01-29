@@ -1,14 +1,13 @@
 package fr.acinq.eclair.gui
 
 import java.io.{File, FileWriter}
-import java.text.NumberFormat
-import java.util.Locale
 
 import akka.pattern.ask
 import akka.util.Timeout
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
+import fr.acinq.eclair.gui.utils.CoinUtils
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
@@ -62,8 +61,8 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
 
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
     val sendPayment = req.minFinalCltvExpiry match {
-      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo())
-      case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo(), minFinalCltvExpiry = minFinalCltvExpiry)
+      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo)
+      case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, minFinalCltvExpiry = minFinalCltvExpiry)
     }
     (for {
       kit <- fKit
@@ -71,7 +70,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     } yield res)
       .onComplete {
         case Success(_: PaymentSucceeded) =>
-          val message = s"${NumberFormat.getInstance(Locale.getDefault).format(amountMsat / 1000)} satoshis"
+          val message = CoinUtils.formatAmountInUnit(MilliSatoshi(amountMsat), FxApp.getUnit, withUnit = true)
           notification("Payment Sent", message, NOTIFICATION_SUCCESS)
         case Success(PaymentFailed(_, failures)) =>
           val message = s"${
@@ -90,7 +89,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
 
   def receive(amountMsat_opt: Option[MilliSatoshi], description: String): Future[String] = for {
     kit <- fKit
-    res <- (kit.paymentHandler ? ReceivePayment(amountMsat_opt, description)).mapTo[PaymentRequest].map(PaymentRequest.write(_))
+    res <- (kit.paymentHandler ? ReceivePayment(amountMsat_opt, description)).mapTo[PaymentRequest].map(PaymentRequest.write)
   } yield res
 
 
@@ -118,6 +117,6 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     * @param showAppName      true if you want the notification title to be preceded by "Eclair - ". True by default
     */
   def notification(title: String, message: String, notificationType: NotificationType = NOTIFICATION_NONE, showAppName: Boolean = true) = {
-    notifsController.map(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType))
+    notifsController.foreach(_.addNotification(if (showAppName) s"Eclair - $title" else title, message, notificationType))
   }
 }
