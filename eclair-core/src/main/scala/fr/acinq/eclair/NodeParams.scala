@@ -109,9 +109,11 @@ object NodeParams {
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
-    val networkDb = new SqliteNetworkDb(sqlite)
     val preimagesDb = new SqlitePreimagesDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
+
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "network.sqlite")}")
+    val networkDb = new SqliteNetworkDb(sqliteNetwork)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
