@@ -44,6 +44,8 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 
+Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
+
 On **__testnet__**, you also need to make sure that all your UTXOs are `p2sh-of-p2wpkh`.
 To do this, use the debug console, create a new address with `getnewaddress`, import it as a witness address with `addwitnessaddress`, and
 send all your balance to this witness address. 
