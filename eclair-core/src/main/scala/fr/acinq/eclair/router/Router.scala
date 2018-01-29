@@ -85,12 +85,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val channels = db.listChannels()
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
-    val staleChannels = getStaleChannels(channels, updates)
+    val staleChannels = getStaleChannels(channels.map(_._1), updates)
     if (staleChannels.size > 0) {
       log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
     }
-    val remainingChannels = channels.filterNot(c => staleChannels.contains(c.shortChannelId))
+    val remainingChannels = channels.filterNot(c => staleChannels.contains(c._1.shortChannelId))
     val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
     remainingChannels.map(self ! _)
     nodes.map(self ! _)
@@ -142,7 +142,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId.toHexString}")
             context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
-            db.addChannel(c)
+            db.addChannel(c, tx.txid)
             Some(c)
           }
         case IndividualResult(c, Some(tx), false) =>
