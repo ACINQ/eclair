@@ -129,16 +129,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay
 
     case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels)) if channelId == CHANNELID_ZERO =>
+      transport ! TransportHandler.ReadAck(err)
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
       channels.values.foreach(_ forward err)
       transport ! PoisonPill
       stay
 
-    case Event(msg: wire.Error, ConnectedData(_, transport, _, channels)) =>
+    case Event(err: wire.Error, ConnectedData(_, transport, _, channels)) =>
+      transport ! TransportHandler.ReadAck(err)
       // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
-      channels.get(FinalChannelId(msg.channelId)).orElse(channels.get(TemporaryChannelId(msg.channelId))) match {
-        case Some(channel) => channel forward msg
-        case None => transport ! wire.Error(msg.channelId, UNKNOWN_CHANNEL_MESSAGE)
+      channels.get(FinalChannelId(err.channelId)).orElse(channels.get(TemporaryChannelId(err.channelId))) match {
+        case Some(channel) => channel forward err
+        case None => transport ! wire.Error(err.channelId, UNKNOWN_CHANNEL_MESSAGE)
       }
       stay
 
