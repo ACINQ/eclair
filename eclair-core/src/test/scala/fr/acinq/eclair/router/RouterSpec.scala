@@ -9,7 +9,7 @@ import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{BucketCounters, ChannelAnnouncement, ChannelUpdate, Error, NodeAnnouncement}
+import fr.acinq.eclair.wire.{BucketFilters, ChannelAnnouncement, ChannelUpdate, Error, NodeAnnouncement}
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -210,12 +210,12 @@ class RouterSpec extends BaseRouterSpec {
     for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
   }
 
-  test("send bucket counters") { case (router, _) =>
+  test("send bucket filters") { case (router, _) =>
     val sender = TestProbe()
     val receiver = TestProbe()
 
-    sender.send(router, SendBucketCounters(receiver.ref))
-    val counters = receiver.expectMsgType[BucketCounters]
+    sender.send(router, SendBucketHashes(receiver.ref))
+    val filters = receiver.expectMsgType[BucketFilters]
 
     sender.send(router, SendRoutingState(receiver.ref, None))
     for (_ <- 0 until 4) receiver.expectMsgType[ChannelAnnouncement]
@@ -223,7 +223,7 @@ class RouterSpec extends BaseRouterSpec {
     for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
 
     // now we'll just receive node announcements
-    sender.send(router, SendRoutingState(receiver.ref, Some(counters)))
+    sender.send(router, SendRoutingState(receiver.ref, Some(filters)))
     for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
   }
 }

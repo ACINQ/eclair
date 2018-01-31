@@ -264,11 +264,11 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  val bucketCounterCodec: Codec[BucketCounter] = (
-    ("height" | int32) :: ("count" | int32)).as[BucketCounter]
+  val bucketFilterCodec: Codec[BucketFilter] = (
+    ("height" | int32) :: ("hash" | binarydata(BucketFilter.SIZE))).as[BucketFilter]
 
-  val bucketCountersCodec: Codec[BucketCounters] = (
-    ("counters" | listOfN(uint16, bucketCounterCodec))).as[BucketCounters]
+  val bucketFiltersCodec: Codec[BucketFilters] = (
+    ("filters" | listOfN(uint16, bucketFilterCodec))).as[BucketFilters]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -294,7 +294,7 @@ object LightningMessageCodecs {
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
-    .typecase(260, bucketCountersCodec)
+    .typecase(260, bucketFiltersCodec)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::

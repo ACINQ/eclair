@@ -13,7 +13,7 @@ object Features {
   // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
   val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
   val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
-  val USE_BUCKET_COUNTERS = 5
+  val USE_BUCKET_HASHES = 5
 
   /**
     *
@@ -34,14 +34,14 @@ object Features {
     * @param features feature bits
     * @return true if an initial dump of the routing table is requested
     */
-  def useBucketCounters(features: BitSet): Boolean = features.get(USE_BUCKET_COUNTERS)
+  def useBucketHashes(features: BitSet): Boolean = features.get(USE_BUCKET_HASHES)
 
   /**
     *
     * @param features feature bits
-    * @return true if bucket counters can be used
+    * @return true if bucket hashes can be used
     */
-  def useBucketCounters(features: BinaryData): Boolean = useBucketCounters(BitSet.valueOf(features.reverse.toArray))
+  def useBucketHashes(features: BinaryData): Boolean = useBucketHashes(BitSet.valueOf(features.reverse.toArray))
 
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
