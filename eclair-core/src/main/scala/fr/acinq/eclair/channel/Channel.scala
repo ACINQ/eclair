@@ -687,8 +687,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // are there pending signed htlcs on either side? we need to have received their last revocation!
         if (d.commitments.hasNoPendingHtlcs) {
           // there are no pending signed htlcs, let's go directly to NEGOTIATING
-          val closingSigned = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingSigned :: Nil)) sending sendList :+ closingSigned
+          val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil)) sending sendList :+ closingSigned
         } else {
           // there are some pending signed htlcs, we need to fail/fullfill them
           goto(SHUTDOWN) using store(DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown)) sending sendList
@@ -894,8 +894,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           (commitments1, revocation)
       } match {
         case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
-          val closingSigned = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingSigned :: Nil)) sending revocation :: closingSigned :: Nil
+          val (closingTx, closingSigned) = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil)) sending revocation :: closingSigned :: Nil
         case Success((commitments1, revocation)) =>
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
@@ -911,8 +911,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       Try(Commitments.receiveRevocation(commitments, revocation)) match {
         case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
           log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
-          val closingSigned = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, closingSigned :: Nil)) sending closingSigned
+          val (closingTx, closingSigned) = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil)) sending closingSigned
         case Success(commitments1) =>
           // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
           d.commitments.remoteChanges.signed.collect {
@@ -958,21 +958,21 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       log.info(s"received closingFeeSatoshis=$remoteClosingFee")
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
-        case Success(signedClosingTx) if remoteClosingFee == d.localClosingSigned.last.feeSatoshis =>
+        case Success(signedClosingTx) if remoteClosingFee == d.closingTxProposed.last.localClosingSigned.feeSatoshis =>
           handleMutualClose(signedClosingTx, Left(d))
         case Success(signedClosingTx) =>
-          val nextClosingFee = Closing.nextClosingFee(Satoshi(d.localClosingSigned.last.feeSatoshis), Satoshi(remoteClosingFee))
-          val (_, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
+          val nextClosingFee = Closing.nextClosingFee(Satoshi(d.closingTxProposed.last.localClosingSigned.feeSatoshis), Satoshi(remoteClosingFee))
+          val (closingTx, closingSigned) = Closing.makeClosingTx(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, nextClosingFee)
           log.info(s"proposing closingFeeSatoshis=${closingSigned.feeSatoshis}")
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
             handleMutualClose(signedClosingTx, Left(store(d))) sending closingSigned
           } else {
-            stay using store(d.copy(localClosingSigned = d.localClosingSigned :+ closingSigned)) sending closingSigned
+            stay using store(d.copy(closingTxProposed = d.closingTxProposed :+ ClosingTxProposed(closingTx.tx, closingSigned))) sending closingSigned
           }
         case Failure(cause) => handleLocalError(cause, d, Some(c))
       }
 
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.localClosingSigned.exists(closingSigned => tx.txIn.head.witness.stack.contains(closingSigned.signature)) =>
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) if d.closingTxProposed.map(_.unsignedTx.txid).contains(tx.txid) =>
       // they can publish a closing tx with any sig we sent them, even if we are not done negotiating
       handleMutualClose(tx, Left(d))
 
@@ -1016,7 +1016,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_CLOSING) =>
-      if (d.localClosingSigned.exists(closingSigned => tx.txIn.head.witness.stack.contains(closingSigned.signature))) {
+      if (d.closingTxProposed.map(_.unsignedTx.txid).contains(tx.txid)) {
         // at any time they can publish a closing tx with any sig we sent them
         handleMutualClose(tx, Right(d))
       } else if (Some(tx.txid) == d.localCommitPublished.map(_.commitTx.txid)) {
@@ -1251,7 +1251,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       goto(SHUTDOWN) using d.copy(commitments = commitments1)
 
     case Event(_: ChannelReestablish, d: DATA_NEGOTIATING) =>
-      forwarder ! d.localClosingSigned
+      forwarder ! d.closingTxProposed
       goto(NEGOTIATING)
 
     case Event(c: CMD_CLOSE, d: HasCommitments) => handleLocalError(ForcedLocalCommit(d.channelId, "can't do a mutual close while syncing"), d, Some(c))
@@ -1408,17 +1408,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     log.info(s"a closing tx has been published: closingTxId=${closingTx.txid}")
 
     val closingSigned = d match {
-      case Left(negotiating) => negotiating.localClosingSigned
-      case Right(closing) => closing.localClosingSigned
+      case Left(negotiating) => negotiating.closingTxProposed
+      case Right(closing) => closing.closingTxProposed
     }
-    val index = closingSigned.indexWhere(closingSigned => closingTx.txIn.head.witness.stack.contains(closingSigned.signature))
+    val index = closingSigned.map(_.unsignedTx.txid).indexOf(closingTx.txid)
     if (index != closingSigned.size - 1) {
       log.warning(s"closing tx was published before end of negotiation: closingTxId=${closingTx.txid} index=$index signatures=${closingSigned.size}")
     }
     doPublish(closingTx)
 
     val nextData = d match {
-      case Left(negotiating) => DATA_CLOSING(negotiating.commitments, negotiating.localClosingSigned, mutualClosePublished = closingTx :: Nil)
+      case Left(negotiating) => DATA_CLOSING(negotiating.commitments, negotiating.closingTxProposed, mutualClosePublished = closingTx :: Nil)
       case Right(closing) => closing.copy(mutualClosePublished = closing.mutualClosePublished :+ closingTx)
     }
     goto(CLOSING) using store(nextData)
@@ -1437,8 +1437,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
-      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.localClosingSigned, localCommitPublished = Some(localCommitPublished))
-      case _ => DATA_CLOSING(d.commitments, localClosingSigned = Nil, localCommitPublished = Some(localCommitPublished))
+      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.closingTxProposed, localCommitPublished = Some(localCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, closingTxProposed = Nil, localCommitPublished = Some(localCommitPublished))
     }
 
     goto(CLOSING) using store(nextData)
@@ -1507,8 +1507,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(remoteCommitPublished = Some(remoteCommitPublished))
-      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.localClosingSigned, remoteCommitPublished = Some(remoteCommitPublished))
-      case _ => DATA_CLOSING(d.commitments, localClosingSigned = Nil, remoteCommitPublished = Some(remoteCommitPublished))
+      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.closingTxProposed, remoteCommitPublished = Some(remoteCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, closingTxProposed = Nil, remoteCommitPublished = Some(remoteCommitPublished))
     }
 
     goto(CLOSING) using store(nextData)
@@ -1525,8 +1525,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     val nextData = d match {
       case closing: DATA_CLOSING => closing.copy(nextRemoteCommitPublished = Some(remoteCommitPublished))
-      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.localClosingSigned, nextRemoteCommitPublished = Some(remoteCommitPublished))
-      case _ => DATA_CLOSING(d.commitments, localClosingSigned = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
+      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.closingTxProposed, nextRemoteCommitPublished = Some(remoteCommitPublished))
+      case _ => DATA_CLOSING(d.commitments, closingTxProposed = Nil, nextRemoteCommitPublished = Some(remoteCommitPublished))
     }
 
     goto(CLOSING) using store(nextData)
@@ -1562,8 +1562,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
         val nextData = d match {
           case closing: DATA_CLOSING => closing.copy(revokedCommitPublished = closing.revokedCommitPublished :+ revokedCommitPublished)
-          case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.localClosingSigned, revokedCommitPublished = revokedCommitPublished :: Nil)
-          case _ => DATA_CLOSING(d.commitments, localClosingSigned = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
+          case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.closingTxProposed, revokedCommitPublished = revokedCommitPublished :: Nil)
+          case _ => DATA_CLOSING(d.commitments, closingTxProposed = Nil, revokedCommitPublished = revokedCommitPublished :: Nil)
         }
         goto(CLOSING) using store(nextData) sending error
       case None =>

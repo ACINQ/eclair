@@ -123,6 +123,8 @@ trait HasCommitments extends Data {
   def channelId = commitments.channelId
 }
 
+case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
+
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTx: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
 case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], htlcPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
@@ -144,9 +146,9 @@ final case class DATA_NORMAL(commitments: Commitments,
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown, closingTxProposed: List[ClosingTxProposed]) extends Data with HasCommitments
 final case class DATA_CLOSING(commitments: Commitments,
-                              localClosingSigned: List[ClosingSigned],
+                              closingTxProposed: List[ClosingTxProposed],
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
