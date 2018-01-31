@@ -41,6 +41,9 @@ object Channel {
   // we don't want the counterparty to use a dust limit lower than that, because they wouldn't only hurt themselves we may need them to publish their commit tx in certain cases (backup/restore)
   val MIN_DUSTLIMIT = 546
 
+  // we won't exchange more than this many signatures when negotiating the closing fee
+  val MAX_NEGOTIATION_ITERATIONS = 20
+
   case object TickRefreshChannelUpdate
 
 }
@@ -688,7 +691,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         if (d.commitments.hasNoPendingHtlcs) {
           // there are no pending signed htlcs, let's go directly to NEGOTIATING
           val (closingTx, closingSigned) = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil)) sending sendList :+ closingSigned
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil, bestUnpublishedClosingTx_opt = None)) sending sendList :+ closingSigned
         } else {
           // there are some pending signed htlcs, we need to fail/fullfill them
           goto(SHUTDOWN) using store(DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown)) sending sendList
@@ -895,7 +898,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       } match {
         case Success((commitments1, revocation)) if commitments1.hasNoPendingHtlcs =>
           val (closingTx, closingSigned) = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil)) sending revocation :: closingSigned :: Nil
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil, bestUnpublishedClosingTx_opt = None)) sending revocation :: closingSigned :: Nil
         case Success((commitments1, revocation)) =>
           if (Commitments.localHasChanges(commitments1)) {
             // if we have newly acknowledged changes let's sign them
@@ -912,7 +915,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Success(commitments1) if commitments1.hasNoPendingHtlcs =>
           log.debug(s"received a new rev, switching to NEGOTIATING spec:\n${Commitments.specs2String(commitments1)}")
           val (closingTx, closingSigned) = Closing.makeFirstClosingTx(commitments1, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
-          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil)) sending closingSigned
+          goto(NEGOTIATING) using store(DATA_NEGOTIATING(commitments1, localShutdown, remoteShutdown, ClosingTxProposed(closingTx.tx, closingSigned) :: Nil, bestUnpublishedClosingTx_opt = None)) sending closingSigned
         case Success(commitments1) =>
           // BOLT 2: A sending node SHOULD fail to route any HTLC added after it sent shutdown.
           d.commitments.remoteChanges.signed.collect {
@@ -958,7 +961,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(c@ClosingSigned(_, remoteClosingFee, remoteSig), d: DATA_NEGOTIATING) =>
       log.info(s"received closingFeeSatoshis=$remoteClosingFee")
       Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(remoteClosingFee), remoteSig) match {
-        case Success(signedClosingTx) if remoteClosingFee == d.closingTxProposed.last.localClosingSigned.feeSatoshis =>
+        case Success(signedClosingTx) if remoteClosingFee == d.closingTxProposed.last.localClosingSigned.feeSatoshis || d.closingTxProposed.size >= MAX_NEGOTIATION_ITERATIONS =>
+          // we close when we converge or when there was too many iterations
           handleMutualClose(signedClosingTx, Left(d))
         case Success(signedClosingTx) =>
           val nextClosingFee = Closing.nextClosingFee(Satoshi(d.closingTxProposed.last.localClosingSigned.feeSatoshis), Satoshi(remoteClosingFee))
@@ -967,7 +971,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           if (nextClosingFee == Satoshi(remoteClosingFee)) {
             handleMutualClose(signedClosingTx, Left(store(d))) sending closingSigned
           } else {
-            stay using store(d.copy(closingTxProposed = d.closingTxProposed :+ ClosingTxProposed(closingTx.tx, closingSigned))) sending closingSigned
+            stay using store(d.copy(closingTxProposed = d.closingTxProposed :+ ClosingTxProposed(closingTx.tx, closingSigned), bestUnpublishedClosingTx_opt = Some(signedClosingTx))) sending closingSigned
           }
         case Failure(cause) => handleLocalError(cause, d, Some(c))
       }
@@ -1390,7 +1394,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       case _ => log.error(cause, s"msg=${msg.getOrElse("n/a")} stateData=$stateData ")
     }
     val error = Error(d.channelId, cause.getMessage.getBytes)
-    spendLocalCurrent(d) sending error
+
+    d match {
+      case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
+        // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+        handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
+      case _ =>
+        // otherwise we use our latest commitment
+        spendLocalCurrent(d) sending error
+    }
   }
 
   def handleRemoteError(e: Error, d: Data) = {
@@ -1398,7 +1410,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     log.error(s"peer sent error: ascii='${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else "n/a"}' bin=${e.data}")
     d match {
       case _: DATA_CLOSING => stay // nothing to do, there is already a spending tx published
-      //case negotiating: DATA_NEGOTIATING => stay TODO: (nitpick) would be nice to publish a closing tx instead if we have already received one of their sigs
+      case negotiating@DATA_NEGOTIATING(_, _, _, _, Some(bestUnpublishedClosingTx)) =>
+        // if we were in the process of closing and already received a closing sig from the counterparty, it's always better to use that
+        handleMutualClose(bestUnpublishedClosingTx, Left(negotiating))
       case hasCommitments: HasCommitments => spendLocalCurrent(hasCommitments)
       case _ => goto(CLOSED) // when there is no commitment yet, we just go to CLOSED state in case an error occurs
     }

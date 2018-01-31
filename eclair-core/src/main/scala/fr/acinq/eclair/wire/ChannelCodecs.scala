@@ -229,7 +229,8 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
-      ("closingTxProposed" | listOfN(uint16, closingTxProposedCodec))).as[DATA_NEGOTIATING]
+      ("closingTxProposed" | listOfN(uint16, closingTxProposedCodec)) ::
+      ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
   val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
     ("commitments" | commitmentsCodec) ::
