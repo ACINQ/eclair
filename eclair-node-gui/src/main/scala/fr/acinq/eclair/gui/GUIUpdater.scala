@@ -28,12 +28,12 @@ import scala.collection.JavaConversions._
 class GUIUpdater(mainController: MainController) extends Actor with ActorLogging {
 
   /**
-  * Needed to stop JavaFX complaining about updates from non GUI thread
-  */
-  private def runInGuiThread(f: () => Unit) :Unit = {
-            Platform.runLater(new Runnable() {
-                 @Override def run() =f()
-        });
+    * Needed to stop JavaFX complaining about updates from non GUI thread
+    */
+  private def runInGuiThread(f: () => Unit): Unit = {
+    Platform.runLater(new Runnable() {
+      @Override def run() = f()
+    })
   }
 
   def receive: Receive = main(Map())
@@ -71,7 +71,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelCreated(channel, peer, remoteNodeId, isFunder, temporaryChannelId) =>
       context.watch(channel)
       val (channelPaneController, root) = createChannelPanel(channel, peer, remoteNodeId, isFunder, temporaryChannelId)
-      runInGuiThread(()=> mainController.channelBox.getChildren.addAll(root))
+      runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))
       context.become(main(m + (channel -> channelPaneController)))
 
     case ChannelRestored(channel, peer, remoteNodeId, isFunder, channelId, currentData) =>
@@ -83,37 +83,37 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toString())
         case _ => {}
       }
-      runInGuiThread(()=> mainController.channelBox.getChildren.addAll(root))
+      runInGuiThread(() => mainController.channelBox.getChildren.addAll(root))
       context.become(main(m + (channel -> channelPaneController)))
 
     case ChannelIdAssigned(channel, _, _, channelId) if m.contains(channel) =>
       val channelPaneController = m(channel)
-      runInGuiThread(()=>channelPaneController.channelId.setText(s"$channelId"))
+      runInGuiThread(() => channelPaneController.channelId.setText(s"$channelId"))
 
     case ChannelStateChanged(channel, _, _, _, currentState, _) if m.contains(channel) =>
       val channelPaneController = m(channel)
-      runInGuiThread{ ()=>
-          if (currentState == CLOSING || currentState == CLOSED) {
-            channelPaneController.close.setVisible(false)
-          } else {
-            channelPaneController.close.setVisible(true)
-          }
-          channelPaneController.close.setText(if (OFFLINE == currentState) "Force close" else "Close")
-          channelPaneController.state.setText(currentState.toString)
+      runInGuiThread { () =>
+        if (currentState == CLOSING || currentState == CLOSED) {
+          channelPaneController.close.setVisible(false)
+        } else {
+          channelPaneController.close.setVisible(true)
         }
+        channelPaneController.close.setText(if (OFFLINE == currentState) "Force close" else "Close")
+        channelPaneController.state.setText(currentState.toString)
+      }
 
     case ChannelSignatureReceived(channel, commitments) if m.contains(channel) =>
       val channelPaneController = m(channel)
-      runInGuiThread( ()=> updateBalance(channelPaneController, commitments))
+      runInGuiThread(() => updateBalance(channelPaneController, commitments))
 
     case Terminated(actor) if m.contains(actor) =>
       val channelPaneController = m(actor)
       log.debug(s"channel=${channelPaneController.channelId.getText} to be removed from gui")
-      runInGuiThread( ()=> mainController.channelBox.getChildren.remove(channelPaneController.root))
+      runInGuiThread(() => mainController.channelBox.getChildren.remove(channelPaneController.root))
 
     case NodeDiscovered(nodeAnnouncement) =>
       log.debug(s"peer node discovered with node id=${nodeAnnouncement.nodeId}")
-      runInGuiThread{ ()=>
+      runInGuiThread { () =>
         if (!mainController.networkNodesList.exists(na => na.nodeId == nodeAnnouncement.nodeId)) {
           mainController.networkNodesList.add(nodeAnnouncement)
           m.foreach(f => if (nodeAnnouncement.nodeId.toString.equals(f._2.theirNodeIdValue)) {
@@ -124,7 +124,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case NodeLost(nodeId) =>
       log.debug(s"peer node lost with node id=${nodeId}")
-      runInGuiThread{ ()=>
+      runInGuiThread { () =>
         mainController.networkNodesList.removeIf(new Predicate[NodeAnnouncement] {
           override def test(na: NodeAnnouncement) = na.nodeId.equals(nodeId)
         })
@@ -132,7 +132,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case NodeUpdated(nodeAnnouncement) =>
       log.debug(s"peer node with id=${nodeAnnouncement.nodeId} has been updated")
-      runInGuiThread{ ()=>
+      runInGuiThread { () =>
         val idx = mainController.networkNodesList.indexWhere(na => na.nodeId == nodeAnnouncement.nodeId)
         if (idx >= 0) {
           mainController.networkNodesList.update(idx, nodeAnnouncement)
@@ -144,15 +144,15 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelDiscovered(channelAnnouncement, capacity) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
-      runInGuiThread{ ()=>
+      runInGuiThread { () =>
         if (!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
-            mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement,-1,-1,capacity.toLong, None, None))
+          mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, -1, -1, capacity.toLong, None, None))
         }
       }
 
     case ChannelLost(shortChannelId) =>
       log.debug(s"peer channel lost with channel id=${shortChannelId}")
-      runInGuiThread{ ()=>
+      runInGuiThread { () =>
         mainController.networkChannelsList.removeIf(new Predicate[ChannelInfo] {
           override def test(c: ChannelInfo) = c.announcement.shortChannelId == shortChannelId
         })
@@ -160,7 +160,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
 
     case ChannelUpdateReceived(channelUpdate) =>
       log.debug(s"peer channel with id=${channelUpdate.shortChannelId} has been updated")
-      runInGuiThread{()=>
+      runInGuiThread { () =>
         val idx = mainController.networkChannelsList.indexWhere(c => c.announcement.shortChannelId == channelUpdate.shortChannelId)
         if (idx >= 0) {
           val c = mainController.networkChannelsList.get(idx)
@@ -169,37 +169,37 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           } else {
             c.isNode2Enabled = Some(Announcements.isEnabled(channelUpdate.flags))
           }
-          c.feeBaseMsat=channelUpdate.feeBaseMsat
-          c.feeProportionalMillionths=channelUpdate.feeProportionalMillionths
+          c.feeBaseMsat = channelUpdate.feeBaseMsat
+          c.feeProportionalMillionths = channelUpdate.feeProportionalMillionths
           mainController.networkChannelsList.update(idx, c)
         }
       }
     case p: PaymentSent =>
       log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.amount}, fees=${p.feesPaid}")
-      runInGuiThread( ()=> mainController.paymentSentList.prepend(new PaymentSentRecord(p, LocalDateTime.now())) )
+      runInGuiThread(() => mainController.paymentSentList.prepend(new PaymentSentRecord(p, LocalDateTime.now())))
 
     case p: PaymentReceived =>
       log.debug(s"payment received with h=${p.paymentHash}, amount=${p.amount}")
-      runInGuiThread( ()=> mainController.paymentReceivedList.prepend(new PaymentReceivedRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentReceivedList.prepend(new PaymentReceivedRecord(p, LocalDateTime.now())))
 
     case p: PaymentRelayed =>
       log.debug(s"payment relayed with h=${p.paymentHash}, amount=${p.amountIn}, feesEarned=${p.amountOut}")
-      runInGuiThread( ()=> mainController.paymentRelayedList.prepend(new PaymentRelayedRecord(p, LocalDateTime.now())))
+      runInGuiThread(() => mainController.paymentRelayedList.prepend(new PaymentRelayedRecord(p, LocalDateTime.now())))
 
     case ZMQConnected =>
       log.debug("ZMQ connection UP")
-      runInGuiThread( ()=> mainController.hideBlockerModal)
+      runInGuiThread(() => mainController.hideBlockerModal)
 
     case ZMQDisconnected =>
       log.debug("ZMQ connection DOWN")
-      runInGuiThread( ()=> mainController.showBlockerModal("Bitcoin Core"))
+      runInGuiThread(() => mainController.showBlockerModal("Bitcoin Core"))
 
     case ElectrumConnected =>
       log.debug("Electrum connection UP")
-      runInGuiThread( ()=> mainController.hideBlockerModal)
+      runInGuiThread(() => mainController.hideBlockerModal)
 
     case ElectrumDisconnected =>
       log.debug("Electrum connection DOWN")
-      runInGuiThread( ()=> mainController.showBlockerModal("Electrum"))
+      runInGuiThread(() => mainController.showBlockerModal("Electrum"))
   }
 }
