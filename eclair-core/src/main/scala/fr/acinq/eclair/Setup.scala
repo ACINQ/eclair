@@ -37,7 +37,7 @@ import scala.concurrent.{Await, ExecutionContext, Future, Promise}
   * @param datadir  directory where eclair-core will write/read its data
   * @param overrideDefaults
   * @param actorSystem
-  * @param seed_opt optional seed. If set, will be used by eclair, and also used as master by the embedded electrum watcher.
+  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
 class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
 
