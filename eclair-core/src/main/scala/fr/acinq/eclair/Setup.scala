@@ -148,7 +148,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
       case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
       case Electrum(electrumClient) => seed_opt match {
-        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)), "electrum-wallet")
+        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet)
         case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
       }
