@@ -30,22 +30,22 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /**
-  * Setups eclair from a datadir.
+  * Setup eclair from a datadir.
   * <p>
   * Created by PM on 25/01/2016.
   *
   * @param datadir  directory where eclair-core will write/read its data
-  * @param seed_opt optional seed used only when the wallet is the embedded electrum one. None by default.
   * @param overrideDefaults
   * @param actorSystem
+  * @param seed_opt optional seed. If set, will be used by eclair, and also used as master by the embedded electrum watcher.
   */
-class Setup(datadir: File, seed_opt: Option[BinaryData] = None, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem()) extends Logging {
+class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
   val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
   val chain: String = config.getString("chain")
 
   // early checks
