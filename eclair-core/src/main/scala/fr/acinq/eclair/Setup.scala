@@ -30,9 +30,16 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /**
+  * Setups eclair from a datadir.
+  * <p>
   * Created by PM on 25/01/2016.
+  *
+  * @param datadir  directory where eclair-core will write/read its data
+  * @param seed_opt optional seed used only when the wallet is the embedded electrum one. None by default.
+  * @param overrideDefaults
+  * @param actorSystem
   */
-class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem()) extends Logging {
+class Setup(datadir: File, seed_opt: Option[BinaryData] = None, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem()) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
@@ -140,10 +147,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
       case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
-      case Electrum(electrumClient) =>
-        val electrumSeedPath = new File(datadir, "electrum_seed.dat")
-        val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, allowSpendUnconfirmed = true)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+      case Electrum(electrumClient) => seed_opt match {
+        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash)), "electrum-wallet")
+          new ElectrumEclairWallet(electrumWallet)
+        case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
+      }
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
