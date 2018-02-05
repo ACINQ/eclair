@@ -108,24 +108,24 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       stay using currentStateData.copy(buffer = buffer ++ data)
 
     case Event(Listener(listener), WaitingForListenerData(enc, dec, buffer)) =>
-      val (nextStateData, plaintextMessages) = WaitingForCyphertextData(enc, dec, None, buffer, listener).decrypt
+      val (nextStateData, plaintextMessages) = WaitingForCiphertextData(enc, dec, None, buffer, listener).decrypt
       context.watch(listener)
       sendToListener(listener, plaintextMessages)
-      goto(WaitingForCyphertext) using nextStateData
+      goto(WaitingForCiphertext) using nextStateData
 
   }
 
-  when(WaitingForCyphertext) {
-    case Event(Tcp.Received(data), currentStateData@WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
-      val (nextStateData, plaintextMessages) = WaitingForCyphertextData.decrypt(currentStateData.copy(buffer = buffer ++ data))
+  when(WaitingForCiphertext) {
+    case Event(Tcp.Received(data), currentStateData@WaitingForCiphertextData(enc, dec, length, buffer, listener)) =>
+      val (nextStateData, plaintextMessages) = WaitingForCiphertextData.decrypt(currentStateData.copy(buffer = buffer ++ data))
       sendToListener(listener, plaintextMessages)
       stay using nextStateData
 
-    case Event(t: T, WaitingForCyphertextData(enc, dec, length, buffer, listener)) =>
+    case Event(t: T, WaitingForCiphertextData(enc, dec, length, buffer, listener)) =>
       val blob = codec.encode(t).require.toByteArray
       val (enc1, ciphertext) = TransportHandler.encrypt(enc, blob)
       out ! buf(ciphertext)
-      stay using WaitingForCyphertextData(enc1, dec, length, buffer, listener)
+      stay using WaitingForCiphertextData(enc1, dec, length, buffer, listener)
   }
 
   whenUnhandled {
@@ -208,7 +208,7 @@ object TransportHandler {
   sealed trait State
   case object Handshake extends State
   case object WaitingForListener extends State
-  case object WaitingForCyphertext extends State
+  case object WaitingForCiphertext extends State
   // @formatter:on
 
   case class Listener(listener: ActorRef)
@@ -232,7 +232,7 @@ object TransportHandler {
 
     override def encryptWithAd(ad: BinaryData, plaintext: BinaryData): (CipherState, BinaryData) = {
       cs match {
-        case UnitializedCipherState(_) => (this, plaintext)
+        case UninitializedCipherState(_) => (this, plaintext)
         case InitializedCipherState(k, n, _) if n == 999 => {
           val (_, ciphertext) = cs.encryptWithAd(ad, plaintext)
           val (ck1, k1) = SHA256HashFunctions.hkdf(ck, k)
@@ -247,7 +247,7 @@ object TransportHandler {
 
     override def decryptWithAd(ad: BinaryData, ciphertext: BinaryData): (CipherState, BinaryData) = {
       cs match {
-        case UnitializedCipherState(_) => (this, ciphertext)
+        case UninitializedCipherState(_) => (this, ciphertext)
         case InitializedCipherState(k, n, _) if n == 999 => {
           val (_, plaintext) = cs.decryptWithAd(ad, ciphertext)
           val (ck1, k1) = SHA256HashFunctions.hkdf(ck, k)
@@ -263,13 +263,13 @@ object TransportHandler {
 
   case class WaitingForListenerData(enc: CipherState, dec: CipherState, buffer: ByteString) extends Data
 
-  case class WaitingForCyphertextData(enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef) extends Data {
-    def decrypt: (WaitingForCyphertextData, Seq[BinaryData]) = WaitingForCyphertextData.decrypt(this)
+  case class WaitingForCiphertextData(enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef) extends Data {
+    def decrypt: (WaitingForCiphertextData, Seq[BinaryData]) = WaitingForCiphertextData.decrypt(this)
   }
 
-  object WaitingForCyphertextData {
+  object WaitingForCiphertextData {
     @tailrec
-    def decrypt(state: WaitingForCyphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCyphertextData, Seq[BinaryData]) = {
+    def decrypt(state: WaitingForCiphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCiphertextData, Seq[BinaryData]) = {
       (state.ciphertextLength, state.buffer.length) match {
         case (None, length) if length < 18 => (state, acc)
         case (None, _) =>

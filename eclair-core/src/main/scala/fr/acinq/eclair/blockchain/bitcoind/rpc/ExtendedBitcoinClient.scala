@@ -94,9 +94,9 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       tx <- getTransaction(txid)
     } yield tx
 
-  def isTransactionOuputSpendable(txId: String, ouputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+  def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
-      json <- rpcClient.invoke("gettxout", txId, ouputIndex, includeMempool)
+      json <- rpcClient.invoke("gettxout", txId, outputIndex, includeMempool)
     } yield json != JNull
 
   /**
@@ -154,7 +154,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
           } getOrElse ("00" * 32)
         }
       tx <- getRawTransaction(txid)
-      unspent <- isTransactionOuputSpendable(txid, coordinates.outputIndex, includeMempool = true)
+      unspent <- isTransactionOutputSpendable(txid, coordinates.outputIndex, includeMempool = true)
     } yield IndividualResult(c, Some(Transaction.read(tx)), unspent)
   }
 

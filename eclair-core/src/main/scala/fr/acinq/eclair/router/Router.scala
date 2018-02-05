@@ -159,7 +159,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
       // in case we just validated our first local channel, we announce the local node
       // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
-      // even if we had stored a previous announcement, it would be overriden by this more recent one
+      // even if we had stored a previous announcement, it would be overridden by this more recent one
       if (!d.nodes.contains(nodeParams.nodeId) && validated.exists(isRelatedTo(_, nodeParams.nodeId))) {
         log.info(s"first local channel validated, announcing local node")
         val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)

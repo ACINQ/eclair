@@ -83,7 +83,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
       w match {
         case WatchSpentBasic(_, txid, outputIndex, _, _) =>
           // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
-          client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
+          client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
             case false =>
               log.warning(s"output=$outputIndex of txid=$txid has already been spent")
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
@@ -94,7 +94,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
           client.getTxConfirmations(txid.toString()).collect {
             case Some(_) =>
               // parent tx was published, we need to make sure this particular output has not been spent
-              client.isTransactionOuputSpendable(txid.toString(), outputIndex, true).collect {
+              client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
                 case false =>
                   log.warning(s"output=$outputIndex of txid=$txid has already been spent")
                   log.warning(s"looking first in the mempool")

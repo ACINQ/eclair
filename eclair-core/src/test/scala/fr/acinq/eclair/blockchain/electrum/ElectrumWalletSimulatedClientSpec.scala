@@ -6,8 +6,9 @@ import fr.acinq.bitcoin.{BinaryData, Block, MnemonicCode, Satoshi}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ScriptHashSubscription, ScriptHashSubscriptionResponse}
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet.{NewWalletReceiveAddress, WalletEvent, WalletParameters, WalletReady}
 import org.junit.runner.RunWith
-import org.scalatest.{BeforeAndAfterAll, FunSuite, FunSuiteLike}
+import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
+
 import scala.concurrent.duration._
 
 @RunWith(classOf[JUnitRunner])
@@ -26,7 +27,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
   val listener = TestProbe()
   system.eventStream.subscribe(listener.ref, classOf[WalletEvent])
-  val wallet = TestFSMRef(new ElectrumWallet(mnemonics, system.actorOf(Props(new SimulatedClient())), WalletParameters(Block.RegtestGenesisBlock.hash, minimumFee = Satoshi(5000))))
+  val wallet = TestFSMRef(new ElectrumWallet(seed, system.actorOf(Props(new SimulatedClient())), WalletParameters(Block.RegtestGenesisBlock.hash, minimumFee = Satoshi(5000))))
 
   // wallet sends a receive address notification as soon as it is created
   listener.expectMsgType[NewWalletReceiveAddress]

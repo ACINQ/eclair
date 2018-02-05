@@ -33,7 +33,7 @@ object GUIValidators {
   /**
     * Displays a label with an error message.
     *
-    * @param errorLabel     JFX label containing an error messsage
+    * @param errorLabel     JFX label containing an error message
     * @param validCondition if true the label is hidden, else it is shown
     * @return true if field is valid, false otherwise
     */

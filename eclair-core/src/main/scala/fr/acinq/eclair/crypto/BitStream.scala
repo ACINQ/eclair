@@ -40,12 +40,12 @@ case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
     * append bytes to a bitstream
     *
     * @param input bytes to append
-    * @return an udpdate bitstream
+    * @return an updated bitstream
     */
   def writeBytes(input: Seq[Byte]): BitStream = input.foldLeft(this) { case (bs, b) => bs.writeByte(b) }
 
   /**
-    * append a bit to a bistream
+    * append a bit to a bitstream
     *
     * @param bit bit to append
     * @return an update bitstream
@@ -63,7 +63,7 @@ case class BitStream(bytes: Vector[Byte], offstart: Int, offend: Int) {
   }
 
   /**
-    * append bits to a bistream
+    * append bits to a bitstream
     *
     * @param input bits to append
     * @return an update bitstream

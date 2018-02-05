@@ -30,15 +30,22 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /**
+  * Setup eclair from a datadir.
+  * <p>
   * Created by PM on 25/01/2016.
+  *
+  * @param datadir  directory where eclair-core will write/read its data
+  * @param overrideDefaults
+  * @param actorSystem
+  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
-class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem()) extends Logging {
+class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
   val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
   val chain: String = config.getString("chain")
 
   // early checks
@@ -140,10 +147,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
       case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
-      case Electrum(electrumClient) =>
-        val electrumSeedPath = new File(datadir, "electrum_seed.dat")
-        val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, allowSpendUnconfirmed = true)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+      case Electrum(electrumClient) => seed_opt match {
+        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
+          new ElectrumEclairWallet(electrumWallet)
+        case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
+      }
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
