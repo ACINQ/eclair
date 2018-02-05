@@ -4,7 +4,7 @@ import java.io.StringWriter
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -100,7 +100,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
     val initNodes = remainingNodes.map(n => (n.nodeId -> n)).toMap
 
-    // we watches the funding tx of all these channels
+    // send events for these channels/nodes
+    remainingChannels.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c)))
+    remainingNodes.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+
+    // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watchh event immediately
     remainingChannels.foreach { c =>
       val txid = channels(c)
@@ -154,7 +158,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId.toHexString}")
-            context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
+            context.system.eventStream.publish(ChannelDiscovered(c))
             db.addChannel(c, tx.txid)
             Some(c)
           }
