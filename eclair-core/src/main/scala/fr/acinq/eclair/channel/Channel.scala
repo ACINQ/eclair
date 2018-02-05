@@ -1419,7 +1419,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def handleMutualClose(closingTx: Transaction, d: Either[DATA_NEGOTIATING, DATA_CLOSING]) = {
-    log.info(s"a closing tx has been published: closingTxId=${closingTx.txid}")
+    log.info(s"closing tx published: closingTxId=${closingTx.txid}")
 
     val closingSigned = d match {
       case Left(negotiating) => negotiating.closingTxProposed
