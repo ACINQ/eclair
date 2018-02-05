@@ -44,10 +44,12 @@ zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
 ```
 
+Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
+
 On **__testnet__**, you also need to make sure that all your UTXOs are `p2sh-of-p2wpkh`.
 To do this, use the debug console, create a new address with `getnewaddress`, import it as a witness address with `addwitnessaddress`, and
 send all your balance to this witness address. 
-If you need to create and send funds manually, don't forget to create and specify a witness address for the change output (this option is avaliable on the GUI once you set the `Enable coin control features` wallet option).
+If you need to create and send funds manually, don't forget to create and specify a witness address for the change output (this option is available on the GUI once you set the `Enable coin control features` wallet option).
 
 
 ### Installing Eclair
@@ -98,7 +100,7 @@ name                         | description                                      
  eclair.api.password         | API password (BASIC)                                                                  | "" (must be set if the API is enabled)
  eclair.bitcoind.rpcuser     | Bitcoin Core RPC user                                                                 | foo
  eclair.bitcoind.rpcpassword | Bitcoin Core RPC password                                                             | bar
- eclair.bitcoind.zmq         | Bitcoin Core ZMQ address                                                              | tcp://127.0.0.1:29000
+ eclair.bitcoind.zmq         | Bitcoin Core ZMQ address                                                              | "tcp://127.0.0.1:29000"
  eclair.gui.unit             | Unit in which amounts are displayed (possible values: msat, sat, mbtc, btc)           | btc 
 
 Quotes are not required unless the value contains special characters. Full syntax guide [here](https://github.com/lightbend/config/blob/master/HOCON.md).
