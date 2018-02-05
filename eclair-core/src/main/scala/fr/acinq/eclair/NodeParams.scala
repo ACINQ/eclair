@@ -55,7 +55,9 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      watcherType: WatcherType) {
+                      watcherType: WatcherType,
+                      paymentRequestExpiry: FiniteDuration,
+                      maxPendingPaymentRequests: Int) {
   val nodeId = privateKey.publicKey
 }
 
@@ -82,17 +84,21 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, seed_opt: Option[BinaryData] = None): NodeParams = {
 
     datadir.mkdirs()
 
-    val seedPath = new File(datadir, "seed.dat")
-    val seed: BinaryData = seedPath.exists() match {
-      case true => Files.readAllBytes(seedPath.toPath)
-      case false =>
-        val seed = randomKey.toBin
-        Files.write(seedPath.toPath, seed)
-        seed
+    val seed: BinaryData = seed_opt match {
+      case Some(s) => s
+      case None =>
+        val seedPath = new File(datadir, "seed.dat")
+        seedPath.exists() match {
+          case true => Files.readAllBytes(seedPath.toPath)
+          case false =>
+            val seed = randomKey.toBin
+            Files.write(seedPath.toPath, seed)
+            seed
+        }
     }
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
@@ -162,6 +168,8 @@ object NodeParams {
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
-      watcherType = watcherType)
+      watcherType = watcherType,
+      paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
+      maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"))
   }
 }

@@ -30,15 +30,22 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /**
+  * Setup eclair from a datadir.
+  * <p>
   * Created by PM on 25/01/2016.
+  *
+  * @param datadir  directory where eclair-core will write/read its data
+  * @param overrideDefaults
+  * @param actorSystem
+  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
-class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem()) extends Logging {
+class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
   val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
   val chain: String = config.getString("chain")
 
   // early checks
@@ -67,6 +74,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         port = config.getInt("bitcoind.rpcport")))
       val future = for {
         json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
+        // Make sure wallet support is enabled in bitcoind.
+        _ <- bitcoinClient.rpcClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
         chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
         bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
@@ -138,10 +147,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
       case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
-      case Electrum(electrumClient) =>
-        val electrumSeedPath = new File(datadir, "electrum_seed.dat")
-        val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, allowSpendUnconfirmed = true)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+      case Electrum(electrumClient) => seed_opt match {
+        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
+          new ElectrumEclairWallet(electrumWallet)
+        case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
+      }
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
@@ -232,4 +242,6 @@ case object BitcoinZMQConnectionTimeoutException extends RuntimeException("could
 
 case object BitcoinRPCConnectionException extends RuntimeException("could not connect to bitcoind using json-rpc")
 
-case object EmptyAPIPasswordException extends RuntimeException("must set a user/password for the json-rpc api")
+case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
+
+case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")

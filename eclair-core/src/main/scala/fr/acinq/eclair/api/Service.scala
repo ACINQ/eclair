@@ -274,6 +274,7 @@ trait Service extends Logging {
     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
+    "getinfo: returns info about the blockchain and this node",
     "help: display this message")
 
   /**

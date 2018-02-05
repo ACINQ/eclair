@@ -70,28 +70,28 @@ object Sphinx extends Logging {
   def blind(pub: PublicKey, blindingFactors: Seq[BinaryData]): PublicKey = blindingFactors.foldLeft(pub)(blind)
 
   /**
-    * computes the ephemereal public keys and shared secrets for all nodes on the route.
+    * computes the ephemeral public keys and shared secrets for all nodes on the route.
     *
     * @param sessionKey this node's session key
     * @param publicKeys public keys of each node on the route
-    * @return a tuple (ephemereal public keys, shared secrets)
+    * @return a tuple (ephemeral public keys, shared secrets)
     */
-  def computeEphemerealPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[BinaryData]) = {
-    val ephemerealPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
+  def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey]): (Seq[PublicKey], Seq[BinaryData]) = {
+    val ephemeralPublicKey0 = blind(PublicKey(Crypto.curve.getG, compressed = true), sessionKey.value)
     val secret0 = computeSharedSecret(publicKeys(0), sessionKey)
-    val blindingFactor0 = computeblindingFactor(ephemerealPublicKey0, secret0)
-    computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemerealPublicKey0), Seq(blindingFactor0), Seq(secret0))
+    val blindingFactor0 = computeblindingFactor(ephemeralPublicKey0, secret0)
+    computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, Seq(ephemeralPublicKey0), Seq(blindingFactor0), Seq(secret0))
   }
 
   @tailrec
-  def computeEphemerealPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], ephemerealPublicKeys: Seq[PublicKey], blindingFactors: Seq[BinaryData], sharedSecrets: Seq[BinaryData]): (Seq[PublicKey], Seq[BinaryData]) = {
+  def computeEphemeralPublicKeysAndSharedSecrets(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], ephemeralPublicKeys: Seq[PublicKey], blindingFactors: Seq[BinaryData], sharedSecrets: Seq[BinaryData]): (Seq[PublicKey], Seq[BinaryData]) = {
     if (publicKeys.isEmpty)
-      (ephemerealPublicKeys, sharedSecrets)
+      (ephemeralPublicKeys, sharedSecrets)
     else {
-      val ephemerealPublicKey = blind(ephemerealPublicKeys.last, blindingFactors.last)
+      val ephemeralPublicKey = blind(ephemeralPublicKeys.last, blindingFactors.last)
       val secret = computeSharedSecret(blind(publicKeys.head, blindingFactors), sessionKey)
-      val blindingFactor = computeblindingFactor(ephemerealPublicKey, secret)
-      computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, ephemerealPublicKeys :+ ephemerealPublicKey, blindingFactors :+ blindingFactor, sharedSecrets :+ secret)
+      val blindingFactor = computeblindingFactor(ephemeralPublicKey, secret)
+      computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys.tail, ephemeralPublicKeys :+ ephemeralPublicKey, blindingFactors :+ blindingFactor, sharedSecrets :+ secret)
     }
   }
 
@@ -176,11 +176,11 @@ object Sphinx extends Logging {
     val bin = xor(packet.routingInfo ++ zeroes(PayloadLength + MacLength), generateStream(rho, PayloadLength + MacLength + MaxHops * (PayloadLength + MacLength)))
     val payload = bin.take(PayloadLength)
     val hmac = bin.slice(PayloadLength, PayloadLength + MacLength)
-    val nextRoutinfo = bin.drop(PayloadLength + MacLength)
+    val nextRouteInfo = bin.drop(PayloadLength + MacLength)
 
     val nextPubKey = blind(PublicKey(packet.publicKey), computeblindingFactor(PublicKey(packet.publicKey), sharedSecret))
 
-    ParsedPacket(payload, Packet(Version, nextPubKey, hmac, nextRoutinfo), sharedSecret)
+    ParsedPacket(payload, Packet(Version, nextPubKey, hmac, nextRouteInfo), sharedSecret)
   }
 
   @tailrec
@@ -201,13 +201,13 @@ object Sphinx extends Logging {
     *
     * @param payload             payload for this packed
     * @param associatedData      associated data
-    * @param ephemerealPublicKey ephemereal key for this packed
+    * @param ephemeralPublicKey ephemeral key for this packed
     * @param sharedSecret        shared secret
     * @param packet              current packet (1 + all zeroes if this is the last packet)
     * @param routingInfoFiller   optional routing info filler, needed only when you're constructing the last packet
     * @return the next packet
     */
-  private def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemerealPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
+  private def makeNextPacket(payload: BinaryData, associatedData: BinaryData, ephemeralPublicKey: BinaryData, sharedSecret: BinaryData, packet: Packet, routingInfoFiller: BinaryData = BinaryData.empty): Packet = {
     require(payload.length == PayloadLength)
 
     val nextRoutingInfo = {
@@ -217,7 +217,7 @@ object Sphinx extends Logging {
     }
 
     val nextHmac: BinaryData = mac(generateKey("mu", sharedSecret), nextRoutingInfo ++ associatedData)
-    val nextPacket = Packet(Version, ephemerealPublicKey, nextHmac, nextRoutingInfo)
+    val nextPacket = Packet(Version, ephemeralPublicKey, nextHmac, nextRoutingInfo)
     nextPacket
   }
 
@@ -249,10 +249,10 @@ object Sphinx extends Logging {
     *         shared secrets (one per node) can be used to parse returned error messages if needed
     */
   def makePacket(sessionKey: PrivateKey, publicKeys: Seq[PublicKey], payloads: Seq[BinaryData], associatedData: BinaryData): PacketAndSecrets = {
-    val (ephemerealPublicKeys, sharedsecrets) = computeEphemerealPublicKeysAndSharedSecrets(sessionKey, publicKeys)
+    val (ephemeralPublicKeys, sharedsecrets) = computeEphemeralPublicKeysAndSharedSecrets(sessionKey, publicKeys)
     val filler = generateFiller("rho", sharedsecrets.dropRight(1), PayloadLength + MacLength, MaxHops)
 
-    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemerealPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler)
+    val lastPacket = makeNextPacket(payloads.last, associatedData, ephemeralPublicKeys.last, sharedsecrets.last, LAST_PACKET, filler)
 
     @tailrec
     def loop(hoppayloads: Seq[BinaryData], ephkeys: Seq[PublicKey], sharedSecrets: Seq[BinaryData], packet: Packet): Packet = {
@@ -262,7 +262,7 @@ object Sphinx extends Logging {
       }
     }
 
-    val packet = loop(payloads.dropRight(1), ephemerealPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
+    val packet = loop(payloads.dropRight(1), ephemeralPublicKeys.dropRight(1), sharedsecrets.dropRight(1), lastPacket)
     PacketAndSecrets(packet, sharedsecrets.zip(publicKeys))
   }
 

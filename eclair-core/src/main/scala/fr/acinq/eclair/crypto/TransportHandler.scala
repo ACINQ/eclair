@@ -115,10 +115,10 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
     case Event(Listener(listener), d: WaitingForListenerData) =>
       context.watch(listener)
-      val (nextData, plaintextMessages) = WaitingForCyphertextData(d.enc, d.dec, None, d.buffer, listener).decrypt
+      val (nextData, plaintextMessages) = WaitingForCiphertextData(d.enc, d.dec, None, d.buffer, listener).decrypt
       if (plaintextMessages.isEmpty) {
         connection ! Tcp.ResumeReading
-        goto(WaitingForCyphertext) using WaitingForCyphertextData(nextData.enc, nextData.dec, nextData.ciphertextLength, nextData.buffer, nextData.listener)
+        goto(WaitingForCiphertext) using WaitingForCiphertextData(nextData.enc, nextData.dec, nextData.ciphertextLength, nextData.buffer, nextData.listener)
       } else {
         log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
         val unacked = sendToListener(listener, plaintextMessages)
@@ -126,9 +126,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       }
   }
 
-  when(WaitingForCyphertext) {
-    case Event(Tcp.Received(data), d: WaitingForCyphertextData) =>
-      val (nextData, plaintextMessages) = WaitingForCyphertextData.decrypt(d.copy(buffer = d.buffer ++ data))
+  when(WaitingForCiphertext) {
+    case Event(Tcp.Received(data), d: WaitingForCiphertextData) =>
+      val (nextData, plaintextMessages) = WaitingForCiphertextData.decrypt(d.copy(buffer = d.buffer ++ data))
       if (plaintextMessages.isEmpty) {
         connection ! Tcp.ResumeReading
         stay using nextData
@@ -138,7 +138,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
         goto(WaitingForReadAck) using WaitingForReadAckData(nextData.enc, nextData.dec, nextData.ciphertextLength, nextData.buffer, nextData.listener, unacked)
       }
 
-    case Event(t: T, d: WaitingForCyphertextData) =>
+    case Event(t: T, d: WaitingForCiphertextData) =>
       val blob = codec.encode(t).require.toByteArray
       val (enc1, ciphertext) = TransportHandler.encrypt(d.enc, blob)
       out ! buf(ciphertext)
@@ -151,7 +151,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       if (unacked1.isEmpty) {
         log.debug("last incoming message was acked, resuming reading")
         connection ! Tcp.ResumeReading
-        goto(WaitingForCyphertext) using WaitingForCyphertextData(d.enc, d.dec, d.ciphertextLength, d.buffer, d.listener)
+        goto(WaitingForCiphertext) using WaitingForCiphertextData(d.enc, d.dec, d.ciphertextLength, d.buffer, d.listener)
       } else {
         stay using d.copy(unackedMessages = unacked1)
       }
@@ -243,7 +243,7 @@ object TransportHandler {
   sealed trait State
   case object Handshake extends State
   case object WaitingForListener extends State
-  case object WaitingForCyphertext extends State
+  case object WaitingForCiphertext extends State
   case object WaitingForReadAck extends State
   // @formatter:on
 
@@ -270,7 +270,7 @@ object TransportHandler {
 
     override def encryptWithAd(ad: BinaryData, plaintext: BinaryData): (CipherState, BinaryData) = {
       cs match {
-        case UnitializedCipherState(_) => (this, plaintext)
+        case UninitializedCipherState(_) => (this, plaintext)
         case InitializedCipherState(k, n, _) if n == 999 => {
           val (_, ciphertext) = cs.encryptWithAd(ad, plaintext)
           val (ck1, k1) = SHA256HashFunctions.hkdf(ck, k)
@@ -285,7 +285,7 @@ object TransportHandler {
 
     override def decryptWithAd(ad: BinaryData, ciphertext: BinaryData): (CipherState, BinaryData) = {
       cs match {
-        case UnitializedCipherState(_) => (this, ciphertext)
+        case UninitializedCipherState(_) => (this, ciphertext)
         case InitializedCipherState(k, n, _) if n == 999 => {
           val (_, plaintext) = cs.decryptWithAd(ad, ciphertext)
           val (ck1, k1) = SHA256HashFunctions.hkdf(ck, k)
@@ -301,15 +301,15 @@ object TransportHandler {
 
   case class WaitingForListenerData(enc: CipherState, dec: CipherState, buffer: ByteString) extends Data
 
-  case class WaitingForCyphertextData(enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef) extends Data {
-    def decrypt: (WaitingForCyphertextData, Seq[BinaryData]) = WaitingForCyphertextData.decrypt(this)
+  case class WaitingForCiphertextData(enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef) extends Data {
+    def decrypt: (WaitingForCiphertextData, Seq[BinaryData]) = WaitingForCiphertextData.decrypt(this)
   }
 
   case class WaitingForReadAckData[T](enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef, unackedMessages: Seq[T]) extends Data
 
-  object WaitingForCyphertextData {
+  object WaitingForCiphertextData {
     @tailrec
-    def decrypt(state: WaitingForCyphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCyphertextData, Seq[BinaryData]) = {
+    def decrypt(state: WaitingForCiphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCiphertextData, Seq[BinaryData]) = {
       (state.ciphertextLength, state.buffer.length) match {
         case (None, length) if length < 18 => (state, acc)
         case (None, _) =>
