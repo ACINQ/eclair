@@ -33,7 +33,8 @@ class RelayerSpec extends TestkitBaseClass {
       val register = TestProbe()
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
-      val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(nodeKey = priv_b), register.ref, paymentHandler.ref))
+      //val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(nodeKey = priv_b), register.ref, paymentHandler.ref))
+      val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams, register.ref, paymentHandler.ref))
       test((relayer, register, paymentHandler))
     }
   }

@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.{randomKey, randomExtendedPrivateKey}
+import fr.acinq.eclair.{TestConstants, randomExtendedPrivateKey, randomKey}
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
 import org.junit.runner.RunWith
@@ -132,7 +132,7 @@ class HtlcGenerationSpec extends FunSuite {
 }
 
 object HtlcGenerationSpec {
-  val (priv_a, priv_b, priv_c, priv_d, priv_e) = (randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
+  val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.keyManager.nodeKey, TestConstants.Bob.keyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.encodeSignature(Crypto.sign(Crypto.sha256(BinaryData.empty), priv_a.privateKey)) :+ 1.toByte
   val defaultChannelUpdate = ChannelUpdate(sig, Block.RegtestGenesisBlock.hash, 0, 0, "0000", 0, 42000, 0, 0)

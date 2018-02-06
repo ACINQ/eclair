@@ -38,8 +38,8 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
     val relayer = paymentHandler
     val router = TestProbe()
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer, Alice.keyManager))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer, Bob.keyManager))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Alice.nodeParams, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(Bob.nodeParams, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer))
     val aliceInit = Init(Alice.channelParams.globalFeatures, Alice.channelParams.localFeatures)
     val bobInit = Init(Bob.channelParams.globalFeatures, Bob.channelParams.localFeatures)
     // alice and bob will both have 1 000 000 sat

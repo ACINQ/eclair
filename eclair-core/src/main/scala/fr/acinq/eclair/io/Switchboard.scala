@@ -14,7 +14,7 @@ import fr.acinq.eclair.router.Rebroadcast
   * Ties network connections to peers.
   * Created by PM on 14/02/2017.
   */
-class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, keyManager: KeyManager) extends Actor with ActorLogging {
+class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends Actor with ActorLogging {
 
   authenticator ! self
 
@@ -29,7 +29,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       .map {
         case (remoteNodeId, states, address_opt) =>
           // we might not have an address if we didn't initiate the connection in the first place
-          val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet, keyManager)
+          val peer = createOrGetPeer(Map(), remoteNodeId, previousKnownAddress = address_opt, offlineChannels = states.toSet)
           remoteNodeId -> peer
       }.toMap
   }
@@ -43,7 +43,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
     case c@Peer.Connect(NodeURI(remoteNodeId, _)) =>
       // we create a peer if it doesn't exist
-      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty, keyManager)
+      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward c
       context become main(peers + (remoteNodeId -> peer))
 
@@ -63,7 +63,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
     case auth@Authenticator.Authenticated(_, _, remoteNodeId, _, _, _) =>
       // if this is an incoming connection, we might not yet have created the peer
-      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty, keyManager)
+      val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
       context become main(peers + (remoteNodeId -> peer))
 
@@ -81,12 +81,12 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
     * @param offlineChannels
     * @return
     */
-  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments], keyManager: KeyManager) = {
+  def createOrGetPeer(peers: Map[PublicKey, ActorRef], remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], offlineChannels: Set[HasCommitments]) = {
     peers.get(remoteNodeId) match {
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${peers.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, previousKnownAddress, authenticator, watcher, router, relayer, wallet, offlineChannels, keyManager), name = s"peer-$remoteNodeId")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, previousKnownAddress, authenticator, watcher, router, relayer, wallet, offlineChannels), name = s"peer-$remoteNodeId")
         context watch (peer)
         peer
     }
@@ -100,6 +100,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
 object Switchboard {
 
-  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, keyManager: KeyManager) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet, keyManager))
+  def props(nodeParams: NodeParams, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Switchboard(nodeParams, authenticator, watcher, router, relayer, wallet))
 
 }
