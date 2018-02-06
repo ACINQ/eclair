@@ -148,11 +148,11 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     for {
       blockHash: String <- rpcClient.invoke("getblockhash", coordinates.blockHeight).map(_.extractOrElse[String]("00" * 32))
       txid: String <- rpcClient.invoke("getblock", blockHash).map {
-          case json => Try {
-            val JArray(txs) = json \ "tx"
-            txs(coordinates.txIndex).extract[String]
-          } getOrElse ("00" * 32)
-        }
+        case json => Try {
+          val JArray(txs) = json \ "tx"
+          txs(coordinates.txIndex).extract[String]
+        } getOrElse ("00" * 32)
+      }
       tx <- getRawTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, coordinates.outputIndex, includeMempool = true)
     } yield IndividualResult(c, Some(Transaction.read(tx)), unspent)

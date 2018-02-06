@@ -1,13 +1,12 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
-import akka.pattern.pipe
 import akka.actor.{Actor, ActorLogging, ActorRef, Status}
+import akka.pattern.pipe
 import fr.acinq.eclair.blockchain.bitcoind.rpc.BatchingClient.Pending
-import org.json4s.JsonAST.JValue
 
 import scala.collection.immutable.Queue
 
-class BatchingClient(rpcClient: BitcoinJsonRPCClient) extends Actor with ActorLogging {
+class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with ActorLogging {
 
   import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -22,11 +21,14 @@ class BatchingClient(rpcClient: BitcoinJsonRPCClient) extends Actor with ActorLo
       // there is already a batch in flight, just add this request to the queue
       context become waiting(queue :+ Pending(request, sender), processing)
 
-    case responses: Seq[JValue]@unchecked =>
+    case responses: Seq[JsonRPCResponse]@unchecked =>
       log.debug(s"got ${responses.size} responses")
       // let's send back answers to the requestors
       require(responses.size == processing.size, s"responses=${responses.size} != processing=${processing.size}")
-      responses.zip(processing).foreach { case (json, Pending(_, requestor)) => requestor ! json }
+      responses.zip(processing).foreach {
+        case (JsonRPCResponse(result, None, _), Pending(_, requestor)) => requestor ! result
+        case (JsonRPCResponse(_, Some(error), _), Pending(_, requestor)) => requestor ! Status.Failure(JsonRPCError(error))
+      }
       process(queue)
 
     case s@Status.Failure(t) =>
