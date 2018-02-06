@@ -113,7 +113,7 @@
     -fx-text-fill: rgb(220, 220, 220);
 }
 .notification-pane .label.notification-message {
-    -fx-font-size: 16px;
+    -fx-font-size: 14px;
     -fx-font-weight: bold;
 }
 .button.notification-close {
