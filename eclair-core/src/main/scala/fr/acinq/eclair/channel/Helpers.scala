@@ -94,6 +94,13 @@ object Helpers {
     remoteFeeratePerKw > 0 && feeRateMismatch(remoteFeeratePerKw, localFeeratePerKw) > maxFeerateMismatchRatio
   }
 
+  def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: Long) = {
+    // TODO: empty features
+    val features = BinaryData("")
+    val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(commitments.localParams.channelNumber, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
+    AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
+  }
+
   def getFinalScriptPubKey(wallet: EclairWallet): BinaryData = {
     import scala.concurrent.duration._
     val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)

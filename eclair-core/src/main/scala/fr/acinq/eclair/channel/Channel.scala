@@ -724,7 +724,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       } else d.channelUpdate
       val localAnnSigs_opt = if (d.commitments.announceChannel) {
         // if channel is public we need to send our announcement_signatures in order to generate the channel_announcement
-        Some(nodeParams.keyManager.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
+        Some(Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, shortChannelId))
       } else None
       // we use GOTO instead of stay because we want to fire transitions
       goto(NORMAL) using store(d.copy(shortChannelId = shortChannelId, buried = true, channelUpdate = channelUpdate)) sending localAnnSigs_opt.toSeq
@@ -734,7 +734,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       if (d.buried) {
         // we are aware that the channel has reached enough confirmations
         // we already had sent our announcement_signatures but we don't store them so we need to recompute it
-        val localAnnSigs = nodeParams.keyManager.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
+        val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
         d.channelAnnouncement match {
           case None =>
             require(d.shortChannelId == remoteAnnSigs.shortChannelId, s"shortChannelId mismatch: local=${d.shortChannelId.toHexString} remote=${remoteAnnSigs.shortChannelId.toHexString}")
@@ -1272,7 +1272,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
             ()
           case None =>
             // BOLT 7: a node SHOULD retransmit the announcement_signatures message if it has not received an announcement_signatures message
-            val localAnnSigs = nodeParams.keyManager.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
+            val localAnnSigs = Helpers.makeAnnouncementSignatures(nodeParams, d.commitments, d.shortChannelId)
             forwarder ! localAnnSigs
           case Some(_) =>
             // channel was already announced, nothing to do
