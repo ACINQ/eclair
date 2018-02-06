@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.payment.{Origin, Relayed}
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 
 /**
@@ -54,5 +54,8 @@ case class InvalidRevocation                   (override val channelId: BinaryDa
 case class CommitmentSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "commitment sync error")
 case class RevocationSyncError                 (override val channelId: BinaryData) extends ChannelException(channelId, "revocation sync error")
 case class InvalidFailureCode                  (override val channelId: BinaryData) extends ChannelException(channelId, "UpdateFailMalformedHtlc message doesn't have BADONION bit set")
-case class AddHtlcFailed                       (override val channelId: BinaryData, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate]) extends ChannelException(channelId, s"cannot add htlc with origin=$origin reason=${t.getMessage}")
+case class AddHtlcFailed                       (override val channelId: BinaryData, t: Throwable, origin: Origin, channelUpdate: Option[ChannelUpdate]) extends ChannelException(channelId, s"cannot add htlc${origin match {
+  case Relayed(originChannelId, _, _, _) => s" with origin=$originChannelId"
+  case _ => ""
+}} reason=${t.getMessage}")
 // @formatter:on

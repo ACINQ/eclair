@@ -219,4 +219,24 @@ object PaymentLifecycle {
     CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, Packet.write(onion.packet), upstream_opt = None, commit = true) -> onion.sharedSecrets
   }
 
+  /**
+    * Rewrites a list of failures to retrieve the meaningful part.
+    * <p>
+    * If a list of failures with many elements ends up with a LocalFailure RouteNotFound, this RouteNotFound failure
+    * should be removed. This last failure is irrelevant information. In such a case only the n-1 attempts were rejected
+    * with a **significant reason** ; the final RouteNotFound error provides no meaningful insight.
+    * <p>
+    * This method should be used by the user interface to provide a non-exhaustive but more useful feedback.
+    *
+    * @param failures a list of payment failures for a payment
+    */
+  def distillPaymentFailures(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
+    failures.lastOption match {
+      case Some(LocalFailure(t)) => t match {
+        case RouteNotFound => if (failures.size > 1) failures.dropRight(1) else failures
+        case _ => failures
+      }
+      case _ => failures
+    }
+  }
 }
