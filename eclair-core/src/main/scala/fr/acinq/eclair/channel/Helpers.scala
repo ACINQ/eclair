@@ -6,7 +6,6 @@ import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.crypto.{Generators, KeyManager}
-import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Scripts._
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._

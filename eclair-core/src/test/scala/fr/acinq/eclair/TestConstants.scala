@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
 import fr.acinq.eclair.TestConstants.Alice.keyManager
-import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.wire.Color
@@ -24,7 +24,7 @@ object TestConstants {
 
   object Alice {
     val seed = BinaryData("01" * 32)
-    val keyManager = new KeyManager(seed)
+    val keyManager = new LocalKeyManager(seed)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
@@ -79,7 +79,7 @@ object TestConstants {
 
   object Bob {
     val seed = BinaryData("02" * 32)
-    val keyManager = new KeyManager(seed)
+    val keyManager = new LocalKeyManager(seed)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 

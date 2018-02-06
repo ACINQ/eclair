@@ -20,7 +20,7 @@ import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
-import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -58,7 +58,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
           seed
       }
   }
-  val keyManager = new KeyManager(seed)
+  val keyManager = new LocalKeyManager(seed)
   val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
   val chain: String = config.getString("chain")
 

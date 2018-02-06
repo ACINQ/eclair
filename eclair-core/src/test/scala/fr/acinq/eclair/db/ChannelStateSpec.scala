@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.{KeyManager, ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.{Local, Relayed}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
@@ -34,7 +34,7 @@ class ChannelStateSpec extends FunSuite {
 }
 
 object ChannelStateSpec {
-  val keyManager = new KeyManager("01" * 32)
+  val keyManager = new LocalKeyManager("01" * 32)
   val localParams = LocalParams(
     channelNumber = 42,
     dustLimitSatoshis = Satoshi(546).toLong,

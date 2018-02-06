@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
-import fr.acinq.eclair.crypto.KeyManager
+import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.serializationResult
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
