@@ -85,7 +85,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
           // not: we assume parent tx was published, we just need to make sure this particular output has not been spent
           client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
             case false =>
-              log.warning(s"output=$outputIndex of txid=$txid has already been spent")
+              log.info(s"output=$outputIndex of txid=$txid has already been spent")
               self ! TriggerEvent(w, WatchEventSpentBasic(w.event))
           }
 
