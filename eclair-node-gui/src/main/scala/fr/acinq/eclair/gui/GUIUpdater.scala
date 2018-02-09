@@ -149,7 +149,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
         })
       }
 
-    case ChannelDiscovered(channelAnnouncement, _) =>
+    case ChannelDiscovered(channelAnnouncement) =>
       log.debug(s"peer channel discovered with channel id=${channelAnnouncement.shortChannelId}")
       if (!mainController.networkChannelsList.exists(c => c.announcement.shortChannelId == channelAnnouncement.shortChannelId)) {
         mainController.networkChannelsList.add(new ChannelInfo(channelAnnouncement, None, None))

@@ -64,7 +64,7 @@ class RouterSpec extends BaseRouterSpec {
     watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 
-    eventListener.expectMsg(ChannelDiscovered(chan_ac, Satoshi(1000000)))
+    eventListener.expectMsg(ChannelDiscovered(chan_ac))
   }
 
   test("properly announce lost channels and nodes") { case (router, watcher) =>
