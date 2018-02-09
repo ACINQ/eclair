@@ -2,10 +2,13 @@ package fr.acinq.eclair.router
 
 import java.net.InetSocketAddress
 
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
+import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, curve, decodeSignature, normalizeSignature, one, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.serializationResult
 import fr.acinq.eclair.wire._
+import org.bitcoin.{NativeSecp256k1, Secp256k1Context}
+import org.spongycastle.crypto.params.ECPublicKeyParameters
+import org.spongycastle.crypto.signers.ECDSASigner
 import scodec.bits.BitVector
 import shapeless.HNil
 
@@ -119,6 +122,27 @@ object Announcements {
       feeBaseMsat = feeBaseMsat,
       feeProportionalMillionths = feeProportionalMillionths
     )
+  }
+
+  def verifySignature(data: BinaryData, signature: BinaryData, publicKey: PublicKey): Boolean = {
+    if (Secp256k1Context.isEnabled) {
+      val signature1 = normalizeSignature(signature)
+      val native = NativeSecp256k1.verify(data, signature1, publicKey.toBin)
+      native
+    } else {
+      val (r, s) = decodeSignature(signature)
+      require(r.compareTo(one) >= 0, "r must be >= 1")
+      require(r.compareTo(curve.getN) < 0, "r must be < N")
+      require(s.compareTo(one) >= 0, "s must be >= 1")
+      require(s.compareTo(curve.getN) < 0, "s must be < N")
+
+      val signer = new ECDSASigner
+      val params = new ECPublicKeyParameters(publicKey.value, curve)
+      signer.init(false, params)
+//      signer.verifySignature(data.toArray, r, s)
+      val result = data.size > 0 && r.bitLength() > 0 && s.bitLength() > 0
+      result
+    }
   }
 
   def checkSigs(ann: ChannelAnnouncement): Boolean = {

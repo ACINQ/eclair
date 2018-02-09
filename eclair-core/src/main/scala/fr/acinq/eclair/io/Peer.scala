@@ -192,10 +192,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
     case Event(Rebroadcast(announcements), ConnectedData(_, transport, _, _)) =>
       // we filter out announcements that we received from this node
-      announcements.foreach {
-        case (_, s) if s == self => ()
-        case (ann, _) => transport ! ann
-      }
+      val selected = announcements.filter(_._2 != self).map(_._1)
+      log.info(s"broadcasting ${selected.size} announcements to $remoteNodeId")
+      selected.foreach(transport ! _)
       stay
 
     case Event(msg: wire.RoutingMessage, _) =>
