@@ -55,12 +55,15 @@ class RouterSpec extends BaseRouterSpec {
     router ! update_ay
     router ! update_az
     router ! TickValidate // we manually trigger a validation
-    assert(watcher.expectMsgType[ParallelGetRequest].ann.toSet === Set(chan_ac, chan_ax, chan_ay, chan_az))
+    watcher.expectMsg(ValidateRequest(chan_ac))
+    watcher.expectMsg(ValidateRequest(chan_ax))
+    watcher.expectMsg(ValidateRequest(chan_ay))
+    watcher.expectMsg(ValidateRequest(chan_az))
     watcher.send(router, ParallelGetResponse(
-      IndividualResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true) ::
-        IndividualResult(chan_ax, None, false) ::
-        IndividualResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true) ::
-        IndividualResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false) :: Nil))
+      ValidateResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true) ::
+        ValidateResult(chan_ax, None, false) ::
+        ValidateResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true) ::
+        ValidateResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false) :: Nil))
     watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 

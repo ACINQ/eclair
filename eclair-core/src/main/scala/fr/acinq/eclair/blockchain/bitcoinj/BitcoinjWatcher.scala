@@ -105,18 +105,16 @@ class BitcoinjWatcher(val kit: WalletAppKit)(implicit ec: ExecutionContext = Exe
         context.become(watching(watches, block2tx1, oldEvents, sent))
       } else publish(tx)
 
-    case ParallelGetRequest(announcements) => sender ! ParallelGetResponse(announcements.map {
-      case c =>
-        log.info(s"blindly validating channel=$c")
-        val pubkeyScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
-        val (_, _, outputIndex) = fromShortId(c.shortChannelId)
-        val fakeFundingTx = Transaction(
-          version = 2,
-          txIn = Seq.empty[TxIn],
-          txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
-          lockTime = 0)
-        IndividualResult(c, Some(fakeFundingTx), true)
-    })
+    case ValidateRequest(c) =>
+      log.info(s"blindly validating channel=$c")
+      val pubkeyScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+      val fakeFundingTx = Transaction(
+        version = 2,
+        txIn = Seq.empty[TxIn],
+        txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+        lockTime = 0)
+      sender ! ValidateResult(c, Some(fakeFundingTx), true)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor

@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.{IndividualResult, ParallelGetResponse}
+import fr.acinq.eclair.blockchain.{ValidateResult, ParallelGetResponse}
 import fr.acinq.eclair.fromShortId
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.JsonAST._
@@ -139,7 +139,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       case JInt(count) => count.toLong
     }
 
-  def get(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[IndividualResult] = {
+  def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
     case class TxCoordinate(blockHeight: Int, txIndex: Int, outputIndex: Int)
 
     val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
@@ -155,11 +155,8 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       }
       tx <- getRawTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, coordinates.outputIndex, includeMempool = true)
-    } yield IndividualResult(c, Some(Transaction.read(tx)), unspent)
+    } yield ValidateResult(c, Some(Transaction.read(tx)), unspent)
   }
-
-  def getParallel(awaiting: Seq[ChannelAnnouncement])(implicit ec: ExecutionContext): Future[ParallelGetResponse] =
-    Future.sequence(awaiting.map(get)).map(ParallelGetResponse)
 
   /**
     *
