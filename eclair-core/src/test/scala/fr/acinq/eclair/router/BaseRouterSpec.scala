@@ -6,7 +6,7 @@ import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.blockchain.{ValidateResult, ValidateRequest, ParallelGetResponse, WatchSpentBasic}
+import fr.acinq.eclair.blockchain.{ValidateResult, ValidateRequest, WatchSpentBasic}
 import fr.acinq.eclair.router.Announcements._
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
@@ -102,20 +102,16 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       router ! channelUpdate_dc
       router ! channelUpdate_ef
       router ! channelUpdate_fe
-      // we manually trigger a validation
-      router ! TickValidate
       // watcher receives the get tx requests
       watcher.expectMsg(ValidateRequest(chan_ab))
       watcher.expectMsg(ValidateRequest(chan_bc))
       watcher.expectMsg(ValidateRequest(chan_cd))
       watcher.expectMsg(ValidateRequest(chan_ef))
       // and answers with valid scripts
-      watcher.send(router, ParallelGetResponse(
-        ValidateResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true) ::
-          ValidateResult(chan_bc, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0)), true) ::
-          ValidateResult(chan_cd, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0)), true) ::
-          ValidateResult(chan_ef, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0)), true) :: Nil
-      ))
+      watcher.send(router, ValidateResult(chan_ab, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_b)))) :: Nil, lockTime = 0)), true))
+      watcher.send(router, ValidateResult(chan_bc, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_b, funding_c)))) :: Nil, lockTime = 0)), true))
+      watcher.send(router, ValidateResult(chan_cd, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_c, funding_d)))) :: Nil, lockTime = 0)), true))
+      watcher.send(router, ValidateResult(chan_ef, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_e, funding_f)))) :: Nil, lockTime = 0)), true))
       // watcher receives watch-spent request
       watcher.expectMsgType[WatchSpentBasic]
       watcher.expectMsgType[WatchSpentBasic]
@@ -131,6 +127,7 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, 'updates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
+        println(nodes.size, channels.size, updates.size)
         nodes.size === 6 && channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
