@@ -1,7 +1,7 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.blockchain.{ValidateResult, ParallelGetResponse}
+import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.fromShortId
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.JsonAST._
