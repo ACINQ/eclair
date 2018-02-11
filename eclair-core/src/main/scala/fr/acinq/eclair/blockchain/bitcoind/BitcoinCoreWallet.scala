@@ -76,7 +76,7 @@ class BitcoinCoreWallet(rpcClient: BitcoinJsonRPCClient)(implicit system: ActorS
     } yield MakeFundingTxResponse(fundingTx, outputIndex)
 
   override def commit(tx: Transaction): Future[Boolean] = publishTransaction(tx)
-    .map(_ => true) // if bitcoind says OK, then we consider the tx succesfully published
+    .map(_ => true) // if bitcoind says OK, then we consider the tx successfully published
     .recoverWith { case JsonRPCError(e) =>
       logger.warn(s"txid=${tx.txid} error=$e")
       getTransaction(tx.txid).map(_ => true).recover { case _ => false } // if we get a parseable error from bitcoind AND the tx is NOT in the mempool/blockchain, then we consider that the tx was not published

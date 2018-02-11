@@ -36,7 +36,7 @@ import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
 import grizzled.slf4j.Logging
 
 case class ChannelInfo(announcement: ChannelAnnouncement, var feeBaseMsat: Long, var feeProportionalMillionths: Long,
-                       var capacity: Long, var isNode1Enabled: Option[Boolean], var isNode2Enabled: Option[Boolean])
+                       var isNode1Enabled: Option[Boolean], var isNode2Enabled: Option[Boolean])
 
 sealed trait Record {
   val event: PaymentEvent
@@ -95,7 +95,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
   @FXML var networkChannelsNode2Column: TableColumn[ChannelInfo, String] = _
   @FXML var networkChannelsFeeBaseMsatColumn: TableColumn[ChannelInfo, String] = _
   @FXML var networkChannelsFeeProportionalMillionthsColumn: TableColumn[ChannelInfo, String] = _
-  @FXML var networkChannelsCapacityColumn: TableColumn[ChannelInfo, String] = _
 
   // payment sent table
   val paymentSentList = FXCollections.observableArrayList[PaymentSentRecord]()
@@ -221,10 +220,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
       def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
         s"${CoinUtils.COIN_FORMAT.format(pc.getValue.feeProportionalMillionths.toDouble / 1000000 * 100)}%")
     })
-    networkChannelsCapacityColumn.setCellValueFactory(new Callback[CellDataFeatures[ChannelInfo, String], ObservableValue[String]]() {
-      def call(pc: CellDataFeatures[ChannelInfo, String]) = new SimpleStringProperty(
-        CoinUtils.formatAmountInUnit(Satoshi(pc.getValue.capacity), FxApp.getUnit, withUnit = true))
-    })
 
     networkChannelsTable.setRowFactory(new Callback[TableView[ChannelInfo], TableRow[ChannelInfo]]() {
       override def call(table: TableView[ChannelInfo]): TableRow[ChannelInfo] = setupPeerChannelContextMenu()
@@ -246,19 +241,19 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
               setText(null)
             } else {
               item match {
-                case ChannelInfo(_, _, _, _, Some(true), Some(true)) =>
+                case ChannelInfo(_, _, _, Some(true), Some(true)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-11.png", false))
                   setTooltip(new Tooltip("Both Node 1 and Node 2 are enabled"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, _, _, _, Some(true), Some(false)) =>
+                case ChannelInfo(_, _, _, Some(true), Some(false)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-10.png", false))
                   setTooltip(new Tooltip("Node 1 is enabled, but not Node 2"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, _, _, _, Some(false), Some(true)) =>
+                case ChannelInfo(_, _, _, Some(false), Some(true)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-01.png", false))
                   setTooltip(new Tooltip("Node 2 is enabled, but not Node 1"))
                   setGraphic(directionImage)
-                case ChannelInfo(_, _, _, _, Some(false), Some(false)) =>
+                case ChannelInfo(_, _, _, Some(false), Some(false)) =>
                   directionImage.setImage(new Image("/gui/commons/images/in-out-00.png", false))
                   setTooltip(new Tooltip("Neither Node 1 nor Node 2 is enabled"))
                   setGraphic(directionImage)

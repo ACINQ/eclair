@@ -17,7 +17,7 @@ object NoiseDemo extends App {
 
     def receive = ???
 
-    val handskaheState = if (isWriter) {
+    val handshakeState = if (isWriter) {
       val state = Noise.HandshakeState.initializeWriter(
         Noise.handshakePatternXK,
         "lightning".getBytes(),
@@ -35,7 +35,7 @@ object NoiseDemo extends App {
       state
     }
 
-    context become handshake(handskaheState)
+    context become handshake(handshakeState)
 
     def toNormal(enc: CipherState, dec: CipherState) = {
       unstashAll()

@@ -94,11 +94,10 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       tx <- getTransaction(txid)
     } yield tx
 
-  def isTransactionOuputSpendable(txId: String, ouputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
+  def isTransactionOutputSpendable(txId: String, outputIndex: Int, includeMempool: Boolean)(implicit ec: ExecutionContext): Future[Boolean] =
     for {
-      json <- rpcClient.invoke("gettxout", txId, ouputIndex, includeMempool)
+      json <- rpcClient.invoke("gettxout", txId, outputIndex, includeMempool)
     } yield json != JNull
-
 
   /**
     *
@@ -140,35 +139,27 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       case JInt(count) => count.toLong
     }
 
-  def getParallel(awaiting: Seq[ChannelAnnouncement]): Future[ParallelGetResponse] = {
+  def get(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[IndividualResult] = {
     case class TxCoordinate(blockHeight: Int, txIndex: Int, outputIndex: Int)
 
-    val coordinates = awaiting.map {
-      case c =>
-        val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
-        TxCoordinate(blockHeight, txIndex, outputIndex)
-    }.zipWithIndex
-
-    import ExecutionContext.Implicits.global
-    implicit val formats = org.json4s.DefaultFormats
+    val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
+    val coordinates = TxCoordinate(blockHeight, txIndex, outputIndex)
 
     for {
-      blockHashes: Seq[String] <- rpcClient.invoke(coordinates.map(coord => ("getblockhash", coord._1.blockHeight :: Nil))).map(_.map(_.extractOrElse[String]("00" * 32)))
-      txids: Seq[String] <- rpcClient.invoke(blockHashes.map(h => ("getblock", h :: Nil)))
-        .map(_.zipWithIndex)
-        .map(_.map {
-          case (json, idx) => Try {
-            val JArray(txs) = json \ "tx"
-            txs(coordinates(idx)._1.txIndex).extract[String]
-          } getOrElse ("00" * 32)
-        })
-      txs <- rpcClient.invoke(txids.map(txid => ("getrawtransaction", txid :: Nil))).map(_.map {
-        case JString(raw) => Some(Transaction.read(raw))
-        case _ => None
-      })
-      unspent <- rpcClient.invoke(txids.zipWithIndex.map(txid => ("gettxout", txid._1 :: coordinates(txid._2)._1.outputIndex :: true :: Nil))).map(_.map(_ != JNull))
-    } yield ParallelGetResponse(awaiting.zip(txs.zip(unspent)).map(x => IndividualResult(x._1, x._2._1, x._2._2)))
+      blockHash: String <- rpcClient.invoke("getblockhash", coordinates.blockHeight).map(_.extractOrElse[String]("00" * 32))
+      txid: String <- rpcClient.invoke("getblock", blockHash).map {
+        case json => Try {
+          val JArray(txs) = json \ "tx"
+          txs(coordinates.txIndex).extract[String]
+        } getOrElse ("00" * 32)
+      }
+      tx <- getRawTransaction(txid)
+      unspent <- isTransactionOutputSpendable(txid, coordinates.outputIndex, includeMempool = true)
+    } yield IndividualResult(c, Some(Transaction.read(tx)), unspent)
   }
+
+  def getParallel(awaiting: Seq[ChannelAnnouncement])(implicit ec: ExecutionContext): Future[ParallelGetResponse] =
+    Future.sequence(awaiting.map(get)).map(ParallelGetResponse)
 
   /**
     *
