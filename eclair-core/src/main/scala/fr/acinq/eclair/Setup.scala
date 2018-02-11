@@ -50,6 +50,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
+  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")

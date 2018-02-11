@@ -3,7 +3,7 @@ package fr.acinq.eclair.db
 import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Announcements
@@ -57,13 +57,14 @@ class SqliteNetworkDbSpec extends FunSuite {
     val txid_1 = randomKey.toBin
     val txid_2 = randomKey.toBin
     val txid_3 = randomKey.toBin
+    val capacity = Satoshi(10000)
 
     assert(db.listChannels().toSet === Set.empty)
-    db.addChannel(channel_1, txid_1)
-    db.addChannel(channel_1, txid_1) // duplicate is ignored
+    db.addChannel(channel_1, txid_1, capacity)
+    db.addChannel(channel_1, txid_1, capacity) // duplicate is ignored
     assert(db.listChannels().size === 1)
-    db.addChannel(channel_2, txid_2)
-    db.addChannel(channel_3, txid_3)
+    db.addChannel(channel_2, txid_2, capacity)
+    db.addChannel(channel_3, txid_3, capacity)
     assert(db.listChannels().toSet === Set((channel_1, txid_1), (channel_2, txid_2), (channel_3, txid_3)))
     db.removeChannel(channel_2.shortChannelId)
     assert(db.listChannels().toSet === Set((channel_1, txid_1), (channel_3, txid_3)))

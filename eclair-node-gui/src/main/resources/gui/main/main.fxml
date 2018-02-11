@@ -75,6 +75,8 @@
                                                 <TableColumn fx:id="networkChannelsDirectionsColumn"
                                                              minWidth="30.0" prefWidth="30.0" maxWidth="30.0"/>
                                                 <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
+                                                <TableColumn fx:id="networkChannelsCapacityColumn" text="Capacity"
+                                                             minWidth="80.0" prefWidth="120.0" maxWidth="200.0"/>
                                                 <TableColumn fx:id="networkChannelsFeeBaseMsatColumn"
                                                              minWidth="100.0" prefWidth="120.0" maxWidth="200.0"
                                                              text="Base Fee"/>
