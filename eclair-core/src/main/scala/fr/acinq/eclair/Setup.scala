@@ -50,7 +50,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
-  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
@@ -246,3 +245,7 @@ case object BitcoinRPCConnectionException extends RuntimeException("could not co
 case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
+
+case object IncompatibleDBException extends RuntimeException("DB is not compatible with this version of eclair.")
+
+case object IncompatibleNetworkDBException extends RuntimeException("Network DB is not compatible with this version of eclair.")

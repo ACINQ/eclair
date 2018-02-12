@@ -3,11 +3,14 @@ package fr.acinq.eclair.db.sqlite
 import java.sql.Connection
 
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
+import fr.acinq.eclair.IncompatibleNetworkDBException
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.{channelAnnouncementCodec, channelUpdateCodec, nodeAnnouncementCodec}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.BitVector
+
+import scala.util.{Failure, Success, Try}
 
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
@@ -19,6 +22,32 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channel_updates (short_channel_id INTEGER NOT NULL, node_flag INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(short_channel_id, node_flag), FOREIGN KEY(short_channel_id) REFERENCES channels(short_channel_id))")
     statement.executeUpdate("CREATE INDEX IF NOT EXISTS channel_updates_idx ON channel_updates(short_channel_id)")
+
+    // compatibility checks by reading data
+    Try(
+      // read 1 node
+      using(sqlite.createStatement()) { statement =>
+        val rs = statement.executeQuery("SELECT data FROM nodes LIMIT 1")
+        codecList(rs, nodeAnnouncementCodec)
+      },
+      // read 1 channel
+      using(sqlite.createStatement()) { statement =>
+        val rs = statement.executeQuery("SELECT data, txid, capacity_sat FROM channels LIMIT 1")
+        var l: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
+        while (rs.next()) {
+          l = l + (channelAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value ->
+            (BinaryData(rs.getString("txid")), Satoshi(rs.getLong("capacity_sat"))))
+        }
+        l
+      },
+      // read 1 channel update
+      using(sqlite.createStatement()) { statement =>
+      val rs = statement.executeQuery("SELECT data FROM channel_updates LIMIT 1")
+      codecList(rs, channelUpdateCodec)
+    }) match {
+      case Success(_) =>
+      case Failure(t) => throw IncompatibleNetworkDBException
+    }
   }
 
   override def addNode(n: NodeAnnouncement): Unit = {
