@@ -4,7 +4,7 @@ import java.io.StringWriter
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -88,7 +88,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val updates = db.listChannelUpdates()
     // let's prune the db (maybe eclair was stopped for a long time)
     val staleChannels = getStaleChannels(channels.keys, updates)
-    if (staleChannels.size > 0) {
+    if (staleChannels.nonEmpty) {
       log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
     }
@@ -101,13 +101,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val initNodes = remainingNodes.map(n => (n.nodeId -> n)).toMap
 
     // send events for these channels/nodes
-    remainingChannels.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c)))
+    remainingChannels.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
     remainingNodes.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
 
     // watch the funding tx of all these channels
-    // note: some of them may already have been spent, in that case we will receive the watchh event immediately
+    // note: some of them may already have been spent, in that case we will receive the watch event immediately
     remainingChannels.foreach { c =>
-      val txid = channels(c)
+      val txid = channels(c)._1
       val (_, _, outputIndex) = fromShortId(c.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
@@ -158,8 +158,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId.toHexString}")
-            context.system.eventStream.publish(ChannelDiscovered(c))
-            db.addChannel(c, tx.txid)
+            val capacity = tx.txOut(outputIndex).amount
+            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
+            db.addChannel(c, tx.txid, capacity)
             Some(c)
           }
         case IndividualResult(c, Some(tx), false) =>
