@@ -28,6 +28,3 @@ object DBCompatChecker extends Logging {
       case Failure(_) => throw IncompatibleNetworkDBException
     }
 }
-
-case object IncompatibleDBException extends RuntimeException("DB is not compatible with this version of eclair.")
-case object IncompatibleNetworkDBException extends RuntimeException("Network DB is not compatible with this version of eclair.")
