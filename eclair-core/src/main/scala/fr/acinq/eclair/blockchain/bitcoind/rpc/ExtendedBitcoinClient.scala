@@ -155,8 +155,9 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
       }
       tx <- getRawTransaction(txid)
       unspent <- isTransactionOutputSpendable(txid, coordinates.outputIndex, includeMempool = true)
-    } yield ValidateResult(c, Some(Transaction.read(tx)), unspent)
-  }
+    } yield ValidateResult(c, Some(Transaction.read(tx)), unspent, None)
+
+  } recover { case t: Throwable => ValidateResult(c, None, false, Some(t)) }
 
   /**
     *

@@ -187,13 +187,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(awaiting = d.awaiting + (c -> sender))
       }
 
-    case Event(v@ValidateResult(c, _, _), d0) =>
-      // TODO: handle validation errors
+    case Event(v@ValidateResult(c, _, _, _), d0) =>
       // now we can acknowledge the message
       d0.awaiting(c) ! TransportHandler.ReadAck(c)
       log.info(s"got validation result for shortChannelId=${c.shortChannelId.toHexString}")
       val success = v match {
-        case ValidateResult(c, Some(tx), true) =>
+        case ValidateResult(c, _, _, Some(t)) =>
+          log.warning(s"validation failure for shortChannelId=${c.shortChannelId.toHexString} reason=${t.getMessage}")
+          false
+        case ValidateResult(c, Some(tx), true, None) =>
           // TODO: blacklisting
           val (_, _, outputIndex) = fromShortId(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
@@ -221,13 +223,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             }
             true
           }
-        case ValidateResult(c, Some(tx), false) =>
+        case ValidateResult(c, Some(tx), false, None) =>
           // TODO: vulnerability if they flood us with spent funding tx?
           log.warning(s"ignoring shortChannelId=${c.shortChannelId.toHexString} tx=${tx.txid} (funding tx not found in utxo)")
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
           false
-        case ValidateResult(c, None, _) =>
+        case ValidateResult(c, None, _, None) =>
           // TODO: blacklist?
           log.warning(s"could not retrieve tx for shortChannelId=${c.shortChannelId.toHexString}")
           false

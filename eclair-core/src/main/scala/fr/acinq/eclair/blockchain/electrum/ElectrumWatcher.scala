@@ -28,7 +28,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
           txIn = Seq.empty[TxIn],
           txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
           lockTime = 0)
-      sender ! ValidateResult(c, Some(fakeFundingTx), true)
+      sender ! ValidateResult(c, Some(fakeFundingTx), true, None)
 
     case _ => log.warning(s"unhandled message $message")
   }

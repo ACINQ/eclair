@@ -61,6 +61,6 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   */
 final case class PublishAsap(tx: Transaction)
 final case class ValidateRequest(ann: ChannelAnnouncement)
-final case class ValidateResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean)
+final case class ValidateResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean, t: Option[Throwable])
 
 // @formatter:on
