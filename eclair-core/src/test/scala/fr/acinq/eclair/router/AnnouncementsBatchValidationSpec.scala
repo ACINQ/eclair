@@ -26,7 +26,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
 
   import AnnouncementsBatchValidationSpec._
 
-  test("validate a batch of announcements") {
+  ignore("validate a batch of announcements") {
     import scala.concurrent.ExecutionContext.Implicits.global
 
     implicit val system = ActorSystem()
