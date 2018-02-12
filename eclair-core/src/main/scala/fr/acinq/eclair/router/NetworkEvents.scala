@@ -15,7 +15,7 @@ case class NodeUpdated(ann: NodeAnnouncement) extends NetworkEvent
 
 case class NodeLost(nodeId: PublicKey) extends NetworkEvent
 
-case class ChannelDiscovered(ann: ChannelAnnouncement) extends NetworkEvent
+case class ChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi) extends NetworkEvent
 
 case class ChannelLost(channelId: Long) extends NetworkEvent
 
