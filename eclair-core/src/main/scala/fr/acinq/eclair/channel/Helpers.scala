@@ -476,7 +476,6 @@ object Helpers {
         val isCommitTx = remoteCommitPublished.commitTx.txid == tx.txid
         // does the tx spend an output of the local commitment tx?
         val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid
-        // TODO: we don't currently spend htlc transactions
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
@@ -502,6 +501,7 @@ object Helpers {
         val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
         // does the tx spend an output of the local commitment tx?
         val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
+        // TODO: we don't currently spend/steal htlc transactions
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
