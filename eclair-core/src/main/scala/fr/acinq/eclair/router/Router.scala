@@ -153,12 +153,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else stay using handleSendState(sender, d)
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
-      log.info("done sending announcements to a peer, freeing slot")
+      log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
       stay using handleSendState(sender, d.copy(sendingState = d.sendingState - actor))
 
     case Event(Terminated(actor), d: Data) if d.sendStateWaitlist.contains(actor) =>
       // note: 'contains' and 'filter' operations are expensive on a queue, but its size should be very small (maybe even capped?)
-      log.info("peer={} died, removing from wait list", actor)
+      log.info("peer={} died, removing from wait list (waiting={})", actor, d.sendStateWaitlist.size - 1)
       stay using d.copy(sendStateWaitlist = d.sendStateWaitlist filterNot(_ == actor))
 
     case Event(c: ChannelAnnouncement, d) =>
@@ -458,7 +458,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     }
 
   def handleSendState(remote: ActorRef, d: Data): Data = {
-    log.info(s"info sending all announcements to $remote: channels=${d.channels.size} nodes=${d.nodes.size} updates=${d.updates.size}")
+    log.info("sending all announcements to {}: channels={} nodes={} updates={}", remote, d.channels.size, d.nodes.size, d.updates.size)
     val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
     // we group and add delays to leave room for channel messages
     val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
