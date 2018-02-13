@@ -1108,6 +1108,16 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
+      // we also need to fail "dust" htlcs if the commitment tx they were included in has reached mindepth
+      val timedoutDustHtlcs =
+        Closing.timedoutDustHtlcs(d.commitments.localCommit, Satoshi(d.commitments.localParams.dustLimitSatoshis), tx) ++
+        Closing.timedoutDustHtlcs(d.commitments.remoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx) ++
+        d.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutDustHtlcs(r.nextRemoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx))
+      timedoutDustHtlcs.foreach { add =>
+        val origin = d.commitments.originChannels(add.id)
+        log.warning(s"failing dust htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
+        relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None))
+      }
       // then let's see if any of the possible close scenarii can be considered done
       val mutualCloseDone = d.mutualClosePublished.exists(_.txid == tx.txid) // this case is trivial, in a mutual close scenario we only need to make sure that one of the closing txes is confirmed
     val localCommitDone = localCommitPublished1.map(Closing.isLocalCommitDone(_)).getOrElse(false)

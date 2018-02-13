@@ -430,6 +430,31 @@ object Helpers {
     }
 
     /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed and if this tx is a commitment tx,
+      * then we can fail all timed out dust htlcs, i.e. htlcs that were included in this very commitment, but didn't have an output
+      * because there amount was too small.
+      *
+      * In the local commitment, those are OUTGOING htlcs.
+      *
+      */
+    def timedoutDustHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction): Set[UpdateAddHtlc] =
+      if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
+        (localCommit.spec.htlcs.filter(_.direction == OUT) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec)).map(_.add)
+      } else Set.empty
+
+    /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed and if this tx is a commitment tx,
+      * then we can fail all timed out dust htlcs, i.e. htlcs that were included in this very commitment, but didn't have an output
+      * because there amount was too small.
+      *
+      * In the remote commitment, those are INCOMING htlcs.
+      */
+    def timedoutDustHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction): Set[UpdateAddHtlc] =
+      if (tx.txid == remoteCommit.txid) {
+        (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec)).map(_.add)
+      } else Set.empty
+
+    /**
       * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
       * local commit scenario and keep track of it.
       *
@@ -570,7 +595,7 @@ object Helpers {
       *   - not watch for confirmations if we know the tx is already confirmed
       *   - not watch the corresponding utxo when we already know the final spending tx
       *
-      * @param tx a tx with only one input
+      * @param tx               a tx with only one input
       * @param irrevocablySpent a map of known spent outpoints
       * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
       */
