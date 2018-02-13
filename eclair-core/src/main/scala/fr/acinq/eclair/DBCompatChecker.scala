@@ -16,6 +16,15 @@ object DBCompatChecker extends Logging {
       case Success(_) => {}
       case Failure(_) => throw IncompatibleDBException
     }
-}
 
-case object IncompatibleDBException extends RuntimeException("DB files are not compatible with this version of eclair.")
+  /**
+    * Tests if the network database is readable.
+    *
+    * @param nodeParams
+    */
+  def checkNetworkDBCompatibility(nodeParams: NodeParams): Unit =
+    Try(nodeParams.networkDb.listChannels(), nodeParams.networkDb.listNodes(), nodeParams.networkDb.listChannelUpdates()) match {
+      case Success(_) => {}
+      case Failure(_) => throw IncompatibleNetworkDBException
+    }
+}

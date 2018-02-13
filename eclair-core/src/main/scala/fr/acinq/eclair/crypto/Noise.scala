@@ -168,7 +168,7 @@ object Noise {
     *
     * @param cipher cipher functions
     */
-  case class UnitializedCipherState(cipher: CipherFunctions) extends CipherState {
+  case class UninitializedCipherState(cipher: CipherFunctions) extends CipherState {
     override val hasKey = false
 
     override def encryptWithAd(ad: BinaryData, plaintext: BinaryData): (CipherState, BinaryData) = (this, plaintext)
@@ -197,11 +197,11 @@ object Noise {
 
   object CipherState {
     def apply(k: BinaryData, cipher: CipherFunctions): CipherState = k.length match {
-      case 0 => UnitializedCipherState(cipher)
+      case 0 => UninitializedCipherState(cipher)
       case 32 => InitializedCipherState(k, 0, cipher)
     }
 
-    def apply(cipher: CipherFunctions): CipherState = UnitializedCipherState(cipher)
+    def apply(cipher: CipherFunctions): CipherState = UninitializedCipherState(cipher)
   }
 
   /**

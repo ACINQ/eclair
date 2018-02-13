@@ -71,8 +71,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
           router ! SendRoutingState(transport)
         }
         // let's bring existing/requested channels online
-        channels.values.foreach(_ ! INPUT_RECONNECTED(transport))
-        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels)
+        channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+        goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v)})
       } else {
         log.warning(s"incompatible features, disconnecting")
         origin_opt.map(origin => origin ! "incompatible features")
@@ -126,7 +126,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
     case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels)) if channelId == CHANNELID_ZERO =>
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
-      channels.values.foreach(_ forward err)
+      channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       transport ! PoisonPill
       stay
 
@@ -199,8 +199,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
     case Event(Terminated(actor), ConnectedData(address_opt, transport, _, channels)) if actor == transport =>
       log.info(s"lost connection to $remoteNodeId")
-      channels.values.foreach(_ ! INPUT_DISCONNECTED)
-      goto(DISCONNECTED) using DisconnectedData(address_opt, channels)
+      channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
+      goto(DISCONNECTED) using DisconnectedData(address_opt, channels.collect { case (k: FinalChannelId, v) => (k, v) })
 
     case Event(Terminated(actor), d@ConnectedData(_, transport, _, channels)) if channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
@@ -216,9 +216,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       log.info(s"got new transport while already connected, switching to new transport")
       context unwatch oldTransport
       oldTransport ! PoisonPill
-      channels.values.foreach(_ ! INPUT_DISCONNECTED)
+      channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       self ! h
-      goto(DISCONNECTED) using DisconnectedData(address_opt, channels)
+      goto(DISCONNECTED) using DisconnectedData(address_opt, channels.collect { case (k: FinalChannelId, v) => (k, v) })
   }
 
   whenUnhandled {
@@ -283,10 +283,10 @@ object Peer {
 
   sealed trait Data {
     def address_opt: Option[InetSocketAddress]
-    def channels: Map[ChannelId, ActorRef]
+    def channels: Map[_ <: ChannelId, ActorRef] // will be overriden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
-  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[ChannelId, ActorRef], attempts: Int = 0) extends Data
-  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[ChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
+  case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
+  case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data
 
   sealed trait State
