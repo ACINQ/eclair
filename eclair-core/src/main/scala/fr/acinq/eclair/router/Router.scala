@@ -35,7 +35,7 @@ case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChan
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendRoutingState(to: ActorRef)
-case class Stash(updates: Map[ChannelUpdate, ActorRef], nodes: Map[NodeAnnouncement, ActorRef])
+case class Stash(updates: Map[Long, Seq[(ChannelUpdate, ActorRef)]], nodes: Map[NodeAnnouncement, ActorRef])
 case class Rebroadcast(ann: Queue[(RoutingMessage, ActorRef)])
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
@@ -190,7 +190,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(v@ValidateResult(c, _, _, _), d0) =>
       // now we can acknowledge the message
       d0.awaiting(c) ! TransportHandler.ReadAck(c)
-      log.info(s"got validation result for shortChannelId=${c.shortChannelId.toHexString}")
+      log.info(s"got validation result for shortChannelId=${c.shortChannelId.toHexString} (awaiting=${nextStateData.awaiting.size} stash.nodes=${nextStateData.stash.nodes.size} stash.updates=${nextStateData.stash.updates.size})")
+//      log.info(s"current status channels=${nextStateData.channels.size} nodes=${nextStateData.nodes.size} updates=${nextStateData.updates.size} privateChannels=${nextStateData.privateChannels.size} privateUpdates=${nextStateData.privateUpdates.size} awaiting=${nextStateData.awaiting.size} stash.nodes=${nextStateData.stash.nodes.size} stash.updates=${nextStateData.stash.updates.size} rebroadcast=${nextStateData.rebroadcast.size} children=${context.children.size} excludedChannels=${nextStateData.excludedChannels.size}")
       val success = v match {
         case ValidateResult(c, _, _, Some(t)) =>
           log.warning(s"validation failure for shortChannelId=${c.shortChannelId.toHexString} reason=${t.getMessage}")
@@ -237,10 +238,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
 
       // we also reprocess node and channel_update announcements related to channels that were just analyzed
-      val reprocessUpdates = d0.stash.updates.filterKeys(u => c.shortChannelId == u.shortChannelId)
+      val reprocessUpdates = d0.stash.updates.getOrElse(c.shortChannelId, Nil).toMap
       val reprocessNodes = d0.stash.nodes.filterKeys(n => isRelatedTo(c, n.nodeId))
       // and we remove the reprocessed messages from the stash
-      val stash1 = d0.stash.copy(updates = d0.stash.updates -- reprocessUpdates.keys, nodes = d0.stash.nodes -- reprocessNodes.keys)
+      val stash1 = d0.stash.copy(updates = d0.stash.updates - c.shortChannelId, nodes = d0.stash.nodes -- reprocessNodes.keys)
       // we remove channel from awaiting map
       val awaiting1 = d0.awaiting - c
 
@@ -371,12 +372,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay
   }
 
-  onTransition {
-    case _ -> NORMAL =>
-      log.info(s"current status channels=${nextStateData.channels.size} nodes=${nextStateData.nodes.size} updates=${nextStateData.updates.size} privateChannels=${nextStateData.privateChannels.size} privateUpdates=${nextStateData.privateUpdates.size}")
-      log.info(s"children=${context.children.size} rebroadcast=${nextStateData.rebroadcast.size} stash.nodes=${nextStateData.stash.nodes.size} stash.updates=${nextStateData.stash.updates.size} awaiting=${nextStateData.awaiting.size} excludedChannels=${nextStateData.excludedChannels.size}")
-  }
-
   initialize()
 
   def handle(n: NodeAnnouncement, origin: ActorRef, d: Data): Data =
@@ -409,6 +404,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   def handle(u: ChannelUpdate, origin: ActorRef, d: Data): Data =
     if (d.channels.contains(u.shortChannelId)) {
+      // related channel is already known
       val publicChannel = true
       val c = d.channels(u.shortChannelId)
       val desc = getDesc(u, c)
@@ -431,8 +427,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ (u -> origin))
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
-      log.debug("stashing {}", u)
-      d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origin)))
+      // channel is currently being validated
+      val stashed = d.stash.updates.getOrElse(u.shortChannelId, Nil)
+      if (stashed.exists(_._1 == u)) {
+        log.debug("ignoring {} (already in the stash)", u)
+        d
+      } else {
+        log.debug("stashing {}", u)
+        val stashed1 = stashed :+ (u, origin)
+        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u.shortChannelId -> stashed1)))
+      }
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
       val c = d.privateChannels(u.shortChannelId)
