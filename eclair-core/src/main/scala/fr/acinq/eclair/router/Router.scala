@@ -190,8 +190,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(v@ValidateResult(c, _, _, _), d0) =>
       // now we can acknowledge the message
       d0.awaiting(c) ! TransportHandler.ReadAck(c)
-      log.info(s"got validation result for shortChannelId=${c.shortChannelId.toHexString} (awaiting=${nextStateData.awaiting.size} stash.nodes=${nextStateData.stash.nodes.size} stash.updates=${nextStateData.stash.updates.size})")
-//      log.info(s"current status channels=${nextStateData.channels.size} nodes=${nextStateData.nodes.size} updates=${nextStateData.updates.size} privateChannels=${nextStateData.privateChannels.size} privateUpdates=${nextStateData.privateUpdates.size} awaiting=${nextStateData.awaiting.size} stash.nodes=${nextStateData.stash.nodes.size} stash.updates=${nextStateData.stash.updates.size} rebroadcast=${nextStateData.rebroadcast.size} children=${context.children.size} excludedChannels=${nextStateData.excludedChannels.size}")
+      log.info(s"got validation result for shortChannelId=${c.shortChannelId.toHexString} (awaiting=${d0.awaiting.size} stash.nodes=${d0.stash.nodes.size} stash.updates=${d0.stash.updates.size})")
       val success = v match {
         case ValidateResult(c, _, _, Some(t)) =>
           log.warning(s"validation failure for shortChannelId=${c.shortChannelId.toHexString} reason=${t.getMessage}")
