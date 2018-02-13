@@ -72,7 +72,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
-  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 day, repeat = true)
+  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
 
   val db = nodeParams.networkDb
 
