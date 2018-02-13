@@ -44,7 +44,7 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   stash: Stash,
                   rebroadcast: Queue[(RoutingMessage, ActorRef)],
                   awaiting: Map[ChannelAnnouncement, ActorRef],
-                  privateChannels: Map[Long, ChannelAnnouncement],
+                  privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   sendingState: Set[ActorRef])
@@ -120,30 +120,23 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u), d: Data) =>
       d.channels.get(shortChannelId) match {
         case Some(_) =>
-          // channel had already been announced and router knows about it, we can process the channel_update
-          self ! u
-          stay
+          // channel has already been announced and router knows about it, we can process the channel_update
+          stay using handle(u, self, d)
         case None =>
           channelAnnouncement_opt match {
             case Some(c) =>
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
-              self ! c
-              self ! u
-              stay
+              watcher ! ValidateRequest(c)
+              val d1 = d.copy(awaiting = d.awaiting + (c -> self)) // we use self as origin
+              stay using handle(u, self, d1)
+            case None if d.privateChannels.contains(shortChannelId) =>
+              // channel isn't announced but we already know about it, we can process the channel_update
+              stay using handle(u, self, d)
             case None =>
-              // channel isn't announced yet, do we have a fake announcement?
-              d.privateChannels.get(shortChannelId) match {
-                case Some(_) =>
-                  // yes: nothing to do, we can process the channel_update
-                  self ! u
-                  stay
-                case None =>
-                  // no: create one and add it to current state, then process the channel_update
-                  log.info(s"adding unannounced local channel to remote=$remoteNodeId shortChannelId=${shortChannelId.toHexString}")
-                  self ! u
-                  val fake_c = Announcements.makeChannelAnnouncement("", shortChannelId, nodeParams.nodeId, remoteNodeId, nodeParams.nodeId, nodeParams.nodeId, "", "", "", "")
-                  stay using d.copy(privateChannels = d.privateChannels + (shortChannelId -> fake_c))
-              }
+              // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
+              // let's create a corresponding private channel and process the channel_update
+              log.info(s"adding unannounced local channel to remote=$remoteNodeId shortChannelId=${shortChannelId.toHexString}")
+              stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> remoteNodeId)))
           }
       }
 
@@ -188,8 +181,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
 
     case Event(v@ValidateResult(c, _, _, _), d0) =>
-      // now we can acknowledge the message
-      d0.awaiting(c) ! TransportHandler.ReadAck(c)
+      d0.awaiting.get(c) match {
+        case Some(origin) if origin == self => () // local channel, didn't come from the network
+        case Some(origin) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message
+        case None => ()
+      }
       log.info(s"got validation result for shortChannelId=${c.shortChannelId.toHexString} (awaiting=${d0.awaiting.size} stash.nodes=${d0.stash.nodes.size} stash.updates=${d0.stash.updates.size})")
       val success = v match {
         case ValidateResult(c, _, _, Some(t)) =>
@@ -438,8 +434,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
     } else if (d.privateChannels.contains(u.shortChannelId)) {
       val publicChannel = false
-      val c = d.privateChannels(u.shortChannelId)
-      val desc = getDesc(u, c)
+      val remoteNodeId = d.privateChannels(u.shortChannelId)
+      val (a, b) = if (Announcements.isNode1(nodeParams.nodeId, remoteNodeId)) (nodeParams.nodeId, remoteNodeId) else (remoteNodeId, nodeParams.nodeId)
+      val desc = if (Announcements.isNode1(u.flags)) ChannelDesc(u.shortChannelId, a, b) else ChannelDesc(u.shortChannelId, b, a)
       if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
         log.debug("ignoring {} (old timestamp or duplicate)", u)
         d
