@@ -7,6 +7,7 @@
 <?import javafx.scene.shape.Rectangle?>
 <?import javafx.scene.text.*?>
 <?import java.net.URL?>
+<?import javafx.scene.input.KeyCodeCombination?>
 <AnchorPane fx:id="root" minHeight="300.0" prefHeight="400.0" styleClass="root" xmlns="http://javafx.com/javafx/8"
             xmlns:fx="http://javafx.com/fxml/1">
     <children>
@@ -67,13 +68,21 @@
                                                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                                             </columnResizePolicy>
                                             <columns>
-                                                <TableColumn fx:id="networkChannelsIdColumn" minWidth="120.0"
-                                                             prefWidth="170.0" maxWidth="300.0"
+                                                <TableColumn fx:id="networkChannelsIdColumn"
+                                                             minWidth="120.0" prefWidth="170.0" maxWidth="200.0"
                                                              text="Short Channel Id"/>
                                                 <TableColumn fx:id="networkChannelsNode1Column" text="Node 1"/>
-                                                <TableColumn fx:id="networkChannelsDirectionsColumn" minWidth="30.0"
-                                                             prefWidth="30.0" maxWidth="30.0"/>
+                                                <TableColumn fx:id="networkChannelsDirectionsColumn"
+                                                             minWidth="30.0" prefWidth="30.0" maxWidth="30.0"/>
                                                 <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
+                                                <TableColumn fx:id="networkChannelsCapacityColumn" text="Capacity"
+                                                             minWidth="80.0" prefWidth="120.0" maxWidth="200.0"/>
+                                                <TableColumn fx:id="networkChannelsFeeBaseMsatColumn"
+                                                             minWidth="100.0" prefWidth="120.0" maxWidth="200.0"
+                                                             text="Base Fee"/>
+                                                <TableColumn fx:id="networkChannelsFeeProportionalMillionthsColumn"
+                                                             minWidth="60.0" prefWidth="120.0" maxWidth="200.0"
+                                                             text="Proportional Fee"/>
                                             </columns>
                                         </TableView>
                                     </children>
@@ -100,17 +109,19 @@
                                                                          minWidth="150.0" prefWidth="150.0"
                                                                          maxWidth="150.0" text="Date"/>
                                                             <TableColumn fx:id="paymentSentAmountColumn"
-                                                                         text="Amount (msat)"
+                                                                         text="Amount"
                                                                          styleClass="align-right" resizable="false"
                                                                          minWidth="150.0" prefWidth="150.0"
                                                                          maxWidth="150.0"/>
                                                             <TableColumn fx:id="paymentSentFeesColumn"
-                                                                         text="Fees Paid (msat)"
+                                                                         text="Fees Paid"
                                                                          styleClass="align-right" resizable="false"
                                                                          minWidth="150.0" prefWidth="150.0"
                                                                          maxWidth="150.0"/>
                                                             <TableColumn fx:id="paymentSentHashColumn"
                                                                          text="Payment Hash"/>
+                                                            <TableColumn fx:id="paymentSentPreimageColumn"
+                                                                         text="Payment Preimage"/>
                                                         </columns>
                                                     </TableView>
                                                 </Tab>
@@ -126,7 +137,7 @@
                                                                          prefWidth="150.0" maxWidth="150.0"
                                                                          text="Date"/>
                                                             <TableColumn fx:id="paymentReceivedAmountColumn"
-                                                                         text="Amount (msat)"
+                                                                         text="Amount"
                                                                          styleClass="align-right" resizable="false"
                                                                          minWidth="150.0" prefWidth="150.0"
                                                                          maxWidth="150.0"/>
@@ -147,12 +158,12 @@
                                                                          prefWidth="150.0" maxWidth="150.0"
                                                                          text="Date"/>
                                                             <TableColumn fx:id="paymentRelayedAmountColumn"
-                                                                         text="Amount (msat)"
+                                                                         text="Amount"
                                                                          styleClass="align-right" resizable="false"
                                                                          minWidth="150.0" prefWidth="150.0"
                                                                          maxWidth="150.0"/>
                                                             <TableColumn fx:id="paymentRelayedFeesColumn"
-                                                                         text="Fees Earned (msat)"
+                                                                         text="Fees Earned"
                                                                          styleClass="align-right" resizable="false"
                                                                          minWidth="150.0" prefWidth="150.0"
                                                                          maxWidth="150.0"/>
@@ -229,14 +240,34 @@
                         <Menu mnemonicParsing="false" text="Channels">
                             <items>
                                 <MenuItem fx:id="menuOpen" mnemonicParsing="false" onAction="#handleOpenChannel"
-                                          text="Open channel..."/>
+                                          text="Open channel...">
+                                    <accelerator>
+                                        <KeyCodeCombination code="O" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
+                                    </accelerator>
+                                </MenuItem>
                                 <SeparatorMenuItem mnemonicParsing="false"/>
                                 <MenuItem fx:id="menuSend" mnemonicParsing="false" onAction="#handleSendPayment"
-                                          text="Send Payment..."/>
+                                          text="Send Payment...">
+                                    <accelerator>
+                                        <KeyCodeCombination code="P" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
+                                    </accelerator>
+                                </MenuItem>
                                 <MenuItem fx:id="menuReceive" mnemonicParsing="false" onAction="#handleReceivePayment"
-                                          text="Receive Payment..."/>
+                                          text="Receive Payment...">
+                                    <accelerator>
+                                        <KeyCodeCombination code="N" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
+                                    </accelerator>
+                                </MenuItem>
                                 <SeparatorMenuItem mnemonicParsing="false"/>
-                                <MenuItem mnemonicParsing="false" onAction="#handleCloseRequest" text="Close"/>
+                                <MenuItem mnemonicParsing="false" onAction="#handleCloseRequest" text="Close">
+                                    <accelerator>
+                                        <KeyCodeCombination code="Q" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
+                                    </accelerator>
+                                </MenuItem>
                             </items>
                         </Menu>
                         <Menu mnemonicParsing="false" text="Tools">

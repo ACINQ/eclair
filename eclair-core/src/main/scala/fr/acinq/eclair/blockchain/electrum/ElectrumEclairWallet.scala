@@ -63,7 +63,5 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
       }
   }
 
-  def getMnemonics: Future[Seq[String]] = (wallet ? GetMnemonicCode).mapTo[GetMnemonicCodeResponse].map(_.mnemonics)
-
   override def rollback(tx: Transaction): Future[Boolean] = (wallet ? CancelTransaction(tx)).map(_ => true)
 }

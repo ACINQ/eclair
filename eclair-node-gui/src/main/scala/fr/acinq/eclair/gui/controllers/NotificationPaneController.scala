@@ -16,6 +16,7 @@ class NotificationPaneController {
   @FXML var messageLabel: Label = _
   @FXML var icon: ImageView = _
   @FXML var closeButton: Button = _
+  @FXML var copyButton: Button = _
 
   @FXML def handleMouseEnter(event: MouseEvent) = {
     rootPane.setOpacity(1)

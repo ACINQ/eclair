@@ -1630,7 +1630,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val sender = TestProbe()
 
-      // initally we have :
+      // initially we have :
       // alice = 800 000
       //   bob = 200 000
       def send(): Transaction = {

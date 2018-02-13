@@ -50,9 +50,9 @@
 }
 
 .channel .grid {
-	-fx-padding: .5em;
-    -fx-vgap: .5em;
-    -fx-hgap: .25em;
+    -fx-padding: 10px;
+    -fx-vgap: 3px;
+    -fx-hgap: 5px;
     -fx-font-size: 12px;
 }
 
@@ -113,7 +113,7 @@
     -fx-text-fill: rgb(220, 220, 220);
 }
 .notification-pane .label.notification-message {
-    -fx-font-size: 18px;
+    -fx-font-size: 16px;
     -fx-font-weight: bold;
 }
 .button.notification-close {
@@ -130,6 +130,20 @@
 .button.notification-close:hover,
 .button.notification-close:pressed {
     -fx-background-color: #353535;
+}
+
+.button.notification-copy {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-padding: 0;
+    -fx-text-fill: rgb(220, 220, 220);
+    -fx-underline: true;
+    -fx-cursor: hand;
+    -fx-font-size: 12px;
+}
+.button.notification-copy:hover,
+.button.notification-copy:pressed {
+    -fx-text-fill: rgb(240, 240, 240);
 }
 
 /* ------------- Activity tab -------------- */

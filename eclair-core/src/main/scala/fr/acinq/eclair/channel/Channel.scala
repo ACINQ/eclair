@@ -34,7 +34,7 @@ object Channel {
   val ANNOUNCEMENTS_MINCONF = 6
 
   // https://github.com/lightningnetwork/lightning-rfc/blob/master/02-peer-protocol.md#requirements
-  val MAX_FUNDING_SATOSHIS = 16777216 // = 2^24
+  val MAX_FUNDING_SATOSHIS = 16777216L // = 2^24
   val MIN_FUNDING_SATOSHIS = 1000
   val MAX_ACCEPTED_HTLCS = 483
 
@@ -694,7 +694,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           val closingSigned = Closing.makeFirstClosingTx(d.commitments, localShutdown.scriptPubKey, remoteShutdown.scriptPubKey)
           goto(NEGOTIATING) using store(DATA_NEGOTIATING(d.commitments, localShutdown, remoteShutdown, closingSigned :: Nil)) sending sendList :+ closingSigned
         } else {
-          // there are some pending signed htlcs, we need to fail/fullfill them
+          // there are some pending signed htlcs, we need to fail/fulfill them
           goto(SHUTDOWN) using store(DATA_SHUTDOWN(d.commitments, localShutdown, remoteShutdown)) sending sendList
         }
       }
@@ -1167,7 +1167,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       wallet.rollback(fundingTx)
       stay
 
-    case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymoer
+    case Event(INPUT_DISCONNECTED, _) => stay // we are disconnected, but it doesn't matter anymore
   })
 
   when(OFFLINE)(handleExceptions {
@@ -1666,7 +1666,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
         if (revWasSentLast) resendRevocation
       case Right(_) if commitments1.remoteCommit.index + 1 == channelReestablish.nextLocalCommitmentNumber =>
-        // there wasn't any sig in-flight when the disconnection occured
+        // there wasn't any sig in-flight when the disconnection occurred
         resendRevocation
       case _ => throw CommitmentSyncError(d.channelId)
     }

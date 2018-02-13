@@ -77,28 +77,45 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   val db = nodeParams.networkDb
 
-  // Note: We go through the whole validation process instead of directly loading into memory, because the channels
-  // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
-  // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
+  // Note: It is possible that some channels have been closed while we were shutdown. Since we are directly loading channels
+  // in memory without checking they are still alive, we may advertise closed channels if someone connects to us right after
+  // startup. That being said, if we stay down long enough that a significant numbers of channels are closed, there is a chance
+  // other peers forgot about us in the meantime.
   {
     log.info(s"loading network announcements from db...")
     val channels = db.listChannels()
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
-    val staleChannels = getStaleChannels(channels, updates)
-    if (staleChannels.size > 0) {
+    // let's prune the db (maybe eclair was stopped for a long time)
+    val staleChannels = getStaleChannels(channels.keys, updates)
+    if (staleChannels.nonEmpty) {
       log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
       staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
     }
-    val remainingChannels = channels.filterNot(c => staleChannels.contains(c.shortChannelId))
+    val remainingChannels = channels.keys.filterNot(c => staleChannels.contains(c.shortChannelId))
     val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
-    remainingChannels.map(self ! _)
-    nodes.map(self ! _)
-    remainingUpdates.map(self ! _)
-    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
-  }
+    val remainingNodes = nodes.filter(n => remainingChannels.exists(c => isRelatedTo(c, n.nodeId)))
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Stash(Map.empty, Map.empty, Map.empty), Queue.empty, Map.empty, Map.empty, Map.empty, Set.empty, Set.empty))
+    val initChannels = remainingChannels.map(c => (c.shortChannelId -> c)).toMap
+    val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    val initNodes = remainingNodes.map(n => (n.nodeId -> n)).toMap
+
+    // send events for these channels/nodes
+    remainingChannels.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
+    remainingNodes.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+
+    // watch the funding tx of all these channels
+    // note: some of them may already have been spent, in that case we will receive the watch event immediately
+    remainingChannels.foreach { c =>
+      val txid = channels(c)._1
+      val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+    }
+
+    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty, Map.empty), Queue.empty, awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendingState = Set.empty))
+  }
 
   when(NORMAL) {
     case Event(TickValidate, d) =>
@@ -141,8 +158,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
             log.debug(s"added channel channelId=${c.shortChannelId.toHexString}")
-            context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
-            db.addChannel(c)
+            val capacity = tx.txOut(outputIndex).amount
+            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
+            db.addChannel(c, tx.txid, capacity)
             Some(c)
           }
         case IndividualResult(c, Some(tx), false) =>
@@ -159,7 +177,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
       // in case we just validated our first local channel, we announce the local node
       // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
-      // even if we had stored a previous announcement, it would be overriden by this more recent one
+      // even if we had stored a previous announcement, it would be overridden by this more recent one
       if (!d.nodes.contains(nodeParams.nodeId) && validated.exists(isRelatedTo(_, nodeParams.nodeId))) {
         log.info(s"first local channel validated, announcing local node")
         val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)

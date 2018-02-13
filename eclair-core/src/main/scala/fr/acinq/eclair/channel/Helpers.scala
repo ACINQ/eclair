@@ -47,7 +47,7 @@ object Helpers {
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw new InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
     val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw new FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
-    // only enfore dust limit check on mainnet
+    // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
@@ -60,7 +60,7 @@ object Helpers {
     */
   def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Unit = {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw new InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
-    // only enfore dust limit check on mainnet
+    // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
@@ -519,7 +519,7 @@ object Helpers {
     def isLocalCommitDone(localCommitPublished: LocalCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have nay outputs)
       val isCommitTxConfirmed = localCommitPublished.irrevocablySpent.values.toSet.contains(localCommitPublished.commitTx.txid)
-      // are there remaining spendable outputs from the commitment tx? we just substract all known spent outputs from the ones we control
+      // are there remaining spendable outputs from the commitment tx? we just subtract all known spent outputs from the ones we control
       val commitOutputsSpendableByUs = (localCommitPublished.claimMainDelayedOutputTx.toSeq ++ localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs)
         .flatMap(_.txIn.map(_.outPoint)).toSet -- localCommitPublished.irrevocablySpent.keys
       // which htlc delayed txes can we expect to be confirmed?
