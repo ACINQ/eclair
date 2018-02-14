@@ -150,11 +150,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.info("received request to send announcements to {}, already sending state to {} peers, adding to wait list (waiting={})", remote, d.sendingState.size, d.sendStateWaitlist.size)
         context watch remote
         stay using d.copy(sendStateWaitlist = d.sendStateWaitlist :+ remote)
-      } else stay using handleSendState(sender, d)
+      } else stay using handleSendState(remote, d)
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
       log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
-      stay using handleSendState(sender, d.copy(sendingState = d.sendingState - actor))
+      val d1 = d.copy(sendingState = d.sendingState - actor)
+      d.sendStateWaitlist.dequeueOption match {
+        case Some((remote, sendStateWaitlist1)) => stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
+        case None => stay using d1
+      }
 
     case Event(Terminated(actor), d: Data) if d.sendStateWaitlist.contains(actor) =>
       // note: 'contains' and 'filter' operations are expensive on a queue, but its size should be very small (maybe even capped?)
