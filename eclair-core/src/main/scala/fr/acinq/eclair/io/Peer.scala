@@ -12,6 +12,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
 import fr.acinq.eclair.wire
+import fr.acinq.eclair.wire.LightningMessage
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -190,11 +191,21 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(Rebroadcast(announcements), ConnectedData(_, transport, _, _)) =>
+    case Event(Rebroadcast(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
       // we filter out announcements that we received from this node
-      val selected = announcements.filter(_._2 != self).map(_._1)
-      log.info(s"broadcasting ${selected.size} announcements to $remoteNodeId")
-      selected.foreach(transport ! _)
+      def sendIfNeeded(m: Map[_ <: LightningMessage, Set[ActorRef]]): Int = m.foldLeft(0) {
+        case (counter, (_, origins)) if origins.contains(self) =>
+          counter // won't send back announcement we received from this peer
+        case (counter, (announcement, _)) =>
+          transport ! announcement
+          counter + 1
+      }
+      val channelsSent = sendIfNeeded(channels)
+      val updatesSent = sendIfNeeded(updates)
+      val nodesSent = sendIfNeeded(nodes)
+      if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
+        log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+      }
       stay
 
     case Event(msg: wire.RoutingMessage, _) =>
