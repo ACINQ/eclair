@@ -36,13 +36,13 @@ case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a Tempo
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendRoutingState(to: ActorRef)
 case class Stash(updates: Map[Long, Seq[(ChannelUpdate, ActorRef)]], nodes: Map[NodeAnnouncement, ActorRef])
-case class Rebroadcast(ann: Queue[(RoutingMessage, ActorRef)])
+case class Rebroadcast(channels: Map[ChannelAnnouncement, ActorRef], updates: Map[ChannelUpdate, ActorRef], nodes: Map[NodeAnnouncement, ActorRef])
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
-                  rebroadcast: Queue[(RoutingMessage, ActorRef)],
+                  rebroadcast: Rebroadcast,
                   awaiting: Map[ChannelAnnouncement, ActorRef],
                   privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
@@ -113,7 +113,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     }
 
     log.info("loaded from db: channels={} nodes={} updates={}", remainingChannels.size, nodes.size, remainingUpdates.size)
-    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), Queue.empty, awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendingState = Set.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendingState = Set.empty))
   }
 
   when(NORMAL) {
@@ -244,7 +244,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         val d1 = d0.copy(
           channels = d0.channels + (c.shortChannelId -> c),
           privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
-          rebroadcast = d0.rebroadcast :+ (c, d0.awaiting.getOrElse(c, self)), // we also add the newly validated channels to the rebroadcast queue
+          rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, self))), // we also add the newly validated channels to the rebroadcast queue
           stash = stash1,
           awaiting = awaiting1)
         // we only reprocess updates and nodes if validation succeeded
@@ -289,12 +289,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
     case Event(TickBroadcast, d) =>
-      if (d.rebroadcast.isEmpty) {
+      if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
         stay
       } else {
-        log.info("broadcasting {} routing messages", d.rebroadcast.size)
-        context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast)
-        stay using d.copy(rebroadcast = Queue.empty)
+        log.info("broadcasting routing messages: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
+        context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
+        stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
     case Event(TickPruneStaleChannels, d) =>
@@ -381,12 +381,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("updated node nodeId={}", n.nodeId)
       context.system.eventStream.publish(NodeUpdated(n))
       db.updateNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ (n -> origin))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origin)))
     } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("added node nodeId={}", n.nodeId)
       context.system.eventStream.publish(NodeDiscovered(n))
       db.addNode(n)
-      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ (n -> origin))
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origin)))
     } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
       log.debug("stashing {}", n)
       d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origin)))
@@ -414,12 +414,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
-        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ (u -> origin))
+        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origin)))
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.addChannelUpdate(u)
-        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ (u -> origin))
+        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origin)))
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
