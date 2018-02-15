@@ -172,7 +172,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val numberOfChannels = 11
     val channelEndpointsCount = 2 * numberOfChannels
 
-     // we make sure all channels have set up their WatchConfirmed for the funding tx
+    // we make sure all channels have set up their WatchConfirmed for the funding tx
     awaitCond({
       val watches = nodes.values.foldLeft(Set.empty[Watch]) {
         case (watches, setup) =>
@@ -528,6 +528,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("generate", 11))
     sender.expectMsgType[JValue](10 seconds)
+    // we generate more blocks for the htlc-timeout to reach enough confirmations
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("generate", 1))
+      sender.expectMsgType[JValue](10 seconds)
+      paymentSender.msgAvailable
+    }, max = 30 seconds, interval = 1 second)
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
     assert(failed.paymentHash === paymentHash)
@@ -576,6 +582,12 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     // we then generate enough blocks to make the htlc timeout
     sender.send(bitcoincli, BitcoinReq("generate", 11))
     sender.expectMsgType[JValue](10 seconds)
+    // we generate more blocks for the claim-htlc-timeout to reach enough confirmations
+    awaitCond({
+      sender.send(bitcoincli, BitcoinReq("generate", 1))
+      sender.expectMsgType[JValue](10 seconds)
+      paymentSender.msgAvailable
+    }, max = 30 seconds, interval = 1 second)
     // this will fail the htlc
     val failed = paymentSender.expectMsgType[PaymentFailed](30 seconds)
     assert(failed.paymentHash === paymentHash)

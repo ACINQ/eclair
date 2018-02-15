@@ -1053,51 +1053,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // one of the outputs of the local/remote/revoked commit was spent
       // we just put a watch to be notified when it is confirmed
       blockchain ! WatchConfirmed(self, tx, nodeParams.minDepthBlocks, BITCOIN_TX_CONFIRMED(tx))
-
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
       log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
-      require(tx.txIn.size == 1, s"htlc tx should only have 1 input")
-      val witness = tx.txIn(0).witness
-      val extracted_opt = witness match {
-        case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
-          log.info(s"extracted preimage=$paymentPreimage from tx=$tx (claim-htlc-success)")
-          Some(paymentPreimage)
-        case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcReceivedScript)) if paymentPreimage.size == 32 =>
-          log.info(s"extracted preimage=$paymentPreimage from tx=$tx (htlc-success)")
-          Some(paymentPreimage)
-        case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, BinaryData.empty, htlcOfferedScript)) =>
-          val paymentHash160 = BinaryData(htlcOfferedScript.slice(109, 109 + 20))
-          log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (htlc-timeout)")
-          Some(paymentHash160)
-        case ScriptWitness(Seq(remoteSig, BinaryData.empty, htlcReceivedScript)) =>
-          val paymentHash160 = BinaryData(htlcReceivedScript.slice(69, 69 + 20))
-          log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (claim-htlc-timeout)")
-          Some(paymentHash160)
-        case _ =>
-          // this is not an htlc witness (we don't watch only htlc outputs)
-          None
-      }
-      extracted_opt map { extracted =>
-        // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment
-        // if an outgoing htlc is in the remote commitment, then:
-        // - either it is in the local commitment (it was never fulfilled)
-        // - or we have already received the fulfill and forwarded it upstream
-        val outgoingHtlcs = d.commitments.localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
-        outgoingHtlcs.collect {
-          case add if add.paymentHash == sha256(extracted) =>
-            val origin = d.commitments.originChannels(add.id)
-            log.warning(s"found a match between preimage=$extracted and origin=$origin: htlc was fulfilled")
-            // let's just pretend we received the preimage from the counterparty
-            relayer ! ForwardFulfill(UpdateFulfillHtlc(add.channelId, add.id, extracted), origin)
-          case add if ripemd160(add.paymentHash) == extracted =>
-            val origin = d.commitments.originChannels(add.id)
-            log.warning(s"found a match between paymentHash160=$extracted and origin=$origin: htlc timed out")
-            relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None))
-        }
-        // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
-        // TODO: we do not handle the case where htlcs transactions end up being unconfirmed this can happen if an htlc-success tx is published right before a htlc timed out
+      val fulfills = Closing.extractPreimages(d.commitments.localCommit, tx)
+      fulfills map { fulfill =>
+        val origin = d.commitments.originChannels(fulfill.id)
+        log.warning(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
+        relayer ! ForwardFulfill(fulfill, origin)
       }
       stay
 
@@ -1108,14 +1072,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val remoteCommitPublished1 = d.remoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val nextRemoteCommitPublished1 = d.nextRemoteCommitPublished.map(Closing.updateRemoteCommitPublished(_, tx))
       val revokedCommitPublished1 = d.revokedCommitPublished.map(Closing.updateRevokedCommitPublished(_, tx))
-      // we also need to fail "dust" htlcs if the commitment tx they were included in has reached mindepth
-      val timedoutDustHtlcs =
-        Closing.timedoutDustHtlcs(d.commitments.localCommit, Satoshi(d.commitments.localParams.dustLimitSatoshis), tx) ++
-        Closing.timedoutDustHtlcs(d.commitments.remoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx) ++
-        d.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutDustHtlcs(r.nextRemoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx))
-      timedoutDustHtlcs.foreach { add =>
+      // we may need to fail some htlcs in case a commitment tx was published and they have reached the timeout threshold
+      val timedoutHtlcs =
+        Closing.timedoutHtlcs(d.commitments.localCommit, Satoshi(d.commitments.localParams.dustLimitSatoshis), tx) ++
+        Closing.timedoutHtlcs(d.commitments.remoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx) ++
+        d.commitments.remoteNextCommitInfo.left.toSeq.flatMap(r => Closing.timedoutHtlcs(r.nextRemoteCommit, Satoshi(d.commitments.remoteParams.dustLimitSatoshis), tx))
+      timedoutHtlcs.foreach { add =>
         val origin = d.commitments.originChannels(add.id)
-        log.warning(s"failing dust htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
+        log.warning(s"failing htlc #${add.id} paymentHash=${add.paymentHash} origin=$origin: htlc timed out")
         relayer ! Status.Failure(AddHtlcFailed(d.channelId, add.paymentHash, HtlcTimedout(d.channelId), origin, None))
       }
       // then let's see if any of the possible close scenarii can be considered done
