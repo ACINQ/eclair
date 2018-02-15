@@ -66,11 +66,11 @@ class ZMQActor(address: String, connected: Option[Promise[Boolean]] = None) exte
     case msg: ZMsg => msg.popString() match {
       case "rawblock" =>
         val block = Block.read(msg.pop().getData)
-        log.debug(s"received blockid=${block.blockId}")
+        log.debug("received blockid={}", block.blockId)
         context.system.eventStream.publish(NewBlock(block))
       case "rawtx" =>
         val tx = Transaction.read(msg.pop().getData)
-        log.debug(s"received txid=${tx.txid}")
+        log.debug("received txid={}", tx.txid)
         context.system.eventStream.publish(NewTransaction(tx))
       case topic => log.warning(s"unexpected topic=$topic")
     }
