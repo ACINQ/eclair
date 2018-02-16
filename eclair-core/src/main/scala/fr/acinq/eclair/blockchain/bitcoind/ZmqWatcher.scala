@@ -96,18 +96,17 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
               // parent tx was published, we need to make sure this particular output has not been spent
               client.isTransactionOutputSpendable(txid.toString(), outputIndex, true).collect {
                 case false =>
-                  log.warning(s"output=$outputIndex of txid=$txid has already been spent")
-                  log.warning(s"looking first in the mempool")
+                  log.info(s"$txid:$outputIndex has already been spent, looking for the spending tx in the mempool")
                   client.getMempool().map { mempoolTxs =>
                     mempoolTxs.filter(tx => tx.txIn.exists(i => i.outPoint.txid == txid && i.outPoint.index == outputIndex)) match {
                       case Nil =>
-                        log.warning(s"couldn't find spending tx in the mempool, looking into blocks...")
+                        log.warning(s"$txid:$outputIndex has already been spent, spending tx not in the mempool, looking in the blockchain...")
                         client.lookForSpendingTx(None, txid.toString(), outputIndex).map { tx =>
-                          log.warning(s"found the spending tx in the blockchain: txid=${tx.txid}")
+                          log.warning(s"found the spending tx of $txid:$outputIndex in the blockchain: txid=${tx.txid}")
                           self ! NewTransaction(tx)
                         }
                       case txs =>
-                        log.warning(s"found ${txs.size} spending txs in the mempool: txids=${txs.map(_.txid).mkString(",")}")
+                        log.info(s"found ${txs.size} txs spending $txid:$outputIndex in the mempool: txids=${txs.map(_.txid).mkString(",")}")
                         txs.foreach(tx => self ! NewTransaction(tx))
                     }
                   }
