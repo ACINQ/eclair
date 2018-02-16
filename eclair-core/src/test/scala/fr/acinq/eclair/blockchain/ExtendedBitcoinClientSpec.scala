@@ -88,17 +88,17 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with FunSui
       priv = PrivateKey("01" * 32)
       wif = Base58Check.encode(Base58.Prefix.SecretKeyTestnet, priv.toBin)
       _ = sender.send(bitcoincli, BitcoinReq("importprivkey", wif))
-      _ = sender.expectMsgType[JValue](10 seconds)
+      _ = sender.expectMsgType[JValue](20 seconds)
       // send money to our private key
       address = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160)
       _ = client.sendFromAccount("", address, 1.0)
       _ = sender.send(bitcoincli, BitcoinReq("generate", 1))
-      _ = sender.expectMsgType[JValue](10 seconds)
+      _ = sender.expectMsgType[JValue](20 seconds)
       // and check that we find a utxo four our private key
       unspentAddresses1 <- client.listUnspentAddresses
       _ = assert(unspentAddresses1 contains address)
     } yield ()
 
-    Await.result(future, 10 seconds)
+    Await.result(future, 20 seconds)
   }
 }

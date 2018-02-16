@@ -44,7 +44,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       channelsDb: ChannelsDb,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
-                      preimagesDb: PreimagesDb,
+                      pendingRelayDb: PendingRelayDb,
                       paymentsDb: PaymentsDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
@@ -113,7 +113,7 @@ object NodeParams {
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
-    val preimagesDb = new SqlitePreimagesDb(sqlite)
+    val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
 
     val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "network.sqlite")}")
@@ -159,7 +159,7 @@ object NodeParams {
       channelsDb = channelsDb,
       peersDb = peersDb,
       networkDb = networkDb,
-      preimagesDb = preimagesDb,
+      pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),
