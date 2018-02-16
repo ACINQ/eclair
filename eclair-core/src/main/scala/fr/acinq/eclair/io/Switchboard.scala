@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.router.Rebroadcast
 
 /**
   * Ties network connections to peers.
@@ -65,8 +64,6 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       val peer = createOrGetPeer(peers, remoteNodeId, previousKnownAddress = None, offlineChannels = Set.empty)
       peer forward auth
       context become main(peers + (remoteNodeId -> peer))
-
-    case r: Rebroadcast => peers.values.foreach(_ forward r)
 
     case 'peers => sender ! peers
 

@@ -44,7 +44,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       channelsDb: ChannelsDb,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
-                      preimagesDb: PreimagesDb,
+                      pendingRelayDb: PendingRelayDb,
                       paymentsDb: PaymentsDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
@@ -55,7 +55,9 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       chainHash: BinaryData,
                       channelFlags: Byte,
                       channelExcludeDuration: FiniteDuration,
-                      watcherType: WatcherType) {
+                      watcherType: WatcherType,
+                      paymentRequestExpiry: FiniteDuration,
+                      maxPendingPaymentRequests: Int) {
   val nodeId = privateKey.publicKey
 }
 
@@ -82,17 +84,21 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config): NodeParams = {
+  def makeNodeParams(datadir: File, config: Config, seed_opt: Option[BinaryData] = None): NodeParams = {
 
     datadir.mkdirs()
 
-    val seedPath = new File(datadir, "seed.dat")
-    val seed: BinaryData = seedPath.exists() match {
-      case true => Files.toByteArray(seedPath)
-      case false =>
-        val seed = randomKey.toBin
-        Files.write(seed, seedPath)
-        seed
+    val seed: BinaryData = seed_opt match {
+      case Some(s) => s
+      case None =>
+        val seedPath = new File(datadir, "seed.dat")
+        seedPath.exists() match {
+          case true => Files.toByteArray(seedPath)
+          case false =>
+            val seed = randomKey.toBin
+            Files.write(seed, seedPath)
+            seed
+        }
     }
     val master = DeterministicWallet.generate(seed)
     val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
@@ -107,9 +113,11 @@ object NodeParams {
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
-    val networkDb = new SqliteNetworkDb(sqlite)
-    val preimagesDb = new SqlitePreimagesDb(sqlite)
+    val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
+
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "network.sqlite")}")
+    val networkDb = new SqliteNetworkDb(sqliteNetwork)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
@@ -151,7 +159,7 @@ object NodeParams {
       channelsDb = channelsDb,
       peersDb = peersDb,
       networkDb = networkDb,
-      preimagesDb = preimagesDb,
+      pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval", TimeUnit.SECONDS), TimeUnit.SECONDS),
@@ -162,6 +170,8 @@ object NodeParams {
       chainHash = chainHash,
       channelFlags = config.getInt("channel-flags").toByte,
       channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration", TimeUnit.SECONDS), TimeUnit.SECONDS),
-      watcherType = watcherType)
+      watcherType = watcherType,
+      paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry", TimeUnit.SECONDS), TimeUnit.SECONDS),
+      maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"))
   }
 }

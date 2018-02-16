@@ -6,7 +6,7 @@ import java.net.InetSocketAddress
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Block
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.{BITCOINJ, ELECTRUM}
 import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
@@ -24,15 +24,22 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 
 
 /**
+  * Setup eclair from a datadir.
+  * <p>
   * Created by PM on 25/01/2016.
+  *
+  * @param datadir  directory where eclair-core will write/read its data
+  * @param overrideDefaults
+  * @param actorSystem
+  * @param seed_opt optional seed, if set eclair will use it instead of generating one and won't create a seed.dat file.
   */
-class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem()) extends Logging {
+class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefaults: Config = ConfigFactory.empty(), actorSystem: ActorSystem = ActorSystem(), seed_opt: Option[BinaryData] = None) extends Logging {
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
   val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config)
+  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
   val chain: String = config.getString("chain")
 
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
@@ -94,10 +101,11 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     val wallet = bitcoin match {
       case _ if wallet_opt.isDefined => wallet_opt.get
       case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
-      case Electrum(electrumClient) =>
-        val electrumSeedPath = new File(datadir, "electrum_seed.dat")
-        val electrumWallet = system.actorOf(ElectrumWallet.props(electrumSeedPath, electrumClient, ElectrumWallet.WalletParameters(Block.RegtestGenesisBlock.hash, allowSpendUnconfirmed = true)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+      case Electrum(electrumClient) => seed_opt match {
+        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
+          new ElectrumEclairWallet(electrumWallet)
+        case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
+      }
       case _ => ???
     }
 
@@ -152,4 +160,10 @@ case class Kit(nodeParams: NodeParams,
 
 
 
-case object EmptyAPIPasswordException extends RuntimeException("must set a user/password for the json-rpc api")
+case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
+
+case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
+
+case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
+
+case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")

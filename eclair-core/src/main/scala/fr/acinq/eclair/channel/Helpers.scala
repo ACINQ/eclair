@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, sha256}
+import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -47,7 +47,7 @@ object Helpers {
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw new InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
     val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw new FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
-    // only enfore dust limit check on mainnet
+    // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (open.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(open.temporaryChannelId, open.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
@@ -60,7 +60,7 @@ object Helpers {
     */
   def validateParamsFunder(nodeParams: NodeParams, open: OpenChannel, accept: AcceptChannel): Unit = {
     if (accept.maxAcceptedHtlcs > Channel.MAX_ACCEPTED_HTLCS) throw new InvalidMaxAcceptedHtlcs(accept.temporaryChannelId, accept.maxAcceptedHtlcs, Channel.MAX_ACCEPTED_HTLCS)
-    // only enfore dust limit check on mainnet
+    // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
       if (accept.dustLimitSatoshis < Channel.MIN_DUSTLIMIT) throw new InvalidDustLimit(accept.temporaryChannelId, accept.dustLimitSatoshis, Channel.MIN_DUSTLIMIT)
     }
@@ -430,6 +430,90 @@ object Helpers {
     }
 
     /**
+      * In CLOSING state, any time we see a new transaction, we try to extract a preimage from it in order to fulfill the
+      * corresponding incoming htlc in an upstream channel.
+      *
+      * Not doing that would result in us losing money, because the downstream node would pull money from one side, and
+      * the upstream node would get refunded after a timeout.
+      *
+      * @param localCommit
+      * @param tx
+      * @return a set of fulfills that need to be sent upstream if extraction was successful
+      */
+    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateFulfillHtlc] = {
+      val paymentPreimages = tx.txIn.map(_.witness match {
+        case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
+          log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (claim-htlc-success)")
+          Some(paymentPreimage)
+        case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, paymentPreimage, htlcReceivedScript)) if paymentPreimage.size == 32 =>
+          log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (htlc-success)")
+          Some(paymentPreimage)
+        case _ => None
+      }).toSet.flatten
+      paymentPreimages flatMap { paymentPreimage =>
+        // we only consider htlcs in our local commitment, because we only care about outgoing htlcs, which disappear first in the remote commitment
+        // if an outgoing htlc is in the remote commitment, then:
+        // - either it is in the local commitment (it was never fulfilled)
+        // - or we have already received the fulfill and forwarded it upstream
+        val outgoingHtlcs = localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add)
+        outgoingHtlcs.collect {
+          case add if add.paymentHash == sha256(paymentPreimage) =>
+            // let's just pretend we received the preimage from the counterparty and build a fulfill message
+            UpdateFulfillHtlc(add.channelId, add.id, paymentPreimage)
+        }
+        // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
+      }
+    }
+
+    /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+      * more htlcs have timed out and need to be failed in an upstream channel.
+      *
+      * @param localCommit
+      * @param localDustLimit
+      * @param tx a tx that has reached mindepth
+      * @return a set of htlcs that need to be failed upstream
+      */
+    def timedoutHtlcs(localCommit: LocalCommit, localDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+      if (tx.txid == localCommit.publishableTxs.commitTx.tx.txid) {
+        // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
+        (localCommit.spec.htlcs.filter(_.direction == OUT) -- Transactions.trimOfferedHtlcs(localDustLimit, localCommit.spec)).map(_.add)
+      } else {
+        // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
+        tx.txIn.map(_.witness match {
+          case ScriptWitness(Seq(BinaryData.empty, remoteSig, localSig, BinaryData.empty, htlcOfferedScript)) =>
+            val paymentHash160 = BinaryData(htlcOfferedScript.slice(109, 109 + 20))
+            log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (htlc-timeout)")
+            localCommit.spec.htlcs.filter(_.direction == OUT).map(_.add).filter(add => ripemd160(add.paymentHash) == paymentHash160)
+          case _ => Set.empty
+        }).toSet.flatten
+      }
+
+    /**
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+      * more htlcs have timed out and need to be failed in an upstream channel.
+      *
+      * @param remoteCommit
+      * @param remoteDustLimit
+      * @param tx a tx that has reached mindepth
+      * @return a set of htlcs that need to be failed upstream
+      */
+    def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
+      if (tx.txid == remoteCommit.txid) {
+        // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
+        (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec)).map(_.add)
+      } else {
+        // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
+        tx.txIn.map(_.witness match {
+          case ScriptWitness(Seq(remoteSig, BinaryData.empty, htlcReceivedScript)) =>
+            val paymentHash160 = BinaryData(htlcReceivedScript.slice(69, 69 + 20))
+            log.info(s"extracted paymentHash160=$paymentHash160 from tx=$tx (claim-htlc-timeout)")
+            remoteCommit.spec.htlcs.filter(_.direction == IN).map(_.add).filter(add => ripemd160(add.paymentHash) == paymentHash160)
+          case _ => Set.empty
+        }).toSet.flatten
+      }
+
+    /**
       * In CLOSING state, when we are notified that a transaction has been confirmed, we check if this tx belongs in the
       * local commit scenario and keep track of it.
       *
@@ -476,7 +560,6 @@ object Helpers {
         val isCommitTx = remoteCommitPublished.commitTx.txid == tx.txid
         // does the tx spend an output of the local commitment tx?
         val spendsTheCommitTx = remoteCommitPublished.commitTx.txid == outPoint.txid
-        // TODO: we don't currently spend htlc transactions
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
@@ -502,6 +585,7 @@ object Helpers {
         val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
         // does the tx spend an output of the local commitment tx?
         val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
+        // TODO: we don't currently spend/steal htlc transactions
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
@@ -519,7 +603,7 @@ object Helpers {
     def isLocalCommitDone(localCommitPublished: LocalCommitPublished) = {
       // is the commitment tx buried? (we need to check this because we may not have nay outputs)
       val isCommitTxConfirmed = localCommitPublished.irrevocablySpent.values.toSet.contains(localCommitPublished.commitTx.txid)
-      // are there remaining spendable outputs from the commitment tx? we just substract all known spent outputs from the ones we control
+      // are there remaining spendable outputs from the commitment tx? we just subtract all known spent outputs from the ones we control
       val commitOutputsSpendableByUs = (localCommitPublished.claimMainDelayedOutputTx.toSeq ++ localCommitPublished.htlcSuccessTxs ++ localCommitPublished.htlcTimeoutTxs)
         .flatMap(_.txIn.map(_.outPoint)).toSet -- localCommitPublished.irrevocablySpent.keys
       // which htlc delayed txes can we expect to be confirmed?
@@ -570,7 +654,7 @@ object Helpers {
       *   - not watch for confirmations if we know the tx is already confirmed
       *   - not watch the corresponding utxo when we already know the final spending tx
       *
-      * @param tx a tx with only one input
+      * @param tx               a tx with only one input
       * @param irrevocablySpent a map of known spent outpoints
       * @return true if we know for sure that the utxos consumed by the tx have already irrevocably been spent, false otherwise
       */

@@ -45,8 +45,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     initiator ! Listener(probe1.ref)
     responder ! Listener(probe2.ref)
 
-    awaitCond(initiator.stateName == TransportHandler.WaitingForCyphertext)
-    awaitCond(responder.stateName == TransportHandler.WaitingForCyphertext)
+    awaitCond(initiator.stateName == TransportHandler.WaitingForCiphertext)
+    awaitCond(responder.stateName == TransportHandler.WaitingForCiphertext)
 
     initiator.tell(BinaryData("hello".getBytes), probe1.ref)
     probe2.expectMsg(BinaryData("hello".getBytes))
@@ -77,8 +77,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     initiator ! Listener(probe1.ref)
     responder ! Listener(probe2.ref)
 
-    awaitCond(initiator.stateName == TransportHandler.WaitingForCyphertext)
-    awaitCond(responder.stateName == TransportHandler.WaitingForCyphertext)
+    awaitCond(initiator.stateName == TransportHandler.WaitingForCiphertext)
+    awaitCond(responder.stateName == TransportHandler.WaitingForCiphertext)
 
     initiator.tell(MyMessage("hello"), probe1.ref)
     probe2.expectMsg(MyMessage("hello"))
@@ -107,8 +107,8 @@ class TransportHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLik
     initiator ! Listener(probe1.ref)
     responder ! Listener(probe2.ref)
 
-    awaitCond(initiator.stateName == TransportHandler.WaitingForCyphertext)
-    awaitCond(responder.stateName == TransportHandler.WaitingForCyphertext)
+    awaitCond(initiator.stateName == TransportHandler.WaitingForCiphertext)
+    awaitCond(responder.stateName == TransportHandler.WaitingForCiphertext)
 
     initiator.tell(BinaryData("hello".getBytes), probe1.ref)
     probe2.expectMsg(BinaryData("hello".getBytes))

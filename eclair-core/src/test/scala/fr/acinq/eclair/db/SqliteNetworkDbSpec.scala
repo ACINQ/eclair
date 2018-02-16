@@ -3,7 +3,7 @@ package fr.acinq.eclair.db
 import java.net.{InetAddress, InetSocketAddress}
 import java.sql.DriverManager
 
-import fr.acinq.bitcoin.{Block, Crypto}
+import fr.acinq.bitcoin.{Block, Crypto, Satoshi}
 import fr.acinq.eclair.db.sqlite.SqliteNetworkDb
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.router.Announcements
@@ -54,15 +54,20 @@ class SqliteNetworkDbSpec extends FunSuite {
     val channel_2 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, 43, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
     val channel_3 = Announcements.makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, 44, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, sig, sig, sig, sig)
 
+    val txid_1 = randomKey.toBin
+    val txid_2 = randomKey.toBin
+    val txid_3 = randomKey.toBin
+    val capacity = Satoshi(10000)
+
     assert(db.listChannels().toSet === Set.empty)
-    db.addChannel(channel_1)
-    db.addChannel(channel_1) // duplicate is ignored
+    db.addChannel(channel_1, txid_1, capacity)
+    db.addChannel(channel_1, txid_1, capacity) // duplicate is ignored
     assert(db.listChannels().size === 1)
-    db.addChannel(channel_2)
-    db.addChannel(channel_3)
-    assert(db.listChannels().toSet === Set(channel_1, channel_2, channel_3))
+    db.addChannel(channel_2, txid_2, capacity)
+    db.addChannel(channel_3, txid_3, capacity)
+    assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity)), (channel_2, (txid_2, capacity)), (channel_3, (txid_3, capacity))))
     db.removeChannel(channel_2.shortChannelId)
-    assert(db.listChannels().toSet === Set(channel_1, channel_3))
+    assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity)), (channel_3, (txid_3, capacity))))
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 42, 5, 7000000, 50000, 100, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 43, 5, 7000000, 50000, 100, true)
@@ -75,7 +80,7 @@ class SqliteNetworkDbSpec extends FunSuite {
     intercept[SQLiteException](db.addChannelUpdate(channel_update_2))
     db.addChannelUpdate(channel_update_3)
     db.removeChannel(channel_3.shortChannelId)
-    assert(db.listChannels().toSet === Set(channel_1))
+    assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity))))
     assert(db.listChannelUpdates().toSet === Set(channel_update_1))
     db.updateChannelUpdate(channel_update_1)
   }

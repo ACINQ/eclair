@@ -46,12 +46,12 @@ object TestConstants {
       smartfeeNBlocks = 3,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
-      reserveToFundingRatio = 0.01, // note: not used (overriden below)
+      reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
       channelsDb = new SqliteChannelsDb(sqlite),
       peersDb = new SqlitePeersDb(sqlite),
       networkDb = new SqliteNetworkDb(sqlite),
-      preimagesDb = new SqlitePreimagesDb(sqlite),
+      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
@@ -62,7 +62,9 @@ object TestConstants {
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
-      watcherType = BITCOIND)
+      watcherType = BITCOIND,
+      paymentRequestExpiry = 1 hour,
+      maxPendingPaymentRequests = 10000000)
 
     def id = nodeParams.privateKey.publicKey
 
@@ -100,12 +102,12 @@ object TestConstants {
       smartfeeNBlocks = 3,
       feeBaseMsat = 546000,
       feeProportionalMillionth = 10,
-      reserveToFundingRatio = 0.01, // note: not used (overriden below)
+      reserveToFundingRatio = 0.01, // note: not used (overridden below)
       maxReserveToFundingRatio = 0.05,
       channelsDb = new SqliteChannelsDb(sqlite),
       peersDb = new SqlitePeersDb(sqlite),
       networkDb = new SqliteNetworkDb(sqlite),
-      preimagesDb = new SqlitePreimagesDb(sqlite),
+      pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       routerBroadcastInterval = 60 seconds,
       routerValidateInterval = 2 seconds,
@@ -116,7 +118,9 @@ object TestConstants {
       chainHash = Block.RegtestGenesisBlock.hash,
       channelFlags = 1,
       channelExcludeDuration = 5 seconds,
-      watcherType = BITCOIND)
+      watcherType = BITCOIND,
+      paymentRequestExpiry = 1 hour,
+      maxPendingPaymentRequests = 10000000)
 
     def id = nodeParams.privateKey.publicKey
 
