@@ -5,7 +5,7 @@ import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Crypto, MerkleTree, Protocol, Satoshi}
+import fr.acinq.bitcoin.{BinaryData, Crypto, MerkleTree, Protocol, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -136,7 +136,24 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
       if (batch.size > 0) {
         log.info(s"validating a batch of ${batch.size} channels")
-        watcher ! ParallelGetRequest(batch.toSeq)
+        // FIXME: remove this, used for protoyping only
+        if (System.getProperty("eclair.fakeValidation") != null) {
+          log.warning("faking annoucement validation")
+          self ! ParallelGetResponse(batch.toSeq.map {
+            case c =>
+              log.info(s"blindly validating channel=$c")
+              val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+              val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+              val fakeFundingTx = Transaction(
+                version = 2,
+                txIn = Seq.empty[TxIn],
+                txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+                lockTime = 0)
+              IndividualResult(c, Some(fakeFundingTx), true)
+          })
+        } else {
+          watcher ! ParallelGetRequest(batch.toSeq)
+        }
         val awaiting1 = d.stash.channels.filterKeys(batch.toSet)
         goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash1, awaiting = awaiting1)
       } else stay using d.copy(stash = stash1)
