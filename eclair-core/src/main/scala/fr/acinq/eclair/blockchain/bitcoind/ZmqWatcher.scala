@@ -170,7 +170,8 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
   def publish(tx: Transaction, isRetry: Boolean = false): Unit = {
     log.info(s"publishing tx (isRetry=$isRetry): txid=${tx.txid} tx=$tx")
     client.publishTransaction(tx)(singleThreadExecutionContext).recover {
-      case t: Throwable if t.getMessage.contains("-25") && !isRetry => // we retry only once
+      case t: Throwable if t.getMessage.contains("(code: -27)") => () // 'transaction already in block chain' isn't an error
+      case t: Throwable if t.getMessage.contains("(code: -25)") && !isRetry => // we retry only once
         import akka.pattern.after
 
         import scala.concurrent.duration._
