@@ -5,6 +5,7 @@ import java.net.{InetAddress, InetSocketAddress}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.router.BucketFiltersSpec
 import fr.acinq.eclair.wire.LightningMessageCodecs._
 import fr.acinq.eclair.{UInt64, randomBytes, randomKey}
 import org.junit.runner.RunWith
@@ -212,6 +213,14 @@ class LightningMessageCodecsSpec extends FunSuite {
       val payload2 = LightningMessageCodecs.perHopPayloadCodec.decode(bin1.toBitVector).require.value
       assert(payload2 === payload1)
     }
+  }
+
+  test("encode/decode bucket filters") {
+    val counters = for (i <- 100000 to 100200) yield BucketFilter(i, randomBytes(BucketFilter.SIZE))
+    val msg = BucketFilters(counters.toList)
+    val encoded = lightningMessageCodec.encode(msg).require
+    val decoded = lightningMessageCodec.decode(encoded).require
+    assert(msg === decoded.value)
   }
 }
 

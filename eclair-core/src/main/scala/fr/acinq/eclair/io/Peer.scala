@@ -9,8 +9,9 @@ import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler.Listener
-import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
+import fr.acinq.eclair.router.{Rebroadcast, SendBucketHashes, SendRoutingState}
 import fr.acinq.eclair.wire
+import fr.acinq.eclair.wire.BucketFilters
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -64,11 +65,18 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt)) =>
-      log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
+      log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)} useBucketHashes=${Features.useBucketHashes(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
         if (Features.initialRoutingSync(remoteInit.localFeatures)) {
-          router ! SendRoutingState(transport)
+          if (Features.useBucketHashes(remoteInit.localFeatures)) {
+            // we send our counters
+            router ! SendBucketHashes(transport)
+            // we will send them our routing table when we receive their counters
+          } else {
+            // peer does not support bucket counters
+            router ! SendRoutingState(transport)
+          }
         }
         // let's bring existing/requested channels online
         channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -187,6 +195,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
         case (_, s) if s == self => ()
         case (ann, _) => transport ! ann
       }
+      stay
+
+    case Event(msg: BucketFilters, data: ConnectedData) if !Features.useBucketHashes(data.remoteInit.localFeatures) =>
+      log.warning("peer sent their bucket hahes, but does not support them in their init message")
+      stay
+
+    case Event(msg: BucketFilters, data: ConnectedData) =>
+      log.info("received their bucket hashes, asking router to filter and send our routing table")
+      router ! SendRoutingState(data.transport, Some(msg))
       stay
 
     case Event(msg: wire.RoutingMessage, _) =>

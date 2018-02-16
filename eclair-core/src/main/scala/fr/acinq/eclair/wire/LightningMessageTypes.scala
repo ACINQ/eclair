@@ -159,6 +159,17 @@ case class ChannelUpdate(signature: BinaryData,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
 
+case class BucketFilter(height: Int, hash: BinaryData) extends RoutingMessage {
+  require(height >= 0 && hash.length == BucketFilter.SIZE)
+}
+
+object BucketFilter {
+  // we could probably just use the first 16 bytes of the hash
+  val SIZE = 32
+}
+
+case class BucketFilters(filters: List[BucketFilter]) extends RoutingMessage
+
 case class PerHopPayload(channel_id: Long,
                          amtToForward: Long,
                          outgoingCltvValue: Long)

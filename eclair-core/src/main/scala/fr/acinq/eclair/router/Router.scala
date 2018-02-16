@@ -1,10 +1,11 @@
 package fr.acinq.eclair.router
 
 import java.io.StringWriter
+import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Crypto, MerkleTree, Protocol, Satoshi, Script, Transaction, TxIn, TxOut}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -18,6 +19,7 @@ import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
+import scala.annotation.tailrec
 import scala.collection.JavaConversions._
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -33,7 +35,8 @@ case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Se
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-case class SendRoutingState(to: ActorRef)
+case class SendBucketHashes(to: ActorRef)
+case class SendRoutingState(to: ActorRef, filter: Option[BucketFilters] = None)
 case class Stash(channels: Map[ChannelAnnouncement, ActorRef], updates: Map[ChannelUpdate, ActorRef], nodes: Map[NodeAnnouncement, ActorRef])
 case class Rebroadcast(ann: Queue[(RoutingMessage, ActorRef)])
 
@@ -133,7 +136,24 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
       if (batch.size > 0) {
         log.info(s"validating a batch of ${batch.size} channels")
-        watcher ! ParallelGetRequest(batch.toSeq)
+        // FIXME: remove this, used for protoyping only
+        if (System.getProperty("eclair.fakeValidation") != null) {
+          log.warning("faking annoucement validation")
+          self ! ParallelGetResponse(batch.toSeq.map {
+            case c =>
+              log.info(s"blindly validating channel=$c")
+              val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+              val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+              val fakeFundingTx = Transaction(
+                version = 2,
+                txIn = Seq.empty[TxIn],
+                txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
+                lockTime = 0)
+              IndividualResult(c, Some(fakeFundingTx), true)
+          })
+        } else {
+          watcher ! ParallelGetRequest(batch.toSeq)
+        }
         val awaiting1 = d.stash.channels.filterKeys(batch.toSet)
         goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash1, awaiting = awaiting1)
       } else stay using d.copy(stash = stash1)
@@ -236,10 +256,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString}")
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
-    case Event(s@SendRoutingState(remote), d: Data) =>
+    case Event(SendBucketHashes(remote), d: Data) =>
+      val hashes = Router.makeBucketFilters(d.channels.values.toSeq, Globals.blockCount.get())
+      log.info(s"sending bucket hashes to $remote")
+      remote ! hashes
+      stay
+
+    case Event(SendRoutingState(remote, None), d: Data) =>
       if (d.sendingState.size > 3) {
         log.info(s"received request to send announcements to $remote, already sending state to ${d.sendingState.size} peers, delaying...")
-        context.system.scheduler.scheduleOnce(3 seconds, self, s)
+        context.system.scheduler.scheduleOnce(3 seconds, self, SendRoutingState(remote, None))
         stay
       } else {
         log.info(s"info sending all announcements to $remote: channels=${d.channels.size} nodes=${d.nodes.size} updates=${d.updates.size}")
@@ -249,6 +275,19 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         context watch actor
         stay using d.copy(sendingState = d.sendingState + actor)
       }
+
+    case Event(SendRoutingState(remote, Some(theirHashes)), d: Data) =>
+      val ourHashes = Router.makeBucketFilters(d.channels.values.toSeq, Globals.blockCount.get())
+      // compare our bucket counters and filter out channels
+      val channels = d.channels.values.toSeq
+      val channels1 = channels.filterNot(channel => Router.checkBucketFilters(channel, ourHashes, theirHashes))
+      val updates = d.updates.values
+      val updates1 = updates.filter(update => channels1.exists(_.shortChannelId == update.shortChannelId))
+      log.info(s"info sending filtered announcements to $remote: channels=${channels1.size} nodes=${d.nodes.size} updates=${updates1.size}")
+      val batch = channels1 ++ d.nodes.values ++ updates1
+      val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+      context watch actor
+      stay using d.copy(sendingState = d.sendingState + actor)
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
       log.info(s"done sending announcements to a peer, freeing slot")
@@ -586,5 +625,75 @@ object Router {
 
   }
 
+  def makeBucketFilters(channelAnnouncements: Seq[ChannelAnnouncement], currentHeight: Long) : BucketFilters = {
+    // we use x / 144 * 144 to get a maker that is a multiple of 144
+    // so that nodes at different current height will compute the same marker
+    // we then use:
+    // - one hash per block for all blocks >= marker
+    // - one hash per day (144 blocks) for all other blocks
+    // worst case scenario after one year:
+    // (358 + 8 * 144) hashes = 1510 hashes, or 48 Kb with 32 bytes hashes
 
+    // marker = now - 1 week
+    val marker = (currentHeight / 144) * 144 - 7 * 144
+
+    // order matters ! sort announcements by short channel id
+    val hca = channelAnnouncements.sortBy(_.shortChannelId).map(ca => (fromShortId(ca.shortChannelId)._1, ca))
+    val (before, after) = hca.partition(_._1 < marker)
+    val map = collection.mutable.HashMap.empty[Int, Seq[ChannelAnnouncement]]
+    // group announcements by buckets. Keep them sorted !!
+    before.foreach { case(h, ca) => {
+      // one key per group of 144 blocks
+      val k = (h / 144) * 144
+      map.put(k, map.getOrElse(k, Seq()) :+ ca)
+    }}
+
+    after.foreach{ case(h, ca) => {
+      // one key per block
+      val k = h
+      map.put(k, map.getOrElse(k, Seq()) :+ ca)
+    }}
+
+    // to serialize a channel announcement we just use its short channel id (8 bytes)
+    def toBin(ca: ChannelAnnouncement): BinaryData = Protocol.writeUInt64(ca.shortChannelId, ByteOrder.BIG_ENDIAN)
+
+    val hashes = map.keys.toList.sorted.map(h => {
+      // serialize all announcements in this bucket
+      val bins = map(h).map(toBin)
+      // concatenate the serialized announcements
+      val bin = bins.flatten
+      // and hash it
+      val hash = Crypto.sha256(bin)
+      BucketFilter(h, hash)
+    })
+    BucketFilters(hashes)
+  }
+
+  /**
+    *
+    * @param height block height to be checked
+    * @param ourFilters our bucket filters
+    * @param theirFilters their bucket filters
+    * @return true if our filters and their filters are consistent for this specific height
+    */
+  def checkBucketFilters(height: Int, ourFilters: BucketFilters, theirFilters: BucketFilters): Boolean = {
+
+    if (theirFilters.filters.isEmpty || height < theirFilters.filters.head.height) false else {
+      @tailrec
+      def filter(input: List[BucketFilter]): List[BucketFilter] = input match {
+        case a :: b :: tail if a.height <= height && b.height <= height => filter(b :: tail)
+        case _ => input
+      }
+
+      val ourFilters1 = filter(ourFilters.filters)
+      val theirFilters1 = filter(theirFilters.filters)
+      (ourFilters1, theirFilters1) match {
+        case (ourFirst :: Nil, theirFirst :: Nil) if ourFirst == theirFirst => true
+        case (ourFirst :: ourNext :: _, theirFirst :: theirNext :: _) if ourFirst == theirFirst && ourNext.height == theirNext.height => true
+        case _ => false
+      }
+    }
+  }
+
+  def checkBucketFilters(ca: ChannelAnnouncement, ourFilters: BucketFilters, theirFilters: BucketFilters): Boolean = checkBucketFilters(fromShortId(ca.shortChannelId)._1, ourFilters, theirFilters)
 }
