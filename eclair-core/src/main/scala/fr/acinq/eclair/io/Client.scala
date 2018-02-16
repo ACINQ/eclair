@@ -21,7 +21,7 @@ class Client(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   import context.system
 
   log.info(s"connecting to pubkey=$remoteNodeId host=${address.getHostString} port=${address.getPort}")
-  IO(Tcp) ! Connect(address, timeout = Some(5 seconds), options = KeepAlive(true) :: Nil)
+  IO(Tcp) ! Connect(address, timeout = Some(5 seconds), options = KeepAlive(true) :: Nil, pullMode = true)
 
   def receive = {
     case CommandFailed(_: Connect) =>

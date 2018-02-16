@@ -152,7 +152,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
         context.become(watching(watches, block2tx1, None))
       } else publish(tx)
 
-    case ParallelGetRequest(ann) => client.getParallel(ann).pipeTo(sender)
+    case ValidateRequest(ann) => client.validate(ann).pipeTo(sender)
 
     case Terminated(channel) =>
       // we remove watches associated to dead actor

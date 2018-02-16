@@ -60,8 +60,7 @@ final case class WatchEventLost(event: BitcoinEvent) extends WatchEvent
   * Publish the provided tx as soon as possible depending on locktime and csv
   */
 final case class PublishAsap(tx: Transaction)
-final case class ParallelGetRequest(ann: Seq[ChannelAnnouncement])
-final case class IndividualResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean)
-final case class ParallelGetResponse(r: Seq[IndividualResult])
+final case class ValidateRequest(ann: ChannelAnnouncement)
+final case class ValidateResult(c: ChannelAnnouncement, tx: Option[Transaction], unspent: Boolean, t: Option[Throwable])
 
 // @formatter:on

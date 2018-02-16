@@ -76,7 +76,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with FunSui
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](10 seconds)
+    sender.expectMsgType[JValue](20 seconds)
 
     val future = for {
       count <- client.getBlockCount

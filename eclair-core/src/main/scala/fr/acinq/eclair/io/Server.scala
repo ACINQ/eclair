@@ -21,21 +21,27 @@ class Server(nodeParams: NodeParams, authenticator: ActorRef, address: InetSocke
   import Tcp._
   import context.system
 
-  IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil)
+  IO(Tcp) ! Bind(self, address, options = KeepAlive(true) :: Nil, pullMode = true)
 
   def receive() = {
     case Bound(localAddress) =>
       bound.map(_.success(Unit))
       log.info(s"bound on $localAddress")
+      // Accept connections one by one
+      sender() ! ResumeAccepting(batchSize = 1)
+      context.become(listening(sender()))
 
     case CommandFailed(_: Bind) =>
       bound.map(_.failure(new RuntimeException("TCP bind failed")))
       context stop self
+  }
 
+  def listening(listener: ActorRef): Receive = {
     case Connected(remote, _) =>
       log.info(s"connected to $remote")
       val connection = sender
       authenticator ! Authenticator.PendingAuth(connection, remoteNodeId_opt = None, address = remote, origin_opt = None)
+      listener ! ResumeAccepting(batchSize = 1)
   }
 
   override def unhandled(message: Any): Unit = log.warning(s"unhandled message=$message")

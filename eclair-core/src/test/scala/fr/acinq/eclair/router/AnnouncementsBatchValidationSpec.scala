@@ -1,10 +1,13 @@
 package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
+import akka.testkit.TestProbe
+import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
+import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{randomKey, toShortId}
@@ -37,16 +40,16 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     generateBlocks(6)
     val announcements = channels.map(makeChannelAnnouncement)
 
-    val alteredAnnouncements = announcements.zipWithIndex map {
-      case (ann, 3) => ann.copy(shortChannelId = Long.MaxValue) // invalid block height
-      case (ann, 7) => ann.copy(shortChannelId = toShortId(500, 1000, 0)) // invalid tx index
-      case (ann, _) => ann
-    }
+    val sender = TestProbe()
 
-    val res = Await.result(extendedBitcoinClient.getParallel(alteredAnnouncements), 10 seconds)
+    extendedBitcoinClient.validate(announcements(0)).pipeTo(sender.ref)
+    sender.expectMsgType[ValidateResult].tx.isDefined
 
-    assert(res.r(3).tx == None)
-    assert(res.r(7).tx == None)
+    extendedBitcoinClient.validate(announcements(1).copy(shortChannelId = Long.MaxValue)).pipeTo(sender.ref) // invalid block height
+    sender.expectMsgType[ValidateResult].tx.isEmpty
+
+    extendedBitcoinClient.validate(announcements(2).copy(shortChannelId = toShortId(500, 1000, 0))).pipeTo(sender.ref) // invalid tx index
+    sender.expectMsgType[ValidateResult].tx.isEmpty
 
   }
 
