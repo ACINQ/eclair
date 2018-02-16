@@ -20,6 +20,7 @@ import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
+import scala.collection.immutable.Queue
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -46,6 +47,7 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  sendStateWaitlist: Queue[ActorRef],
                   sendingState: Set[ActorRef])
 
 sealed trait State
@@ -112,7 +114,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     }
 
     log.info("loaded from db: channels={} nodes={} updates={}", remainingChannels.size, nodes.size, remainingUpdates.size)
-    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendingState = Set.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty))
   }
 
   when(NORMAL) {
@@ -146,23 +148,25 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId.toHexString)
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
-    case Event(s@SendRoutingState(remote), d: Data) =>
+    case Event(SendRoutingState(remote), d: Data) =>
       if (d.sendingState.size > 3) {
-        log.info("received request to send announcements to {}, already sending state to peers, delaying...", remote, d.sendingState.size)
-        context.system.scheduler.scheduleOnce(3 seconds, self, s)
-        stay
-      } else {
-        log.info("info sending all announcements to {}: channels={} nodes={} updates={}", remote, d.channels.size, d.nodes.size, d.updates.size)
-        val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
-        // we group and add delays to leave room for channel messages
-        val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
-        context watch actor
-        stay using d.copy(sendingState = d.sendingState + actor)
-      }
+        log.info("received request to send announcements to {}, already sending state to {} peers, adding to wait list (waiting={})", remote, d.sendingState.size, d.sendStateWaitlist.size)
+        context watch remote
+        stay using d.copy(sendStateWaitlist = d.sendStateWaitlist :+ remote)
+      } else stay using handleSendState(remote, d)
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
-      log.info("done sending announcements to a peer, freeing slot")
-      stay using d.copy(sendingState = d.sendingState - actor)
+      log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
+      val d1 = d.copy(sendingState = d.sendingState - actor)
+      d.sendStateWaitlist.dequeueOption match {
+        case Some((remote, sendStateWaitlist1)) => stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
+        case None => stay using d1
+      }
+
+    case Event(Terminated(actor), d: Data) if d.sendStateWaitlist.contains(actor) =>
+      // note: 'contains' and 'filter' operations are expensive on a queue, but its size should be very small (maybe even capped?)
+      log.info("peer={} died, removing from wait list (waiting={})", actor, d.sendStateWaitlist.size - 1)
+      stay using d.copy(sendStateWaitlist = d.sendStateWaitlist filterNot(_ == actor))
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
@@ -474,6 +478,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
     }
+
+  def handleSendState(remote: ActorRef, d: Data): Data = {
+    log.info("sending all announcements to {}: channels={} nodes={} updates={}", remote, d.channels.size, d.nodes.size, d.updates.size)
+    val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
+    // we group and add delays to leave room for channel messages
+    val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+    context watch actor
+    d.copy(sendingState = d.sendingState + actor)
+  }
 
 
 }
