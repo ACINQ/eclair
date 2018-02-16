@@ -466,8 +466,8 @@ object Helpers {
     }
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed and if this tx is a commitment tx,
-      * then at some point our outgoing htlcs with time out if they are not spent using a preimage by the counterparty.
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+      * more htlcs have timed out and need to be failed in an upstream channel.
       *
       * @param localCommit
       * @param localDustLimit
@@ -490,8 +490,8 @@ object Helpers {
       }
 
     /**
-      * In CLOSING state, when we are notified that a transaction has been confirmed and if this tx is a commitment tx,
-      * then at some point our outgoing htlcs with time out if they are not spent using a preimage by the counterparty.
+      * In CLOSING state, when we are notified that a transaction has been confirmed, we analyze it to find out if one or
+      * more htlcs have timed out and need to be failed in an upstream channel.
       *
       * @param remoteCommit
       * @param remoteDustLimit
@@ -500,6 +500,7 @@ object Helpers {
       */
     def timedoutHtlcs(remoteCommit: RemoteCommit, remoteDustLimit: Satoshi, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateAddHtlc] =
       if (tx.txid == remoteCommit.txid) {
+        // the tx is a commitment tx, we can immediately fail all dust htlcs (they don't have an output in the tx)
         (remoteCommit.spec.htlcs.filter(_.direction == IN) -- Transactions.trimReceivedHtlcs(remoteDustLimit, remoteCommit.spec)).map(_.add)
       } else {
         // maybe this is a timeout tx, in that case we can resolve and fail the corresponding htlc
