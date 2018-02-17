@@ -1,6 +1,6 @@
 package fr.acinq.eclair.router
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Terminated}
 
 import scala.concurrent.duration.{FiniteDuration, _}
 
@@ -16,6 +16,8 @@ class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: In
   import ThrottleForwarder.Tick
 
   import scala.concurrent.ExecutionContext.Implicits.global
+
+  context watch target
 
   val clock = context.system.scheduler.schedule(0 second, delay, self, Tick)
 
@@ -34,6 +36,11 @@ class ThrottleForwarder(target: ActorRef, messages: Iterable[Any], chunkSize: In
           chunk.foreach(target ! _)
           context become group(rest)
       }
+
+    case Terminated(_) =>
+      clock.cancel()
+      log.debug(s"target died, aborting sending")
+      context stop self
   }
 
 }
