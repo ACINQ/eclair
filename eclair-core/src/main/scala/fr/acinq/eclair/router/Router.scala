@@ -158,7 +158,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
       val d1 = d.copy(sendingState = d.sendingState - actor)
       d.sendStateWaitlist.dequeueOption match {
-        case Some((remote, sendStateWaitlist1)) => stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
+        case Some((remote, sendStateWaitlist1)) =>
+          context unwatch remote
+          stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
         case None => stay using d1
       }
 
