@@ -254,7 +254,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d0.copy(stash = stash1, awaiting = awaiting1)
       }
 
-    case Event(n: NodeAnnouncement, d: Data) => stay // we just ignore node_announcements on android
+    case Event(n: NodeAnnouncement, d: Data) =>
+      sender ! TransportHandler.ReadAck(n)
+      stay // we just ignore node_announcements on android
 
     case Event(u: ChannelUpdate, d: Data) =>
       sender ! TransportHandler.ReadAck(u)
