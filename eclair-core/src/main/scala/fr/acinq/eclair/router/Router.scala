@@ -52,7 +52,6 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
 
 sealed trait State
 case object NORMAL extends State
-case object WAITING_FOR_VALIDATION extends State
 
 case object TickBroadcast
 case object TickPruneStaleChannels
