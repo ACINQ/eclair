@@ -5,9 +5,8 @@ import java.nio.charset.StandardCharsets
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, Props, Status, SupervisorStrategy}
 import akka.event.Logging.MDC
 import akka.pattern.pipe
-import fr.acinq.bitcoin.Crypto.{PublicKey, ripemd160, sha256}
+import fr.acinq.bitcoin.Crypto.{PublicKey, sha256}
 import fr.acinq.bitcoin._
-import fr.acinq.eclair.NodeParams.BITCOINJ
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
@@ -16,11 +15,10 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
-import org.bitcoinj.script.{Script => BitcoinjScript}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.{Failure, Left, Random, Success, Try}
+import scala.util.{Failure, Left, Success, Try}
 
 
 /**
@@ -437,16 +435,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
   when(WAIT_FOR_FUNDING_LOCKED)(handleExceptions {
     case Event(FundingLocked(_, nextPerCommitmentPoint), d@DATA_WAIT_FOR_FUNDING_LOCKED(commitments, shortChannelId, _)) =>
-      if (d.commitments.announceChannel && nodeParams.watcherType == BITCOINJ && d.commitments.localParams.isFunder && System.getProperty("spvtest") != null) {
-        // bitcoinj-based watcher currently can't get the tx index in block (which is used to calculate the short id)
-        // instead, we rely on a hack by trusting the index the counterparty sends us
-        // but in testing when connecting to bitcoinj impl together we make the funder choose some random data
-        log.warning("using hardcoded short id for testing with bitcoinj!!!!!")
-        context.system.scheduler.scheduleOnce(5 seconds, self, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, Random.nextInt(100), Random.nextInt(100)))
-      } else {
-        // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
-        blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
-      }
+      // used to get the final shortChannelId, used in announcements (if minDepth >= ANNOUNCEMENTS_MINCONF this event will fire instantly)
+      blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
       context.system.eventStream.publish(ShortChannelIdAssigned(self, commitments.channelId, shortChannelId))
       val initialChannelUpdate = Announcements.makeChannelUpdate(nodeParams.chainHash, nodeParams.privateKey, remoteNodeId, shortChannelId, nodeParams.expiryDeltaBlocks, d.commitments.remoteParams.htlcMinimumMsat, nodeParams.feeBaseMsat, nodeParams.feeProportionalMillionth, enable = true)
       goto(NORMAL) using store(DATA_NORMAL(commitments.copy(remoteNextCommitInfo = Right(nextPerCommitmentPoint)), shortChannelId, buried = false, None, initialChannelUpdate, None, None))
@@ -759,11 +749,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         // note: no need to persist their message, in case of disconnection they will resend it
         log.debug(s"received remote announcement signatures, delaying")
         context.system.scheduler.scheduleOnce(5 seconds, self, remoteAnnSigs)
-        if (nodeParams.watcherType == BITCOINJ) {
-          log.warning(s"HACK: since we cannot get the tx index with bitcoinj, we copy the value sent by remote")
-          val (blockHeight, txIndex, _) = fromShortId(remoteAnnSigs.shortChannelId)
-          self ! WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, blockHeight, txIndex)
-        }
         stay
       }
 
@@ -1201,14 +1186,9 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
       if (!d.buried) {
-        if (nodeParams.watcherType != BITCOINJ) {
-          // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
-          // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
-          blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
-        } else {
-          // NB: in BITCOINJ mode we currently can't get the tx index in block (which is used to calculate the short id)
-          // instead, we rely on a hack by trusting the index the counterparty sends us)
-        }
+        // even if we were just disconnected/reconnected, we need to put back the watch because the event may have been
+        // fired while we were in OFFLINE (if not, the operation is idempotent anyway)
+        blockchain ! WatchConfirmed(self, d.commitments.commitInput.outPoint.txid, d.commitments.commitInput.txOut.publicKeyScript, ANNOUNCEMENTS_MINCONF, BITCOIN_FUNDING_DEEPLYBURIED)
       } else {
         // channel has been buried enough, should we (re)send our announcement sigs?
         d.channelAnnouncement match {
