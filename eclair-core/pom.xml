@@ -113,7 +113,7 @@
         <dependency>
             <groupId>com.typesafe.akka</groupId>
             <artifactId>akka-http-core_${scala.version.short}</artifactId>
-            <version>10.0.7</version>
+            <version>10.1.0-RC2</version>
         </dependency>
         <!-- JSON -->
         <dependency>
@@ -124,7 +124,7 @@
         <dependency>
             <groupId>de.heikoseeberger</groupId>
             <artifactId>akka-http-json4s_${scala.version.short}</artifactId>
-            <version>1.16.1</version>
+            <version>1.20.0-RC2</version>
         </dependency>
         <!-- BITCOIN -->
         <dependency>
