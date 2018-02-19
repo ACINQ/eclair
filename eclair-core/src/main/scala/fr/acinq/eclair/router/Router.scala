@@ -86,35 +86,31 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val channels = db.listChannels()
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
-    // let's prune the db (maybe eclair was stopped for a long time)
-    val staleChannels = getStaleChannels(channels.keys, updates)
-    if (staleChannels.nonEmpty) {
-      log.info("dropping {} stale channels pre-validation", staleChannels.size)
-      staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
-    }
-    val remainingChannels = channels.keys.filterNot(c => staleChannels.contains(c.shortChannelId))
-    val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
-    val remainingNodes = nodes.filter(n => remainingChannels.exists(c => isRelatedTo(c, n.nodeId)))
 
-    val initChannels = remainingChannels.map(c => (c.shortChannelId -> c)).toMap
-    val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
-    val initNodes = remainingNodes.map(n => (n.nodeId -> n)).toMap
+    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
+    val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
 
-    // send events for these channels/nodes
-    remainingChannels.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
-    remainingNodes.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+    // we immediately prune the db (maybe eclair was stopped for a long time)
+    val d = prune(
+      Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty),
+      cleanDb = true)
+
+    // send events for remaining channels/nodes
+    d.channels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
+    d.nodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
-    remainingChannels.foreach { c =>
+    d.channels.values.foreach { c =>
       val txid = channels(c)._1
       val (_, _, outputIndex) = fromShortId(c.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
 
-    log.info("loaded from db: channels={} nodes={} updates={}", remainingChannels.size, nodes.size, remainingUpdates.size)
-    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty))
+    log.info("loaded from db: channels={} nodes={} updates={}", d.channels.size, d.nodes.size, d.updates.size)
+    startWith(NORMAL, d)
   }
 
   when(NORMAL) {
@@ -153,13 +149,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.info("received request to send announcements to {}, already sending state to {} peers, adding to wait list (waiting={})", remote, d.sendingState.size, d.sendStateWaitlist.size)
         context watch remote
         stay using d.copy(sendStateWaitlist = d.sendStateWaitlist :+ remote)
-      } else stay using handleSendState(remote, d)
+      } else stay using sendState(remote, d)
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
       log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
       val d1 = d.copy(sendingState = d.sendingState - actor)
       d.sendStateWaitlist.dequeueOption match {
-        case Some((remote, sendStateWaitlist1)) => stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
+        case Some((remote, sendStateWaitlist1)) => stay using sendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
         case None => stay using d1
       }
 
@@ -307,28 +303,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
-    case Event(TickPruneStaleChannels, d) =>
-      // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
-      // then we clean up the related channel updates
-      val staleUpdates = d.updates.keys.filter(desc => staleChannels.contains(desc.id))
-      // finally we remove nodes that aren't tied to any channels anymore
-      val channels1 = d.channels -- staleChannels
-      val staleNodes = d.nodes.keys.filterNot(nodeId => hasChannels(nodeId, channels1.values))
-      // let's clean the db and send the events
-      staleChannels.foreach {
-        case shortChannelId =>
-          log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
-          db.removeChannel(shortChannelId) // NB: this also removes channel updates
-          context.system.eventStream.publish(ChannelLost(shortChannelId))
-      }
-      staleNodes.foreach {
-        case nodeId =>
-          log.info("pruning nodeId={} (stale)", nodeId)
-          db.removeNode(nodeId)
-          context.system.eventStream.publish(NodeLost(nodeId))
-      }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
+    case Event(TickPruneStaleChannels, d) => stay using prune(d, cleanDb = true)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
@@ -479,15 +454,42 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       d
     }
 
-  def handleSendState(remote: ActorRef, d: Data): Data = {
+  def sendState(remote: ActorRef, d: Data): Data = {
     log.info("sending all announcements to {}: channels={} nodes={} updates={}", remote, d.channels.size, d.nodes.size, d.updates.size)
-    val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
+    // we send only pruned data, but without modifying our state
+    val pruned = prune(d, cleanDb = true)
+    val batch = pruned.channels.values ++ pruned.nodes.values ++ pruned.updates.values
     // we group and add delays to leave room for channel messages
     val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
     context watch actor
     d.copy(sendingState = d.sendingState + actor)
   }
 
+  def prune(d: Data, cleanDb: Boolean): Data = {
+    // first we select channels that we will prune
+    val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
+    // then we clean up the related channel updates
+    val staleUpdates = d.updates.keys.filter(desc => staleChannels.contains(desc.id))
+    // finally we remove nodes that aren't tied to any channels anymore
+    val channels1 = d.channels -- staleChannels
+    val staleNodes = d.nodes.keys.filterNot(nodeId => hasChannels(nodeId, channels1.values))
+    if (cleanDb) {
+      // let's clean the db and send the events
+      staleChannels.foreach {
+        case shortChannelId =>
+          log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
+          db.removeChannel(shortChannelId) // NB: this also removes channel updates
+          context.system.eventStream.publish(ChannelLost(shortChannelId))
+      }
+      staleNodes.foreach {
+        case nodeId =>
+          log.info("pruning nodeId={} (stale)", nodeId)
+          db.removeNode(nodeId)
+          context.system.eventStream.publish(NodeLost(nodeId))
+      }
+    }
+    d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
+  }
 
 }
 
