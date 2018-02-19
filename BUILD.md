@@ -25,4 +25,4 @@ $ mvn install -DskipTests -Pinstaller
 The generated installer will be located in `eclair-node-gui/target/jfx/installer`
 
 If you get `javax.net.ssl.SSLHandshakeException: sun.security.validator.ValidatorException: PKIX path building failed: sun.security.provider.certpath.SunCertPathBuilderException: unable to find valid certification path to requested target` 
-during the build process you'll need to import bitcoin.org SSL certificate into your JVM. 
+during the build process you'll need to [import bitcoin.org SSL certificate](SSL_CERT.md) into your JVM. 
