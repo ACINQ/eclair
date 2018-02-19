@@ -54,8 +54,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?)")) { statement =>
       statement.setLong(1, c.shortChannelId)
-      statement.setBytes(2, c.nodeId1.data.toArray)
-      statement.setBytes(3, c.nodeId2.data.toArray)
+      statement.setBytes(2, c.nodeId1.value.toBin(false).toArray) // we store uncompressed public keys
+      statement.setBytes(3, c.nodeId2.value.toBin(false).toArray)
       statement.executeUpdate()
     }
   }
@@ -84,8 +84,8 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           features = null,
           chainHash = null,
           shortChannelId = rs.getLong("short_channel_id"),
-          nodeId1 = PublicKey(rs.getBytes("node_id_1")),
-          nodeId2 = PublicKey(rs.getBytes("node_id_2")),
+          nodeId1 = PublicKey(PublicKey(rs.getBytes("node_id_1")).value, compressed = true), // we read as uncompressed, and convert to compressed
+          nodeId2 = PublicKey(PublicKey(rs.getBytes("node_id_1")).value, compressed = true),
           bitcoinKey1 = null,
           bitcoinKey2 = null) -> (emptyTxid, zeroCapacity))
       }
