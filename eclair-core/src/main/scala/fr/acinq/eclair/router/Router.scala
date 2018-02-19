@@ -430,7 +430,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("ignoring {} (old timestamp or duplicate)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
-        log.warning("bad signature for announcement shortChannelId={} {}", u, u.shortChannelId.toHexString)
+        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
         origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         d
       } else if (d.updates.contains(desc)) {
