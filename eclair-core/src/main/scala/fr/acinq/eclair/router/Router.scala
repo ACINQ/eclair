@@ -80,6 +80,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val channels = db.listChannels()
     val updates = db.listChannelUpdates()
     // let's prune the db (maybe eclair was stopped for a long time)
+    log.info("pruning stale channels...")
     val staleChannels = getStaleChannels(channels.keys, updates)
     if (staleChannels.nonEmpty) {
       log.info("dropping {} stale channels pre-validation", staleChannels.size)
