@@ -457,7 +457,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   def sendState(remote: ActorRef, d: Data): Data = {
     // we send only pruned data, but without modifying our state or the database
     val pruned = prune(d, cleanDb = false)
-    log.info(s"sending all pruned announcements to $remote: channels=${d.channels.size}->${pruned.channels.size} nodes=${d.nodes.size}->${pruned.nodes.size} updates=${d.updates.size}->${pruned.nodes.size} (after pruning)")
+    log.info(s"sending all pruned announcements to $remote: channels=${d.channels.size}->${pruned.channels.size} nodes=${d.nodes.size}->${pruned.nodes.size} updates=${d.updates.size}->${pruned.updates.size} (after pruning)")
     val batch = pruned.channels.values ++ pruned.nodes.values ++ pruned.updates.values
     // we group and add delays to leave room for channel messages
     val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
