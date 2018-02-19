@@ -65,9 +65,9 @@ class SqliteNetworkDbSpec extends FunSuite {
     assert(db.listChannels().size === 1)
     db.addChannel(channel_2, txid_2, capacity)
     db.addChannel(channel_3, txid_3, capacity)
-    assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity)), (channel_2, (txid_2, capacity)), (channel_3, (txid_3, capacity))))
+    assert(db.listChannels().size === 3)
     db.removeChannel(channel_2.shortChannelId)
-    assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity)), (channel_3, (txid_3, capacity))))
+    assert(db.listChannels().size === 2)
 
     val channel_update_1 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 42, 5, 7000000, 50000, 100, true)
     val channel_update_2 = Announcements.makeChannelUpdate(Block.RegtestGenesisBlock.hash, randomKey, randomKey.publicKey, 43, 5, 7000000, 50000, 100, true)
@@ -80,8 +80,8 @@ class SqliteNetworkDbSpec extends FunSuite {
     intercept[SQLiteException](db.addChannelUpdate(channel_update_2))
     db.addChannelUpdate(channel_update_3)
     db.removeChannel(channel_3.shortChannelId)
-    assert(db.listChannels().toSet === Set((channel_1, (txid_1, capacity))))
-    assert(db.listChannelUpdates().toSet === Set(channel_update_1))
+    assert(db.listChannels().size === 1)
+    assert(db.listChannelUpdates().size === 1)
     db.updateChannelUpdate(channel_update_1)
   }
 
