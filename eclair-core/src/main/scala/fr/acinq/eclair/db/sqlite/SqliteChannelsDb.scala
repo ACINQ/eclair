@@ -42,7 +42,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     }
   }
 
-  override def listChannels(): List[HasCommitments] = {
+  override def listChannels(): Seq[HasCommitments] = {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels")
       codecList(rs, stateDataCodec)

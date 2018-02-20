@@ -32,7 +32,7 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
-  override def listPendingRelay(channelId: BinaryData): List[Command] = {
+  override def listPendingRelay(channelId: BinaryData): Seq[Command] = {
     using(sqlite.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       val rs = statement.executeQuery()
