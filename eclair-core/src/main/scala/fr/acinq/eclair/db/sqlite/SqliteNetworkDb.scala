@@ -47,7 +47,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def listNodes(): Seq[NodeAnnouncement] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM nodes")
-      codecList(rs, nodeAnnouncementCodec)
+      codecSequence(rs, nodeAnnouncementCodec)
     }
   }
 
@@ -103,7 +103,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def listChannelUpdates(): Seq[ChannelUpdate] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM channel_updates")
-      codecList(rs, channelUpdateCodec)
+      codecSequence(rs, channelUpdateCodec)
     }
   }
 

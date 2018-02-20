@@ -33,7 +33,7 @@ object SqliteUtils {
     * @tparam T
     * @return
     */
-  def codecList[T](rs: ResultSet, codec: Codec[T]): Seq[T] = {
+  def codecSequence[T](rs: ResultSet, codec: Codec[T]): Seq[T] = {
     var q: Queue[T] = Queue()
     while (rs.next()) {
       q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
