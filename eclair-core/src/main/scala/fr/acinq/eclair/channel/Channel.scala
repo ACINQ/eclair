@@ -500,8 +500,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
-        case Success(Right((commitments1, origin))) =>
-          relayer ! ForwardFulfill(fulfill, origin)
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
@@ -525,8 +525,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(fail: UpdateFailHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
-        case Success(Right((commitments1, origin))) =>
-          relayer ! ForwardFail(fail, origin)
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFail(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -534,8 +534,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_NORMAL) =>
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
-        case Success(Right((commitments1, origin))) =>
-          relayer ! ForwardFailMalformed(fail, origin)
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFailMalformed(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -801,8 +801,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(fulfill: UpdateFulfillHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFulfill(d.commitments, fulfill)) match {
-        case Success(Right((commitments1, origin))) =>
-          relayer ! ForwardFulfill(fulfill, origin)
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFulfill(fulfill, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fulfill))
@@ -826,8 +826,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(fail: UpdateFailHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFail(d.commitments, fail)) match {
-        case Success(Right((commitments1, origin))) =>
-          relayer ! ForwardFail(fail, origin)
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFail(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -835,8 +835,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(fail: UpdateFailMalformedHtlc, d: DATA_SHUTDOWN) =>
       Try(Commitments.receiveFailMalformed(d.commitments, fail)) match {
-        case Success(Right((commitments1, origin))) =>
-          relayer ! ForwardFailMalformed(fail, origin)
+        case Success(Right((commitments1, origin, htlc))) =>
+          relayer ! ForwardFailMalformed(fail, origin, htlc)
           stay using d.copy(commitments = commitments1)
         case Success(Left(_)) => stay
         case Failure(cause) => handleLocalError(cause, d, Some(fail))
@@ -1042,11 +1042,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
       log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
-      val fulfills = Closing.extractPreimages(d.commitments.localCommit, tx)
-      fulfills map { fulfill =>
+      val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
+      extracted map { case (htlc, fulfill) =>
         val origin = d.commitments.originChannels(fulfill.id)
         log.warning(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
-        relayer ! ForwardFulfill(fulfill, origin)
+        relayer ! ForwardFulfill(fulfill, origin, htlc)
       }
       stay
 

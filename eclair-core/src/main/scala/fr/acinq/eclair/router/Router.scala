@@ -52,7 +52,6 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
 
 sealed trait State
 case object NORMAL extends State
-case object WAITING_FOR_VALIDATION extends State
 
 case object TickBroadcast
 case object TickPruneStaleChannels
@@ -159,14 +158,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
       val d1 = d.copy(sendingState = d.sendingState - actor)
       d.sendStateWaitlist.dequeueOption match {
-        case Some((remote, sendStateWaitlist1)) => stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
+        case Some((remote, sendStateWaitlist1)) =>
+          context unwatch remote
+          stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
         case None => stay using d1
       }
 
     case Event(Terminated(actor), d: Data) if d.sendStateWaitlist.contains(actor) =>
       // note: 'contains' and 'filter' operations are expensive on a queue, but its size should be very small (maybe even capped?)
       log.info("peer={} died, removing from wait list (waiting={})", actor, d.sendStateWaitlist.size - 1)
-      stay using d.copy(sendStateWaitlist = d.sendStateWaitlist filterNot(_ == actor))
+      stay using d.copy(sendStateWaitlist = d.sendStateWaitlist filterNot (_ == actor))
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
@@ -369,7 +370,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // we add them to the publicly-announced updates (order matters!! local/assisted channel_updates will override channel_updates received by the network)
       val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
-      val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
+      val updates2 = updates1 -- d.excludedChannels
       // we also filter out disabled channels, and channels/nodes that are blacklisted for this particular request
       val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
       log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
@@ -429,7 +430,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("ignoring {} (old timestamp or duplicate)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
-        log.warning("bad signature for announcement shortChannelId={} {}", u, u.shortChannelId.toHexString)
+        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
         origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         d
       } else if (d.updates.contains(desc)) {
@@ -534,9 +535,10 @@ object Router {
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
-      .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filter(c => updates.exists(_.shortChannelId == c.shortChannelId)) // channel must have updates
-      .filter(c => updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
+      .filter(c =>
+        fromShortId(c.shortChannelId)._1 < staleThresholdBlocks // consider only channels older than 2 weeks
+          && updates.exists(_.shortChannelId == c.shortChannelId) // channel must have updates
+          && updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
     staleChannels.map(_.shortChannelId)
   }
 
@@ -544,10 +546,11 @@ object Router {
     * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
     */
   def filterUpdates(updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) =
-    updates
-      .filterNot(u => ignoreNodes.map(_.toBin).contains(u._1.a) || ignoreNodes.map(_.toBin).contains(u._1.b))
-      .filterNot(u => ignoreChannels.contains(u._1.id))
-      .filter(u => Announcements.isEnabled(u._2.flags))
+    updates.filter { case (desc, u) =>
+      !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b) &&
+        !ignoreChannels.contains(desc.id) &&
+        Announcements.isEnabled(u.flags)
+    }
 
   def findRouteDijkstra(localNodeId: PublicKey, targetNodeId: PublicKey, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
