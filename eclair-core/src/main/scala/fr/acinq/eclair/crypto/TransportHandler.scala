@@ -311,7 +311,7 @@ object TransportHandler {
 
   object WaitingForCiphertextData {
     @tailrec
-    def decrypt(state: WaitingForCiphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCiphertextData, Seq[BinaryData]) = {
+    def decrypt(state: WaitingForCiphertextData, acc: Seq[BinaryData] = Vector()): (WaitingForCiphertextData, Seq[BinaryData]) = {
       (state.ciphertextLength, state.buffer.length) match {
         case (None, length) if length < 18 => (state, acc)
         case (None, _) =>
