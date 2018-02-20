@@ -31,7 +31,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   }
 
   override def removeChannel(channelId: BinaryData): Unit = {
-    using(sqlite.prepareStatement("DELETE FROM preimages WHERE channel_id=?")) { statement =>
+    using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       statement.executeUpdate()
     }

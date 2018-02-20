@@ -10,12 +10,11 @@ import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
-import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
+import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
@@ -25,7 +24,6 @@ import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
 
-import scala.collection.JavaConversions._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
@@ -92,14 +90,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       // TODO: add a check on bitcoin version?
 
       Bitcoind(bitcoinClient)
-    case BITCOINJ =>
-      logger.warn("EXPERIMENTAL BITCOINJ MODE ENABLED!!!")
-      val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
-      logger.info(s"using staticPeers=$staticPeers")
-      val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
-      bitcoinjKit.startAsync()
-      Await.ready(bitcoinjKit.initialized, 10 seconds)
-      Bitcoinj(bitcoinjKit)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
       val addressesFile = chain match {
@@ -137,9 +127,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       case Bitcoind(bitcoinClient) =>
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
         system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(bitcoinClient), "watcher", SupervisorStrategy.Resume))
-      case Bitcoinj(bitcoinj) =>
-        zmqConnected.success(true)
-        system.actorOf(SimpleSupervisor.props(BitcoinjWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
       case Electrum(electrumClient) =>
         zmqConnected.success(true)
         system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
@@ -147,7 +134,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
-      case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
       case Electrum(electrumClient) => seed_opt match {
         case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet)
@@ -223,7 +209,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 // @formatter:off
 sealed trait Bitcoin
 case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
-case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 

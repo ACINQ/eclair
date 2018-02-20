@@ -22,7 +22,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
       context become waiting(queue :+ Pending(request, sender), processing)
 
     case responses: Seq[JsonRPCResponse]@unchecked =>
-      log.debug(s"got ${responses.size} responses")
+      log.debug(s"got {} responses", responses.size)
       // let's send back answers to the requestors
       require(responses.size == processing.size, s"responses=${responses.size} != processing=${processing.size}")
       responses.zip(processing).foreach {
@@ -32,7 +32,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
       process(queue)
 
     case s@Status.Failure(t) =>
-      log.error(t, s"got exception for batch of ${processing.size} requests ")
+      log.error(t, s"got exception for batch of ${processing.size} requests")
       // let's fail all requests
       processing.foreach { case Pending(_, requestor) => requestor ! s }
       process(queue)
@@ -45,7 +45,7 @@ class BatchingClient(rpcClient: BasicBitcoinJsonRPCClient) extends Actor with Ac
       context become receive
     } else {
       val (batch, rest) = queue.splitAt(BatchingClient.BATCH_SIZE)
-      log.debug(s"sending ${batch.size} requests (queue=${queue.size})")
+      log.debug(s"sending {} request(s): {} (queue={})", batch.size, batch.groupBy(_.request.method).map(e => e._1 + "=" + e._2.size).mkString(" "), queue.size)
       rpcClient.invoke(batch.map(_.request)) pipeTo self
       context become waiting(rest, batch)
     }

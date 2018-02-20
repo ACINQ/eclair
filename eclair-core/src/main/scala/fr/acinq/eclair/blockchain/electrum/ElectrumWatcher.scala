@@ -19,8 +19,7 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
   client ! ElectrumClient.AddStatusListener(self)
 
   override def unhandled(message: Any): Unit = message match {
-    case ParallelGetRequest(announcements) => sender ! ParallelGetResponse(announcements.map {
-      case c =>
+    case ValidateRequest(c) =>
         log.info(s"blindly validating channel=$c")
         val pubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
         val (_, _, outputIndex) = fromShortId(c.shortChannelId)
@@ -29,8 +28,8 @@ class ElectrumWatcher(client: ActorRef) extends Actor with Stash with ActorLoggi
           txIn = Seq.empty[TxIn],
           txOut = List.fill(outputIndex + 1)(TxOut(Satoshi(0), pubkeyScript)), // quick and dirty way to be sure that the outputIndex'th output is of the expected format
           lockTime = 0)
-        IndividualResult(c, Some(fakeFundingTx), true)
-    })
+      sender ! ValidateResult(c, Some(fakeFundingTx), true, None)
+
     case _ => log.warning(s"unhandled message $message")
   }
 
