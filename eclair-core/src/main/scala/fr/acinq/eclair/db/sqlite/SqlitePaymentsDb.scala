@@ -7,6 +7,8 @@ import fr.acinq.eclair.db.sqlite.SqliteUtils.using
 import fr.acinq.eclair.db.{Payment, PaymentsDb}
 import grizzled.slf4j.Logging
 
+import scala.collection.immutable.Queue
+
 /**
   * Payments are stored in the `payments` table.
   * The primary key in this DB is the `payment_hash` column. Columns are not nullable.
@@ -46,14 +48,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  override def listPayments(): List[Payment] = {
+  override def listPayments(): Seq[Payment] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM payments")
-      var l: List[Payment] = Nil
+      var q: Queue[Payment] = Queue()
       while (rs.next()) {
-        l = Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp")) +: l
+        q = q :+ Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp"))
       }
-      l
+      q
     }
   }
 
