@@ -22,7 +22,7 @@ class SimpleSupervisor(childProps: Props, childName: String, strategy: Superviso
   override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false, maxNrOfRetries = 100, withinTimeRange = 1 minute) {
     case t =>
       // log this as silent errors are dangerous
-      log.error(t, s"supervisor caught error for child=$childName ")
+      log.error(t, s"supervisor caught error for child=$childName strategy=$strategy ")
       strategy
   }
 }
