@@ -1,10 +1,12 @@
 package fr.acinq.eclair.router
 
-import java.io.StringWriter
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, StringWriter}
+import java.nio.ByteOrder
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -19,6 +21,7 @@ import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
+import scala.annotation.tailrec
 import scala.collection.JavaConversions._
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -351,6 +354,42 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
       findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
+
+    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
+      // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
+      val shortChannelIds = d.channels.values.toSeq.map(_.shortChannelId).filter(id => {
+        val (height, _, _) = fromShortId(id)
+        height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+      }).sorted
+
+      val reply = makeReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, shortChannelIds)
+      sender ! TransportHandler.ReadAck(query)
+      sender ! reply
+      stay
+
+    case Event(query@QueryShortChannelId(chainHash, shortChannelId), d) =>
+      // TODO: check chain hash
+      sender ! TransportHandler.ReadAck(query)
+      d.channels.get(shortChannelId) match {
+        case None => log.debug("peer asked for a channel announcement {} that we don't have", shortChannelId)
+        case Some(ca) =>
+          sender ! ca
+          d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
+          d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => sender ! u)
+      }
+      stay
+
+    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
+      sender ! TransportHandler.ReadAck(reply)
+      val theirShortChannelIds = Router.unzip(data)
+      val ourShortChannelIds = d.channels.values.toSeq.map(_.shortChannelId).filter(id => {
+        val (height, _, _) = fromShortId(id)
+        height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+      }).sorted
+      val missing = ourShortChannelIds.toSet -- theirShortChannelIds.toSet
+      log.info("we're missing {} channel annoucements/updates", missing.size)
+      missing.map(id => sender ! QueryShortChannelId(chainHash, id))
+      stay()
   }
 
   initialize()
@@ -586,8 +625,57 @@ object Router {
     } finally {
       writer.close()
     }
-
   }
 
+  def zip(shortChannelIds: Seq[Long]) : BinaryData = {
+    val bos = new ByteArrayOutputStream()
+    val output = new GZIPOutputStream(bos)
+    shortChannelIds.map(id => Protocol.writeUInt64(id, output, ByteOrder.BIG_ENDIAN))
+    output.finish()
+    bos.toByteArray
+  }
 
+  private def unzip(input: GZIPInputStream) : Vector[Long] = {
+    val buffer = new Array[Byte](8)
+
+    // read 8 bytes from input
+    // zipped input stream often returns less bytes than what you want to read
+    @tailrec
+    def read8(offset: Int = 0): Int = input.read(buffer, offset, 8 - offset) match {
+      case len if len <= 0 => len
+      case 8 => 8
+      case len if offset + len == 8 => 8
+      case len => read8(offset + len)
+    }
+
+    // read until there's nothing left
+    @tailrec
+    def loop(acc: Vector[Long] = Vector()): Vector[Long] = {
+      if (read8() <= 0) acc else loop(acc :+ Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN))
+    }
+
+    loop()
+  }
+
+  def unzip(input: BinaryData) : Vector[Long] = {
+    val stream = new GZIPInputStream(new ByteArrayInputStream(input))
+    try {
+      unzip(stream)
+    }
+    finally {
+      stream.close()
+    }
+  }
+
+  /**
+    * TODO: support other encoding formats than gzip
+    * @param chainHash chain hash
+    * @param firstBlockNum number of the first block
+    * @param numberOfBlocks number of blocks
+    * @param shortChannelIds short channel ids that match [firstBlockNum, firstBlockNum + numberOfBlocks]
+    * @return a ReplyChannelRange message
+    */
+  def makeReplyChannelRange(chainHash: BinaryData, firstBlockNum: Int, numberOfBlocks: Int, shortChannelIds: Seq[Long]) : ReplyChannelRange = {
+    ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
+  }
 }
