@@ -38,14 +38,14 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
     }
   }
 
-  override def listPeers(): List[(PublicKey, InetSocketAddress)] = {
+  override def listPeers(): Map[PublicKey, InetSocketAddress] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT node_id, data FROM peers")
-      var l: List[(PublicKey, InetSocketAddress)] = Nil
+      var m: Map[PublicKey, InetSocketAddress] = Map()
       while (rs.next()) {
-        l = (PublicKey(rs.getBytes("node_id")), socketaddress.decode(BitVector(rs.getBytes("data"))).require.value) +: l
+        m += (PublicKey(rs.getBytes("node_id")) -> socketaddress.decode(BitVector(rs.getBytes("data"))).require.value)
       }
-      l
+      m
     }
   }
 }
