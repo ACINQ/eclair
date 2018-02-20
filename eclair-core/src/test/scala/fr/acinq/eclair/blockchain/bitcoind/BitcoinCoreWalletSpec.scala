@@ -14,7 +14,6 @@ import fr.acinq.eclair.blockchain.bitcoind.rpc.BasicBitcoinJsonRPCClient
 import fr.acinq.eclair.randomKey
 import fr.acinq.eclair.transactions.Scripts
 import grizzled.slf4j.Logging
-import org.bitcoinj.script.{Script => BitcoinjScript}
 import org.json4s.JsonAST.JValue
 import org.json4s.{DefaultFormats, JString}
 import org.junit.runner.RunWith
