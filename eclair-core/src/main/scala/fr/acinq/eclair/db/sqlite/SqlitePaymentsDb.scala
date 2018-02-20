@@ -51,7 +51,7 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
       val rs = statement.executeQuery("SELECT payment_hash, amount_msat, timestamp FROM payments")
       var l: List[Payment] = Nil
       while (rs.next()) {
-        l = l :+ Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+        l = Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp")) +: l
       }
       l
     }

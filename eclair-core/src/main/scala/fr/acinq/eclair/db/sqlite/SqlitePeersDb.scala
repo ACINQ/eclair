@@ -43,7 +43,7 @@ class SqlitePeersDb(sqlite: Connection) extends PeersDb {
       val rs = statement.executeQuery("SELECT node_id, data FROM peers")
       var l: List[(PublicKey, InetSocketAddress)] = Nil
       while (rs.next()) {
-        l = l :+ (PublicKey(rs.getBytes("node_id")), socketaddress.decode(BitVector(rs.getBytes("data"))).require.value)
+        l = (PublicKey(rs.getBytes("node_id")), socketaddress.decode(BitVector(rs.getBytes("data"))).require.value) +: l
       }
       l
     }

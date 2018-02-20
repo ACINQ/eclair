@@ -34,7 +34,7 @@ object SqliteUtils {
   def codecList[T](rs: ResultSet, codec: Codec[T]): List[T] = {
     var l: List[T] = Nil
     while (rs.next()) {
-      l = l :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
+      l = codec.decode(BitVector(rs.getBytes("data"))).require.value +: l
     }
     l
   }
