@@ -67,8 +67,6 @@ object NodeParams {
 
   object BITCOIND extends WatcherType
 
-  object BITCOINJ extends WatcherType
-
   object ELECTRUM extends WatcherType
 
   /**
@@ -123,7 +121,6 @@ object NodeParams {
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
     val watcherType = config.getString("watcher-type") match {
-      case "bitcoinj" => BITCOINJ
       case "electrum" => ELECTRUM
       case _ => BITCOIND
     }

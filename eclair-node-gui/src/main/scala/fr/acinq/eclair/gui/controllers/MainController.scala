@@ -26,7 +26,7 @@ import javafx.util.{Callback, Duration}
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
-import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
+import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.Setup
 import fr.acinq.eclair.gui.stages._
 import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, CopyAction}
@@ -330,7 +330,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     val wallet = setup.nodeParams.watcherType match {
       case BITCOIND => "Bitcoin-core"
       case ELECTRUM => "Electrum"
-      case BITCOINJ => "BitcoinJ"
     }
     bitcoinWallet.setText(wallet)
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
