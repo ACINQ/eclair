@@ -264,6 +264,23 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
+  val queryShortChannelIdCodec: Codec[QueryShortChannelId] = (
+    ("chainHash" | binarydata(32)) ::
+      ("shortChannelId" | int64)
+    ).as[QueryShortChannelId]
+
+  val queryChannelRangeCodec: Codec[QueryChannelRange] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | int32) ::
+      ("numberOfBlocks" | int32)
+    ).as[QueryChannelRange]
+
+  val replyChannelRangeCodec: Codec[ReplyChannelRange] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstBlockNum" | int32) ::
+      ("numberOfBlocks" | int32) ::
+      ("data" | varsizebinarydata)
+    ).as[ReplyChannelRange]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -289,6 +306,9 @@ object LightningMessageCodecs {
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
+    .typecase(260, queryShortChannelIdCodec)
+    .typecase(261, queryChannelRangeCodec)
+    .typecase(262, replyChannelRangeCodec)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::

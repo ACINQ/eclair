@@ -12,7 +12,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
 import fr.acinq.eclair.wire
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.wire.{LightningMessage, QueryChannelRange, QueryShortChannelId, ReplyChannelRange}
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -208,9 +208,17 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       }
       stay
 
+
     case Event(msg: wire.RoutingMessage, _) =>
       // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
-      router ! msg
+      msg match {
+          // special case: we forward the `sync` routing messages
+          // because it makes more sense to have the router reply directly
+        case _: QueryChannelRange => router forward msg
+        case _: ReplyChannelRange => router forward msg
+        case _: QueryShortChannelId => router forward msg
+        case _ => router ! msg
+      }
       stay
 
     case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _)) =>
