@@ -1174,22 +1174,26 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
-    // We have started a channel with DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT and wait for their ChannelReestablish
-    case Event(ChannelReestablish(channelId, _, _, _, Some(myCurrentPerCommitmentPoint)), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
+    case Event(ChannelReestablish(_, _, _, _, Some(myCurrentPerCommitmentPoint)), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
+      // We have started a channel with DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT and wait for their ChannelReestablish
       val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
-      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d.copy(commitments = commitments1) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+      val exc = PleasePublishYourCommitment(d.channelId)
+      val error = Error(d.channelId, exc.getMessage.getBytes)
+      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d.copy(commitments = commitments1) sending error
 
-    // We have started a channel with DATA_NORMAL and wait for their ChannelReestablish but suddenly their `nextRemoteRevocationNumber` is greater than expected
-    case Event(ChannelReestablish(channelId, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
-      // if next_remote_revocation_number is greater than expected above
+    case Event(ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
       if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
-
-      // AND your_last_per_commitment_secret is correct for that next_remote_revocation_number minus 1
-      // yourLastPerCommitmentSecret may be None if this is our first commitment
+      // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
+      // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
       if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
+        // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
+        // would punish us by taking all the funds in the channel
         val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
-        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1, System.currentTimeMillis) sending Error(channelId, "Please be so kind as to spend your local commit" getBytes "UTF-8")
+        val exc = PleasePublishYourCommitment(d.channelId)
+        val error = Error(d.channelId, exc.getMessage.getBytes)
+        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1, System.currentTimeMillis) sending error
       } else {
+        // they lied! the last per_commitment_secret they claimed to have received from us is invalid
         throw CommitmentSyncError(d.channelId)
       }
 
