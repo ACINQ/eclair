@@ -385,7 +385,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       remote ! query
       stay
 
-    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) if chainHash != nodeParams.chainHash =>
+    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
       sender ! TransportHandler.ReadAck(query)
       if (chainHash != nodeParams.chainHash) {
         log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
