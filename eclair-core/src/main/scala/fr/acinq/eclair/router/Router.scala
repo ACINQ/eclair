@@ -147,88 +147,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else {
-        log.info("validating shortChannelId={}", c.shortChannelId.toHexString)
-        watcher ! ValidateRequest(c)
-        // we don't acknowledge the message just yet
-        stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
-      }
-
-    case Event(v@ValidateResult(c, _, _, _), d0) =>
-      d0.awaiting.get(c) match {
-        case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
-        case _ => ()
-      }
-      log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId.toHexString, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
-      val success = v match {
-        case ValidateResult(c, _, _, Some(t)) =>
-          log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId.toHexString, t.getMessage)
-          false
-        case ValidateResult(c, Some(tx), true, None) =>
-          // TODO: blacklisting
-          val (_, _, outputIndex) = fromShortId(c.shortChannelId)
-          // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
-          val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
-          if (tx.txOut.size < outputIndex + 1) {
-            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c.shortChannelId.toHexString, tx.txid, outputIndex, c)
-            false
-          } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error("invalid script for shortChannelId={} txid={} ann={}", c.shortChannelId.toHexString, tx.txid, c)
-            false
-          } else {
-            // On Android we disable the ability to detect when external channels die. If we try to use them during a
-            // payment, we simply will get an error from the node that is just before the missing channel.
-            //watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
-            // TODO: check feature bit set
-            log.debug("added channel channelId={}", c.shortChannelId.toHexString)
-            val capacity = tx.txOut(outputIndex).amount
-            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
-            db.addChannel(c, tx.txid, capacity)
-
-            // in case we just validated our first local channel, we announce the local node
-            // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
-            // even if we had stored a previous announcement, it would be overridden by this more recent one
-            if (!d0.nodes.contains(nodeParams.nodeId) && isRelatedTo(c, nodeParams.nodeId)) {
-              log.info("first local channel validated, announcing local node")
-              val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
-              self ! nodeAnn
-            }
-            true
-          }
-        case ValidateResult(c, Some(tx), false, None) =>
-          // TODO: vulnerability if they flood us with spent funding tx?
-          log.warning("ignoring shortChannelId={} tx={} (funding tx not found in utxo)", c.shortChannelId.toHexString, tx.txid)
-          // there may be a record if we have just restarted
-          db.removeChannel(c.shortChannelId)
-          false
-        case ValidateResult(c, None, _, None) =>
-          // TODO: blacklist?
-          log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId.toHexString)
-          false
-      }
-
-      // we also reprocess node and channel_update announcements related to channels that were just analyzed
-      val reprocessUpdates = d0.stash.updates.filterKeys(u => u.shortChannelId == c.shortChannelId)
-      val reprocessNodes = d0.stash.nodes.filterKeys(n => isRelatedTo(c, n.nodeId))
-      // and we remove the reprocessed messages from the stash
-      val stash1 = d0.stash.copy(updates = d0.stash.updates -- reprocessUpdates.keys, nodes = d0.stash.nodes -- reprocessNodes.keys)
-      // we remove channel from awaiting map
-      val awaiting1 = d0.awaiting - c
-      if (success) {
-        val d1 = d0.copy(
-          channels = d0.channels + (c.shortChannelId -> c),
-          privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
-          stash = stash1,
-          awaiting = awaiting1)
-        // we only reprocess updates and nodes if validation succeeded
-        val d2 = reprocessUpdates.foldLeft(d1) {
-          case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, origin, d) } // we reprocess the same channel_update for every origin (to preserve origin information)
-        }
-        val d3 = reprocessNodes.foldLeft(d2) {
-          case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
-        }
-        stay using d3
-      } else {
-        stay using d0.copy(stash = stash1, awaiting = awaiting1)
+        sender ! TransportHandler.ReadAck(c)
+        // On Android, we don't validate announcements for now, it means that neither awaiting nor stashed announcements are used
+        stay using d.copy(
+          channels = d.channels + (c.shortChannelId -> c),
+          privateChannels = d.privateChannels - c.shortChannelId // we remove fake announcements that we may have made before)
+        )
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
