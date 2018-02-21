@@ -74,7 +74,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
         if (Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
           if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)) {
-            // if our peer support channel queries we do nothing, they will send us their filters
+            // if they support channel queries we do nothing, they will send us their filters
             log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
           } else {
             // "old" nodes, do as before

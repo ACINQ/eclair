@@ -3,6 +3,8 @@ package fr.acinq.eclair.router
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.{Block, Protocol}
+import fr.acinq.eclair.router.Announcements.zip
+import fr.acinq.eclair.wire.ReplyChannelRange
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -13,8 +15,8 @@ import scala.annotation.tailrec
 class QueryChannelsSpec extends FunSuite {
   val shortChannelIds = QueryChannelsSpec.readShortChannelIds()
 
-  test("create `reply_chanel_range` messages") {
-    val reply = Announcements.makeReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, shortChannelIds)
+  test("create `reply_channel_range` messages") {
+    val reply = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, zip(shortChannelIds))
     val unzipped = Announcements.unzip(reply.data)
     assert(unzipped == shortChannelIds)
   }
