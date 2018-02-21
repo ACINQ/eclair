@@ -1,12 +1,10 @@
 package fr.acinq.eclair.router
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, StringWriter}
-import java.nio.ByteOrder
-import java.util.zip.{GZIPInputStream, GZIPOutputStream}
+import java.io.StringWriter
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Protocol}
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -22,7 +20,6 @@ import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
-import scala.annotation.tailrec
 import scala.collection.JavaConversions._
 import scala.collection.immutable.Queue
 import scala.compat.Platform
