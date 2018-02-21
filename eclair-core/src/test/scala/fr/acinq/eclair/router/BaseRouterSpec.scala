@@ -24,6 +24,8 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 abstract class BaseRouterSpec extends TestkitBaseClass {
 
+  import BaseRouterSpec._
+
   type FixtureParam = Tuple2[ActorRef, TestProbe]
 
   val (priv_a, priv_b, priv_c, priv_d, priv_e, priv_f) = (randomKey, randomKey, randomKey, randomKey, randomKey, randomKey)
@@ -45,12 +47,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val channelId_bc = toShortId(420000, 2, 0)
   val channelId_cd = toShortId(420000, 3, 0)
   val channelId_ef = toShortId(420000, 4, 0)
-
-  def channelAnnouncement(channelId: Long, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
-    val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
-    val (node2_sig, funding2_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
-    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
-  }
 
   val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)
   val chan_bc = channelAnnouncement(channelId_bc, priv_b, priv_c, priv_funding_b, priv_funding_c)
@@ -134,5 +130,12 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
       test((router, watcher))
     }
   }
+}
 
+object BaseRouterSpec {
+  def channelAnnouncement(channelId: Long, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+    val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
+    val (node2_sig, funding2_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
+    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
+  }
 }

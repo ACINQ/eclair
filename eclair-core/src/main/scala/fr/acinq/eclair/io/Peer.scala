@@ -52,6 +52,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       transport ! Listener(self)
       context watch transport
       transport ! wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+
       // we store the ip upon successful outgoing connection, keeping only the most recent one
       if (outgoing) {
         nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
@@ -67,12 +68,27 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt)) =>
       transport ! TransportHandler.ReadAck(remoteInit)
-      log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
+      val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+      log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
-        if (Features.initialRoutingSync(remoteInit.localFeatures)) {
-          router ! GetRoutingState
+
+        if (remoteHasInitialRoutingSync) {
+          if (!remoteHasChannelRangeQueriesMandatory && !remoteHasChannelRangeQueriesOptional) {
+            // "old" nodes, do as before
+            router ! GetRoutingState
+          } else {
+            // if our peer support channel queries we do nothing, they will send us their filters
+            log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
+          }
         }
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+          // if they support channel queries, ask for their filter
+          router ! SendChannelQuery(transport)
+        }
+
         // let's bring existing/requested channels online
         channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v)})
