@@ -1191,7 +1191,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
         val exc = PleasePublishYourCommitment(d.channelId)
         val error = Error(d.channelId, exc.getMessage.getBytes)
-        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1, System.currentTimeMillis) sending error
+        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1) sending error
       } else {
         // they lied! the last per_commitment_secret they claimed to have received from us is invalid
         throw CommitmentSyncError(d.channelId)

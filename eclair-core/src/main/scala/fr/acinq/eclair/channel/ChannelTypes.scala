@@ -147,8 +147,7 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
 
-final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments,
-                                                                startedAt: Long) extends Data with HasCommitments // `startedAt` may be used to remove channel if peer does not respond for a long time
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments) extends Data with HasCommitments
 
 final case class DATA_CLOSING(commitments: Commitments,
                               localClosingSigned: List[ClosingSigned],
