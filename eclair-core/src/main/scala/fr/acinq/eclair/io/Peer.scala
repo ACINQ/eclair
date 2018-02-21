@@ -10,7 +10,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
-import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
+import fr.acinq.eclair.router.{Rebroadcast, SendChannelQuery, SendRoutingState}
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.{LightningMessage, QueryChannelRange, QueryShortChannelId, ReplyChannelRange}
 
@@ -52,6 +52,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       transport ! Listener(self)
       context watch transport
       transport ! wire.Init(globalFeatures = nodeParams.globalFeatures, localFeatures = nodeParams.localFeatures)
+
       // we store the ip upon successful outgoing connection, keeping only the most recent one
       if (outgoing) {
         nodeParams.peersDb.addOrUpdatePeer(remoteNodeId, address)
@@ -70,9 +71,21 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
-        if (Features.initialRoutingSync(remoteInit.localFeatures)) {
-          router ! SendRoutingState(transport)
+
+        if (Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
+          if (!Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) && !Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) {
+            // "old" nodes, do as before
+            router ! SendRoutingState(transport)
+          } else {
+            // if our peer support channel queries we do nothing, they will send us their filters
+            log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
+          }
         }
+        if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) {
+          // if they support channel queries, ask for their filter
+          router ! SendChannelQuery(transport)
+        }
+
         // let's bring existing/requested channels online
         channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
         goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v)})

@@ -38,6 +38,7 @@ case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChan
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendRoutingState(to: ActorRef)
+case class SendChannelQuery(to: ActorRef)
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
@@ -157,6 +158,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         context watch remote
         stay using d.copy(sendStateWaitlist = d.sendStateWaitlist :+ remote)
       } else stay using handleSendState(remote, d)
+
+    case Event(SendChannelQuery(remote), d: Data) =>
+      val query = QueryChannelRange(nodeParams.chainHash, 0, Globals.blockCount.get().toInt + 144)
+      log.info("querying channel range {}", query)
+      remote ! query
+      stay
 
     case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
       log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
@@ -379,23 +386,33 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
 
+
+    case Event(QueryChannelRange(chainHash, _, _), _) if chainHash != nodeParams.chainHash =>
+      log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      stay
+
     case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
       // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-      val shortChannelIds = d.channels.values.toSeq.map(_.shortChannelId).filter(id => {
+      val shortChannelIds = d.channels.values.toList.map(_.shortChannelId).filter(id => {
         val (height, _, _) = fromShortId(id)
         height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
       }).sorted
 
       val reply = makeReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, shortChannelIds)
+      log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.length)
       sender ! TransportHandler.ReadAck(query)
       sender ! reply
+      stay
+
+    case Event(QueryShortChannelId(chainHash, _), _) if chainHash != nodeParams.chainHash =>
+      log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       stay
 
     case Event(query@QueryShortChannelId(chainHash, shortChannelId), d) =>
       // TODO: check chain hash
       sender ! TransportHandler.ReadAck(query)
       d.channels.get(shortChannelId) match {
-        case None => log.debug("peer asked for a channel announcement {} that we don't have", shortChannelId)
+        case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)
         case Some(ca) =>
           sender ! ca
           d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
@@ -406,14 +423,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
       sender ! TransportHandler.ReadAck(reply)
       val theirShortChannelIds = Router.unzip(data)
-      val ourShortChannelIds = d.channels.values.toSeq.map(_.shortChannelId).filter(id => {
+      val ourShortChannelIds = d.channels.values.toList.map(_.shortChannelId).filter(id => {
         val (height, _, _) = fromShortId(id)
         height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
       }).sorted
-      val missing = ourShortChannelIds.toSet -- theirShortChannelIds.toSet
-      log.info("we're missing {} channel annoucements/updates", missing.size)
+      val missing = theirShortChannelIds.toSet -- ourShortChannelIds.toSet
+      log.info("we received their reply, we're missing {} channel annoucements/updates", missing.size)
       missing.map(id => sender ! QueryShortChannelId(chainHash, id))
       stay()
+
+    case Event(_ : TransportHandler.ReadAck, _) => stay()
   }
 
   initialize()
@@ -526,8 +545,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     context watch actor
     d.copy(sendingState = d.sendingState + actor)
   }
-
-
 }
 
 object Router {

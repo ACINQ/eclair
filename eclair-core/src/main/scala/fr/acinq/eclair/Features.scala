@@ -13,13 +13,15 @@ object Features {
   // reserved but not used as per lightningnetwork/lightning-rfc/pull/178
   val INITIAL_ROUTING_SYNC_BIT_MANDATORY = 2
   val INITIAL_ROUTING_SYNC_BIT_OPTIONAL = 3
+  val CHANNEL_RANGE_QUERIES_BIT_MANDATORY = 6
+  val CHANNEL_RANGE_QUERIES_BIT_OPTIONAL = 7
 
   /**
     *
     * @param features feature bits
     * @return true if an initial dump of the routing table is requested
     */
-  def initialRoutingSync(features: BitSet): Boolean = features.get(INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+  def initialRoutingSync(features: BitSet): Boolean = hasFeature(features, INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
 
   /**
     *
@@ -28,14 +30,18 @@ object Features {
     */
   def initialRoutingSync(features: BinaryData): Boolean = initialRoutingSync(BitSet.valueOf(features.reverse.toArray))
 
+  def hasFeature(features: BitSet, bit: Int): Boolean = features.get(bit)
+
+  def hasFeature(features: BinaryData, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
+
+
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits)
     */
-  def areSupported(bitset: BitSet): Boolean = {
-    // for now there is no mandatory feature bit, so we don't support features with any even bit set
+  def areSupported(bitset: BitSet, supportedMandatoryFeatures: Set[Int] = Set(CHANNEL_RANGE_QUERIES_BIT_MANDATORY)): Boolean = {
     for (i <- 0 until bitset.length() by 2) {
-      if (bitset.get(i)) return false
+      if (bitset.get(i) && !supportedMandatoryFeatures.contains(i)) return false
     }
     return true
   }
