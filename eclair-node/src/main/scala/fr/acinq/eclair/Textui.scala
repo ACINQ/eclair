@@ -116,7 +116,6 @@ class Textui(kit: Kit) extends Logging {
             try {
               for {
                 _ <- kit.switchboard ? Peer.Connect(NodeURI.parse(input))
-                _ <- kit.switchboard ? Peer.OpenChannel(NodeURI.parse(input).nodeId, MilliBtc(30), MilliSatoshi(0), None)
               } yield {}
             } catch {
               case t: Throwable => logger.error("", t)
