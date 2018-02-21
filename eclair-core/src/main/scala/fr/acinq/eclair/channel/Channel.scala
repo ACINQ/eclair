@@ -1184,11 +1184,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
-    case Event(channelReestablish@ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
+    case Event(channelReestablish@ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), _), d: DATA_NORMAL)
       if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
       // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
       // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
       if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
+        log.warning(s"counterparty proved that we have an outdated (revoked) local commitment!!! ourCommitmentNumber=${d.commitments.localCommit.index} theirCommitmentNumber=${nextRemoteRevocationNumber}")
         // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
         // would punish us by taking all the funds in the channel
         val exc = PleasePublishYourCommitment(d.channelId)
