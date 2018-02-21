@@ -19,7 +19,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
   // we load peers and channels from database
   private val initialPeers = {
     val channels = nodeParams.channelsDb.listChannels().groupBy(_.commitments.remoteParams.nodeId)
-    val peers = nodeParams.peersDb.listPeers().toMap
+    val peers = nodeParams.peersDb.listPeers()
     channels
       .map {
         case (remoteNodeId, states) => (remoteNodeId, states, peers.get(remoteNodeId))

@@ -139,11 +139,6 @@
             <artifactId>jeromq</artifactId>
             <version>0.4.0</version>
         </dependency>
-        <dependency>
-            <groupId>fr.acinq</groupId>
-            <artifactId>bitcoinj-core</artifactId>
-            <version>${bitcoinj.version}</version>
-        </dependency>
         <!-- SERIALIZATION -->
         <dependency>
             <groupId>org.scodec</groupId>
@@ -183,6 +178,11 @@
             <groupId>com.google.code.findbugs</groupId>
             <artifactId>jsr305</artifactId>
             <version>3.0.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
         </dependency>
         <!-- TESTS -->
         <dependency>

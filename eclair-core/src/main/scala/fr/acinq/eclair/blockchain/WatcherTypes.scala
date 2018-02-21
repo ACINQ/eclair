@@ -18,7 +18,7 @@ sealed trait Watch {
   def channel: ActorRef
   def event: BitcoinEvent
 }
-// we need a public key script to use bitcoinj or electrum apis
+// we need a public key script to use electrum apis
 final case class WatchConfirmed(channel: ActorRef, txId: BinaryData, publicKeyScript: BinaryData, minDepth: Long, event: BitcoinEvent) extends Watch
 object WatchConfirmed {
   // if we have the entire transaction, we can get the redeemScript from the witness, and re-compute the publicKeyScript

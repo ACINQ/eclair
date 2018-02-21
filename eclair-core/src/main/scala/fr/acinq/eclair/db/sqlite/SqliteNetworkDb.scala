@@ -9,6 +9,8 @@ import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
+import scala.collection.immutable.Queue
+
 class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   import SqliteUtils._
@@ -44,10 +46,10 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def listNodes(): List[NodeAnnouncement] = {
+  override def listNodes(): Seq[NodeAnnouncement] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM nodes")
-      codecList(rs, nodeAnnouncementCodec)
+      codecSequence(rs, nodeAnnouncementCodec)
     }
   }
 
@@ -72,11 +74,11 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT * FROM channels")
-      var l: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
+      var m: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
       val emptyTxid = BinaryData("")
       val zeroCapacity = Satoshi(0)
       while (rs.next()) {
-        l = l + (ChannelAnnouncement(
+        m = m + (ChannelAnnouncement(
           nodeSignature1 = null,
           nodeSignature2 = null,
           bitcoinSignature1 = null,
@@ -89,7 +91,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           bitcoinKey1 = null,
           bitcoinKey2 = null) -> (emptyTxid, zeroCapacity))
       }
-      l
+      m
     }
   }
 
@@ -121,12 +123,12 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def listChannelUpdates(): List[ChannelUpdate] = {
+  override def listChannelUpdates(): Seq[ChannelUpdate] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT * FROM channel_updates")
-      var l: List[ChannelUpdate] = Nil
+      var q: Queue[ChannelUpdate] = Queue()
       while (rs.next()) {
-        l = l :+ ChannelUpdate(
+        q = q :+ ChannelUpdate(
           signature = null,
           chainHash = null,
           shortChannelId = rs.getLong("short_channel_id"),
@@ -137,7 +139,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           feeBaseMsat = rs.getLong("fee_base_msat"),
           feeProportionalMillionths = rs.getLong("fee_proportional_millionths"))
       }
-      l
+      q
     }
   }
 
