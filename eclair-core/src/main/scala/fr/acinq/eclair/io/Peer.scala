@@ -76,16 +76,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
         origin_opt.map(origin => origin ! "connected")
 
         if (remoteHasInitialRoutingSync) {
-          if (!remoteHasChannelRangeQueriesMandatory && !remoteHasChannelRangeQueriesOptional) {
+          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+            // our peer supports channel queries so we do nothing, they will send us their filters
+            log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
+          } else {
             // "old" nodes, do as before
             router ! GetRoutingState
-          } else {
-            // if our peer support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
           }
         }
-        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
-          // if they support channel queries, ask for their filter
+        if (remoteHasChannelRangeQueriesMandatory || remoteHasChannelRangeQueriesMandatory) {
+          // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(transport)
         }
 

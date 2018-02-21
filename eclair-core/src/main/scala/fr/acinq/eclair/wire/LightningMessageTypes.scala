@@ -5,6 +5,7 @@ import java.net.InetSocketAddress
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.router.Announcements
 
 /**
   * Created by PM on 15/11/2016.
@@ -165,8 +166,11 @@ case class PerHopPayload(channel_id: Long,
                          outgoingCltvValue: Long)
 
 case class QueryShortChannelId(chainHash: BinaryData,
-                               shortChannelId: Long) extends RoutingMessage
+                               data: BinaryData) extends RoutingMessage
 
+object QueryShortChannelId {
+  def apply(chainHash: BinaryData, ids: Seq[Long]) : QueryShortChannelId = QueryShortChannelId(chainHash, Announcements.zip(ids))
+}
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Int,
                              numberOfBlocks: Int) extends RoutingMessage

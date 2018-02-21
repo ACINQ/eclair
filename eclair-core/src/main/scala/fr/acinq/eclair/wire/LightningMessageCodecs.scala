@@ -268,7 +268,7 @@ object LightningMessageCodecs {
 
   val queryShortChannelIdCodec: Codec[QueryShortChannelId] = (
     ("chainHash" | binarydata(32)) ::
-      ("shortChannelId" | int64)
+      ("data" | varsizebinarydata)
     ).as[QueryShortChannelId]
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = (

@@ -25,6 +25,7 @@ object Features {
 
   def hasFeature(features: BinaryData, bit: Int): Boolean = hasFeature(BitSet.valueOf(features.reverse.toArray), bit)
 
+
   /**
     * Check that the features that we understand are correctly specified, and that there are no mandatory features that
     * we don't understand (even bits)

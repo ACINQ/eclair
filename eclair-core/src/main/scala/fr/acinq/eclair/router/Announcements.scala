@@ -1,14 +1,18 @@
 package fr.acinq.eclair.router
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.net.InetSocketAddress
+import java.nio.ByteOrder
+import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, Protocol}
 import fr.acinq.eclair.serializationResult
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import shapeless.HNil
 
+import scala.annotation.tailrec
 import scala.compat.Platform
 
 
@@ -139,4 +143,55 @@ object Announcements {
     verifySignature(witness, ann.signature, nodeId)
   }
 
+  def zip(shortChannelIds: Seq[Long]) : BinaryData = {
+    val bos = new ByteArrayOutputStream()
+    val output = new GZIPOutputStream(bos)
+    shortChannelIds.sorted.map(id => Protocol.writeUInt64(id, output, ByteOrder.BIG_ENDIAN))
+    output.finish()
+    bos.toByteArray
+  }
+
+  private def unzip(input: GZIPInputStream) : Vector[Long] = {
+    val buffer = new Array[Byte](8)
+
+    // read 8 bytes from input
+    // zipped input stream often returns less bytes than what you want to read
+    @tailrec
+    def read8(offset: Int = 0): Int = input.read(buffer, offset, 8 - offset) match {
+      case len if len <= 0 => len
+      case 8 => 8
+      case len if offset + len == 8 => 8
+      case len => read8(offset + len)
+    }
+
+    // read until there's nothing left
+    @tailrec
+    def loop(acc: Vector[Long] = Vector()): Vector[Long] = {
+      if (read8() <= 0) acc else loop(acc :+ Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN))
+    }
+
+    loop()
+  }
+
+  def unzip(input: BinaryData) : Vector[Long] = {
+    val stream = new GZIPInputStream(new ByteArrayInputStream(input))
+    try {
+      unzip(stream)
+    }
+    finally {
+      stream.close()
+    }
+  }
+
+  /**
+    * TODO: support other encoding formats than gzip
+    * @param chainHash chain hash
+    * @param firstBlockNum number of the first block
+    * @param numberOfBlocks number of blocks
+    * @param shortChannelIds short channel ids that match [firstBlockNum, firstBlockNum + numberOfBlocks]
+    * @return a ReplyChannelRange message
+    */
+  def makeReplyChannelRange(chainHash: BinaryData, firstBlockNum: Int, numberOfBlocks: Int, shortChannelIds: Seq[Long]) : ReplyChannelRange = {
+    ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
+  }
 }
