@@ -171,4 +171,73 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   }
 
+  test("discover that we have a revoked commitment") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    val sender = TestProbe()
+
+    // first let's ge
+    val (ra1, htlca1) = addHtlc(250000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val (ra2, htlca2) = addHtlc(100000000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val (ra3, htlca3) = addHtlc(10000, alice, bob, alice2bob, bob2alice)
+    crossSign(alice, bob, alice2bob, bob2alice)
+    val oldStateData = alice.stateData
+    fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlca2.id, ra2, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+    fulfillHtlc(htlca3.id, ra3, bob, alice, bob2alice, alice2bob)
+    crossSign(bob, alice, bob2alice, alice2bob)
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // then we manually replace alice's state with an older one
+    alice.setState(OFFLINE, oldStateData)
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    bob2alice.expectMsgType[ChannelReestablish]
+
+    // alice then realizes it has an old state...
+    bob2alice.forward(alice)
+    // ... and ask bob to publish its current commitment
+    val error = alice2bob.expectMsgType[Error]
+    assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+
+  }
+
+  test("counterparty lies about having a more recent commitment") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+    val sender = TestProbe()
+
+    // we simulate a disconnection
+    sender.send(alice, INPUT_DISCONNECTED)
+    sender.send(bob, INPUT_DISCONNECTED)
+    awaitCond(alice.stateName == OFFLINE)
+    awaitCond(bob.stateName == OFFLINE)
+
+    // then we reconnect them
+    sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
+    sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+
+    // peers exchange channel_reestablish messages
+    alice2bob.expectMsgType[ChannelReestablish]
+    val ba_reestablish = bob2alice.expectMsgType[ChannelReestablish]
+
+    // let's forge a dishonest channel_reestablish
+    val ba_reestablish_forged = ba_reestablish.copy(nextRemoteRevocationNumber = 42)
+
+    // alice then finds out bob is lying
+    bob2alice.send(alice, ba_reestablish_forged)
+    val error = alice2bob.expectMsgType[Error]
+    assert(new String(error.data) === CommitmentSyncError(channelId(alice)).getMessage)
+  }
+
 }

@@ -147,8 +147,6 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
 
-final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
-
 final case class DATA_CLOSING(commitments: Commitments,
                               localClosingSigned: List[ClosingSigned],
                               mutualClosePublished: List[Transaction] = Nil,
@@ -160,6 +158,8 @@ final case class DATA_CLOSING(commitments: Commitments,
   val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxes.size > 0, "there must be at least one tx published in this state")
 }
+
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
                              dustLimitSatoshis: Long,
