@@ -1174,24 +1174,22 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val fundingLocked = FundingLocked(d.commitments.channelId, nextPerCommitmentPoint)
       goto(WAIT_FOR_FUNDING_LOCKED) sending fundingLocked
 
-    case Event(ChannelReestablish(_, _, _, _, Some(myCurrentPerCommitmentPoint)), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
+    case Event(_: ChannelReestablish, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) =>
       // We have started a channel with DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT and wait for their ChannelReestablish
-      val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
       val exc = PleasePublishYourCommitment(d.channelId)
       val error = Error(d.channelId, exc.getMessage.getBytes)
-      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using d.copy(commitments = commitments1) sending error
+      goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) sending error
 
-    case Event(ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
+    case Event(channelReestablish@ChannelReestablish(_, _, nextRemoteRevocationNumber, Some(yourLastPerCommitmentSecret), Some(myCurrentPerCommitmentPoint)), d: DATA_NORMAL)
       if d.commitments.localCommit.index < nextRemoteRevocationNumber =>
       // if next_remote_revocation_number is greater than our local commitment index, it means that either we are using an outdated commitment, or they are lying
       // but first we need to make sure that the last per_commitment_secret that they claim to have received from us is correct for that next_remote_revocation_number minus 1
       if (Generators.perCommitSecret(d.commitments.localParams.shaSeed, nextRemoteRevocationNumber - 1) == yourLastPerCommitmentSecret) {
         // their data checks out, we indeed seem to be using an old revoked commitment, and must absolutely *NOT* publish it, because that would be a cheating attempt and they
         // would punish us by taking all the funds in the channel
-        val commitments1 = d.commitments.copy(remoteCommit = d.commitments.remoteCommit.copy(remotePerCommitmentPoint = myCurrentPerCommitmentPoint))
         val exc = PleasePublishYourCommitment(d.channelId)
         val error = Error(d.channelId, exc.getMessage.getBytes)
-        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments1) sending error
+        goto(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) using DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(d.commitments, channelReestablish) sending error
       } else {
         // they lied! the last per_commitment_secret they claimed to have received from us is invalid
         throw CommitmentSyncError(d.channelId)
@@ -1261,7 +1259,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)(handleExceptions {
-    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentCurrentLost(tx, d)
+    case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx: Transaction), d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) => handleRemoteSpentFuture(tx, d)
   })
 
   def errorStateHandler: StateFunction = {
@@ -1510,9 +1508,11 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     goto(CLOSING) using store(nextData)
   }
 
-  def handleRemoteSpentCurrentLost(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
-    log.warning(s"they published their current commit because we asked them to in txid=${commitTx.txid}")
-    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(d.commitments, d.commitments.remoteCommit, commitTx)
+  def handleRemoteSpentFuture(commitTx: Transaction, d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT) = {
+    log.warning(s"they published their future commit (because we asked them to) in txid=${commitTx.txid}")
+    // if we are in this state, then this field is defined
+    val remotePerCommitmentPoint = d.remoteChannelReestablish.myCurrentPerCommitmentPoint.get
+    val remoteCommitPublished = Helpers.Closing.claimRemoteCommitMainOutput(d.commitments, remotePerCommitmentPoint, commitTx)
     val nextData = DATA_CLOSING(d.commitments, Nil, futureRemoteCommitPublished = Some(remoteCommitPublished))
 
     doPublish(remoteCommitPublished)
