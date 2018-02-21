@@ -11,7 +11,7 @@ import com.typesafe.config.ConfigFactory
 import fr.acinq.bitcoin._
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.eclair.Kit
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.integration.IntegrationSpec
 import grizzled.slf4j.Logging
 import org.json4s.DefaultFormats
@@ -48,7 +48,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with FunSui
     Files.copy(classOf[IntegrationSpec].getResourceAsStream("/integration/bitcoin.conf"), new File(PATH_BITCOIND_DATADIR.toString, "bitcoin.conf").toPath)
 
     bitcoind = s"$PATH_BITCOIND -datadir=$PATH_BITCOIND_DATADIR".run()
-    bitcoinrpcclient = new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
+    bitcoinrpcclient = new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 28332)
     bitcoincli = system.actorOf(Props(new Actor {
       override def receive: Receive = {
         case BitcoinReq(method) => bitcoinrpcclient.invoke(method) pipeTo sender
@@ -76,7 +76,7 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with FunSui
     }, max = 30 seconds, interval = 500 millis)
     logger.info(s"generating initial blocks...")
     sender.send(bitcoincli, BitcoinReq("generate", 500))
-    sender.expectMsgType[JValue](10 seconds)
+    sender.expectMsgType[JValue](20 seconds)
 
     val future = for {
       count <- client.getBlockCount
@@ -88,17 +88,17 @@ class ExtendedBitcoinClientSpec extends TestKit(ActorSystem("test")) with FunSui
       priv = PrivateKey("01" * 32)
       wif = Base58Check.encode(Base58.Prefix.SecretKeyTestnet, priv.toBin)
       _ = sender.send(bitcoincli, BitcoinReq("importprivkey", wif))
-      _ = sender.expectMsgType[JValue](10 seconds)
+      _ = sender.expectMsgType[JValue](20 seconds)
       // send money to our private key
       address = Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160)
       _ = client.sendFromAccount("", address, 1.0)
       _ = sender.send(bitcoincli, BitcoinReq("generate", 1))
-      _ = sender.expectMsgType[JValue](10 seconds)
+      _ = sender.expectMsgType[JValue](20 seconds)
       // and check that we find a utxo four our private key
       unspentAddresses1 <- client.listUnspentAddresses
       _ = assert(unspentAddresses1 contains address)
     } yield ()
 
-    Await.result(future, 10 seconds)
+    Await.result(future, 20 seconds)
   }
 }

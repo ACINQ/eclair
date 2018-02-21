@@ -10,6 +10,7 @@ import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
@@ -34,26 +35,25 @@ case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChan
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendRoutingState(to: ActorRef)
-case class Stash(channels: Map[ChannelAnnouncement, ActorRef], updates: Map[ChannelUpdate, ActorRef], nodes: Map[NodeAnnouncement, ActorRef])
-case class Rebroadcast(ann: Queue[(RoutingMessage, ActorRef)])
+case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
+case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
-                  rebroadcast: Queue[(RoutingMessage, ActorRef)],
-                  awaiting: Map[ChannelAnnouncement, ActorRef],
-                  privateChannels: Map[Long, ChannelAnnouncement],
+                  rebroadcast: Rebroadcast,
+                  awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
+                  privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  sendStateWaitlist: Queue[ActorRef],
                   sendingState: Set[ActorRef])
 
 sealed trait State
 case object NORMAL extends State
-case object WAITING_FOR_VALIDATION extends State
 
 case object TickBroadcast
-case object TickValidate
 case object TickPruneStaleChannels
 
 // @formatter:on
@@ -72,293 +72,240 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
   context.system.eventStream.subscribe(self, classOf[LocalChannelDown])
 
   setTimer(TickBroadcast.toString, TickBroadcast, nodeParams.routerBroadcastInterval, repeat = true)
-  setTimer(TickValidate.toString, TickValidate, nodeParams.routerValidateInterval, repeat = true)
-  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 day, repeat = true)
+  setTimer(TickPruneStaleChannels.toString, TickPruneStaleChannels, 1 hour, repeat = true)
 
   val db = nodeParams.networkDb
 
-  // Note: We go through the whole validation process instead of directly loading into memory, because the channels
-  // could have been closed while we were shutdown, and if someone connects to us right after startup we don't want to
-  // advertise invalid channels. We could optimize this (at least not fetch txes from the blockchain, and not check sigs)
+  // Note: It is possible that some channels have been closed while we were shutdown. Since we are directly loading channels
+  // in memory without checking they are still alive, we may advertise closed channels if someone connects to us right after
+  // startup. That being said, if we stay down long enough that a significant numbers of channels are closed, there is a chance
+  // other peers forgot about us in the meantime.
   {
-    log.info(s"loading network announcements from db...")
+    log.info("loading network announcements from db...")
     val channels = db.listChannels()
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
-    val staleChannels = getStaleChannels(channels, updates)
-    if (staleChannels.size > 0) {
-      log.info(s"dropping ${staleChannels.size} stale channels pre-validation")
+    // let's prune the db (maybe eclair was stopped for a long time)
+    val staleChannels = getStaleChannels(channels.keys, updates)
+    if (staleChannels.nonEmpty) {
+      log.info("dropping {} stale channels pre-validation", staleChannels.size)
       staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
     }
-    val remainingChannels = channels.filterNot(c => staleChannels.contains(c.shortChannelId))
+    val remainingChannels = channels.keys.filterNot(c => staleChannels.contains(c.shortChannelId))
     val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
-    remainingChannels.map(self ! _)
-    nodes.map(self ! _)
-    remainingUpdates.map(self ! _)
-    log.info(s"loaded from db: channels=${remainingChannels.size} nodes=${nodes.size} updates=${remainingUpdates.size}")
-  }
+    val remainingNodes = nodes.filter(n => remainingChannels.exists(c => isRelatedTo(c, n.nodeId)))
 
-  startWith(NORMAL, Data(Map.empty, Map.empty, Map.empty, Stash(Map.empty, Map.empty, Map.empty), Queue.empty, Map.empty, Map.empty, Map.empty, Set.empty, Set.empty))
+    val initChannels = remainingChannels.map(c => (c.shortChannelId -> c)).toMap
+    val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    val initNodes = remainingNodes.map(n => (n.nodeId -> n)).toMap
+
+    // send events for these channels/nodes
+    remainingChannels.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
+    remainingNodes.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+
+    // watch the funding tx of all these channels
+    // note: some of them may already have been spent, in that case we will receive the watch event immediately
+    remainingChannels.foreach { c =>
+      val txid = channels(c)._1
+      val (_, _, outputIndex) = fromShortId(c.shortChannelId)
+      val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
+      watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
+    }
+
+    log.info("loaded from db: channels={} nodes={} updates={}", remainingChannels.size, nodes.size, remainingUpdates.size)
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty))
+  }
 
   when(NORMAL) {
-    case Event(TickValidate, d) =>
-      require(d.awaiting.size == 0, "awaiting queue should be empty")
-      // we remove stale channels
-      val staleChannels = getStaleChannels(d.stash.channels.keys, d.stash.updates.keys)
-      val (droppedChannels, remainingChannels) = d.stash.channels.keys.partition(c => staleChannels.contains(c.shortChannelId))
-      val (droppedUpdates, _) = d.stash.updates.keys.partition(u => staleChannels.contains(u.shortChannelId))
-      // we validate non-stale channels that had a channel_update
-      val batch = remainingChannels.filter(c => d.stash.updates.keys.exists(_.shortChannelId == c.shortChannelId)).take(MAX_PARALLEL_JSONRPC_REQUESTS)
-      // we clean up the stash (nodes will be filtered afterwards)
-      val stash1 = d.stash.copy(channels = d.stash.channels -- droppedChannels -- batch, updates = d.stash.updates -- droppedUpdates)
-      if (staleChannels.size > 0) {
-        log.info(s"dropping ${staleChannels.size} stale channels pre-validation, stash channels: ${d.stash.channels.size} -> ${stash1.channels.size} updates: ${d.stash.updates.size} -> ${stash1.updates.size} nodes: ${stash1.nodes.size}")
+    case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u), d: Data) =>
+      d.channels.get(shortChannelId) match {
+        case Some(_) =>
+          // channel has already been announced and router knows about it, we can process the channel_update
+          stay using handle(u, self, d)
+        case None =>
+          channelAnnouncement_opt match {
+            case Some(c) if d.awaiting.contains(c) =>
+              // channel is currently beeing verified, we can process the channel_update right away (it will be stashed)
+              stay using handle(u, self, d)
+            case Some(c) =>
+              // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
+              watcher ! ValidateRequest(c)
+              val d1 = d.copy(awaiting = d.awaiting + (c -> Nil)) // no origin
+              stay using handle(u, self, d1)
+            case None if d.privateChannels.contains(shortChannelId) =>
+              // channel isn't announced but we already know about it, we can process the channel_update
+              stay using handle(u, self, d)
+            case None =>
+              // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
+              // let's create a corresponding private channel and process the channel_update
+              log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId.toHexString)
+              stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> remoteNodeId)))
+          }
       }
-      if (batch.size > 0) {
-        log.info(s"validating a batch of ${batch.size} channels")
-        watcher ! ParallelGetRequest(batch.toSeq)
-        val awaiting1 = d.stash.channels.filterKeys(batch.toSet)
-        goto(WAITING_FOR_VALIDATION) using d.copy(stash = stash1, awaiting = awaiting1)
-      } else stay using d.copy(stash = stash1)
-  }
 
-  when(WAITING_FOR_VALIDATION) {
-    case Event(ParallelGetResponse(results), d) =>
-      log.info(s"got validation results for ${results.size} channels")
-      val validated = results.flatMap {
-        case IndividualResult(c, Some(tx), true) =>
+    case Event(LocalChannelDown(_, channelId, shortChannelId, _), d: Data) =>
+      log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId.toHexString)
+      stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
+
+    case Event(SendRoutingState(remote), d: Data) =>
+      if (d.sendingState.size > 3) {
+        log.info("received request to send announcements to {}, already sending state to {} peers, adding to wait list (waiting={})", remote, d.sendingState.size, d.sendStateWaitlist.size)
+        context watch remote
+        stay using d.copy(sendStateWaitlist = d.sendStateWaitlist :+ remote)
+      } else stay using handleSendState(remote, d)
+
+    case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
+      log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
+      val d1 = d.copy(sendingState = d.sendingState - actor)
+      d.sendStateWaitlist.dequeueOption match {
+        case Some((remote, sendStateWaitlist1)) =>
+          context unwatch remote
+          stay using handleSendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
+        case None => stay using d1
+      }
+
+    case Event(Terminated(actor), d: Data) if d.sendStateWaitlist.contains(actor) =>
+      // note: 'contains' and 'filter' operations are expensive on a queue, but its size should be very small (maybe even capped?)
+      log.info("peer={} died, removing from wait list (waiting={})", actor, d.sendStateWaitlist.size - 1)
+      stay using d.copy(sendStateWaitlist = d.sendStateWaitlist filterNot (_ == actor))
+
+    case Event(c: ChannelAnnouncement, d) =>
+      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
+      if (d.channels.contains(c.shortChannelId)) {
+        sender ! TransportHandler.ReadAck(c)
+        log.debug("ignoring {} (duplicate)", c)
+        stay
+      } else if (d.awaiting.contains(c)) {
+        sender ! TransportHandler.ReadAck(c)
+        log.debug("ignoring {} (being verified)", c)
+        // adding the sender to the list of origins so that we don't send back the same announcement to this peer later
+        val origins = d.awaiting(c) :+ sender
+        stay using d.copy(awaiting = d.awaiting + (c -> origins))
+      } else if (!Announcements.checkSigs(c)) {
+        sender ! TransportHandler.ReadAck(c)
+        log.warning("bad signature for announcement {}", c)
+        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+        stay
+      } else {
+        log.info("validating shortChannelId={}", c.shortChannelId.toHexString)
+        watcher ! ValidateRequest(c)
+        // we don't acknowledge the message just yet
+        stay using d.copy(awaiting = d.awaiting + (c -> Seq(sender)))
+      }
+
+    case Event(v@ValidateResult(c, _, _, _), d0) =>
+      d0.awaiting.get(c) match {
+        case Some(origin +: others) => origin ! TransportHandler.ReadAck(c) // now we can acknowledge the message, we only need to do it for the first peer that sent us the announcement
+        case _ => ()
+      }
+      log.info("got validation result for shortChannelId={} (awaiting={} stash.nodes={} stash.updates={})", c.shortChannelId.toHexString, d0.awaiting.size, d0.stash.nodes.size, d0.stash.updates.size)
+      val success = v match {
+        case ValidateResult(c, _, _, Some(t)) =>
+          log.warning("validation failure for shortChannelId={} reason={}", c.shortChannelId.toHexString, t.getMessage)
+          false
+        case ValidateResult(c, Some(tx), true, None) =>
           // TODO: blacklisting
           val (_, _, outputIndex) = fromShortId(c.shortChannelId)
           // let's check that the output is indeed a P2WSH multisig 2-of-2 of nodeid1 and nodeid2)
           val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
           if (tx.txOut.size < outputIndex + 1) {
-            log.error(s"invalid script for shortChannelId=${c.shortChannelId.toHexString}: txid=${tx.txid} does not have outputIndex=$outputIndex ann=$c")
-            None
+            log.error("invalid script for shortChannelId={}: txid={} does not have outputIndex={} ann={}", c.shortChannelId.toHexString, tx.txid, outputIndex, c)
+            false
           } else if (fundingOutputScript != tx.txOut(outputIndex).publicKeyScript) {
-            log.error(s"invalid script for shortChannelId=${c.shortChannelId.toHexString} txid=${tx.txid} ann=$c")
-            None
+            log.error("invalid script for shortChannelId={} txid={} ann={}", c.shortChannelId.toHexString, tx.txid, c)
+            false
           } else {
             watcher ! WatchSpentBasic(self, tx, outputIndex, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
             // TODO: check feature bit set
-            log.debug(s"added channel channelId=${c.shortChannelId.toHexString}")
-            context.system.eventStream.publish(ChannelDiscovered(c, tx.txOut(outputIndex).amount))
-            db.addChannel(c)
-            Some(c)
+            log.debug("added channel channelId={}", c.shortChannelId.toHexString)
+            val capacity = tx.txOut(outputIndex).amount
+            context.system.eventStream.publish(ChannelDiscovered(c, capacity))
+            db.addChannel(c, tx.txid, capacity)
+
+            // in case we just validated our first local channel, we announce the local node
+            // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
+            // even if we had stored a previous announcement, it would be overridden by this more recent one
+            if (!d0.nodes.contains(nodeParams.nodeId) && isRelatedTo(c, nodeParams.nodeId)) {
+              log.info("first local channel validated, announcing local node")
+              val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
+              self ! nodeAnn
+            }
+            true
           }
-        case IndividualResult(c, Some(tx), false) =>
+        case ValidateResult(c, Some(tx), false, None) =>
           // TODO: vulnerability if they flood us with spent funding tx?
-          log.warning(s"ignoring shortChannelId=${c.shortChannelId.toHexString} tx=${tx.txid} (funding tx not found in utxo)")
+          log.warning("ignoring shortChannelId={} tx={} (funding tx not found in utxo)", c.shortChannelId.toHexString, tx.txid)
           // there may be a record if we have just restarted
           db.removeChannel(c.shortChannelId)
-          None
-        case IndividualResult(c, None, _) =>
+          false
+        case ValidateResult(c, None, _, None) =>
           // TODO: blacklist?
-          log.warning(s"could not retrieve tx for shortChannelId=${c.shortChannelId.toHexString}")
-          None
-      }
-
-      // in case we just validated our first local channel, we announce the local node
-      // note that this will also make sure we always update our node announcement on restart (eg: alias, color), because
-      // even if we had stored a previous announcement, it would be overriden by this more recent one
-      if (!d.nodes.contains(nodeParams.nodeId) && validated.exists(isRelatedTo(_, nodeParams.nodeId))) {
-        log.info(s"first local channel validated, announcing local node")
-        val nodeAnn = Announcements.makeNodeAnnouncement(nodeParams.privateKey, nodeParams.alias, nodeParams.color, nodeParams.publicAddresses)
-        self ! nodeAnn
+          log.warning("could not retrieve tx for shortChannelId={}", c.shortChannelId.toHexString)
+          false
       }
 
       // we also reprocess node and channel_update announcements related to channels that were just analyzed
-      val reprocessUpdates = d.stash.updates.filterKeys(u => results.exists(r => r.c.shortChannelId == u.shortChannelId))
-      val reprocessNodes = d.stash.nodes.filterKeys(n => results.exists(r => isRelatedTo(r.c, n.nodeId)))
-      reprocessUpdates.foreach { case (msg, origin) => self.tell(msg, origin) } // we preserve the origin when reprocessing the message
-      reprocessNodes.foreach { case (msg, origin) => self.tell(msg, origin) } // we preserve the origin when reprocessing the message
-
+      val reprocessUpdates = d0.stash.updates.filterKeys(u => u.shortChannelId == c.shortChannelId)
+      val reprocessNodes = d0.stash.nodes.filterKeys(n => isRelatedTo(c, n.nodeId))
       // and we remove the reprocessed messages from the stash
-      val stash1 = d.stash.copy(updates = d.stash.updates -- reprocessUpdates.keys, nodes = d.stash.nodes -- reprocessNodes.keys)
-
-      // we also add the newly validated channels to the rebroadcast queue
-      val rebroadcast1 = d.rebroadcast ++ d.awaiting.filterKeys(validated.toSet)
-
-      // we remove fake announcements that we may have made before
-      goto(NORMAL) using d.copy(channels = d.channels ++ validated.map(c => (c.shortChannelId -> c)), privateChannels = d.privateChannels -- validated.map(_.shortChannelId), rebroadcast = rebroadcast1, stash = stash1, awaiting = Map.empty)
-  }
-
-  whenUnhandled {
-
-    case Event(LocalChannelUpdate(_, _, shortChannelId, remoteNodeId, channelAnnouncement_opt, u), d: Data) =>
-      d.channels.get(shortChannelId) match {
-        case Some(_) =>
-          // channel had already been announced and router knows about it, we can process the channel_update
-          self ! u
-          stay
-        case None =>
-          channelAnnouncement_opt match {
-            case Some(c) =>
-              // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
-              self ! c
-              self ! u
-              stay
-            case None =>
-              // channel isn't announced yet, do we have a fake announcement?
-              d.privateChannels.get(shortChannelId) match {
-                case Some(_) =>
-                  // yes: nothing to do, we can process the channel_update
-                  self ! u
-                  stay
-                case None =>
-                  // no: create one and add it to current state, then process the channel_update
-                  log.info(s"adding unannounced local channel to remote=$remoteNodeId shortChannelId=${shortChannelId.toHexString}")
-                  self ! u
-                  val fake_c = Announcements.makeChannelAnnouncement("", shortChannelId, nodeParams.nodeId, remoteNodeId, nodeParams.nodeId, nodeParams.nodeId, "", "", "", "")
-                  stay using d.copy(privateChannels = d.privateChannels + (shortChannelId -> fake_c))
-              }
-          }
-      }
-
-    case Event(LocalChannelDown(_, channelId, shortChannelId, _), d: Data) =>
-      log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString}")
-      stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
-
-    case Event(s@SendRoutingState(remote), d: Data) =>
-      if (d.sendingState.size > 3) {
-        log.info(s"received request to send announcements to $remote, already sending state to ${d.sendingState.size} peers, delaying...")
-        context.system.scheduler.scheduleOnce(3 seconds, self, s)
-        stay
+      val stash1 = d0.stash.copy(updates = d0.stash.updates -- reprocessUpdates.keys, nodes = d0.stash.nodes -- reprocessNodes.keys)
+      // we remove channel from awaiting map
+      val awaiting1 = d0.awaiting - c
+      if (success) {
+        val d1 = d0.copy(
+          channels = d0.channels + (c.shortChannelId -> c),
+          privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
+          rebroadcast = d0.rebroadcast.copy(channels = d0.rebroadcast.channels + (c -> d0.awaiting.getOrElse(c, Nil).toSet)), // we also add the newly validated channels to the rebroadcast queue
+          stash = stash1,
+          awaiting = awaiting1)
+        // we only reprocess updates and nodes if validation succeeded
+        val d2 = reprocessUpdates.foldLeft(d1) {
+          case (d, (u, origins)) => origins.foldLeft(d) { case (d, origin) => handle(u, origin, d) } // we reprocess the same channel_update for every origin (to preserve origin information)
+        }
+        val d3 = reprocessNodes.foldLeft(d2) {
+          case (d, (n, origins)) => origins.foldLeft(d) { case (d, origin) => handle(n, origin, d) } // we reprocess the same node_announcement for every origins (to preserve origin information)
+        }
+        stay using d3
       } else {
-        log.info(s"info sending all announcements to $remote: channels=${d.channels.size} nodes=${d.nodes.size} updates=${d.updates.size}")
-        val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
-        // we group and add delays to leave room for channel messages
-        val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
-        context watch actor
-        stay using d.copy(sendingState = d.sendingState + actor)
-      }
-
-    case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
-      log.info(s"done sending announcements to a peer, freeing slot")
-      stay using d.copy(sendingState = d.sendingState - actor)
-
-    case Event(c: ChannelAnnouncement, d) =>
-      log.debug(s"received channel announcement for shortChannelId=${c.shortChannelId.toHexString} nodeId1=${c.nodeId1} nodeId2=${c.nodeId2} from $sender")
-      if (d.channels.containsKey(c.shortChannelId) || d.awaiting.keys.exists(_.shortChannelId == c.shortChannelId) || d.stash.channels.contains(c)) {
-        log.debug("ignoring {} (duplicate)", c)
-        stay
-      } else if (!Announcements.checkSigs(c)) {
-        log.warning("bad signature for announcement {}", c)
-        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else {
-        log.debug("stashing {}", c)
-        stay using d.copy(stash = d.stash.copy(channels = d.stash.channels + (c -> sender)))
+        stay using d0.copy(stash = stash1, awaiting = awaiting1)
       }
 
     case Event(n: NodeAnnouncement, d: Data) =>
-      log.debug(s"received node announcement for nodeId=${n.nodeId} from $sender")
-      if (d.nodes.containsKey(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
-        log.debug("ignoring {} (old timestamp or duplicate)", n)
-        stay
-      } else if (!Announcements.checkSig(n)) {
-        log.warning("bad signature for {}", n)
-        sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-        stay
-      } else if (d.nodes.containsKey(n.nodeId)) {
-        log.debug(s"updated node nodeId=${n.nodeId}")
-        context.system.eventStream.publish(NodeUpdated(n))
-        db.updateNode(n)
-        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ (n -> sender))
-      } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
-        log.debug(s"added node nodeId=${n.nodeId}")
-        context.system.eventStream.publish(NodeDiscovered(n))
-        db.addNode(n)
-        stay using d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast :+ (n -> sender))
-      } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId)) || d.stash.channels.keys.exists(c => isRelatedTo(c, n.nodeId))) {
-        log.debug("stashing {}", n)
-        stay using d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> sender)))
-      } else {
-        log.debug("ignoring {} (no related channel found)", n)
-        // there may be a record if we have just restarted
-        db.removeNode(n.nodeId)
-        stay
-      }
+      if (sender != self) sender ! TransportHandler.ReadAck(n)
+      log.debug("received node announcement for nodeId={} from {}", n.nodeId, sender)
+      stay using handle(n, sender, d)
 
     case Event(u: ChannelUpdate, d: Data) =>
-      log.debug(s"received channel update for shortChannelId=${u.shortChannelId.toHexString} from $sender")
-      if (d.channels.contains(u.shortChannelId)) {
-        val publicChannel = true
-        val c = d.channels(u.shortChannelId)
-        val desc = getDesc(u, c)
-        if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-          log.debug("ignoring {} (old timestamp or duplicate)", u)
-          stay
-        } else if (!Announcements.checkSig(u, desc.a)) {
-          log.warning(s"bad signature for announcement shortChannelId=${u.shortChannelId.toHexString} {}", u)
-          sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-          stay
-        } else if (d.updates.contains(desc)) {
-          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
-          context.system.eventStream.publish(ChannelUpdateReceived(u))
-          db.updateChannelUpdate(u)
-          stay using d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast :+ (u -> sender))
-        } else {
-          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
-          context.system.eventStream.publish(ChannelUpdateReceived(u))
-          db.addChannelUpdate(u)
-          stay using d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast :+ (u -> sender))
-        }
-      } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId) || d.stash.channels.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
-        log.debug("stashing {}", u)
-        stay using d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> sender)))
-      } else if (d.privateChannels.contains(u.shortChannelId)) {
-        val publicChannel = false
-        val c = d.privateChannels(u.shortChannelId)
-        val desc = getDesc(u, c)
-        if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-          log.debug("ignoring {} (old timestamp or duplicate)", u)
-          stay
-        } else if (!Announcements.checkSig(u, desc.a)) {
-          log.warning(s"bad signature for announcement shortChannelId=${u.shortChannelId.toHexString} {}", u)
-          sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
-          stay
-        } else if (d.privateUpdates.contains(desc)) {
-          log.debug(s"updated channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
-          context.system.eventStream.publish(ChannelUpdateReceived(u))
-          stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
-        } else {
-          log.debug(s"added channel_update for shortChannelId=${u.shortChannelId.toHexString} public=$publicChannel flags=${u.flags} {}", u)
-          context.system.eventStream.publish(ChannelUpdateReceived(u))
-          stay using d.copy(privateUpdates = d.privateUpdates + (desc -> u))
-        }
-      } else {
-        log.debug("ignoring announcement {} (unknown channel)", u)
-        stay
-      }
+      sender ! TransportHandler.ReadAck(u)
+      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId.toHexString, sender)
+      stay using handle(u, sender, d)
 
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d)
-      if d.channels.containsKey(shortChannelId) =>
+      if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
-      log.info(s"funding tx of channelId=${shortChannelId.toHexString} has been spent")
+      log.info("funding tx of channelId={} has been spent", shortChannelId.toHexString)
       // we need to remove nodes that aren't tied to any channels anymore
       val channels1 = d.channels - lostChannel.shortChannelId
       val lostNodes = Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values))
       // let's clean the db and send the events
-      log.info(s"pruning shortChannelId=${shortChannelId.toHexString} (spent)")
+      log.info("pruning shortChannelId={} (spent)", shortChannelId.toHexString)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
         case nodeId =>
-          log.info(s"pruning nodeId=$nodeId (spent)")
+          log.info("pruning nodeId={} (spent)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
       stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
 
-    case Event(TickValidate, d) => stay // ignored
-
     case Event(TickBroadcast, d) =>
-      if (d.rebroadcast.isEmpty) {
+      if (d.rebroadcast.channels.isEmpty && d.rebroadcast.updates.isEmpty && d.rebroadcast.nodes.isEmpty) {
         stay
       } else {
-        log.info(s"broadcasting ${d.rebroadcast.size} routing messages")
-        context.actorSelection(context.system / "*" / "switchboard") ! Rebroadcast(d.rebroadcast)
-        stay using d.copy(rebroadcast = Queue.empty)
+        log.info("broadcasting routing messages: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
+        context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
+        stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
     case Event(TickPruneStaleChannels, d) =>
@@ -372,13 +319,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // let's clean the db and send the events
       staleChannels.foreach {
         case shortChannelId =>
-          log.info(s"pruning shortChannelId=${shortChannelId.toHexString} (stale)")
+          log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
           db.removeChannel(shortChannelId) // NB: this also removes channel updates
           context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
       staleNodes.foreach {
         case nodeId =>
-          log.info(s"pruning nodeId=$nodeId (stale)")
+          log.info("pruning nodeId={} (stale)", nodeId)
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
@@ -386,12 +333,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
-      log.info(s"excluding shortChannelId=${shortChannelId.toHexString} from nodeId=$nodeId for duration=$banDuration")
+      log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId.toHexString, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
       stay using d.copy(excludedChannels = d.excludedChannels + desc)
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      log.info(s"reinstating shortChannelId=${shortChannelId.toHexString} from nodeId=$nodeId")
+      log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId.toHexString, nodeId)
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
     case Event('nodes, d) =>
@@ -423,27 +370,129 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // we add them to the publicly-announced updates (order matters!! local/assisted channel_updates will override channel_updates received by the network)
       val updates1 = d.updates ++ updates0
       // we then filter out the currently excluded channels
-      val updates2 = updates1.filterKeys(!d.excludedChannels.contains(_))
+      val updates2 = updates1 -- d.excludedChannels
       // we also filter out disabled channels, and channels/nodes that are blacklisted for this particular request
       val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
-      log.info(s"finding a route $start->$end with ignoreNodes=${ignoreNodes.map(_.toBin).mkString(",")} ignoreChannels=${ignoreChannels.map(_.toHexString).mkString(",")}")
+      log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
       findRoute(start, end, updates3).map(r => RouteResponse(r, ignoreNodes, ignoreChannels)) pipeTo sender
       stay
   }
 
-  onTransition {
-    case _ -> NORMAL =>
-      log.info(s"current status channels=${nextStateData.channels.size} nodes=${nextStateData.nodes.size} updates=${nextStateData.updates.size} privateChannels=${nextStateData.privateChannels.size} privateUpdates=${nextStateData.privateUpdates.size}")
-      log.info(s"children=${context.children.size} rebroadcast=${nextStateData.rebroadcast.size} stash.channels=${nextStateData.stash.channels.size} stash.nodes=${nextStateData.stash.nodes.size} stash.updates=${nextStateData.stash.updates.size} awaiting=${nextStateData.awaiting.size} excludedChannels=${nextStateData.excludedChannels.size}")
+  initialize()
+
+  def handle(n: NodeAnnouncement, origin: ActorRef, d: Data): Data =
+    if (d.stash.nodes.contains(n)) {
+      log.debug("ignoring {} (already stashed)", n)
+      val origins = d.stash.nodes(n) + origin
+      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> origins)))
+    } else if (d.rebroadcast.nodes.contains(n)) {
+      log.debug("ignoring {} (pending rebroadcast)", n)
+      val origins = d.rebroadcast.nodes(n) + origin
+      d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
+    } else if (d.nodes.contains(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
+      log.debug("ignoring {} (old timestamp or duplicate)", n)
+      d
+    } else if (!Announcements.checkSig(n)) {
+      log.warning("bad signature for {}", n)
+      origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+      d
+    } else if (d.nodes.contains(n.nodeId)) {
+      log.debug("updated node nodeId={}", n.nodeId)
+      context.system.eventStream.publish(NodeUpdated(n))
+      db.updateNode(n)
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
+    } else if (d.channels.values.exists(c => isRelatedTo(c, n.nodeId))) {
+      log.debug("added node nodeId={}", n.nodeId)
+      context.system.eventStream.publish(NodeDiscovered(n))
+      db.addNode(n)
+      d.copy(nodes = d.nodes + (n.nodeId -> n), rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> Set(origin))))
+    } else if (d.awaiting.keys.exists(c => isRelatedTo(c, n.nodeId))) {
+      log.debug("stashing {}", n)
+      d.copy(stash = d.stash.copy(nodes = d.stash.nodes + (n -> Set(origin))))
+    } else {
+      log.debug("ignoring {} (no related channel found)", n)
+      // there may be a record if we have just restarted
+      db.removeNode(n.nodeId)
+      d
+    }
+
+  def handle(u: ChannelUpdate, origin: ActorRef, d: Data): Data =
+    if (d.channels.contains(u.shortChannelId)) {
+      // related channel is already known (note: this means no related channel_update is in the stash)
+      val publicChannel = true
+      val c = d.channels(u.shortChannelId)
+      val desc = getDesc(u, c)
+      if (d.rebroadcast.updates.contains(u)) {
+        log.debug("ignoring {} (pending rebroadcast)", u)
+        val origins = d.rebroadcast.updates(u) + origin
+        d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)))
+      } else if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
+        log.debug("ignoring {} (old timestamp or duplicate)", u)
+        d
+      } else if (!Announcements.checkSig(u, desc.a)) {
+        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
+        origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+        d
+      } else if (d.updates.contains(desc)) {
+        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        db.updateChannelUpdate(u)
+        d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))))
+      } else {
+        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        db.addChannelUpdate(u)
+        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))))
+      }
+    } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
+      // channel is currently being validated
+      if (d.stash.updates.contains(u)) {
+        log.debug("ignoring {} (already stashed)", u)
+        val origins = d.stash.updates(u) + origin
+        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> origins)))
+      } else {
+        log.debug("stashing {}", u)
+        d.copy(stash = d.stash.copy(updates = d.stash.updates + (u -> Set(origin))))
+      }
+    } else if (d.privateChannels.contains(u.shortChannelId)) {
+      val publicChannel = false
+      val remoteNodeId = d.privateChannels(u.shortChannelId)
+      val (a, b) = if (Announcements.isNode1(nodeParams.nodeId, remoteNodeId)) (nodeParams.nodeId, remoteNodeId) else (remoteNodeId, nodeParams.nodeId)
+      val desc = if (Announcements.isNode1(u.flags)) ChannelDesc(u.shortChannelId, a, b) else ChannelDesc(u.shortChannelId, b, a)
+      if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
+        log.debug("ignoring {} (old timestamp or duplicate)", u)
+        d
+      } else if (!Announcements.checkSig(u, desc.a)) {
+        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
+        origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
+        d
+      } else if (d.privateUpdates.contains(desc)) {
+        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+      } else {
+        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        context.system.eventStream.publish(ChannelUpdateReceived(u))
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+      }
+    } else {
+      log.debug("ignoring announcement {} (unknown channel)", u)
+      d
+    }
+
+  def handleSendState(remote: ActorRef, d: Data): Data = {
+    log.info("sending all announcements to {}: channels={} nodes={} updates={}", remote, d.channels.size, d.nodes.size, d.updates.size)
+    val batch = d.channels.values ++ d.nodes.values ++ d.updates.values
+    // we group and add delays to leave room for channel messages
+    val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
+    context watch actor
+    d.copy(sendingState = d.sendingState + actor)
   }
 
-  initialize()
 
 }
 
 object Router {
-
-  val MAX_PARALLEL_JSONRPC_REQUESTS = 50
 
   def props(nodeParams: NodeParams, watcher: ActorRef) = Props(new Router(nodeParams, watcher))
 
@@ -458,19 +507,6 @@ object Router {
     extraRoute.zip(nextNodeIds).map {
       case (extraHop: ExtraHop, nextNodeId) => (ChannelDesc(extraHop.shortChannelId, extraHop.nodeId, nextNodeId) -> toFakeUpdate(extraHop))
     }.toMap
-  }
-
-  /**
-    * Helper method to build a ChannelDesc, *nodeX and nodeY are provided in no particular order* and will be sorted
-    *
-    * @param u
-    * @param nodeX
-    * @param nodeY
-    * @return a ChannelDesc
-    */
-  def getDesc(u: ChannelUpdate, nodeX: PublicKey, nodeY: PublicKey): ChannelDesc = {
-    val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeX, nodeY)) (nodeX, nodeY) else (nodeY, nodeX)
-    if (Announcements.isNode1(u.flags)) ChannelDesc(u.shortChannelId, nodeId1, nodeId2) else ChannelDesc(u.shortChannelId, nodeId2, nodeId1)
   }
 
   def getDesc(u: ChannelUpdate, channel: ChannelAnnouncement): ChannelDesc = {
@@ -499,9 +535,10 @@ object Router {
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels
-      .filter(c => fromShortId(c.shortChannelId)._1 < staleThresholdBlocks) // consider only channels older than 2 weeks
-      .filter(c => updates.exists(_.shortChannelId == c.shortChannelId)) // channel must have updates
-      .filter(c => updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
+      .filter(c =>
+        fromShortId(c.shortChannelId)._1 < staleThresholdBlocks // consider only channels older than 2 weeks
+          && updates.exists(_.shortChannelId == c.shortChannelId) // channel must have updates
+          && updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
     staleChannels.map(_.shortChannelId)
   }
 
@@ -509,10 +546,11 @@ object Router {
     * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
     */
   def filterUpdates(updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) =
-    updates
-      .filterNot(u => ignoreNodes.map(_.toBin).contains(u._1.a) || ignoreNodes.map(_.toBin).contains(u._1.b))
-      .filterNot(u => ignoreChannels.contains(u._1.id))
-      .filter(u => Announcements.isEnabled(u._2.flags))
+    updates.filter { case (desc, u) =>
+      !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b) &&
+        !ignoreChannels.contains(desc.id) &&
+        Announcements.isEnabled(u.flags)
+    }
 
   def findRouteDijkstra(localNodeId: PublicKey, targetNodeId: PublicKey, channels: Iterable[ChannelDesc]): Seq[ChannelDesc] = {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf

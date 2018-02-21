@@ -23,4 +23,4 @@ object PortChecker {
 
 }
 
-case class TCPBindException(port: Int) extends RuntimeException
+case class TCPBindException(port: Int) extends RuntimeException(s"could not bind to port $port")

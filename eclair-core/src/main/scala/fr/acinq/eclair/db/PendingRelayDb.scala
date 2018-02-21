@@ -1,6 +1,7 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.BinaryData
+import fr.acinq.eclair.channel.Command
 
 /**
   * This database stores the preimages that we have received from downstream
@@ -14,12 +15,12 @@ import fr.acinq.bitcoin.BinaryData
   * to handle all corner cases.
   *
   */
-trait PreimagesDb {
+trait PendingRelayDb {
 
-  def addPreimage(channelId: BinaryData, htlcId: Long, paymentPreimage: BinaryData)
+  def addPendingRelay(channelId: BinaryData, htlcId: Long, cmd: Command)
 
-  def removePreimage(channelId: BinaryData, htlcId: Long)
+  def removePendingRelay(channelId: BinaryData, htlcId: Long)
 
-  def listPreimages(channelId: BinaryData): List[(BinaryData, Long, BinaryData)]
+  def listPendingRelay(channelId: BinaryData): Seq[Command]
 
 }

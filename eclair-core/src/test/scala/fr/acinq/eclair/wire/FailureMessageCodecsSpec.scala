@@ -11,7 +11,7 @@ import scala.util.Random
   * Created by PM on 31/05/2016.
   */
 @RunWith(classOf[JUnitRunner])
-class FailureMessageLightningMessageCodecsSpec extends FunSuite {
+class FailureMessageCodecsSpec extends FunSuite {
   val channelUpdate = ChannelUpdate(
     signature = BinaryData("3045022100c451cd65c88f55b1767941a247e849e12f5f4d4a93a07316659e22f5267d2088022009042a595c6bc8942cd9d729317b82b306edc259fb6b3a3cecb3dd1bd446e90601"),
     chainHash = Block.RegtestGenesisBlock.hash,

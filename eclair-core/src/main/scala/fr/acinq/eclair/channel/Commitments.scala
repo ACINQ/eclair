@@ -47,7 +47,8 @@ case class Commitments(localParams: LocalParams, remoteParams: RemoteParams,
 
   def hasTimedoutOutgoingHtlcs(blockheight: Long): Boolean =
     localCommit.spec.htlcs.exists(htlc => htlc.direction == OUT && blockheight >= htlc.add.expiry) ||
-      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)
+      remoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry) ||
+      remoteNextCommitInfo.left.toOption.map(_.nextRemoteCommit.spec.htlcs.exists(htlc => htlc.direction == IN && blockheight >= htlc.add.expiry)).getOrElse(false)
 
   def addLocalProposal(proposal: UpdateMessage): Commitments = Commitments.addLocalProposal(this, proposal)
 
@@ -194,9 +195,9 @@ object Commitments {
       case None => throw UnknownHtlcId(commitments.channelId, cmd.id)
     }
 
-  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[Commitments, (Commitments, Origin)] =
+  def receiveFulfill(commitments: Commitments, fulfill: UpdateFulfillHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(commitments, OUT, fulfill.id) match {
-      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Right((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id)))
+      case Some(htlc) if htlc.paymentHash == sha256(fulfill.paymentPreimage) => Right((addRemoteProposal(commitments, fulfill), commitments.originChannels(fulfill.id), htlc))
       case Some(htlc) => throw InvalidHtlcPreimage(commitments.channelId, fulfill.id)
       case None => throw UnknownHtlcId(commitments.channelId, fulfill.id)
     }
@@ -249,20 +250,20 @@ object Commitments {
     }
   }
 
-  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[Commitments, (Commitments, Origin)] =
+  def receiveFail(commitments: Commitments, fail: UpdateFailHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] =
     getHtlcCrossSigned(commitments, OUT, fail.id) match {
-      case Some(htlc) => Right((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id)))
+      case Some(htlc) => Right((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
       case None => throw UnknownHtlcId(commitments.channelId, fail.id)
     }
 
-  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, (Commitments, Origin)] = {
+  def receiveFailMalformed(commitments: Commitments, fail: UpdateFailMalformedHtlc): Either[Commitments, (Commitments, Origin, UpdateAddHtlc)] = {
     // A receiving node MUST fail the channel if the BADONION bit in failure_code is not set for update_fail_malformed_htlc.
     if ((fail.failureCode & FailureMessageCodecs.BADONION) == 0) {
       throw InvalidFailureCode(commitments.channelId)
     }
 
     getHtlcCrossSigned(commitments, OUT, fail.id) match {
-      case Some(htlc) => Right((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id)))
+      case Some(htlc) => Right((addRemoteProposal(commitments, fail), commitments.originChannels(fail.id), htlc))
       case None => throw UnknownHtlcId(commitments.channelId, fail.id)
     }
   }

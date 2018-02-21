@@ -11,7 +11,7 @@ cd libbase58
 cd
 git clone https://github.com/ElementsProject/lightning.git
 cd lightning
-git checkkout fce9ee29e3c37b4291ebb050e6a687cfaa7df95a
+git checkout fce9ee29e3c37b4291ebb050e6a687cfaa7df95a
 git submodule init
 git submodule update
 make

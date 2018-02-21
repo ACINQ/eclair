@@ -31,7 +31,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
   }
 
   override def removeChannel(channelId: BinaryData): Unit = {
-    using(sqlite.prepareStatement("DELETE FROM preimages WHERE channel_id=?")) { statement =>
+    using(sqlite.prepareStatement("DELETE FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       statement.executeUpdate()
     }
@@ -42,10 +42,10 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     }
   }
 
-  override def listChannels(): List[HasCommitments] = {
+  override def listChannels(): Seq[HasCommitments] = {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels")
-      codecList(rs, stateDataCodec)
+      codecSequence(rs, stateDataCodec)
     }
   }
 }

@@ -1,6 +1,6 @@
 package fr.acinq.eclair.payment
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
+import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
@@ -42,7 +42,7 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[State, Data] {
 
   import PaymentLifecycle._
 

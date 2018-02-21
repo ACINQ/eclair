@@ -1,15 +1,11 @@
 package fr.acinq.eclair.blockchain.electrum
 
-import java.io.File
-
-import akka.actor.{ActorRef, LoggingFSM, Props}
-import com.google.common.io.Files
+import akka.actor.{ActorRef, FSM, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, MnemonicCode, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptFlags, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.Error
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{GetTransaction, GetTransactionResponse, TransactionHistoryItem, computeScriptHash}
-import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.transactions.Transactions
 import grizzled.slf4j.Logging
 
@@ -28,16 +24,15 @@ import scala.util.{Failure, Success, Try}
   * client <--- ask tx        ----- wallet
   * client ---- tx            ----> wallet
   *
-  * @param mnemonics
+  * @param seed
   * @param client
   * @param params
   */
-class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumWallet.WalletParameters) extends LoggingFSM[ElectrumWallet.State, ElectrumWallet.Data] {
+class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
   import ElectrumWallet._
   import params._
 
-  val seed = MnemonicCode.toSeed(mnemonics, "")
   val master = DeterministicWallet.generate(seed)
 
   val accountMaster = accountKey(master)
@@ -241,7 +236,6 @@ class ElectrumWallet(mnemonics: Seq[String], client: ActorRef, params: ElectrumW
   }
 
   whenUnhandled {
-    case Event(GetMnemonicCode, _) => stay replying GetMnemonicCodeResponse(mnemonics)
 
     case Event(GetCurrentReceiveAddress, data) => stay replying GetCurrentReceiveAddressResponse(data.currentReceiveAddress)
 
@@ -263,20 +257,7 @@ object ElectrumWallet {
   // use 32 bytes seed, which will generate a 24 words mnemonic code
   val SEED_BYTES_LENGTH = 32
 
-  def props(mnemonics: Seq[String], client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(mnemonics, client, params))
-
-  def props(file: File, client: ActorRef, params: WalletParameters): Props = {
-    val entropy: BinaryData = (file.exists(), file.canRead(), file.isFile) match {
-      case (true, true, true) => Files.toByteArray(file)
-      case (false, _, _) =>
-        val buffer = randomBytes(SEED_BYTES_LENGTH)
-        Files.write(buffer, file)
-        buffer
-      case _ => throw new IllegalArgumentException(s"cannot create wallet:$file exist but cannot read from")
-    }
-    val mnemonics = MnemonicCode.toMnemonics(entropy)
-    Props(new ElectrumWallet(mnemonics, client, params))
-  }
+  def props(seed: BinaryData, client: ActorRef, params: WalletParameters): Props = Props(new ElectrumWallet(seed, client, params))
 
   case class WalletParameters(chainHash: BinaryData, minimumFee: Satoshi = Satoshi(2000), dustLimit: Satoshi = Satoshi(546), swipeRange: Int = 10, allowSpendUnconfirmed: Boolean = true)
 
@@ -288,9 +269,6 @@ object ElectrumWallet {
 
   sealed trait Request
   sealed trait Response
-
-  case object GetMnemonicCode extends RuntimeException
-  case class GetMnemonicCodeResponse(mnemonics: Seq[String]) extends Response
 
   case object GetBalance extends Request
   case class GetBalanceResponse(confirmed: Satoshi, unconfirmed: Satoshi) extends Response
@@ -418,12 +396,12 @@ object ElectrumWallet {
   }
 
   /**
-    * Wallet state, which stores data returned by EletrumX servers.
+    * Wallet state, which stores data returned by ElectrumX servers.
     * Most items are indexed by script hash (i.e. by pubkey script sha256 hash).
     * Height follow ElectrumX's conventions:
     * - h > 0 means that the tx was confirmed at block #h
     * - 0 means unconfirmed, but all input are confirmed
-    * < 0 means unconfirmed, and sonme inputs are unconfirmed as well
+    * < 0 means unconfirmed, and some inputs are unconfirmed as well
     *
     * @param tip                        current blockchain tip
     * @param accountKeys                account keys

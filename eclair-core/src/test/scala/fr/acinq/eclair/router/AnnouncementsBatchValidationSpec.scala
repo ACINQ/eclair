@@ -1,10 +1,13 @@
 package fr.acinq.eclair.router
 
 import akka.actor.ActorSystem
+import akka.testkit.TestProbe
+import akka.pattern.pipe
 import fr.acinq.bitcoin.Crypto.PrivateKey
 import fr.acinq.bitcoin.{BinaryData, Block, Satoshi, Script, Transaction}
+import fr.acinq.eclair.blockchain.ValidateResult
 import fr.acinq.eclair.blockchain.bitcoind.BitcoinCoreWallet
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate}
 import fr.acinq.eclair.{randomKey, toShortId}
@@ -27,7 +30,7 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     import scala.concurrent.ExecutionContext.Implicits.global
 
     implicit val system = ActorSystem()
-    implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
+    implicit val extendedBitcoinClient = new ExtendedBitcoinClient(new BasicBitcoinJsonRPCClient(user = "foo", password = "bar", host = "localhost", port = 18332))
 
     val channels = for (i <- 0 until 50) yield {
       // let's generate a block every 10 txs so that we can compute short ids
@@ -37,16 +40,16 @@ class AnnouncementsBatchValidationSpec extends FunSuite {
     generateBlocks(6)
     val announcements = channels.map(makeChannelAnnouncement)
 
-    val alteredAnnouncements = announcements.zipWithIndex map {
-      case (ann, 3) => ann.copy(shortChannelId = Long.MaxValue) // invalid block height
-      case (ann, 7) => ann.copy(shortChannelId = toShortId(500, 1000, 0)) // invalid tx index
-      case (ann, _) => ann
-    }
+    val sender = TestProbe()
 
-    val res = Await.result(extendedBitcoinClient.getParallel(alteredAnnouncements), 10 seconds)
+    extendedBitcoinClient.validate(announcements(0)).pipeTo(sender.ref)
+    sender.expectMsgType[ValidateResult].tx.isDefined
 
-    assert(res.r(3).tx == None)
-    assert(res.r(7).tx == None)
+    extendedBitcoinClient.validate(announcements(1).copy(shortChannelId = Long.MaxValue)).pipeTo(sender.ref) // invalid block height
+    sender.expectMsgType[ValidateResult].tx.isEmpty
+
+    extendedBitcoinClient.validate(announcements(2).copy(shortChannelId = toShortId(500, 1000, 0))).pipeTo(sender.ref) // invalid tx index
+    sender.expectMsgType[ValidateResult].tx.isEmpty
 
   }
 

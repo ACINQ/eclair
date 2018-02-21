@@ -68,13 +68,21 @@
                                                 <TableView fx:constant="CONSTRAINED_RESIZE_POLICY"/>
                                             </columnResizePolicy>
                                             <columns>
-                                                <TableColumn fx:id="networkChannelsIdColumn" minWidth="120.0"
-                                                             prefWidth="170.0" maxWidth="300.0"
+                                                <TableColumn fx:id="networkChannelsIdColumn"
+                                                             minWidth="120.0" prefWidth="170.0" maxWidth="200.0"
                                                              text="Short Channel Id"/>
                                                 <TableColumn fx:id="networkChannelsNode1Column" text="Node 1"/>
-                                                <TableColumn fx:id="networkChannelsDirectionsColumn" minWidth="30.0"
-                                                             prefWidth="30.0" maxWidth="30.0"/>
+                                                <TableColumn fx:id="networkChannelsDirectionsColumn"
+                                                             minWidth="30.0" prefWidth="30.0" maxWidth="30.0"/>
                                                 <TableColumn fx:id="networkChannelsNode2Column" text="Node 2"/>
+                                                <TableColumn fx:id="networkChannelsCapacityColumn" text="Capacity"
+                                                             minWidth="80.0" prefWidth="120.0" maxWidth="200.0"/>
+                                                <TableColumn fx:id="networkChannelsFeeBaseMsatColumn"
+                                                             minWidth="100.0" prefWidth="120.0" maxWidth="200.0"
+                                                             text="Base Fee"/>
+                                                <TableColumn fx:id="networkChannelsFeeProportionalMillionthsColumn"
+                                                             minWidth="60.0" prefWidth="120.0" maxWidth="200.0"
+                                                             text="Proportional Fee"/>
                                             </columns>
                                         </TableView>
                                     </children>
@@ -231,26 +239,33 @@
                     <menus>
                         <Menu mnemonicParsing="false" text="Channels">
                             <items>
-                                <MenuItem fx:id="menuOpen" mnemonicParsing="false" onAction="#handleOpenChannel" text="Open channel...">
+                                <MenuItem fx:id="menuOpen" mnemonicParsing="false" onAction="#handleOpenChannel"
+                                          text="Open channel...">
                                     <accelerator>
-                                        <KeyCodeCombination code="O" control="DOWN" alt="UP" meta="UP" shift="UP" shortcut="UP" />
+                                        <KeyCodeCombination code="O" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
                                     </accelerator>
                                 </MenuItem>
                                 <SeparatorMenuItem mnemonicParsing="false"/>
-                                <MenuItem fx:id="menuSend" mnemonicParsing="false" onAction="#handleSendPayment" text="Send Payment...">
+                                <MenuItem fx:id="menuSend" mnemonicParsing="false" onAction="#handleSendPayment"
+                                          text="Send Payment...">
                                     <accelerator>
-                                        <KeyCodeCombination code="P" control="DOWN" alt="UP" meta="UP" shift="UP" shortcut="UP" />
+                                        <KeyCodeCombination code="P" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
                                     </accelerator>
                                 </MenuItem>
-                                <MenuItem fx:id="menuReceive" mnemonicParsing="false" onAction="#handleReceivePayment" text="Receive Payment...">
+                                <MenuItem fx:id="menuReceive" mnemonicParsing="false" onAction="#handleReceivePayment"
+                                          text="Receive Payment...">
                                     <accelerator>
-                                        <KeyCodeCombination code="N" control="DOWN" alt="UP" meta="UP" shift="UP" shortcut="UP" />
+                                        <KeyCodeCombination code="N" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
                                     </accelerator>
                                 </MenuItem>
                                 <SeparatorMenuItem mnemonicParsing="false"/>
                                 <MenuItem mnemonicParsing="false" onAction="#handleCloseRequest" text="Close">
                                     <accelerator>
-                                        <KeyCodeCombination code="Q" control="DOWN" alt="UP" meta="UP" shift="UP" shortcut="UP" />
+                                        <KeyCodeCombination code="Q" control="DOWN" alt="UP" meta="UP" shift="UP"
+                                                            shortcut="UP"/>
                                     </accelerator>
                                 </MenuItem>
                             </items>
