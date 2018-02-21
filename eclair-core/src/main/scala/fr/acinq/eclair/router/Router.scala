@@ -271,21 +271,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
       sender ! TransportHandler.ReadAck(query)
-      if (chainHash != nodeParams.chainHash) {
-        log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
-      } else {
-        def keep(id: Long): Boolean = {
-          val (height, _, _) = fromShortId(id)
-          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
-        }
-
-        // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-        val shortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
-
-        val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
-        log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.length)
-        sender ! reply
-      }
+      // On Android we ignore queries
       stay
 
     case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
@@ -309,20 +295,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(query@QueryShortChannelId(chainHash, data), d) =>
       sender ! TransportHandler.ReadAck(query)
-      if (chainHash != nodeParams.chainHash) {
-        log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
-      } else {
-        val shortChannelIds = Announcements.unzip(data)
-        shortChannelIds.foreach(shortChannelId => {
-          d.channels.get(shortChannelId) match {
-            case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)
-            case Some(ca) =>
-              sender ! ca
-              d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
-              d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => sender ! u)
-          }
-        })
-      }
+      // On Android we ignore queries
       stay
   }
 
