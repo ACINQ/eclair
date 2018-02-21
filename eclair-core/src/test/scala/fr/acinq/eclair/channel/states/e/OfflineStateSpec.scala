@@ -1,9 +1,10 @@
 package fr.acinq.eclair.channel.states.e
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, ScriptFlags, Transaction}
 import fr.acinq.bitcoin.Crypto.Scalar
 import fr.acinq.eclair.TestkitBaseClass
+import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
@@ -171,7 +172,7 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
   }
 
-  test("discover that we have a revoked commitment") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
+  test("discover that we have a revoked commitment") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _) =>
     val sender = TestProbe()
 
     // first let's ge
@@ -211,6 +212,17 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     // ... and ask bob to publish its current commitment
     val error = alice2bob.expectMsgType[Error]
     assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+
+    // alice now waits for bob to publish its commitment
+    awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+
+    // bob is nice and publishes its commitment
+    val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+    sender.send(alice, WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx))
+
+    // alice is able to claim its main output
+    val claimMainOutput = alice2blockchain.expectMsgType[PublishAsap].tx
+    Transaction.correctlySpends(claimMainOutput, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
 
   }
 
