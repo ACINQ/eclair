@@ -73,16 +73,16 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
         origin_opt.map(origin => origin ! "connected")
 
         if (Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
-          if (!Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) && !Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) {
-            // "old" nodes, do as before
-            router ! SendRoutingState(transport)
-          } else {
+          if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)) {
             // if our peer support channel queries we do nothing, they will send us their filters
             log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
+          } else {
+            // "old" nodes, do as before
+            router ! SendRoutingState(transport)
           }
         }
-        if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL) || Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)) {
-          // if they support channel queries, ask for their filter
+        if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)) {
+          // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(transport)
         }
 
