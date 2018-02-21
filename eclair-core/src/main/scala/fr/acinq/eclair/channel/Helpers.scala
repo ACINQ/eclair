@@ -301,6 +301,8 @@ object Helpers {
       * Claim all the HTLCs that we've received from their current commit tx
       *
       * @param commitments our commitment data, which include payment preimages
+      * @param remoteCommit the remote commitment data to use to claim outputs (it can be their current or next commitment)
+      * @param tx the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitTxOutputs(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
@@ -320,7 +322,7 @@ object Helpers {
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
 
       // remember we are looking at the remote commitment so IN for them is really OUT for us and vice versa
-      val txes = commitments.remoteCommit.spec.htlcs.collect {
+      val txes = remoteCommit.spec.htlcs.collect {
         // incoming htlc for which we have the preimage: we spend it directly
         case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
@@ -354,11 +356,9 @@ object Helpers {
       *
       * @param commitments  either our current commitment data in case of usual remote uncooperative closing
       *                     or our outdated commitment data in case of data loss protection procedure
-      *
       * @param remoteCommit either our current remoteCommit/remoteNextCommit in case of usual remote uncooperative closing
       *                     or our outdated remoteCommit with `.remotePerCommitmentPoint` updated to `myCurrentPerCommitmentPoint`
       *                     taken from their `ChannelReestablish`
-      *
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitMainOutput(commitments: Commitments, remoteCommit: RemoteCommit, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
