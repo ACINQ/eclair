@@ -11,6 +11,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Announcements.zip
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
@@ -32,6 +33,7 @@ case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChan
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendRoutingState(to: ActorRef)
+case class SendChannelQuery(to: ActorRef)
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
@@ -258,6 +260,69 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // if the node that created this channel tells us it is unusable (only permanent channel failure) we forget about it
       // note that if the channel is in fact still alive, we will get it again via network announcements anyway
       ignoreChannels.foreach(shortChannelId => self ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)))
+      stay
+
+    case Event(SendChannelQuery(remote), d: Data) =>
+      // ask for everything
+      val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
+      log.debug("querying channel range {}", query)
+      remote ! query
+      stay
+
+    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
+      sender ! TransportHandler.ReadAck(query)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        def keep(id: Long): Boolean = {
+          val (height, _, _) = fromShortId(id)
+          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+        }
+
+        // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
+        val shortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
+
+        val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
+        log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.length)
+        sender ! reply
+      }
+      stay
+
+    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
+      sender ! TransportHandler.ReadAck(reply)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        val theirShortChannelIds = Announcements.unzip(data)
+
+        def keep(id: Long): Boolean = {
+          val (height, _, _) = fromShortId(id)
+          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+        }
+
+        val ourShortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
+        val missing = theirShortChannelIds diff ourShortChannelIds
+        log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
+        sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
+      }
+      stay
+
+    case Event(query@QueryShortChannelId(chainHash, data), d) =>
+      sender ! TransportHandler.ReadAck(query)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        val shortChannelIds = Announcements.unzip(data)
+        shortChannelIds.foreach(shortChannelId => {
+          d.channels.get(shortChannelId) match {
+            case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)
+            case Some(ca) =>
+              sender ! ca
+              d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
+              d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => sender ! u)
+          }
+        })
+      }
       stay
   }
 

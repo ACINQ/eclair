@@ -162,3 +162,15 @@ case class ChannelUpdate(signature: BinaryData,
 case class PerHopPayload(channel_id: Long,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
+
+case class QueryShortChannelId(chainHash: BinaryData,
+                               data: BinaryData) extends RoutingMessage
+
+case class QueryChannelRange(chainHash: BinaryData,
+                             firstBlockNum: Int,
+                             numberOfBlocks: Int) extends RoutingMessage
+
+case class ReplyChannelRange(chainHash: BinaryData,
+                             firstBlockNum: Int,
+                             numberOfBlocks: Int,
+                             data: BinaryData) extends RoutingMessage
