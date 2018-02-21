@@ -2,7 +2,7 @@ package fr.acinq.eclair.router
 
 import akka.actor.{ActorRef, FSM, Props, Terminated}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.BinaryData
+import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Script.{pay2wsh, write}
 import fr.acinq.eclair._
@@ -151,6 +151,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         sender ! TransportHandler.ReadAck(c)
         // On Android, we don't validate announcements for now, it means that neither awaiting nor stashed announcements are used
+        db.addChannel(c, BinaryData(""), Satoshi(0))
         stay using d.copy(
           channels = d.channels + (c.shortChannelId -> c),
           privateChannels = d.privateChannels - c.shortChannelId // we remove fake announcements that we may have made before)
