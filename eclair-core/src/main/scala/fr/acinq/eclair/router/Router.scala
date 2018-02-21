@@ -15,6 +15,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Announcements.zip
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
@@ -358,67 +359,66 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(SendChannelQuery(remote), _) =>
       // ask for everything
-      val query = QueryChannelRange(nodeParams.chainHash, 0, Int.MaxValue)
+      val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
       log.debug("querying channel range {}", query)
       remote ! query
       stay
 
-    case Event(query@QueryChannelRange(chainHash, _, _), _) if chainHash != nodeParams.chainHash =>
-      log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) if chainHash != nodeParams.chainHash =>
       sender ! TransportHandler.ReadAck(query)
-      stay
-
-    case Event(query@QueryChannelRange(chainHash, firstBlockNum, numberOfBlocks), d) =>
-
-      def keep(id: Long) : Boolean = {
-        val (height, _, _) = fromShortId(id)
-        height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
-      }
-
-      // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-      val shortChannelIds = d.channels.keys.collect({ case id if keep(id) => id }).toVector.sorted
-
-      val reply = Announcements.makeReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, shortChannelIds)
-      log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.length)
-      sender ! TransportHandler.ReadAck(query)
-      sender ! reply
-      stay
-
-    case Event(query@QueryShortChannelId(chainHash, _), _) if chainHash != nodeParams.chainHash =>
-      log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
-      sender ! TransportHandler.ReadAck(query)
-      stay
-
-    case Event(query@QueryShortChannelId(chainHash, data), d) =>
-      sender ! TransportHandler.ReadAck(query)
-      val shortChannelIds = Announcements.unzip(data)
-      shortChannelIds.foreach(shortChannelId => {
-        d.channels.get(shortChannelId) match {
-          case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)
-          case Some(ca) =>
-            sender ! ca
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
-            d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => sender ! u)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        def keep(id: Long): Boolean = {
+          val (height, _, _) = fromShortId(id)
+          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
         }
-      })
+
+        // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
+        val shortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
+
+        val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
+        log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.length)
+        sender ! reply
+      }
       stay
 
     case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
       sender ! TransportHandler.ReadAck(reply)
-      val theirShortChannelIds = Announcements.unzip(data)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        val theirShortChannelIds = Announcements.unzip(data)
 
-      def keep(id: Long) : Boolean = {
-        val (height, _, _) = fromShortId(id)
-        height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+        def keep(id: Long): Boolean = {
+          val (height, _, _) = fromShortId(id)
+          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
+        }
+
+        val ourShortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
+        val missing = theirShortChannelIds diff ourShortChannelIds
+        log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
+        sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
       }
+      stay
 
-      val ourShortChannelIds = d.channels.keys.collect({ case id if keep(id) => id }).toVector.sorted
-      val missing = theirShortChannelIds.toSet -- ourShortChannelIds.toSet
-      log.info("we received their reply, we're missing {} channel annoucements/updates", missing.size)
-      sender ! QueryShortChannelId(chainHash, missing.toSeq)
-      stay()
-
-    case Event(_ : TransportHandler.ReadAck, _) => stay()
+    case Event(query@QueryShortChannelId(chainHash, data), d) =>
+      sender ! TransportHandler.ReadAck(query)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        val shortChannelIds = Announcements.unzip(data)
+        shortChannelIds.foreach(shortChannelId => {
+          d.channels.get(shortChannelId) match {
+            case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)
+            case Some(ca) =>
+              sender ! ca
+              d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId1, ca.nodeId2)).map(u => sender ! u)
+              d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => sender ! u)
+          }
+        })
+      }
+      stay
   }
 
   initialize()

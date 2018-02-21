@@ -182,16 +182,4 @@ object Announcements {
       stream.close()
     }
   }
-
-  /**
-    * TODO: support other encoding formats than gzip
-    * @param chainHash chain hash
-    * @param firstBlockNum number of the first block
-    * @param numberOfBlocks number of blocks
-    * @param shortChannelIds short channel ids that match [firstBlockNum, firstBlockNum + numberOfBlocks]
-    * @return a ReplyChannelRange message
-    */
-  def makeReplyChannelRange(chainHash: BinaryData, firstBlockNum: Int, numberOfBlocks: Int, shortChannelIds: Seq[Long]) : ReplyChannelRange = {
-    ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
-  }
 }
