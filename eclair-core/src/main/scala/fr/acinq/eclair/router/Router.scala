@@ -24,7 +24,7 @@ import scala.collection.immutable.Queue
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Random, Success, Try}
+import scala.util.{Success, Try}
 
 // @formatter:off
 
@@ -556,10 +556,10 @@ object Router {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
     val g = new DefaultDirectedGraph[PublicKey, DescEdge](classOf[DescEdge])
-    Random.shuffle(channels).foreach(d => {
+    channels.foreach(d => {
       g.addVertex(d.a)
       g.addVertex(d.b)
-      g.addEdge(d.a, d.b, new DescEdge(d))
+      g.addEdge(d.a, d.b, DescEdge(d))
     })
     Try(Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))) match {
       case Success(Some(path)) => path.getEdgeList.map(_.desc)
