@@ -76,10 +76,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   val db = nodeParams.networkDb
 
-  // Note: It is possible that some channels have been closed while we were shutdown. Since we are directly loading channels
-  // in memory without checking they are still alive, we may advertise closed channels if someone connects to us right after
-  // startup. That being said, if we stay down long enough that a significant numbers of channels are closed, there is a chance
-  // other peers forgot about us in the meantime.
   {
     log.info("loading network announcements from db...")
     val channels = db.listChannels()
@@ -90,26 +86,21 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
 
-    // we immediately prune the db (maybe eclair was stopped for a long time)
-    val d = prune(
-      Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty),
-      cleanDb = true)
-
     // send events for remaining channels/nodes
-    d.channels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
-    d.nodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
+    initChannels.values.foreach(c => context.system.eventStream.publish(ChannelDiscovered(c, channels(c)._2)))
+    initNodes.values.foreach(n => context.system.eventStream.publish(NodeDiscovered(n)))
 
     // watch the funding tx of all these channels
     // note: some of them may already have been spent, in that case we will receive the watch event immediately
-    d.channels.values.foreach { c =>
+    initChannels.values.foreach { c =>
       val txid = channels(c)._1
       val (_, _, outputIndex) = fromShortId(c.shortChannelId)
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
 
-    log.info("loaded from db: channels={} nodes={} updates={}", d.channels.size, d.nodes.size, d.updates.size)
-    startWith(NORMAL, d)
+    log.info("loaded from db: channels={} nodes={} updates={}", initChannels.size, initNodes.size, initChannelUpdates.size)
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty))
   }
 
   when(NORMAL) {
