@@ -134,7 +134,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
     case Event(SendRoutingState(remote), d: Data) =>
-      log.info(s"getting valid announcements announcements")
+      log.info(s"getting valid announcements for $remote")
       val (validChannels, validNodes, validUpdates) = getValidAnnouncements(d.channels, d.nodes, d.updates)
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
