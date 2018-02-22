@@ -36,4 +36,4 @@ _eclair-cli()
             COMPREPLY=( $(compgen -W "${cmds} ${opts}" -- ${cur}) )
     esac
 }
-complete -o nosort -F _eclair-cli eclair-cli
+complete -o -F _eclair-cli eclair-cli
