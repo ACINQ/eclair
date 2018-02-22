@@ -19,7 +19,12 @@ class SimpleSupervisor(childProps: Props, childName: String, strategy: Superviso
   }
 
   // we allow at most <maxNrOfRetries> within <withinTimeRange>, otherwise the child actor is not restarted (this avoids restart loops)
-  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = true, maxNrOfRetries = 100, withinTimeRange = 1 minute) { case _ => strategy }
+  override val supervisorStrategy = OneForOneStrategy(loggingEnabled = false, maxNrOfRetries = 100, withinTimeRange = 1 minute) {
+    case t =>
+      // log this as silent errors are dangerous
+      log.error(t, s"supervisor caught error for child=$childName strategy=$strategy ")
+      strategy
+  }
 }
 
 object SimpleSupervisor {

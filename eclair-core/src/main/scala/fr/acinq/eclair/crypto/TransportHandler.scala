@@ -54,17 +54,16 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     makeReader(keyPair)
   }
 
-  def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]): Seq[T] = {
-    plaintextMessages.flatMap(plaintext => {
-      codec.decode(BitVector(plaintext.data)) match {
+  def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]): Map[T, Int] = {
+    var m: Map[T, Int] = Map()
+    plaintextMessages.foreach(plaintext => codec.decode(BitVector(plaintext.data)) match {
         case Attempt.Successful(DecodeResult(message, _)) =>
           listener ! message
-          Some(message)
+          m += (message -> (m.getOrElse(message, 0) + 1))
         case Attempt.Failure(err) =>
           log.error(s"cannot deserialize $plaintext: $err")
-          None
-      }
-    })
+      })
+    m
   }
 
   startWith(Handshake, HandshakeData(reader))
@@ -147,7 +146,10 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   when(WaitingForReadAck) {
     case Event(ReadAck(msg: T), d: WaitingForReadAckData[T]) =>
-      val unacked1 = d.unackedMessages diff List(msg) // TODO: NOT OPTIMAL!! but can't use a set because there might be duplicate messages
+      // how many occurences of this message are still unacked?
+      val remaining = d.unackedMessages.getOrElse(msg, 0) - 1
+      // if all occurences have been acked then we remove the keep from the map
+      val unacked1 = if (remaining > 0) d.unackedMessages + (msg -> remaining) else d.unackedMessages - msg
       if (unacked1.isEmpty) {
         log.debug("last incoming message was acked, resuming reading")
         connection ! Tcp.ResumeReading
@@ -305,11 +307,11 @@ object TransportHandler {
     def decrypt: (WaitingForCiphertextData, Seq[BinaryData]) = WaitingForCiphertextData.decrypt(this)
   }
 
-  case class WaitingForReadAckData[T](enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef, unackedMessages: Seq[T]) extends Data
+  case class WaitingForReadAckData[T](enc: CipherState, dec: CipherState, ciphertextLength: Option[Int], buffer: ByteString, listener: ActorRef, unackedMessages: Map[T, Int]) extends Data
 
   object WaitingForCiphertextData {
     @tailrec
-    def decrypt(state: WaitingForCiphertextData, acc: Seq[BinaryData] = Nil): (WaitingForCiphertextData, Seq[BinaryData]) = {
+    def decrypt(state: WaitingForCiphertextData, acc: Seq[BinaryData] = Vector()): (WaitingForCiphertextData, Seq[BinaryData]) = {
       (state.ciphertextLength, state.buffer.length) match {
         case (None, length) if length < 18 => (state, acc)
         case (None, _) =>

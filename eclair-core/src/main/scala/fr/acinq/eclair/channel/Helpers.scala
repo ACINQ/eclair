@@ -438,9 +438,11 @@ object Helpers {
       *
       * @param localCommit
       * @param tx
-      * @return a set of fulfills that need to be sent upstream if extraction was successful
+      * @return a set of pairs (add, fulfills) if extraction was successful:
+      *           - add is the htlc in the downstream channel from which we extracted the preimage
+      *           - fulfill needs to be sent to the upstream channel
       */
-    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[UpdateFulfillHtlc] = {
+    def extractPreimages(localCommit: LocalCommit, tx: Transaction)(implicit log: LoggingAdapter): Set[(UpdateAddHtlc, UpdateFulfillHtlc)] = {
       val paymentPreimages = tx.txIn.map(_.witness match {
         case ScriptWitness(Seq(localSig, paymentPreimage, htlcOfferedScript)) if paymentPreimage.size == 32 =>
           log.info(s"extracted paymentPreimage=$paymentPreimage from tx=$tx (claim-htlc-success)")
@@ -459,7 +461,7 @@ object Helpers {
         outgoingHtlcs.collect {
           case add if add.paymentHash == sha256(paymentPreimage) =>
             // let's just pretend we received the preimage from the counterparty and build a fulfill message
-            UpdateFulfillHtlc(add.channelId, add.id, paymentPreimage)
+            (add, UpdateFulfillHtlc(add.channelId, add.id, paymentPreimage))
         }
         // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
       }

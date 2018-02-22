@@ -5,6 +5,8 @@ import java.sql.{ResultSet, Statement}
 import scodec.Codec
 import scodec.bits.BitVector
 
+import scala.collection.immutable.Queue
+
 object SqliteUtils {
 
   /**
@@ -31,11 +33,11 @@ object SqliteUtils {
     * @tparam T
     * @return
     */
-  def codecList[T](rs: ResultSet, codec: Codec[T]): List[T] = {
-    var l: List[T] = Nil
+  def codecSequence[T](rs: ResultSet, codec: Codec[T]): Seq[T] = {
+    var q: Queue[T] = Queue()
     while (rs.next()) {
-      l = l :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
+      q = q :+ codec.decode(BitVector(rs.getBytes("data"))).require.value
     }
-    l
+    q
   }
 }

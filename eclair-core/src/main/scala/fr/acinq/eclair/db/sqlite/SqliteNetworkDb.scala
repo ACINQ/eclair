@@ -44,10 +44,10 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def listNodes(): List[NodeAnnouncement] = {
+  override def listNodes(): Seq[NodeAnnouncement] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM nodes")
-      codecList(rs, nodeAnnouncementCodec)
+      codecSequence(rs, nodeAnnouncementCodec)
     }
   }
 
@@ -73,12 +73,12 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
   override def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data, txid, capacity_sat FROM channels")
-      var l: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
+      var m: Map[ChannelAnnouncement, (BinaryData, Satoshi)] = Map()
       while (rs.next()) {
-        l = l + (channelAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value ->
+        m += (channelAnnouncementCodec.decode(BitVector(rs.getBytes("data"))).require.value ->
           (BinaryData(rs.getString("txid")), Satoshi(rs.getLong("capacity_sat"))))
       }
-      l
+      m
     }
   }
 
@@ -100,10 +100,10 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
     }
   }
 
-  override def listChannelUpdates(): List[ChannelUpdate] = {
+  override def listChannelUpdates(): Seq[ChannelUpdate] = {
     using(sqlite.createStatement()) { statement =>
       val rs = statement.executeQuery("SELECT data FROM channel_updates")
-      codecList(rs, channelUpdateCodec)
+      codecSequence(rs, channelUpdateCodec)
     }
   }
 
