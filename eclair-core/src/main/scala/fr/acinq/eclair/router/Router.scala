@@ -151,8 +151,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       }
       log.info(s"sending all announcements to $remote")
       val channelsSent = send(validChannels.values)
-      val updatesSent = send(validNodes.values)
-      val nodesSent = send(validUpdates.values)
+      val nodesSent = send(validNodes.values)
+      val updatesSent = send(validUpdates.values)
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remote, channelsSent, updatesSent, nodesSent)
       stay
 
