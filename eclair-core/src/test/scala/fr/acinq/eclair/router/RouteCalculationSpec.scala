@@ -194,7 +194,7 @@ class RouteCalculationSpec extends FunSuite {
     val id_a = toShortId(daysAgoInBlocks(16), 0, 0)
     val chan_a = channelAnnouncement(id_a)
     val upd_a = channelUpdate(id_a, daysAgoInSeconds(30))
-    // b is an old channel with no channel update  => KEPT
+    // b is an old channel with no channel update  => PRUNED
     val id_b = toShortId(daysAgoInBlocks(16), 1, 0)
     val chan_b = channelAnnouncement(id_b)
     // c is an old channel with a recent channel update  => KEPT
@@ -218,7 +218,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val staleChannels = Router.getStaleChannels(channels, updates).toSet
 
-    assert(staleChannels === Set(id_a))
+    assert(staleChannels === Set(id_a, id_b))
 
   }
 
