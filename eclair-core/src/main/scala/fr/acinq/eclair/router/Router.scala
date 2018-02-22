@@ -468,6 +468,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     }
 
   def sendState(remote: ActorRef, d: Data): Data = {
+    log.info(s"pruning before sending announcements")
     // we send only pruned data, but without modifying our state or the database
     val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
     // finally we remove nodes that aren't tied to any channels anymore
