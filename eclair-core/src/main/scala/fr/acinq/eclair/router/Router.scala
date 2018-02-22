@@ -134,15 +134,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
     case Event(SendRoutingState(remote), d: Data) =>
-      log.info(s"pruning before sending announcements")
-      // we send only pruned data, but without modifying our state or the database
-      val staleChannels = getStaleChannels(d.channels.values, d.updates)
-      val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
-      val staleNodes = staleChannels.map(d.channels).flatMap(c => Seq(c.nodeId1, c.nodeId2))
-      // finally we remove nodes that aren't tied to any channels anymore
-      val validChannels = d.channels -- staleChannels
-      val validUpdates = d.updates -- staleUpdates
-      val validNodes = d.nodes -- staleNodes
+      log.info(s"getting valid announcements announcements")
+      val (validChannels, validNodes, validUpdates) = getValidAnnouncements(d.channels, d.nodes, d.updates)
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -150,9 +143,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           c + 1
       }
       log.info(s"sending all announcements to $remote")
-      val channelsSent = send(validChannels.values)
-      val nodesSent = send(validNodes.values)
-      val updatesSent = send(validUpdates.values)
+      val channelsSent = send(validChannels)
+      val nodesSent = send(validNodes)
+      val updatesSent = send(validUpdates)
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remote, channelsSent, updatesSent, nodesSent)
       stay
 
@@ -302,7 +295,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // then we clean up the related channel updates
       val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
       // finally we remove nodes that aren't tied to any channels anymore
-      val staleNodes = staleChannels.map(d.channels).flatMap(c => Seq(c.nodeId1, c.nodeId2)).filter(d.nodes.contains)
+      val potentialStaleNodes = staleChannels.map(d.channels).flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet // deduped
+      val channels1 = d.channels -- staleChannels
+      // no need to iterate on all nodes, just on those that are affected by current pruning
+      val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
+
       // let's clean the db and send the events
       staleChannels.foreach {
         case shortChannelId =>
@@ -316,7 +313,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = d.channels -- staleChannels, updates = d.updates -- staleUpdates)
+      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
@@ -518,6 +515,23 @@ object Router {
         (latestUpdate_opt.isEmpty || latestUpdate_opt.get < staleThresholdSeconds) // channel must have updates more recent than two weeks
     }
     staleChannels.map(_.shortChannelId)
+  }
+
+  /**
+    * Filters announcements that we want to send to nodes asking an `initial_routing_sync`
+    *
+    * @param channels
+    * @param nodes
+    * @param updates
+    * @return
+    */
+  def getValidAnnouncements(channels: Map[Long, ChannelAnnouncement], nodes: Map[PublicKey, NodeAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): (Iterable[ChannelAnnouncement], Iterable[NodeAnnouncement], Iterable[ChannelUpdate]) = {
+    val staleChannels = getStaleChannels(channels.values, updates)
+    val validChannels = (channels -- staleChannels).values
+    val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
+    val validUpdates = (updates -- staleUpdates).values
+    val validNodes = validChannels.flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet.map(nodes)
+    (validChannels, validNodes, validUpdates)
   }
 
   /**
