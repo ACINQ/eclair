@@ -186,8 +186,6 @@ class RouteCalculationSpec extends FunSuite {
 
     def channelUpdate(shortChannelId: Long, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
 
-    def desc(shortChannelId: Long) = ChannelDesc(shortChannelId, randomKey.publicKey, randomKey.publicKey)
-
     def daysAgoInBlocks(daysAgo: Int): Int = Globals.blockCount.get().toInt - 144 * daysAgo
 
     def daysAgoInSeconds(daysAgo: Int): Long = Platform.currentTime / 1000 - daysAgo * 24 * 3600
@@ -212,7 +210,11 @@ class RouteCalculationSpec extends FunSuite {
     val chan_e = channelAnnouncement(id_e)
 
     val channels = Set(chan_a, chan_b, chan_c, chan_d, chan_e)
-    val updates = Set(upd_a, upd_c, upd_d)
+    val updates = Map(
+      (ChannelDesc(chan_a.shortChannelId, chan_a.nodeId1, chan_a.nodeId2) -> upd_a),
+      (ChannelDesc(chan_c.shortChannelId, chan_c.nodeId1, chan_c.nodeId2) -> upd_c),
+      (ChannelDesc(chan_d.shortChannelId, chan_d.nodeId1, chan_d.nodeId2) -> upd_d)
+    )
 
     val staleChannels = Router.getStaleChannels(channels, updates).toSet
 

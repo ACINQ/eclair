@@ -136,11 +136,13 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(SendRoutingState(remote), d: Data) =>
       log.info(s"pruning before sending announcements")
       // we send only pruned data, but without modifying our state or the database
-      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
+      val staleChannels = getStaleChannels(d.channels.values, d.updates)
+      val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
+      val staleNodes = staleChannels.map(d.channels).flatMap(c => Seq(c.nodeId1, c.nodeId2))
       // finally we remove nodes that aren't tied to any channels anymore
       val validChannels = d.channels -- staleChannels
-      val validUpdates = d.updates.filterKeys(desc => validChannels.contains(desc.id))
-      val validNodes = d.nodes.filterKeys(nodeId => hasChannels(nodeId, validChannels.values))
+      val validUpdates = d.updates -- staleUpdates
+      val validNodes = d.nodes -- staleNodes
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -296,12 +298,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
+      val staleChannels = getStaleChannels(d.channels.values, d.updates)
       // then we clean up the related channel updates
-      val staleUpdates = d.updates.keys.filter(desc => staleChannels.contains(desc.id))
+      val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
       // finally we remove nodes that aren't tied to any channels anymore
-      val channels1 = d.channels -- staleChannels
-      val staleNodes = d.nodes.keys.filterNot(nodeId => hasChannels(nodeId, channels1.values))
+      val staleNodes = staleChannels.map(d.channels).flatMap(c => Seq(c.nodeId1, c.nodeId2)).filter(d.nodes.contains)
       // let's clean the db and send the events
       staleChannels.foreach {
         case shortChannelId =>
@@ -315,7 +316,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- staleNodes, channels = channels1, updates = d.updates -- staleUpdates)
+      stay using d.copy(nodes = d.nodes -- staleNodes, channels = d.channels -- staleChannels, updates = d.updates -- staleUpdates)
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
@@ -505,16 +506,18 @@ object Router {
     * @param updates
     * @return
     */
-  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate]): Iterable[Long] = {
+  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
-    val staleChannels = channels
-      .filter(c =>
-        fromShortId(c.shortChannelId)._1 < staleThresholdBlocks // consider only channels older than 2 weeks
-          && updates.exists(_.shortChannelId == c.shortChannelId) // channel must have updates
-          && updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
+    val staleChannels = channels.filter { c =>
+      val (blockHeight, _, _) = fromShortId(c.shortChannelId)
+      val latestUpdate_opt = (updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)) ++ updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))).toSeq.map(_.timestamp).sorted.headOption
+      blockHeight < staleThresholdBlocks && // consider only channels older than 2 weeks
+        latestUpdate_opt.isDefined && // channel must have updates
+        latestUpdate_opt.get < staleThresholdSeconds // updates are all older than 2 weeks (can have 1 or 2)
+    }
     staleChannels.map(_.shortChannelId)
   }
 
