@@ -81,6 +81,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val channels = db.listChannels()
     val nodes = db.listNodes()
     val updates = db.listChannelUpdates()
+    log.info("loaded from db: channels={} nodes={} updates={}", channels.size, nodes.size, updates.size)
 
     val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
     val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
@@ -98,8 +99,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val fundingOutputScript = write(pay2wsh(Scripts.multiSig2of2(PublicKey(c.bitcoinKey1), PublicKey(c.bitcoinKey2))))
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
-
-    log.info("loaded from db: channels={} nodes={} updates={}", initChannels.size, initNodes.size, initChannelUpdates.size)
+    log.info(s"initialization completed, ready to process messages")
     startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty))
   }
 
