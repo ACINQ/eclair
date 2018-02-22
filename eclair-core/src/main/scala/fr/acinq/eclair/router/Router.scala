@@ -80,20 +80,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     // On Android, we discard the node announcements
     val channels = db.listChannels()
     val updates = db.listChannelUpdates()
-    // let's prune the db (maybe eclair was stopped for a long time)
-    log.info("pruning stale channels...")
-    val staleChannels = getStaleChannels(channels.keys, updates)
-    if (staleChannels.nonEmpty) {
-      log.info("dropping {} stale channels pre-validation", staleChannels.size)
-      staleChannels.foreach(shortChannelId => db.removeChannel(shortChannelId)) // this also removes updates
-    }
-    val remainingChannels = channels.keys.filterNot(c => staleChannels.contains(c.shortChannelId))
-    val remainingUpdates = updates.filterNot(c => staleChannels.contains(c.shortChannelId))
 
-    val initChannels = remainingChannels.map(c => (c.shortChannelId -> c)).toMap
-    val initChannelUpdates = remainingUpdates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
+    val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
 
-    log.info("loaded from db: channels={} nodes={} updates={}", remainingChannels.size, 0, remainingUpdates.size)
+    log.info("loaded from db: channels={} nodes={} updates={}", channels.size, 0, updates.size)
     startWith(NORMAL, Data(Map.empty, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty))
   }
 
