@@ -530,7 +530,7 @@ object Router {
     val validChannels = (channels -- staleChannels).values
     val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
     val validUpdates = (updates -- staleUpdates).values
-    val validNodes = validChannels.flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet.map(nodes)
+    val validNodes = validChannels.flatMap(c => nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2)).toSet
     (validChannels, validNodes, validUpdates)
   }
 

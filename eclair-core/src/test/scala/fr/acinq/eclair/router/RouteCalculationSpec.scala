@@ -213,7 +213,7 @@ class RouteCalculationSpec extends FunSuite {
     val upd_d = channelUpdate(id_d, daysAgoInSeconds(2))
     // e is a recent channel with no channel update  => KEPT
     val id_e = toShortId(daysAgoInBlocks(1), 0, 0)
-    val chan_e = channelAnnouncement(id_e, node_1.nodeId, node_4.nodeId)
+    val chan_e = channelAnnouncement(id_e, node_1.nodeId, randomKey.publicKey)
 
     val nodes = Map(
       node_1.nodeId -> node_1,
