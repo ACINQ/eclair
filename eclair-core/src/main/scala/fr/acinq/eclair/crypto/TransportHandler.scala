@@ -9,6 +9,8 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.io.WriteAckSender
+import fr.acinq.eclair.io.WriteAckSender.{LowPriority, NormalPriority, Send}
+import fr.acinq.eclair.wire.RoutingMessage
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -48,7 +50,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     val state = makeWriter(keyPair, rs.get)
     val (state1, message, None) = state.write(BinaryData.empty)
     log.debug(s"sending prefix + $message")
-    out ! buf(TransportHandler.prefix +: message)
+    out ! Send(buf(TransportHandler.prefix +: message))
     state1
   } else {
     makeReader(keyPair)
@@ -92,11 +94,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
                 // we're still in the middle of the handshake process and the other end must first received our next
                 // message before they can reply
                 require(remainder.isEmpty, "unexpected additional data received during handshake")
-                out ! buf(TransportHandler.prefix +: message)
+                out ! Send(buf(TransportHandler.prefix +: message))
                 stay using HandshakeData(reader1, remainder)
               }
               case (_, message, Some((enc, dec, ck))) => {
-                out ! buf(TransportHandler.prefix +: message)
+                out ! Send(buf(TransportHandler.prefix +: message))
                 val remoteNodeId = PublicKey(writer.rs)
                 context.parent ! HandshakeCompleted(connection, self, remoteNodeId)
                 val nextStateData = WaitingForListenerData(ExtendedCipherState(enc, ck), ExtendedCipherState(dec, ck), remainder)
@@ -140,7 +142,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     case Event(t: T, d: WaitingForCiphertextData) =>
       val blob = codec.encode(t).require.toByteArray
       val (enc1, ciphertext) = TransportHandler.encrypt(d.enc, blob)
-      out ! buf(ciphertext)
+      val priority = t match {
+        case _: RoutingMessage => LowPriority
+        case _ => NormalPriority
+      }
+      out ! Send(buf(ciphertext), priority)
       stay using d.copy(enc = enc1)
   }
 
@@ -161,7 +167,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
     case Event(t: T, d: WaitingForReadAckData[T]) =>
       val blob = codec.encode(t).require.toByteArray
       val (enc1, ciphertext) = TransportHandler.encrypt(d.enc, blob)
-      out ! buf(ciphertext)
+      val priority = t match {
+        case _: RoutingMessage => LowPriority
+        case _ => NormalPriority
+      }
+      out ! Send(buf(ciphertext), priority)
       stay using d.copy(enc = enc1)
   }
 

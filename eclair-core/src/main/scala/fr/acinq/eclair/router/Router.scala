@@ -46,9 +46,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  sendStateWaitlist: Queue[ActorRef],
-                  sendingState: Set[ActorRef])
+                  excludedChannels: Set[ChannelDesc] // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+               )
 
 sealed trait State
 case object NORMAL extends State
@@ -100,7 +99,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
     log.info(s"initialization completed, ready to process messages")
-    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, sendStateWaitlist = Queue.empty, sendingState = Set.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty))
   }
 
   when(NORMAL) {
@@ -135,26 +134,25 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
     case Event(SendRoutingState(remote), d: Data) =>
-      if (d.sendingState.size > 3) {
-        log.info("received request to send announcements to {}, already sending state to {} peers, adding to wait list (waiting={})", remote, d.sendingState.size, d.sendStateWaitlist.size)
-        context watch remote
-        stay using d.copy(sendStateWaitlist = d.sendStateWaitlist :+ remote)
-      } else stay using sendState(remote, d)
-
-    case Event(Terminated(actor), d: Data) if d.sendingState.contains(actor) =>
-      log.info("done sending announcements to a peer, freeing slot (waiting={})", d.sendStateWaitlist.size)
-      val d1 = d.copy(sendingState = d.sendingState - actor)
-      d.sendStateWaitlist.dequeueOption match {
-        case Some((remote, sendStateWaitlist1)) =>
-          context unwatch remote
-          stay using sendState(remote, d1.copy(sendStateWaitlist = sendStateWaitlist1))
-        case None => stay using d1
+      log.info(s"pruning before sending announcements")
+      // we send only pruned data, but without modifying our state or the database
+      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
+      // finally we remove nodes that aren't tied to any channels anymore
+      val validChannels = d.channels -- staleChannels
+      val validUpdates = d.updates.filterKeys(desc => validChannels.contains(desc.id))
+      val validNodes = d.nodes.filterKeys(nodeId => hasChannels(nodeId, validChannels.values))
+      // let's send the messages
+      def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
+        case (c, ann) =>
+          remote ! ann
+          c + 1
       }
-
-    case Event(Terminated(actor), d: Data) if d.sendStateWaitlist.contains(actor) =>
-      // note: 'contains' and 'filter' operations are expensive on a queue, but its size should be very small (maybe even capped?)
-      log.info("peer={} died, removing from wait list (waiting={})", actor, d.sendStateWaitlist.size - 1)
-      stay using d.copy(sendStateWaitlist = d.sendStateWaitlist filterNot (_ == actor))
+      log.info(s"sending all announcements to $remote")
+      val channelsSent = send(validChannels.values)
+      val updatesSent = send(validNodes.values)
+      val nodesSent = send(validUpdates.values)
+      log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remote, channelsSent, updatesSent, nodesSent)
+      stay
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
@@ -467,22 +465,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
     }
-
-  def sendState(remote: ActorRef, d: Data): Data = {
-    log.info(s"pruning before sending announcements")
-    // we send only pruned data, but without modifying our state or the database
-    val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
-    // finally we remove nodes that aren't tied to any channels anymore
-    val validChannels = d.channels -- staleChannels
-    val validUpdates = d.updates.filterKeys(desc => validChannels.contains(desc.id))
-    val validNodes = d.nodes.filterKeys(nodeId => hasChannels(nodeId, validChannels.values))
-    val batch = validChannels.values ++ validNodes.values ++ validUpdates.values
-    // we group and add delays to leave room for channel messages
-    log.info(s"sending all announcements to $remote")
-    val actor = context.actorOf(ThrottleForwarder.props(remote, batch, 100, 100 millis))
-    context watch actor
-    d.copy(sendingState = d.sendingState + actor)
-  }
 
 }
 
