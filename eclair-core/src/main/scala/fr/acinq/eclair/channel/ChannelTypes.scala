@@ -7,7 +7,7 @@ import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
 
 /**
@@ -43,6 +43,7 @@ case object CLOSING extends State
 case object CLOSED extends State
 case object OFFLINE extends State
 case object SYNCING extends State
+case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends State
 case object ERR_FUNDING_PUBLISH_FAILED extends State
 case object ERR_FUNDING_LOST extends State
 case object ERR_FUNDING_TIMEOUT extends State
@@ -145,16 +146,20 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
+
 final case class DATA_CLOSING(commitments: Commitments,
                               localClosingSigned: List[ClosingSigned],
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
+                              futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxes.size > 0, "there must be at least one tx published in this state")
 }
+
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
                              dustLimitSatoshis: Long,

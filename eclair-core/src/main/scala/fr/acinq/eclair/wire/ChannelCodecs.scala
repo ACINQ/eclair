@@ -1,7 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
-import fr.acinq.eclair.channel._
+import fr.acinq.eclair.channel.{DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT, _}
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.payment.{Local, Origin, Relayed}
 import fr.acinq.eclair.transactions.Transactions._
@@ -234,7 +234,12 @@ object ChannelCodecs extends Logging {
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("nextRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
+      ("futureRemoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::
       ("revokedCommitPublished" | listOfN(uint16, revokedCommitPublishedCodec))).as[DATA_CLOSING]
+
+  val DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec: Codec[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT] = (
+    ("commitments" | commitmentsCodec) ::
+      ("remoteChannelReestablish" | channelReestablishCodec)).as[DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT]
 
   val stateDataCodec: Codec[HasCommitments] = ("version" | constant(0x00)) ~> discriminated[HasCommitments].by(uint16)
     .typecase(0x01, DATA_WAIT_FOR_FUNDING_CONFIRMED_Codec)
@@ -243,5 +248,6 @@ object ChannelCodecs extends Logging {
     .typecase(0x04, DATA_SHUTDOWN_Codec)
     .typecase(0x05, DATA_NEGOTIATING_Codec)
     .typecase(0x06, DATA_CLOSING_Codec)
+    .typecase(0x07, DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT_Codec)
 
 }
