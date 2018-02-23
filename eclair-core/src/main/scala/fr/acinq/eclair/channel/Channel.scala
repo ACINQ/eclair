@@ -1436,18 +1436,30 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   def spendLocalCurrent(d: HasCommitments) = {
-    val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
 
-    val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(d.commitments, commitTx)
-    doPublish(localCommitPublished)
-
-    val nextData = d match {
-      case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
-      case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.localClosingSigned, localCommitPublished = Some(localCommitPublished))
-      case _ => DATA_CLOSING(d.commitments, localClosingSigned = Nil, localCommitPublished = Some(localCommitPublished))
+    val outdatedCommitment = d match {
+      case _: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT => true
+      case closing: DATA_CLOSING if closing.futureRemoteCommitPublished.isDefined => true
+      case _ => false
     }
 
-    goto(CLOSING) using store(nextData)
+    if (outdatedCommitment) {
+      log.warning("we have an outdated commitment: will not publish our local tx")
+      stay
+    } else {
+      val commitTx = d.commitments.localCommit.publishableTxs.commitTx.tx
+
+      val localCommitPublished = Helpers.Closing.claimCurrentLocalCommitTxOutputs(d.commitments, commitTx)
+      doPublish(localCommitPublished)
+
+      val nextData = d match {
+        case closing: DATA_CLOSING => closing.copy(localCommitPublished = Some(localCommitPublished))
+        case negotiating: DATA_NEGOTIATING => DATA_CLOSING(d.commitments, negotiating.localClosingSigned, localCommitPublished = Some(localCommitPublished))
+        case _ => DATA_CLOSING(d.commitments, localClosingSigned = Nil, localCommitPublished = Some(localCommitPublished))
+      }
+
+      goto(CLOSING) using store(nextData)
+    }
   }
 
   /**
@@ -1705,10 +1717,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         s(event)
       } catch {
         case t: Throwable => event.stateData match {
-          case d: DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT =>
-            log.error(t, "not going to CLOSED and not spending a local commit")
-            val error = Error(d.channelId, t.getMessage.getBytes)
-            stay sending error
           case d: HasCommitments =>
             handleLocalError(t, d, None)
           case d: Data =>
