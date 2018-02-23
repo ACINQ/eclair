@@ -15,7 +15,6 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
-import fr.acinq.eclair.gui.utils.{BtcUnit, CoinUnit, CoinUtils}
 import fr.acinq.eclair.payment.PaymentEvent
 import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
