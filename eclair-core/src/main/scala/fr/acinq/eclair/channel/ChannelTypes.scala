@@ -146,7 +146,11 @@ final case class DATA_NORMAL(commitments: Commitments,
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  localShutdown: Shutdown, remoteShutdown: Shutdown, closingTxProposed: List[ClosingTxProposed], bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown,
+                                  closingTxProposed: List[ClosingTxProposed],
+                                  bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
+  require(!commitments.localParams.isFunder || !closingTxProposed.isEmpty, "funder must have at least one closing signature because it initiates the closing")
+}
 final case class DATA_CLOSING(commitments: Commitments,
                               closingTxProposed: List[ClosingTxProposed],
                               mutualClosePublished: List[Transaction] = Nil,
