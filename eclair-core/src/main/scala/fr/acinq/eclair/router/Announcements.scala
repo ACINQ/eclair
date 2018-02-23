@@ -143,15 +143,29 @@ object Announcements {
     verifySignature(witness, ann.signature, nodeId)
   }
 
-  def zip(shortChannelIds: Seq[Long]) : BinaryData = {
+  /**
+    * Compressed a sequence of *sorted* short channel id.
+    *
+    * @param shortChannelIds must be sorted beforehand
+    * @return
+    */
+  def zip(shortChannelIds: Iterable[Long]) : BinaryData = {
     val bos = new ByteArrayOutputStream()
     val output = new GZIPOutputStream(bos)
-    shortChannelIds.sorted.map(id => Protocol.writeUInt64(id, output, ByteOrder.BIG_ENDIAN))
+    shortChannelIds.map(id => Protocol.writeUInt64(id, output, ByteOrder.BIG_ENDIAN))
     output.finish()
     bos.toByteArray
   }
 
-  private def unzip(input: GZIPInputStream) : Vector[Long] = {
+  /**
+    *  Uncompresses a zipped sequence of sorted short channel ids.
+    *
+    *  Does *not* preserve the order
+    *
+    * @param input
+    * @return
+    */
+  private def unzip(input: GZIPInputStream) : Set[Long] = {
     val buffer = new Array[Byte](8)
 
     // read 8 bytes from input
@@ -166,14 +180,14 @@ object Announcements {
 
     // read until there's nothing left
     @tailrec
-    def loop(acc: Vector[Long] = Vector()): Vector[Long] = {
-      if (read8() <= 0) acc else loop(acc :+ Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN))
+    def loop(acc: Set[Long] = Set()): Set[Long] = {
+      if (read8() <= 0) acc else loop(acc + Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN))
     }
 
     loop()
   }
 
-  def unzip(input: BinaryData) : Vector[Long] = {
+  def unzip(input: BinaryData) : Set[Long] = {
     val stream = new GZIPInputStream(new ByteArrayInputStream(input))
     try {
       unzip(stream)

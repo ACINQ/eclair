@@ -21,7 +21,7 @@ import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
-import scala.collection.immutable.Queue
+import scala.collection.immutable.{Queue, SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -42,7 +42,7 @@ case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnno
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: Map[Long, ChannelAnnouncement],
+                  channels: SortedMap[Long, ChannelAnnouncement], // critical for performance that keys are sorted
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
                   rebroadcast: Rebroadcast,
@@ -85,7 +85,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val updates = db.listChannelUpdates()
     log.info("loaded from db: channels={} nodes={} updates={}", channels.size, nodes.size, updates.size)
 
-    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
+    val initChannels = channels.keys.foldLeft(TreeMap.empty[Long, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
     val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
 
@@ -372,10 +372,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         }
 
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-        val shortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
+        val shortChannelIds = d.channels.keys.filter(keep) // note: order is preserved
 
         val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
-        log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.length)
+        log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
         sender ! reply
       }
       stay
@@ -392,8 +392,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
         }
 
-        val ourShortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
-        val missing = theirShortChannelIds diff ourShortChannelIds
+        val ourShortChannelIds = d.channels.keys.filter(keep) // note: order is preserved
+        val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
         sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
       }

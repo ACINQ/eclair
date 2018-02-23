@@ -84,7 +84,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
             router ! GetRoutingState
           }
         }
-        if (remoteHasChannelRangeQueriesMandatory || remoteHasChannelRangeQueriesMandatory) {
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(transport)
         }
