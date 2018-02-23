@@ -34,9 +34,9 @@ object Features {
   /**
     *
     * @param features feature bits
-    * @return true if data loss protection is supported
+    * @return true if data loss protection is supported (meaning that there is a corresponding OPTIONAL or MANDATORY flag)
     */
-  def dataLossProtect(features: BitSet): Boolean = features.get(OPTION_DATA_LOSS_PROTECT_OPTIONAL)
+  def dataLossProtect(features: BitSet): Boolean = features.get(OPTION_DATA_LOSS_PROTECT_OPTIONAL) || features.get(OPTION_DATA_LOSS_PROTECT_MANDATORY)
 
   /**
     *
@@ -50,9 +50,9 @@ object Features {
     * we don't understand (even bits)
     */
   def areSupported(bitset: BitSet): Boolean = {
-    // for now there is no mandatory feature bit, so we don't support features with any even bit set
+    val supportedMandatoryFeatures = Set(OPTION_DATA_LOSS_PROTECT_MANDATORY)
     for (i <- 0 until bitset.length() by 2) {
-      if (bitset.get(i)) return false
+      if (bitset.get(i) && !supportedMandatoryFeatures.contains(i)) return false
     }
     return true
   }
