@@ -23,6 +23,7 @@ import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
+import org.json4s.JsonAST.JArray
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
@@ -66,19 +67,19 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
-      val bitcoinClient = new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(new BasicBitcoinJsonRPCClient(
+      val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
-        port = config.getInt("bitcoind.rpcport"))))
+        port = config.getInt("bitcoind.rpcport"))
       val future = for {
-        json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
+        json <- bitcoinClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
         // Make sure wallet support is enabled in bitcoind.
-        _ <- bitcoinClient.rpcClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
+        _ <- bitcoinClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
-        chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
-        bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-        unspentAddresses <- bitcoinClient.listUnspentAddresses
+        chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
+        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+        unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) => values.map(value => (value \ "address").extract[String]) }
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 10 seconds)
@@ -112,7 +113,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
     val feeProvider = (chain, bitcoin) match {
       case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
-      case (_, Bitcoind(client)) => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(client.rpcClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
+      case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
       case _ => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
@@ -126,14 +127,14 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val watcher = bitcoin match {
       case Bitcoind(bitcoinClient) =>
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
-        system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(bitcoinClient), "watcher", SupervisorStrategy.Resume))
+        system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
       case Electrum(electrumClient) =>
         zmqConnected.success(true)
         system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
     }
 
     val wallet = bitcoin match {
-      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
+      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
       case Electrum(electrumClient) => seed_opt match {
         case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet)
@@ -208,7 +209,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
 // @formatter:off
 sealed trait Bitcoin
-case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
+case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 
