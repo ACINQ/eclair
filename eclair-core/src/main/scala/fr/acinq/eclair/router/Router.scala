@@ -34,7 +34,8 @@ case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Se
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-case class SendRoutingState(to: ActorRef)
+case object GetRoutingState
+case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate], nodes: Iterable[NodeAnnouncement])
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
@@ -133,20 +134,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId.toHexString)
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
-    case Event(SendRoutingState(remote), d: Data) =>
-      log.info(s"getting valid announcements for $remote")
+    case Event(GetRoutingState, d: Data) =>
+      log.info(s"getting valid announcements for $sender")
       val (validChannels, validNodes, validUpdates) = getValidAnnouncements(d.channels, d.nodes, d.updates)
-      // let's send the messages
-      def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
-        case (c, ann) =>
-          remote ! ann
-          c + 1
-      }
-      log.info(s"sending all announcements to $remote")
-      val channelsSent = send(validChannels)
-      val nodesSent = send(validNodes)
-      val updatesSent = send(validUpdates)
-      log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remote, channelsSent, updatesSent, nodesSent)
+      sender ! RoutingState(validChannels, validUpdates, validNodes)
       stay
 
     case Event(c: ChannelAnnouncement, d) =>
