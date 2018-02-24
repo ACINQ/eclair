@@ -8,6 +8,7 @@ import akka.util.ByteString
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
+import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
 
@@ -115,11 +116,11 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       val (dec1, plaintextMessages) = dec.decrypt()
       if (plaintextMessages.isEmpty) {
         connection ! Tcp.ResumeReading
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = Queue.empty, unackedReceived = Map.empty[T, Int], unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty, Queue.empty), unackedReceived = Map.empty[T, Int], unackedSent = None)
       } else {
         log.debug(s"read ${plaintextMessages.size} messages, waiting for readacks")
         val unackedReceived = sendToListener(listener, plaintextMessages)
-        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = Queue.empty, unackedReceived, unackedSent = None)
+        goto(Normal) using NormalData(d.encryptor, dec1, listener, sendBuffer = SendBuffer(Queue.empty, Queue.empty), unackedReceived, unackedSent = None)
       }
   }
 
@@ -149,13 +150,19 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       }
 
     case Event(t: T, d: NormalData[T]) =>
-      if (d.sendBuffer.size >= MAX_BUFFERED) {
+      if (d.sendBuffer.normalPriority.size + d.sendBuffer.lowPriority.size >= MAX_BUFFERED) {
         log.warning(s"send buffer overrun, closing connection")
         connection ! PoisonPill
         stop(FSM.Normal)
       } else if (d.unackedSent.isDefined) {
         log.debug("buffering send data={}", t)
-        stay using d.copy(sendBuffer = d.sendBuffer :+ t)
+        val sendBuffer1 = t match {
+          case _: ChannelAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+          case _: NodeAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+          case _: ChannelUpdate => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
+          case _ => d.sendBuffer.copy(lowPriority = d.sendBuffer.normalPriority :+ t)
+        }
+        stay using d.copy(sendBuffer = sendBuffer1)
       } else {
         val blob = codec.encode(t).require.toByteArray
         val (enc1, ciphertext) = d.encryptor.encrypt(blob)
@@ -164,14 +171,24 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
       }
 
     case Event(WriteAck, d: NormalData[T]) =>
-      d.sendBuffer.dequeueOption match {
-        case Some((t, sendBuffer1)) =>
-          val blob = codec.encode(t).require.toByteArray
-          val (enc1, ciphertext) = d.encryptor.encrypt(blob)
-          connection ! Tcp.Write(buf(ciphertext), WriteAck)
-          stay using d.copy(encryptor = enc1, sendBuffer = sendBuffer1, unackedSent = Some(t))
+      def send(t: T) = {
+        val blob = codec.encode(t).require.toByteArray
+        val (enc1, ciphertext) = d.encryptor.encrypt(blob)
+        connection ! Tcp.Write(buf(ciphertext), WriteAck)
+        enc1
+      }
+      d.sendBuffer.normalPriority.dequeueOption match {
+        case Some((t, highPriority1)) =>
+          val enc1 = send(t)
+          stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = highPriority1), unackedSent = Some(t))
         case None =>
-          stay using d.copy(unackedSent = None)
+          d.sendBuffer.lowPriority.dequeueOption match {
+            case Some((t, lowPriority1)) =>
+              val enc1 = send(t)
+              stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(lowPriority = lowPriority1), unackedSent = Some(t))
+            case None =>
+              stay using d.copy(unackedSent = None)
+          }
       }
   }
 
@@ -324,7 +341,9 @@ object TransportHandler {
   sealed trait Data
   case class HandshakeData(reader: Noise.HandshakeStateReader, buffer: ByteString = ByteString.empty) extends Data
   case class WaitingForListenerData(encryptor: Encryptor, decryptor: Decryptor) extends Data
-  case class NormalData[T](encryptor: Encryptor, decryptor: Decryptor, listener: ActorRef, sendBuffer: Queue[T], unackedReceived: Map[T, Int], unackedSent: Option[T]) extends Data
+  case class NormalData[T](encryptor: Encryptor, decryptor: Decryptor, listener: ActorRef, sendBuffer: SendBuffer[T], unackedReceived: Map[T, Int], unackedSent: Option[T]) extends Data
+
+  case class SendBuffer[T](normalPriority: Queue[T], lowPriority: Queue[T])
 
   case class Listener(listener: ActorRef)
 
