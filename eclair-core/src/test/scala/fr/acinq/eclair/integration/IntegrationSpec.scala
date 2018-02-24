@@ -143,7 +143,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = MilliSatoshi(pushMsat),
       channelFlags = None))
-    sender.expectMsgAnyOf(10 seconds, "channel created")
+    assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
   }
 
   test("connect nodes") {

@@ -26,7 +26,7 @@ import scala.util.{Failure, Left, Success, Try}
   */
 
 object Channel {
-  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer))
+  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef]) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer, origin_opt))
 
   // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   val ANNOUNCEMENTS_MINCONF = 6
@@ -43,7 +43,7 @@ object Channel {
 
 }
 
-class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
   import Channel._
 
@@ -228,6 +228,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(temporaryChannelId, t.getMessage.getBytes)
+          origin_opt.map(_ ! s"bad remote parameters: ${t.getMessage}")
           goto(CLOSED) sending error
         case _ =>
           // TODO: check equality of temporaryChannelId? or should be done upstream
@@ -254,11 +255,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+    case Event(CMD_CLOSE(_), _) =>
+      origin_opt.map(_ ! s"closed")
+      goto(CLOSED)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => handleRemoteError(e, d)
+    case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      origin_opt.map(_ ! s"peer sent error: ascii='${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else "n/a"}' bin=${e.data}")
+      handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, _) =>
+      origin_opt.map(_ ! s"disconnected")
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
@@ -275,21 +282,29 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         signature = localSigOfRemoteTx
       )
       val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
+      origin_opt.map(_ ! s"created channel $channelId")
       context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
       context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
       goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), open.channelFlags, fundingCreated) sending fundingCreated
 
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      origin_opt.map(_ ! s"wallet error: ${t.getMessage}")
       log.error(t, s"wallet returned error: ")
       val exc = ChannelFundingError(d.temporaryChannelId)
       val error = Error(d.temporaryChannelId, exc.getMessage.getBytes)
       goto(CLOSED) sending error
 
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+    case Event(CMD_CLOSE(_), _) =>
+      origin_opt.map(_ ! s"closed")
+      goto(CLOSED)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => handleRemoteError(e, d)
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      origin_opt.map(_ ! s"peer sent error: ascii='${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else "n/a"}' bin=${e.data}")
+      handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, _) =>
+      origin_opt.map(_ ! s"disconnected")
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {

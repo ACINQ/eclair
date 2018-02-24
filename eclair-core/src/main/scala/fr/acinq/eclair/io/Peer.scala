@@ -25,7 +25,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
   import Peer._
 
   startWith(DISCONNECTED, DisconnectedData(address_opt = previousKnownAddress, channels = storedChannels.map { state =>
-    val channel = spawnChannel(nodeParams, context.system.deadLetters)
+    val channel = spawnChannel(nodeParams, origin_opt = None)
     channel ! INPUT_RESTORED(state)
     FinalChannelId(state.channelId) -> channel
   }.toMap))
@@ -147,8 +147,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
 
     case Event(c: Peer.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
-      val (channel, localParams) = createNewChannel(nodeParams, transport, funder = true, c.fundingSatoshis.toLong)
-      sender ! "channel created"
+      val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
       val temporaryChannelId = randomBytes(32)
       val networkFeeratePerKw = Globals.feeratesPerKw.get.block_1
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, networkFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
@@ -159,7 +158,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
           log.info(s"accepting a new channel to $remoteNodeId")
-          val (channel, localParams) = createNewChannel(nodeParams, transport, funder = false, fundingSatoshis = msg.fundingSatoshis)
+          val (channel, localParams) = createNewChannel(nodeParams, funder = false, fundingSatoshis = msg.fundingSatoshis, origin_opt = None)
           val temporaryChannelId = msg.temporaryChannelId
           channel ! INPUT_INIT_FUNDEE(temporaryChannelId, localParams, transport, remoteInit)
           channel ! msg
@@ -285,15 +284,15 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
     case DISCONNECTED -> _ if nodeParams.autoReconnect && stateData.address_opt.isDefined => cancelTimer(RECONNECT_TIMER)
   }
 
-  def createNewChannel(nodeParams: NodeParams, transport: ActorRef, funder: Boolean, fundingSatoshis: Long): (ActorRef, LocalParams) = {
+  def createNewChannel(nodeParams: NodeParams, funder: Boolean, fundingSatoshis: Long, origin_opt: Option[ActorRef]): (ActorRef, LocalParams) = {
     val defaultFinalScriptPubKey = Helpers.getFinalScriptPubKey(wallet)
     val localParams = makeChannelParams(nodeParams, defaultFinalScriptPubKey, funder, fundingSatoshis)
-    val channel = spawnChannel(nodeParams, transport)
+    val channel = spawnChannel(nodeParams, origin_opt)
     (channel, localParams)
   }
 
-  def spawnChannel(nodeParams: NodeParams, transport: ActorRef): ActorRef = {
-    val channel = context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, router, relayer))
+  def spawnChannel(nodeParams: NodeParams, origin_opt: Option[ActorRef]): ActorRef = {
+    val channel = context.actorOf(Channel.props(nodeParams, wallet, remoteNodeId, watcher, router, relayer, origin_opt))
     context watch channel
     channel
   }
