@@ -20,15 +20,21 @@ import scala.util.Random
 /**
   * Created by PM on 26/08/2016.
   */
-class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, storedChannels: Set[HasCommitments]) extends FSM[Peer.State, Peer.Data] {
+class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) extends FSM[Peer.State, Peer.Data] {
 
   import Peer._
 
-  startWith(DISCONNECTED, DisconnectedData(address_opt = previousKnownAddress, channels = storedChannels.map { state =>
-    val channel = spawnChannel(nodeParams, origin_opt = None)
-    channel ! INPUT_RESTORED(state)
-    FinalChannelId(state.channelId) -> channel
-  }.toMap))
+  startWith(INSTANTIATING, Nothing())
+
+  when(INSTANTIATING) {
+    case Event(Init(previousKnownAddress, storedChannels), _) =>
+      val channels = storedChannels.map { state =>
+        val channel = spawnChannel(nodeParams, origin_opt = None)
+        channel ! INPUT_RESTORED(state)
+        FinalChannelId(state.channelId) -> channel
+      }.toMap
+      goto(DISCONNECTED) using DisconnectedData(previousKnownAddress, channels)
+  }
 
   when(DISCONNECTED) {
     case Event(Peer.Connect(NodeURI(_, address)), _) =>
@@ -312,12 +318,9 @@ object Peer {
 
   val RECONNECT_TIMER = "reconnect"
 
-  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress: Option[InetSocketAddress], authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet, storedChannels: Set[HasCommitments]) = Props(new Peer(nodeParams, remoteNodeId, previousKnownAddress, authenticator, watcher, router, relayer, wallet: EclairWallet, storedChannels))
+  def props(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: ActorRef, watcher: ActorRef, router: ActorRef, relayer: ActorRef, wallet: EclairWallet) = Props(new Peer(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet: EclairWallet))
 
   // @formatter:off
-
-  case object Reconnect
-  case object Disconnect
 
   sealed trait ChannelId { def id: BinaryData }
   case class TemporaryChannelId(id: BinaryData) extends ChannelId
@@ -327,16 +330,21 @@ object Peer {
     def address_opt: Option[InetSocketAddress]
     def channels: Map[_ <: ChannelId, ActorRef] // will be overriden by Map[FinalChannelId, ActorRef] or Map[ChannelId, ActorRef]
   }
+  case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
   case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data
 
   sealed trait State
+  case object INSTANTIATING extends State
   case object DISCONNECTED extends State
   case object INITIALIZING extends State
   case object CONNECTED extends State
 
+  case class Init(previousKnownAddress: Option[InetSocketAddress], storedChannels: Set[HasCommitments])
   case class Connect(uri: NodeURI)
+  case object Reconnect
+  case object Disconnect
   case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
     require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
