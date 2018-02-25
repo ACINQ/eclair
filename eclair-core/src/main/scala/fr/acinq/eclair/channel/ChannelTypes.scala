@@ -147,12 +147,13 @@ final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
                                   localShutdown: Shutdown, remoteShutdown: Shutdown,
-                                  closingTxProposed: List[ClosingTxProposed],
+                                  closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
                                   bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
-  require(!commitments.localParams.isFunder || !closingTxProposed.isEmpty, "funder must have at least one closing signature because it initiates the closing")
+  require(!closingTxProposed.isEmpty, "there must always be a list for the current negotiation")
+  require(!commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
 }
 final case class DATA_CLOSING(commitments: Commitments,
-                              closingTxProposed: List[ClosingTxProposed],
+                              mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
