@@ -6,6 +6,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.getValidAnnouncements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, randomKey, toShortId}
+import org.jgrapht.graph.DefaultDirectedWeightedGraph
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -24,6 +25,12 @@ class RouteCalculationSpec extends FunSuite {
     (ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, shortChannelId, 0L, "0000", 1, 42, feeBaseMsat, feeProportionalMillionth))
   }
 
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
+    val g = new DefaultDirectedWeightedGraph[PublicKey, DescEdge](classOf[DescEdge])
+    updates.foreach { case (d, u) => Router.addEdge(g, d, u) }
+    g
+  }
+
   def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId)
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
@@ -37,8 +44,11 @@ class RouteCalculationSpec extends FunSuite {
        makeUpdate(4L, d, e, 0, 0)
     ).toMap
 
-    val route = Router.findRoute(a, e, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, updates)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+
   }
 
   test("calculate longer but cheaper route") {
@@ -51,7 +61,9 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(5L, a, e, 10, 10)
     ).toMap
 
-    val route = Router.findRoute(a, e, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, updates)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
@@ -62,7 +74,9 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(4L, d, e, 0, 0)
     ).toMap
 
-    val route = Router.findRoute(a, e, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, updates)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -74,7 +88,9 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(4L, d, e, 0, 0)
     ).toMap
 
-    val route = Router.findRoute(a, e, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, updates)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -86,7 +102,9 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(3L, c, d, 0, 0)
     ).toMap
 
-    val route = Router.findRoute(a, e, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e, updates)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -98,7 +116,9 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(3L, c, d, 0, 0)
     ).toMap
 
-    val route = Router.findRoute(a, a, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, a, updates)
     assert(route.map(hops2Ids) === Failure(CannotRouteToSelf))
   }
 
@@ -111,7 +131,9 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(4L, d, e, 0, 0)
     ).toMap
 
-    val route = Router.findRoute(a, b, updates)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, b, updates)
     assert(route.map(hops2Ids) === Success(1 :: Nil))
   }
 
@@ -125,10 +147,12 @@ class RouteCalculationSpec extends FunSuite {
 
     // a->e works, e->a fails
 
-    val route1 = Router.findRoute(a, e, updates)
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e, updates)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    val route2 = Router.findRoute(e, a, updates)
+    val route2 = Router.findRoute(g, e, a, updates)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -163,7 +187,9 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(4L, e, d) -> ued
     )
 
-    val hops = Router.findRoute(a, e, updates).get
+    val g = makeGraph(updates)
+
+    val hops = Router.findRoute(g, a, e, updates).get
 
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
   }

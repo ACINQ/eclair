@@ -17,7 +17,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
-import org.jgrapht.graph._
+import org.jgrapht.graph.{DefaultDirectedWeightedGraph, _}
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
@@ -38,6 +38,8 @@ case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterab
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
+case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
+
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   channels: Map[Long, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
@@ -46,7 +48,8 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
                   privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
-                  excludedChannels: Set[ChannelDesc] // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
+                  graph: DefaultDirectedWeightedGraph[PublicKey, DescEdge]
                )
 
 sealed trait State
@@ -82,8 +85,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val updates = db.listChannelUpdates()
     log.info("loaded from db: channels={} nodes={} updates={}", channels.size, nodes.size, updates.size)
 
+    // this will be used to calculate routes
+    val graph = new DefaultDirectedWeightedGraph[PublicKey, DescEdge](classOf[DescEdge])
+
     val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
-    val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
+    val initChannelUpdates = updates.map { u =>
+      val desc = getDesc(u, initChannels(u.shortChannelId))
+      addEdge(graph, desc, u)
+      (desc) -> u
+    }.toMap
     val initNodes = nodes.map(n => (n.nodeId -> n)).toMap
 
     // send events for remaining channels/nodes
@@ -99,7 +109,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       watcher ! WatchSpentBasic(self, txid, outputIndex, fundingOutputScript, BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(c.shortChannelId))
     }
     log.info(s"initialization completed, ready to process messages")
-    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty))
+    startWith(NORMAL, Data(initNodes, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty, graph))
   }
 
   when(NORMAL) {
@@ -260,6 +270,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // let's clean the db and send the events
       log.info("pruning shortChannelId={} (spent)", shortChannelId.toHexString)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
+      // we also need to remove updates from the graph
+      channels1.values.foreach { c =>
+        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+      }
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
         case nodeId =>
@@ -296,6 +311,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
           db.removeChannel(shortChannelId) // NB: this also removes channel updates
           context.system.eventStream.publish(ChannelLost(shortChannelId))
+      }
+      // we also need to remove updates from the graph
+      channels1.values.foreach { c =>
+        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
       }
       staleNodes.foreach {
         case nodeId =>
@@ -338,17 +358,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(RouteRequest(start, end, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
       // it has precedence over all other channel_updates we know
-      val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end))
-      // we add them to the private channel_updates
-      val updates0 = d.privateUpdates ++ assistedUpdates
-      // we add them to the publicly-announced updates (order matters!! local/assisted channel_updates will override channel_updates received by the network)
-      val updates1 = d.updates ++ updates0
-      // we then filter out the currently excluded channels
-      val updates2 = updates1 -- d.excludedChannels
-      // we also filter out disabled channels, and channels/nodes that are blacklisted for this particular request
-      val updates3 = filterUpdates(updates2, ignoreNodes, ignoreChannels)
+      val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
+      // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
+      val excludedUpdates = d.excludedChannels.map(desc => (desc -> d.updates.get(desc))).map {
+        case (desc, Some(u)) => Some(desc -> u)
+        case _ => None
+      }.flatten.toMap
+      val blacklistedUpdates = getBlacklistedUpdates(d.channels, d.updates ++ assistedUpdates, ignoreNodes, ignoreChannels)
       log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
-      findRoute(start, end, updates3)
+      findRoute(d.graph, start, end, withUpdates = assistedUpdates, withoutUpdates = blacklistedUpdates ++ excludedUpdates)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -413,11 +431,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
+        // we also need to update the graph
+        removeEdge(d.graph, desc)
+        addEdge(d.graph, desc, u)
         d.copy(updates = d.updates + (desc -> u), rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))))
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.addChannelUpdate(u)
+        // we also need to update the graph
+        addEdge(d.graph, desc, u)
         d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc, rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> Set(origin))))
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
@@ -445,10 +468,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else if (d.privateUpdates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
+        // we also need to update the graph
+        removeEdge(d.graph, desc)
+        addEdge(d.graph, desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u))
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
+        // we also need to update the graph
+        addEdge(d.graph, desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u))
       }
     } else {
@@ -529,37 +557,74 @@ object Router {
   /**
     * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
     */
-  def filterUpdates(updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) =
-    updates.filter { case (desc, u) =>
-      !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b) &&
-        !ignoreChannels.contains(desc.id) &&
-        Announcements.isEnabled(u.flags)
+  def getBlacklistedUpdates(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]): Map[ChannelDesc, ChannelUpdate] = {
+    // expensive, but node blacklisting shouldn't happen often
+    val u1 = if (ignoreNodes.isEmpty) {
+      Map.empty[ChannelDesc, ChannelUpdate]
+    } else {
+      updates.filterKeys(desc => !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b))
+    }
+    val u2 = ignoreChannels.map(channels).flatMap { c =>
+      val desc1 = ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)
+      val desc2 = ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)
+      updates.get(desc1).map(desc1 -> _) ++ updates.get(desc2).map(desc2 -> _)
+    }.toMap
+      u1 ++ u2
     }
 
-  def findRoute(localNodeId: PublicKey, targetNodeId: PublicKey, updates: Map[ChannelDesc, ChannelUpdate]): Try[Seq[Hop]] = Try {
-    if (localNodeId == targetNodeId) throw CannotRouteToSelf
+  val DEFAULT_AMOUNT_MSAT = 10000000
 
-    case class DescEdge(desc: ChannelDesc) extends DefaultWeightedEdge
-    val g = new DefaultDirectedWeightedGraph[PublicKey, DescEdge](classOf[DescEdge])
-
-    val DEFAULT_AMOUNT_MSAT = 10000000
-
-    updates.foreach { case (d, u) =>
+  /**
+    * Careful: this function *mutates* the graph
+    *
+    * Note that we only add the edge if the corresponding channel is enabled
+    */
+  def addEdge(g: DefaultDirectedWeightedGraph[PublicKey, DescEdge], d: ChannelDesc, u: ChannelUpdate) = {
+    if (Announcements.isEnabled(u.flags)) {
       g.addVertex(d.a)
       g.addVertex(d.b)
-      val e = new DescEdge(d)
-      g.addEdge(d.a, d.b, e)
+      val e = new DescEdge(d, u)
       val weight = nodeFee(u.feeBaseMsat, u.feeProportionalMillionths, DEFAULT_AMOUNT_MSAT).toDouble
+      g.addEdge(d.a, d.b, e)
       g.setEdgeWeight(e, weight)
     }
+  }
+
+  /**
+    * Careful: this function *mutates* the graph
+    *
+    * Note that we don't clean up vertices
+    */
+  def removeEdge(g: DefaultDirectedWeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
+    g.removeEdge(d.a, d.b)
+  }
+
+  /**
+    * Find a route in the graph between localNodeId and targetNodeId
+    *
+    * @param g
+    * @param localNodeId
+    * @param targetNodeId
+    * @param withUpdates    those will be added before computing the route, and removed after so that g is left unchanged
+    * @param withoutUpdates those will be removed before computing the route, and added back after so that g is left unchanged
+    * @return
+    */
+  def findRoute(g: DefaultDirectedWeightedGraph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, withUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty): Try[Seq[Hop]] = Try {
+    if (localNodeId == targetNodeId) throw CannotRouteToSelf
     try {
+      withUpdates.foreach { case (d, u) => addEdge(g, d, u) }
+      withoutUpdates.foreach { case (d, _) => removeEdge(g, d) }
+
       val route_opt = Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))
       route_opt match {
-        case Some(path) => path.getEdgeList.map(edge => Hop(edge.desc.a, edge.desc.b, updates(edge.desc)))
+        case Some(path) => path.getEdgeList.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u))
         case None => throw RouteNotFound
       }
     } catch {
       case _: Throwable => throw RouteNotFound
+    } finally {
+      withUpdates.foreach { case (d, _) => removeEdge(g, d) }
+      withoutUpdates.foreach { case (d, u) => addEdge(g, d, u) }
     }
   }
 
