@@ -41,6 +41,20 @@ class RouteCalculationSpec extends FunSuite {
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
+  test("calculate longer but cheaper route") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0),
+      makeUpdate(5L, a, e, 10, 10)
+    ).toMap
+
+    val route = Router.findRoute(a, e, updates)
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+  }
+
   test("no local channels") {
 
     val updates = List(

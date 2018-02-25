@@ -17,7 +17,7 @@ import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
-import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
+import org.jgrapht.graph._
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
@@ -539,14 +539,19 @@ object Router {
   def findRoute(localNodeId: PublicKey, targetNodeId: PublicKey, updates: Map[ChannelDesc, ChannelUpdate]): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
 
-    case class DescEdge(desc: ChannelDesc) extends DefaultEdge
-    val g = new DefaultDirectedGraph[PublicKey, DescEdge](classOf[DescEdge])
+    case class DescEdge(desc: ChannelDesc) extends DefaultWeightedEdge
+    val g = new DefaultDirectedWeightedGraph[PublicKey, DescEdge](classOf[DescEdge])
 
-    updates.keys.foreach(d => {
+    val DEFAULT_AMOUNT_MSAT = 10000000
+
+    updates.foreach { case (d, u) =>
       g.addVertex(d.a)
       g.addVertex(d.b)
-      g.addEdge(d.a, d.b, new DescEdge(d))
-    })
+      val e = new DescEdge(d)
+      g.addEdge(d.a, d.b, e)
+      val weight = nodeFee(u.feeBaseMsat, u.feeProportionalMillionths, DEFAULT_AMOUNT_MSAT).toDouble
+      g.setEdgeWeight(e, weight)
+    }
     try {
       val route_opt = Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))
       route_opt match {
