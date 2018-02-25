@@ -19,9 +19,9 @@ case class Local(sender: Option[ActorRef]) extends Origin // we don't persist re
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 case class ForwardAdd(add: UpdateAddHtlc)
-case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
-case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
-case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
+case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc)
+case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc)
+case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc)
 
 // @formatter:on
 
@@ -130,25 +130,25 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmdFail.reason}")
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
 
-    case ForwardFulfill(fulfill, Local(Some(sender))) =>
+    case ForwardFulfill(fulfill, Local(Some(sender)), _) =>
       sender ! fulfill
 
-    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut)) =>
+    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), _) =>
       val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
       context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
 
-    case ForwardFail(fail, Local(Some(sender))) =>
+    case ForwardFail(fail, Local(Some(sender)), _) =>
       sender ! fail
 
-    case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
+    case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _), _) =>
       val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
 
-    case ForwardFailMalformed(fail, Local(Some(sender))) =>
+    case ForwardFailMalformed(fail, Local(Some(sender)), _) =>
       sender ! fail
 
-    case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
+    case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _), _) =>
       val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
 

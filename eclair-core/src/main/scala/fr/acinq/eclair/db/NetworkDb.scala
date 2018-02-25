@@ -12,7 +12,7 @@ trait NetworkDb {
 
   def removeNode(nodeId: PublicKey)
 
-  def listNodes(): List[NodeAnnouncement]
+  def listNodes(): Seq[NodeAnnouncement]
 
   def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi)
 
@@ -30,6 +30,6 @@ trait NetworkDb {
 
   def updateChannelUpdate(u: ChannelUpdate)
 
-  def listChannelUpdates(): List[ChannelUpdate]
+  def listChannelUpdates(): Seq[ChannelUpdate]
 
 }

@@ -5,7 +5,7 @@ import java.sql.Connection
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.Command
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecList, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, using}
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
 class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
@@ -32,11 +32,11 @@ class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
     }
   }
 
-  override def listPendingRelay(channelId: BinaryData): List[Command] = {
+  override def listPendingRelay(channelId: BinaryData): Seq[Command] = {
     using(sqlite.prepareStatement("SELECT htlc_id, data FROM pending_relay WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       val rs = statement.executeQuery()
-      codecList(rs, cmdCodec)
+      codecSequence(rs, cmdCodec)
     }
   }
 

@@ -21,6 +21,6 @@ trait PendingRelayDb {
 
   def removePendingRelay(channelId: BinaryData, htlcId: Long)
 
-  def listPendingRelay(channelId: BinaryData): List[Command]
+  def listPendingRelay(channelId: BinaryData): Seq[Command]
 
 }
