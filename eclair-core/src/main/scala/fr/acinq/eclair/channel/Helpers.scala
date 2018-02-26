@@ -169,33 +169,36 @@ object Helpers {
       }
     }
 
-    def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): ClosingSigned = {
-      log.debug(s"making first closing tx with commitments:\n${Commitments.specs2String(commitments)}")
+    def firstClosingFee(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): Satoshi = {
       import commitments._
-      val closingFee = {
-        // this is just to estimate the weight, it depends on size of the pubkey scripts
-        val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
-        val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
-        // no need to use a very high fee here, so we target 6 blocks; also, we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
-        val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
-        log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
-        Transactions.weight2fee(feeratePerKw, closingWeight)
-      }
-      val (_, closingSigned) = makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
-      log.info(s"proposing closingFeeSatoshis=${closingSigned.feeSatoshis}")
-      closingSigned
+      // this is just to estimate the weight, it depends on size of the pubkey scripts
+      val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
+      val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
+      // no need to use a very high fee here, so we target 6 blocks; also, we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
+      val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
+      log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
+      Transactions.weight2fee(feeratePerKw, closingWeight)
+    }
+
+    def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
+
+    def makeFirstClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
+      val closingFee = firstClosingFee(commitments, localScriptPubkey, remoteScriptPubkey)
+      makeClosingTx(commitments, localScriptPubkey, remoteScriptPubkey, closingFee)
     }
 
     def makeClosingTx(commitments: Commitments, localScriptPubkey: BinaryData, remoteScriptPubkey: BinaryData, closingFee: Satoshi)(implicit log: LoggingAdapter): (ClosingTx, ClosingSigned) = {
       import commitments._
       require(isValidFinalScriptPubkey(localScriptPubkey), "invalid localScriptPubkey")
       require(isValidFinalScriptPubkey(remoteScriptPubkey), "invalid remoteScriptPubkey")
+      log.debug(s"making closing tx with closingFee={} and commitments:\n{}", closingFee, Commitments.specs2String(commitments))
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
       val localClosingSig = Transactions.sign(closingTx, commitments.localParams.fundingPrivKey)
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
-      log.debug(s"closingTx=${closingTx.tx}}")
+      log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
+      log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
       (closingTx, closingSigned)
     }
 
@@ -210,8 +213,6 @@ object Helpers {
       val signedClosingTx = Transactions.addSigs(closingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx).recover { case _ => throw InvalidCloseSignature(commitments.channelId, signedClosingTx.tx) }
     }
-
-    def nextClosingFee(localClosingFee: Satoshi, remoteClosingFee: Satoshi): Satoshi = ((localClosingFee + remoteClosingFee) / 4) * 2
 
     def generateTx(desc: String)(attempt: Try[TransactionWithInputInfo])(implicit log: LoggingAdapter): Option[TransactionWithInputInfo] = {
       attempt match {

@@ -173,6 +173,10 @@ object ChannelCodecs extends Logging {
       ("remotePerCommitmentSecrets" | ShaChain.shaChainCodec) ::
       ("channelId" | binarydata(32))).as[Commitments]
 
+  val closingTxProposedCodec: Codec[ClosingTxProposed] = (
+    ("unsignedTx" | txCodec) ::
+      ("localClosingSigned" | closingSignedCodec)).as[ClosingTxProposed]
+
   val localCommitPublishedCodec: Codec[LocalCommitPublished] = (
     ("commitTx" | txCodec) ::
       ("claimMainDelayedOutputTx" | optional(bool, txCodec)) ::
@@ -225,11 +229,12 @@ object ChannelCodecs extends Logging {
     ("commitments" | commitmentsCodec) ::
       ("localShutdown" | shutdownCodec) ::
       ("remoteShutdown" | shutdownCodec) ::
-      ("localClosingSigned" | listOfN(uint16, closingSignedCodec))).as[DATA_NEGOTIATING]
+      ("closingTxProposed" | listOfN(uint16, listOfN(uint16, closingTxProposedCodec))) ::
+      ("bestUnpublishedClosingTx_opt" | optional(bool, txCodec))).as[DATA_NEGOTIATING]
 
   val DATA_CLOSING_Codec: Codec[DATA_CLOSING] = (
     ("commitments" | commitmentsCodec) ::
-      ("localClosingSigned" | listOfN(uint16, closingSignedCodec)) ::
+      ("mutualCloseProposed" | listOfN(uint16, txCodec)) ::
       ("mutualClosePublished" | listOfN(uint16, txCodec)) ::
       ("localCommitPublished" | optional(bool, localCommitPublishedCodec)) ::
       ("remoteCommitPublished" | optional(bool, remoteCommitPublishedCodec)) ::

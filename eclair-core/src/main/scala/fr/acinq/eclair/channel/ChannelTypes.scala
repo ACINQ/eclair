@@ -124,6 +124,8 @@ trait HasCommitments extends Data {
   def channelId = commitments.channelId
 }
 
+case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
+
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTx: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
 case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], htlcPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
@@ -145,10 +147,14 @@ final case class DATA_NORMAL(commitments: Commitments,
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
-
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown,
+                                  closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
+                                  bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
+  require(!closingTxProposed.isEmpty, "there must always be a list for the current negotiation")
+  require(!commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+}
 final case class DATA_CLOSING(commitments: Commitments,
-                              localClosingSigned: List[ClosingSigned],
+                              mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,

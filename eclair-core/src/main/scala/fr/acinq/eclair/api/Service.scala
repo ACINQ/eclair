@@ -51,7 +51,7 @@ trait Service extends Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
