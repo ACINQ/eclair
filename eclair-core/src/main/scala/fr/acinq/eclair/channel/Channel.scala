@@ -100,7 +100,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, remote, remoteInit, channelFlags), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, remote, remoteInit, channelFlags), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
       val firstPerCommitmentPoint = Generators.perCommitPoint(localParams.shaSeed, 0)
@@ -226,7 +226,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit, _), open)) =>
+    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, _, remoteInit, _), open)) =>
       Try(Helpers.validateParamsFunder(nodeParams, open, accept)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
@@ -253,7 +253,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.debug(s"remote params: $remoteParams")
           val localFundingPubkey = localParams.fundingPrivKey.publicKey
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
-          val fundingTxFeeratePerKw = Globals.feeratesPerKw.get.blocks_6
           wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }

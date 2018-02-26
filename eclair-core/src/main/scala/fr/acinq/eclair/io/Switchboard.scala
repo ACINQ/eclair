@@ -46,7 +46,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       peer forward c
       context become main(peers + (remoteNodeId -> peer))
 
-    case o@Peer.OpenChannel(remoteNodeId, _, _, _) =>
+    case o@Peer.OpenChannel(remoteNodeId, _, _, _, _) =>
       peers.get(remoteNodeId) match {
         case Some(peer) => peer forward o
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))

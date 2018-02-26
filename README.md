@@ -126,30 +126,30 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
 
 ## JSON-RPC API
 
- method        |  params                                                    | description
- ------------- |------------------------------------------------------------|-----------------------------------------------------------
-  getinfo      |                                                            | return basic node information (id, chain hash, current block height) 
-  connect      | nodeId, host, port                                         | open a secure connection to a lightning node
-  connect      | uri                                                        | open a secure connection to a lightning node
-  open         | nodeId, fundingSatoshis, pushMsat = 0, channelFlags = 0x01 | open a channel with another lightning node, by default push = 0 and channel is announced
-  peers        |                                                            | list existing local peers
-  channels     |                                                            | list existing local channels
-  channels     | nodeId                                                     | list existing local channels opened with a particular nodeId
-  channel      | channelId                                                  | retrieve detailed information about a given channel
-  allnodes     |                                                            | list all known nodes
-  allchannels  |                                                            | list all known channels
-  allupdates   |                                                            | list all channels updates
-  allupdates   | nodeId                                                     | list all channels updates for this nodeId
-  receive      | description                                                | generate a payment request without a required amount (can be useful for donations)
-  receive      | amountMsat, description                                    | generate a payment request for a given amount
-  send         | amountMsat, paymentHash, nodeId                            | send a payment to a lightning node
-  send         | paymentRequest                                             | send a payment to a lightning node using a BOLT11 payment request
-  send         | paymentRequest, amountMsat                                 | send a payment to a lightning node using a BOLT11 payment request and a custom amount
-  checkpayment | paymentHash                                                | returns true if the payment has been received, false otherwise
-  checkpayment | paymentRequest                                             | returns true if the payment has been received, false otherwise
-  close        | channelId                                                  | close a channel
-  close        | channelId, scriptPubKey                                    | close a channel and send the funds to the given scriptPubKey
-  help         |                                                            | display available methods
+ method        |  params                                                                                | description
+ ------------- |----------------------------------------------------------------------------------------|-----------------------------------------------------------
+  getinfo      |                                                                                        | return basic node information (id, chain hash, current block height) 
+  connect      | nodeId, host, port                                                                     | open a secure connection to a lightning node
+  connect      | uri                                                                                    | open a secure connection to a lightning node
+  open         | nodeId, fundingSatoshis, pushMsat = 0, fundingTxFeerateSatPerByte, channelFlags = 0x01 | open a channel with another lightning node, by default push = 0, feerate aims for 1st conf within 6 blocks, and channel is announced
+  peers        |                                                                                        | list existing local peers
+  channels     |                                                                                        | list existing local channels
+  channels     | nodeId                                                                                 | list existing local channels opened with a particular nodeId
+  channel      | channelId                                                                              | retrieve detailed information about a given channel
+  allnodes     |                                                                                        | list all known nodes
+  allchannels  |                                                                                        | list all known channels
+  allupdates   |                                                                                        | list all channels updates
+  allupdates   | nodeId                                                                                 | list all channels updates for this nodeId
+  receive      | description                                                                            | generate a payment request without a required amount (can be useful for donations)
+  receive      | amountMsat, description                                                                | generate a payment request for a given amount
+  send         | amountMsat, paymentHash, nodeId                                                        | send a payment to a lightning node
+  send         | paymentRequest                                                                         | send a payment to a lightning node using a BOLT11 payment request
+  send         | paymentRequest, amountMsat                                                             | send a payment to a lightning node using a BOLT11 payment request and a custom amount
+  checkpayment | paymentHash                                                                            | returns true if the payment has been received, false otherwise
+  checkpayment | paymentRequest                                                                         | returns true if the payment has been received, false otherwise
+  close        | channelId                                                                              | close a channel
+  close        | channelId, scriptPubKey                                                                | close a channel and send the funds to the given scriptPubKey
+  help         |                                                                                        | display available methods
 
 ## Docker
 

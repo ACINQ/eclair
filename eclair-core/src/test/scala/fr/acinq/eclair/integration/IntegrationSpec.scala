@@ -142,6 +142,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = MilliSatoshi(pushMsat),
+      fundingTxFeeratePerKw_opt = None,
       channelFlags = None))
     assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
   }

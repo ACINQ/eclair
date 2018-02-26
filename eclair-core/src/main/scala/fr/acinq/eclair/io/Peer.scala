@@ -152,11 +152,12 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       stay
 
     case Event(c: Peer.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels)) =>
-      log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis} and pushMsat=${c.pushMsat}")
+      log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt}")
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
       val temporaryChannelId = randomBytes(32)
-      val networkFeeratePerKw = Globals.feeratesPerKw.get.block_1
-      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, networkFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
+      val channelFeeratePerKw = Globals.feeratesPerKw.get.block_1
+      val fundingTxFeeratePerKw = c.fundingTxFeeratePerKw_opt.getOrElse(Globals.feeratesPerKw.get.blocks_6)
+      channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
     case Event(msg: wire.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels)) =>
@@ -345,9 +346,12 @@ object Peer {
   case class Connect(uri: NodeURI)
   case object Reconnect
   case object Disconnect
-  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, channelFlags: Option[Byte]) {
+  case class OpenChannel(remoteNodeId: PublicKey, fundingSatoshis: Satoshi, pushMsat: MilliSatoshi, fundingTxFeeratePerKw_opt: Option[Long], channelFlags: Option[Byte]) {
     require(fundingSatoshis.amount < Channel.MAX_FUNDING_SATOSHIS, s"fundingSatoshis must be less than ${Channel.MAX_FUNDING_SATOSHIS}")
     require(pushMsat.amount <= 1000 * fundingSatoshis.amount, s"pushMsat must be less or equal to fundingSatoshis")
+    require(fundingSatoshis.amount >= 0, s"fundingSatoshis must be positive")
+    require(pushMsat.amount >= 0, s"pushMsat must be positive")
+    require(fundingTxFeeratePerKw_opt.getOrElse(0L) >= 0, s"funding tx feerate must be positive")
   }
   case object GetPeerInfo
   case class PeerInfo(nodeId: PublicKey, state: String, address: Option[InetSocketAddress], channels: Int)
