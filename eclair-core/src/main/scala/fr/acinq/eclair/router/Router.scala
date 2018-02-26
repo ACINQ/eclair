@@ -366,14 +366,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       if (chainHash != nodeParams.chainHash) {
         log.warning("received query_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        def keep(id: Long): Boolean = {
-          val (height, _, _) = fromShortId(id)
-          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
-        }
-
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
-        val shortChannelIds = d.channels.keys.filter(keep) // note: order is preserved
-
+        val shortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
         log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
         sender ! reply
@@ -386,13 +380,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
         val theirShortChannelIds = Announcements.unzip(data)
-
-        def keep(id: Long): Boolean = {
-          val (height, _, _) = fromShortId(id)
-          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
-        }
-
-        val ourShortChannelIds = d.channels.keys.filter(keep) // note: order is preserved
+        val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
         sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
@@ -550,6 +538,36 @@ object Router {
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
   /**
+    * Is valid (not stale) a channel that:
+    * (1) is younger than 2 weeks (2*7*144 = 2016 blocks)
+    * OR
+    * (2) has at least one channel_update younger than 2 weeks
+    * @param channel
+    * @param update1
+    * @param update2
+    */
+  def isValid(channel: ChannelAnnouncement, update1: Option[ChannelUpdate], update2: Option[ChannelUpdate]) = {
+    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
+    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
+    val staleThresholdBlocks = Globals.blockCount.get() - 2016
+    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    val (blockHeight, _, _) = fromShortId(channel.shortChannelId)
+    blockHeight >= staleThresholdBlocks || update1.map(_.timestamp).getOrElse(0L) > staleThresholdSeconds || update2.map(_.timestamp).getOrElse(0L) > staleThresholdSeconds
+  }
+
+  /**
+    * filter channel for advanced sync
+    */
+  def keep(firstBlockNum: Int, numberOfBlocks: Int, id: Long, channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
+    val (height, _, _) = fromShortId(id)
+    val c = channels(id)
+    val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+    val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks) && isValid(c, u1, u2)
+  }
+
+
+  /**
     * Is stale a channel that:
     * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
     * AND
@@ -560,15 +578,10 @@ object Router {
     * @return
     */
   def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
-    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
-    val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels.filter { c =>
-      val (blockHeight, _, _) = fromShortId(c.shortChannelId)
-      val latestUpdate_opt = (updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)) ++ updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))).toSeq.map(_.timestamp).sorted.reverse.headOption
-      blockHeight < staleThresholdBlocks && // consider only channels older than 2 weeks
-        (latestUpdate_opt.isEmpty || latestUpdate_opt.get < staleThresholdSeconds) // channel must have updates more recent than two weeks
+      val update1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+      val update2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+      !isValid(c, update1, update2)
     }
     staleChannels.map(_.shortChannelId)
   }
