@@ -8,13 +8,12 @@ import javafx.scene.input.KeyCode.{ENTER, TAB}
 import javafx.scene.input.KeyEvent
 import javafx.stage.Stage
 
+import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.gui.{FxApp, Handlers}
-import fr.acinq.eclair.gui.utils.CoinUtils
 import fr.acinq.eclair.payment.PaymentRequest
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
-
 
 /**
   * Created by DPA on 23/09/2016.

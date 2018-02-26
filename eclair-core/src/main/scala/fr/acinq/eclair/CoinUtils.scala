@@ -1,10 +1,8 @@
-package fr.acinq.eclair.gui.utils
+package fr.acinq.eclair
 
 import java.text.DecimalFormat
-import javafx.collections.FXCollections
 
 import fr.acinq.bitcoin.{Btc, BtcAmount, MilliBtc, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.gui.FxApp
 import grizzled.slf4j.Logging
 
 import scala.util.{Failure, Success, Try}
@@ -19,11 +17,14 @@ private sealed trait BtcAmountGUILossless {
   def toMilliSatoshi: MilliSatoshi = MilliSatoshi(amount_msat)
 }
 
-private case class MSatWrapper(amount_msat: Long) extends BtcAmountGUILossless {
+private case class GUIMSat(amount_msat: Long) extends BtcAmountGUILossless {
   override def unit: CoinUnit = MSatUnit
 }
 private case class GUISat(amount_msat: Long) extends BtcAmountGUILossless {
   override def unit: CoinUnit = SatUnit
+}
+private case class GUIBits(amount_msat: Long) extends BtcAmountGUILossless {
+  override def unit: CoinUnit = BitUnit
 }
 private case class GUIMBtc(amount_msat: Long) extends BtcAmountGUILossless {
   override def unit: CoinUnit = MBtcUnit
@@ -53,6 +54,13 @@ case object SatUnit extends CoinUnit {
   override def factorToMsat: Long = 1000L // 1 sat = 1 000 msat
 }
 
+case object BitUnit extends CoinUnit {
+  override def code: String = "bits"
+  override def shortLabel: String = "bits"
+  override def label: String = "Bits"
+  override def factorToMsat: Long = 100 * 1000L // 1 bit = 100 sat = 100 000 msat
+}
+
 case object MBtcUnit extends CoinUnit {
   override def code: String = "mbtc"
   override def shortLabel: String = "mBTC"
@@ -70,10 +78,11 @@ case object BtcUnit extends CoinUnit {
 object CoinUtils extends Logging {
 
   val COIN_PATTERN = "###,###,###,##0.###########"
-  val COIN_FORMAT = new DecimalFormat(COIN_PATTERN)
+  var COIN_FORMAT = new DecimalFormat(COIN_PATTERN)
 
-  val FX_UNITS_ARRAY_NO_MSAT = FXCollections.observableArrayList(SatUnit.label, MBtcUnit.label, BtcUnit.label)
-  val FX_UNITS_ARRAY = FXCollections.observableArrayList(MSatUnit.label, SatUnit.label, MBtcUnit.label, BtcUnit.label)
+  def setCoinPattern(pattern: String) = {
+    COIN_FORMAT = new DecimalFormat(pattern)
+  }
 
   /**
     * Converts a string amount denominated in a bitcoin unit to a Millisatoshi amount. The amount might be truncated if
@@ -92,11 +101,11 @@ object CoinUtils extends Logging {
     if (amountDecimal < 0) {
       throw new IllegalArgumentException("amount must be equal or greater than 0")
     }
-    logger.debug(s"amount=$amountDecimal with unit=$unit")
     // note: we can't use the fr.acinq.bitcoin._ conversion methods because they truncate the sub-satoshi part
     getUnitFromString(unit) match {
       case MSatUnit => MilliSatoshi((amountDecimal * MSatUnit.factorToMsat).longValue())
       case SatUnit => MilliSatoshi((amountDecimal * SatUnit.factorToMsat).longValue())
+      case BitUnit => MilliSatoshi((amountDecimal * BitUnit.factorToMsat).longValue())
       case MBtcUnit => MilliSatoshi((amountDecimal * MBtcUnit.factorToMsat).longValue())
       case BtcUnit => MilliSatoshi((amountDecimal * BtcUnit.factorToMsat).longValue())
       case _ => throw new IllegalArgumentException("unhandled unit")
@@ -107,13 +116,14 @@ object CoinUtils extends Logging {
     fr.acinq.bitcoin.millisatoshi2satoshi(CoinUtils.convertStringAmountToMsat(amount, unit))
 
   /**
-    * Only BtcUnit, MBtcUnit and SatUnit are supported.
+    * Only BtcUnit, MBtcUnit, SatUnit and MSatUnit codes or label are supported.
     * @param unit
     * @return
     */
   def getUnitFromString(unit: String): CoinUnit = unit.toLowerCase() match {
     case u if u == MSatUnit.code || u == MSatUnit.label.toLowerCase() => MSatUnit
     case u if u == SatUnit.code || u == SatUnit.label.toLowerCase() => SatUnit
+    case u if u == BitUnit.code || u == BitUnit.label.toLowerCase() => BitUnit
     case u if u == MBtcUnit.code || u == MBtcUnit.label.toLowerCase() => MBtcUnit
     case u if u == BtcUnit.code || u == BtcUnit.label.toLowerCase() => BtcUnit
     case u => throw new IllegalArgumentException(s"unhandled unit=$u")
@@ -128,26 +138,30 @@ object CoinUtils extends Logging {
     */
   private def convertAmountToGUIUnit(amount: BtcAmount, unit: CoinUnit): BtcAmountGUILossless = (amount, unit) match {
     // amount is msat, so no conversion required
-    case (a: MilliSatoshi, MSatUnit) => MSatWrapper(a.amount * MSatUnit.factorToMsat)
+    case (a: MilliSatoshi, MSatUnit) => GUIMSat(a.amount * MSatUnit.factorToMsat)
     case (a: MilliSatoshi, SatUnit) => GUISat(a.amount * MSatUnit.factorToMsat)
+    case (a: MilliSatoshi, BitUnit) => GUIBits(a.amount * MSatUnit.factorToMsat)
     case (a: MilliSatoshi, MBtcUnit) => GUIMBtc(a.amount * MSatUnit.factorToMsat)
     case (a: MilliSatoshi, BtcUnit) => GUIBtc(a.amount * MSatUnit.factorToMsat)
 
     // amount is satoshi, convert sat -> msat
-    case (a: Satoshi, MSatUnit) => MSatWrapper(a.amount * SatUnit.factorToMsat)
+    case (a: Satoshi, MSatUnit) => GUIMSat(a.amount * SatUnit.factorToMsat)
     case (a: Satoshi, SatUnit) => GUISat(a.amount * SatUnit.factorToMsat)
+    case (a: Satoshi, BitUnit) => GUIBits(a.amount * SatUnit.factorToMsat)
     case (a: Satoshi, MBtcUnit) => GUIMBtc(a.amount * SatUnit.factorToMsat)
     case (a: Satoshi, BtcUnit) => GUIBtc(a.amount * SatUnit.factorToMsat)
 
     // amount is mbtc
-    case (a: MilliBtc, MSatUnit) => MSatWrapper((a.amount * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, MSatUnit) => GUIMSat((a.amount * MBtcUnit.factorToMsat).toLong)
     case (a: MilliBtc, SatUnit) => GUISat((a.amount * MBtcUnit.factorToMsat).toLong)
+    case (a: MilliBtc, BitUnit) => GUIBits((a.amount * MBtcUnit.factorToMsat).toLong)
     case (a: MilliBtc, MBtcUnit) => GUIMBtc((a.amount * MBtcUnit.factorToMsat).toLong)
     case (a: MilliBtc, BtcUnit) => GUIBtc((a.amount * MBtcUnit.factorToMsat).toLong)
 
     // amount is mbtc
-    case (a: Btc, MSatUnit) => MSatWrapper((a.amount * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, MSatUnit) => GUIMSat((a.amount * BtcUnit.factorToMsat).toLong)
     case (a: Btc, SatUnit) => GUISat((a.amount * BtcUnit.factorToMsat).toLong)
+    case (a: Btc, BitUnit) => GUIBits((a.amount * BtcUnit.factorToMsat).toLong)
     case (a: Btc, MBtcUnit) => GUIMBtc((a.amount * BtcUnit.factorToMsat).toLong)
     case (a: Btc, BtcUnit) => GUIBtc((a.amount * BtcUnit.factorToMsat).toLong)
 
@@ -165,7 +179,7 @@ object CoinUtils extends Logging {
     */
   def formatAmountInUnit(amount: BtcAmount, unit: CoinUnit, withUnit: Boolean = false): String = {
     val formatted = COIN_FORMAT.format(rawAmountInUnit(amount, unit))
-    if (withUnit) s"$formatted ${FxApp.getUnit.shortLabel}" else formatted
+    if (withUnit) s"$formatted ${unit.shortLabel}" else formatted
   }
 
   /**

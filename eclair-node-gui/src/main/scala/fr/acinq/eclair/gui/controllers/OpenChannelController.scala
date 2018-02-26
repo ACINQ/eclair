@@ -8,8 +8,9 @@ import javafx.scene.control._
 import javafx.stage.Stage
 
 import fr.acinq.bitcoin.{Satoshi, _}
+import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.channel.{Channel, ChannelFlags}
-import fr.acinq.eclair.gui.utils.CoinUtils
+import fr.acinq.eclair.gui.utils.Constants
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import grizzled.slf4j.Logging
@@ -33,7 +34,7 @@ class OpenChannelController(val handlers: Handlers, val stage: Stage) extends Lo
   @FXML var button: Button = _
 
   @FXML def initialize = {
-    unit.setItems(CoinUtils.FX_UNITS_ARRAY_NO_MSAT)
+    unit.setItems(Constants.FX_UNITS_ARRAY_NO_MSAT)
     unit.setValue(FxApp.getUnit.label)
 
     simpleConnection.selectedProperty.addListener(new ChangeListener[Boolean] {

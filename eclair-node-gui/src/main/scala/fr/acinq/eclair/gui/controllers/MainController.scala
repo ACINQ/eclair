@@ -27,9 +27,9 @@ import javafx.util.{Callback, Duration}
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
-import fr.acinq.eclair.Setup
+import fr.acinq.eclair.{CoinUtils, Setup}
 import fr.acinq.eclair.gui.stages._
-import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
