@@ -92,14 +92,6 @@ case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEven
  */
 
 sealed trait Command
-case class UpstreamHtlc(add: UpdateAddHtlc, commitTx: CommitTx, channelNumber: Long) {
-  def id = add.id
-  def paymentHash = add.paymentHash
-  def amountMsat = add.amountMsat
-  def channelId = add.channelId
-  def expiry = add.expiry
-  def onionRoutingPacket = add.onionRoutingPacket
-}
 final case class CMD_ADD_HTLC(amountMsat: Long, paymentHash: BinaryData, expiry: Long, onion: BinaryData = Sphinx.LAST_PACKET.serialize, upstream_opt: Option[UpdateAddHtlc] = None, commit: Boolean = false) extends Command
 final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = false) extends Command
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[BinaryData, FailureMessage], commit: Boolean = false) extends Command

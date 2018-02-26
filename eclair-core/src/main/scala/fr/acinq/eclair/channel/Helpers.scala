@@ -1,7 +1,7 @@
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
-import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar, ripemd160, sha256}
+import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar, ripemd160, sha256}
 import fr.acinq.bitcoin.Script._
 import fr.acinq.bitcoin.{OutPoint, _}
 import fr.acinq.eclair.blockchain.EclairWallet
@@ -158,6 +158,9 @@ object Helpers {
 
   object Closing {
 
+    // used only to compute tx weights and estimate fees
+    lazy val dummyPublicKey = PrivateKey(BinaryData("01" * 32), true).publicKey
+
     def isValidFinalScriptPubkey(scriptPubKey: BinaryData): Boolean = {
       Try(Script.parse(scriptPubKey)) match {
         case Success(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(pubkeyHash, _) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil) if pubkeyHash.size == 20 => true
@@ -172,7 +175,7 @@ object Helpers {
       import commitments._
       // this is just to estimate the weight, it depends on size of the pubkey scripts
       val dummyClosingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, Satoshi(0), Satoshi(0), localCommit.spec)
-      val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
+      val closingWeight = Transaction.weight(Transactions.addSigs(dummyClosingTx, dummyPublicKey, remoteParams.fundingPubKey, "aa" * 71, "bb" * 71).tx)
       // no need to use a very high fee here, so we target 6 blocks; also, we "MUST set fee_satoshis less than or equal to the base fee of the final commitment transaction"
       val feeratePerKw = Math.min(Globals.feeratesPerKw.get.blocks_6, commitments.localCommit.spec.feeratePerKw)
       log.info(s"using feeratePerKw=$feeratePerKw for initial closing tx")
@@ -353,7 +356,7 @@ object Helpers {
       // OPTIONAL: let's check transactions are actually spendable
       //require(txes.forall(Transactions.checkSpendable(_).isSuccess), "the tx we produced are not spendable!")
 
-      claimRemoteCommitMainOutput(commitments, remoteCommit.remotePerCommitmentPoint, tx).copy(
+      claimRemoteCommitMainOutput(keyManager, commitments, remoteCommit.remotePerCommitmentPoint, tx).copy(
         claimHtlcSuccessTxs = txes.toList.collect { case c: ClaimHtlcSuccessTx => c.tx },
         claimHtlcTimeoutTxs = txes.toList.collect { case c: ClaimHtlcTimeoutTx => c.tx }
       )
@@ -370,17 +373,17 @@ object Helpers {
       * @param tx the remote commitment transaction that has just been published
       * @return a list of transactions (one per HTLC that we can claim)
       */
-    def claimRemoteCommitMainOutput(commitments: Commitments, remotePerCommitmentPoint: Point, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-      val localPaymentPrivkey = Generators.derivePrivKey(commitments.localParams.paymentKey, remotePerCommitmentPoint)
+    def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
+      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelNumber).publicKey, remotePerCommitmentPoint)
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
 
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(commitments.localParams.dustLimitSatoshis),
-          localPaymentPrivkey.publicKey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = Transactions.sign(claimMain, localPaymentPrivkey)
-        Transactions.addSigs(claimMain, localPaymentPrivkey.publicKey, sig)
+          localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
+        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelNumber), remotePerCommitmentPoint)
+        Transactions.addSigs(claimMain, localPubkey, sig)
       })
 
       RemoteCommitPublished(
