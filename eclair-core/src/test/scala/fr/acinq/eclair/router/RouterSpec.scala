@@ -209,11 +209,11 @@ class RouterSpec extends BaseRouterSpec {
 
   test("send routing state") { case (router, _) =>
     val sender = TestProbe()
-    val receiver = TestProbe()
-    sender.send(router, SendRoutingState(receiver.ref))
-    for (_ <- 0 until 4) receiver.expectMsgType[ChannelAnnouncement]
-    for (_ <- 0 until 6) receiver.expectMsgType[NodeAnnouncement]
-    for (_ <- 0 until 8) receiver.expectMsgType[ChannelUpdate]
+    sender.send(router, GetRoutingState)
+    val state = sender.expectMsgType[RoutingState]
+    assert(state.channels.size == 4)
+    assert(state.nodes.size == 6)
+    assert(state.updates.size == 8)
   }
 
 }

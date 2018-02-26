@@ -10,7 +10,7 @@ import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
-import fr.acinq.eclair.router.{Rebroadcast, SendRoutingState}
+import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire
 import fr.acinq.eclair.wire.LightningMessage
 
@@ -71,7 +71,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
         if (Features.initialRoutingSync(remoteInit.localFeatures)) {
-          router ! SendRoutingState(transport)
+          router ! GetRoutingState
         }
         // let's bring existing/requested channels online
         channels.values.toSet[ActorRef].foreach(_ ! INPUT_RECONNECTED(transport)) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
@@ -191,6 +191,20 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
+    case Event(RoutingState(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
+      // let's send the messages
+      def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
+        case (c, ann) =>
+          transport ! ann
+          c + 1
+      }
+      log.info(s"sending all announcements to {}", remoteNodeId)
+      val channelsSent = send(channels)
+      val nodesSent = send(nodes)
+      val updatesSent = send(updates)
+      log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+      stay
+
     case Event(Rebroadcast(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
       // we filter out announcements that we received from this node
       def sendIfNeeded(m: Map[_ <: LightningMessage, Set[ActorRef]]): Int = m.foldLeft(0) {
@@ -260,6 +274,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, previousKnownAddress
       stay
 
     case Event(_: Rebroadcast, _) => stay // ignored
+
+    case Event(_: RoutingState, _) => stay // ignored
 
     case Event(_: TransportHandler.ReadAck, _) => stay // ignored
   }
