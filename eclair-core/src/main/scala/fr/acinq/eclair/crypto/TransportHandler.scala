@@ -160,7 +160,7 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
           case _: ChannelAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
           case _: NodeAnnouncement => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
           case _: ChannelUpdate => d.sendBuffer.copy(lowPriority = d.sendBuffer.lowPriority :+ t)
-          case _ => d.sendBuffer.copy(lowPriority = d.sendBuffer.normalPriority :+ t)
+          case _ => d.sendBuffer.copy(normalPriority = d.sendBuffer.normalPriority :+ t)
         }
         stay using d.copy(sendBuffer = sendBuffer1)
       } else {
@@ -178,9 +178,9 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
         enc1
       }
       d.sendBuffer.normalPriority.dequeueOption match {
-        case Some((t, highPriority1)) =>
+        case Some((t, normalPriority1)) =>
           val enc1 = send(t)
-          stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = highPriority1), unackedSent = Some(t))
+          stay using d.copy(encryptor = enc1, sendBuffer = d.sendBuffer.copy(normalPriority = normalPriority1), unackedSent = Some(t))
         case None =>
           d.sendBuffer.lowPriority.dequeueOption match {
             case Some((t, lowPriority1)) =>
