@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
@@ -42,6 +42,10 @@ class PointSerializer extends CustomSerializer[Point](format => ({ null }, {
 
 class ScalarSerializer extends CustomSerializer[Scalar](format => ({ null }, {
   case x: Scalar => JString("XXX")
+}))
+
+class TransactionSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {
+  case x: Transaction => JString(x.toString())
 }))
 
 class TransactionWithInputInfoSerializer extends CustomSerializer[TransactionWithInputInfo](ser = format => ({ null }, {

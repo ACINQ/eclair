@@ -4,7 +4,7 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.getValidAnnouncements
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Color, NodeAnnouncement}
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
