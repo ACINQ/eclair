@@ -1,7 +1,6 @@
-package fr.acinq.eclair.gui.utils
+package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
-import fr.acinq.eclair._
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
