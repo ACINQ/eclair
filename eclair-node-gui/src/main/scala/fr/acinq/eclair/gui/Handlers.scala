@@ -40,16 +40,24 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       conn <- kit.switchboard ? Peer.Connect(nodeUri)
-      _ <- channel match {
-        case Some(o) =>
-          logger.info(s"opening a channel with remoteNodeId=${o.remoteNodeId}")
-          kit.switchboard ? o
-        case None => Future.successful(0) // nothing to do
-      }
-    } yield conn) onFailure {
-      case t: Throwable =>
-        logger.error("Could not open channel ", t)
-        notification("Connection failed", nodeUri.address.toString, NOTIFICATION_ERROR)
+    } yield (kit, conn)) onComplete {
+      case Success((k, _)) =>
+        logger.info(s"connection to $nodeUri successful")
+        channel match {
+          case Some(openChannel) =>
+            k.switchboard ? openChannel onComplete {
+              case Success(s) =>
+                logger.info(s"successfully opened channel $s")
+                notification("Channel created", s.toString, NOTIFICATION_SUCCESS)
+              case Failure(t) =>
+                logger.info("could not open channel ", t)
+                notification("Channel creation failed", t.getMessage, NOTIFICATION_ERROR)
+            }
+          case None =>
+        }
+      case Failure(t) =>
+        logger.error(s"could not create connection to $nodeUri ", t)
+        notification("Connection failed", t.getMessage, NOTIFICATION_ERROR)
     }
   }
 

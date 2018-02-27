@@ -84,14 +84,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
         goto(CONNECTED) using ConnectedData(address_opt, transport, remoteInit, channels.map { case (k: ChannelId, v) => (k, v)})
       } else {
         log.warning(s"incompatible features, disconnecting")
-        origin_opt.map(origin => origin ! "incompatible features")
+        origin_opt.map(origin => origin ! Status.Failure(new RuntimeException("incompatible features")))
         transport ! PoisonPill
         stay
       }
 
     case Event(Authenticator.Authenticated(connection, _, _, _, _, origin_opt), _) =>
       // two connections in parallel
-      origin_opt.map(origin => origin ! "there is another connection attempt in progress")
+      origin_opt.map(origin => origin ! Status.Failure(new RuntimeException("there is another connection attempt in progress")))
       // we kill this one
       log.warning(s"killing parallel connection $connection")
       connection ! PoisonPill
