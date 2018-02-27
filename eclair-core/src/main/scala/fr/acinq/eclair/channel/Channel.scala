@@ -230,7 +230,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(temporaryChannelId, t.getMessage.getBytes)
-          sendMessageToUser(Right(error))
+          replyToUser(Left(Left(t)))
           goto(CLOSED) sending error
         case _ =>
           // TODO: check equality of temporaryChannelId? or should be done upstream
@@ -257,15 +257,15 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       }
 
     case Event(CMD_CLOSE(_), _) =>
-      sendMessageToUser(Left("closed"))
+      replyToUser(Right("closed"))
       goto(CLOSED)
 
     case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
-      sendMessageToUser(Right(e))
+      replyToUser(Left(Right(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) =>
-      sendMessageToUser(Left("disconnected"))
+      replyToUser(Left(Left(new RuntimeException("disconnected"))))
       goto(CLOSED)
   })
 
@@ -291,19 +291,19 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.error(t, s"wallet returned error: ")
       val exc = ChannelFundingError(d.temporaryChannelId)
       val error = Error(d.temporaryChannelId, exc.getMessage.getBytes)
-      sendMessageToUser(Right(error))
+      replyToUser(Left(Left(t)))
       goto(CLOSED) sending error
 
     case Event(CMD_CLOSE(_), _) =>
-      sendMessageToUser(Left("closed"))
+      replyToUser(Right("closed"))
       goto(CLOSED)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
-      sendMessageToUser(Right(e))
+      replyToUser(Left(Right(e)))
       handleRemoteError(e, d)
 
     case Event(INPUT_DISCONNECTED, _) =>
-      sendMessageToUser(Left("disconnected"))
+      replyToUser(Left(Left(new RuntimeException("disconnected"))))
       goto(CLOSED)
   })
 
@@ -366,8 +366,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           val error = Error(channelId, exc.getMessage.getBytes)
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
+          replyToUser(Left(Left(cause)))
           // we haven't published anything yet, we can just stop
-          sendMessageToUser(Right(error))
           goto(CLOSED) sending error
         case Success(_) =>
           val commitInput = localCommitTx.input
@@ -386,22 +386,28 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           log.info(s"committing txid=${fundingTx.txid}")
           wallet.commit(fundingTx).onComplete {
-            case Success(true) => ()
-            case Success(false) => self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
-            case Failure(t) => log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
+            case Success(true) =>
+              replyToUser(Right(s"created channel $channelId"))
+            case Success(false) =>
+              replyToUser(Left(Left(new RuntimeException("couldn't publish funding tx"))))
+              self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
+            case Failure(t) =>
+              replyToUser(Left(Left(t)))
+              log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
           }
-          sendMessageToUser(Left(s"created channel $channelId"))
           goto(WAIT_FOR_FUNDING_CONFIRMED) using nextState
       }
 
     case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
+      replyToUser(Right("closed"))
       goto(CLOSED)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
+      replyToUser(Left(Right(e)))
       handleRemoteError(e, d)
   })
 
@@ -1442,10 +1448,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
 
-  def sendMessageToUser(message: Either[String, Error]) = {
+  /**
+    * This function is used to return feedback to user at channel opening
+    */
+  def replyToUser(message: Either[Either[Throwable, Error], String]) = {
     val m = message match {
-      case Left(s) => s
-      case Right(e) => Status.Failure(new RuntimeException(s"peer sent error: '${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else e.data.toString()}'"))
+      case Left(Left(t)) => Status.Failure(t)
+      case Left(Right(e)) => Status.Failure(new RuntimeException(s"peer sent error: '${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else e.data.toString()}'"))
+      case Right(s) => s
     }
     origin_opt.map(_ ! m)
   }
