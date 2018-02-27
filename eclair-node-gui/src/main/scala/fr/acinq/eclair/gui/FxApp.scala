@@ -137,7 +137,7 @@ class FxApp extends Application with Logging {
         popup.setHideOnEscape(false)
         popup.setAutoFix(false)
         val margin = 10
-        val width = 300
+        val width = 400
         popup.setWidth(margin + width)
         popup.getContent.add(root)
         // positioning the popup @ TOP RIGHT of screen

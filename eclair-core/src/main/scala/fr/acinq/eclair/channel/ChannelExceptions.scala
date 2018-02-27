@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel
 
 import fr.acinq.bitcoin.{BinaryData, Transaction}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.payment.Origin
+import fr.acinq.eclair.payment.{Origin, Relayed}
 import fr.acinq.eclair.wire.{ChannelUpdate, UpdateAddHtlc}
 
 /**

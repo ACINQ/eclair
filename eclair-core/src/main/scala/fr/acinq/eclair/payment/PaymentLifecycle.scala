@@ -4,7 +4,7 @@ import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -219,4 +219,24 @@ object PaymentLifecycle {
     CMD_ADD_HTLC(firstAmountMsat, paymentHash, firstExpiry, Packet.write(onion.packet), upstream_opt = None, commit = true) -> onion.sharedSecrets
   }
 
+  /**
+    * Rewrites a list of failures to retrieve the meaningful part.
+    * <p>
+    * If a list of failures with many elements ends up with a LocalFailure RouteNotFound, this RouteNotFound failure
+    * should be removed. This last failure is irrelevant information. In such a case only the n-1 attempts were rejected
+    * with a **significant reason** ; the final RouteNotFound error provides no meaningful insight.
+    * <p>
+    * This method should be used by the user interface to provide a non-exhaustive but more useful feedback.
+    *
+    * @param failures a list of payment failures for a payment
+    */
+  def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
+    failures.map {
+      case LocalFailure(AddHtlcFailed(_, _, t, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
+      case other => other
+    } match {
+      case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures
+      case _ => failures
+    }
+  }
 }
