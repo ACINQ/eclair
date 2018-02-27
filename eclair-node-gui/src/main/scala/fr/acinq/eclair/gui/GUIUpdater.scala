@@ -10,11 +10,11 @@ import javafx.scene.layout.VBox
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, ElectrumDisconnected}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
-import fr.acinq.eclair.gui.utils.CoinUtils
 import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.NodeAnnouncement

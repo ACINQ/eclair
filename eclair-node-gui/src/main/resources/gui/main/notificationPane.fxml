@@ -33,7 +33,7 @@
     <ImageView fx:id="icon" fitWidth="25.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
         <Image url="@../commons/images/eclair-square.png" />
     </ImageView>
-    <Button fx:id="closeButton" maxHeight="18.0" maxWidth="18.0" minHeight="18.0" minWidth="18.0" mnemonicParsing="false" styleClass="notification-close" text="" GridPane.columnIndex="2" />
-    <Label fx:id="messageLabel" styleClass="notification-message" wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-    <Button fx:id="copyButton" mnemonicParsing="false" styleClass="notification-copy" text="Copy Message" GridPane.rowIndex="2" GridPane.columnIndex="1" />
+    <Button fx:id="closeButton" maxHeight="18.0" maxWidth="18.0" minHeight="18.0" minWidth="18.0" mnemonicParsing="false" styleClass="notification-close" GridPane.columnIndex="2" />
+    <Label fx:id="messageLabel" styleClass="notification-message" wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" maxHeight="280.0" />
+    <Button fx:id="copyButton" mnemonicParsing="false" styleClass="notification-copy" text="Copy the whole message" GridPane.rowIndex="2" GridPane.columnIndex="1" />
 </GridPane>

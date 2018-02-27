@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import javafx.collections.FXCollections?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import java.lang.String?>
 <?import java.net.URL?>
-<GridPane styleClass="grid" prefWidth="550.0" prefHeight="350.0" xmlns="http://javafx.com/javafx/8"
+<GridPane styleClass="grid" prefWidth="550.0" prefHeight="400.0" xmlns="http://javafx.com/javafx/8"
           xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="180.0" minWidth="10.0" prefWidth="180.0" halignment="RIGHT"/>
@@ -19,62 +17,65 @@
         <RowConstraints vgrow="SOMETIMES" minHeight="30.0" valignment="BOTTOM"/>
         <RowConstraints vgrow="SOMETIMES"/>
         <RowConstraints vgrow="SOMETIMES"/>
+        <RowConstraints vgrow="SOMETIMES"/>
     </rowConstraints>
-    <children>
-
-        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="0">
-            <children>
-                <Label styleClass="text-strong" text="Target Node URI"/>
-                <Label styleClass="label-description" text="Address of the node" textAlignment="RIGHT" wrapText="true"/>
-            </children>
-        </VBox>
-        <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port"
-                   GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="0"/>
-        <Label fx:id="hostError" styleClass="text-error, text-error-downward" mouseTransparent="true"
-               GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2"/>
-
-        <CheckBox fx:id="simpleConnection" mnemonicParsing="false" text="Simple connection (no channel)"
-                  styleClass="text-sm"
-                  GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1"/>
-
-        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="2">
-            <children>
-                <Label styleClass="text-strong" text="Capacity"/>
-                <Label styleClass="label-description" text="Funding capacity of the channel" textAlignment="RIGHT"
-                       wrapText="true"/>
-            </children>
-        </VBox>
-        <TextField fx:id="fundingSatoshis" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
-        <ComboBox fx:id="unit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="2" />
-        <Label fx:id="fundingSatoshisError" styleClass="text-error, text-error-downward"
-               GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2"/>
-
-        <Label styleClass="text-muted" text="Optional Parameters" wrapText="true" GridPane.columnIndex="0"
-               GridPane.rowIndex="3"/>
-        <Separator styleClass="options-separator" GridPane.columnIndex="1" GridPane.rowIndex="3"
-                   GridPane.columnSpan="2"/>
-
-        <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="4">
-            <children>
-                <Label styleClass="text-strong" text="Push Amount (msat)"/>
-                <Label styleClass="label-description" text="Sent when opening channel" textAlignment="RIGHT"
-                       wrapText="true"/>
-            </children>
-        </VBox>
-        <TextField fx:id="pushMsatField" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
-        <Label fx:id="pushMsatError" styleClass="text-error, text-error-downward"
-               GridPane.columnIndex="1" GridPane.rowIndex="4" GridPane.columnSpan="2"/>
-        <CheckBox fx:id="publicChannel" mnemonicParsing="true" selected="true" styleClass="text-sm"
-                  text="Public Channel"
-                  GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="5"/>
-
-        <Button fx:id="button" defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect"
-                GridPane.columnIndex="1" GridPane.rowIndex="6" GridPane.valignment="BOTTOM"/>
-        <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
-                GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="6"
-                GridPane.valignment="BOTTOM"/>
-    </children>
     <stylesheets>
         <URL value="@../commons/globals.css"/>
     </stylesheets>
+
+    <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="0">
+        <Label styleClass="text-strong" text="Target Node URI"/>
+        <Label styleClass="label-description" text="Address of the node" textAlignment="RIGHT" wrapText="true"/>
+    </VBox>
+    <TextField fx:id="host" prefWidth="313.0" promptText="pubkey@host:port"
+               GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="0"/>
+    <Label fx:id="hostError" styleClass="text-error, text-error-downward" mouseTransparent="true"
+           GridPane.rowIndex="0" GridPane.columnIndex="1" GridPane.columnSpan="2"/>
+
+    <CheckBox fx:id="simpleConnection" mnemonicParsing="false" text="Simple connection (no channel)"
+              styleClass="text-sm"
+              GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1"/>
+
+    <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="2">
+        <Label styleClass="text-strong" text="Capacity"/>
+        <Label styleClass="label-description" text="Funding capacity of the channel" textAlignment="RIGHT"
+               wrapText="true"/>
+    </VBox>
+    <TextField fx:id="fundingSat" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+    <ComboBox fx:id="fundingUnit" prefWidth="150.0" GridPane.columnIndex="2" GridPane.rowIndex="2"/>
+    <Label fx:id="fundingSatError" styleClass="text-error, text-error-downward"
+           GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="2"/>
+
+    <Label styleClass="text-muted" text="Optional Parameters" wrapText="true" GridPane.columnIndex="0"
+           GridPane.rowIndex="3"/>
+    <Separator styleClass="options-separator" GridPane.columnIndex="1" GridPane.rowIndex="3"
+               GridPane.columnSpan="2"/>
+
+    <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="4">
+        <Label styleClass="text-strong" text="Fee rate"/>
+        <Label styleClass="label-description" text="Funding tx fee rate, in sat/byte" textAlignment="RIGHT"
+               wrapText="true"/>
+    </VBox>
+    <TextField fx:id="feerateField" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="4"/>
+    <Label fx:id="feerateError" styleClass="text-error, text-error-downward"
+           GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="4"/>
+
+    <VBox alignment="CENTER_RIGHT" GridPane.rowIndex="5">
+        <Label styleClass="text-strong" text="Push Amount (msat)"/>
+        <Label styleClass="label-description" text="Sent when opening channel" textAlignment="RIGHT"
+               wrapText="true"/>
+    </VBox>
+    <TextField fx:id="pushMsatField" prefWidth="313.0" GridPane.columnIndex="1" GridPane.rowIndex="5"/>
+    <Label fx:id="pushMsatError" styleClass="text-error, text-error-downward"
+           GridPane.columnIndex="1" GridPane.rowIndex="5" GridPane.columnSpan="2"/>
+
+    <CheckBox fx:id="publicChannel" mnemonicParsing="true" selected="true" styleClass="text-sm"
+              text="Public Channel"
+              GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="6"/>
+
+    <Button defaultButton="true" mnemonicParsing="false" onAction="#handleOpen" text="Connect"
+            GridPane.columnIndex="1" GridPane.rowIndex="7" GridPane.valignment="BOTTOM"/>
+    <Button cancelButton="true" mnemonicParsing="false" onAction="#handleClose" styleClass="cancel" text="Cancel"
+            GridPane.columnIndex="2" GridPane.halignment="RIGHT" GridPane.rowIndex="7"
+            GridPane.valignment="BOTTOM"/>
 </GridPane>

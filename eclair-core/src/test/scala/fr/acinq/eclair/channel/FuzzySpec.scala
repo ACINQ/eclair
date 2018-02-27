@@ -51,7 +51,7 @@ class FuzzySpec extends TestkitBaseClass with StateTestsHelperMethods with Loggi
       relayerA ! alice
       relayerB ! bob
       // no announcements
-      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
+      alice ! INPUT_INIT_FUNDER("00" * 32, TestConstants.fundingSatoshis, TestConstants.pushMsat, TestConstants.feeratePerKw, TestConstants.feeratePerKw, Alice.channelParams, pipe, bobInit, channelFlags = 0x00.toByte)
       bob ! INPUT_INIT_FUNDEE("00" * 32, Bob.channelParams, pipe, aliceInit)
       pipe ! (alice, bob)
       alice2blockchain.expectMsgType[WatchSpent]

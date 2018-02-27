@@ -9,6 +9,7 @@ import javafx.scene.layout.GridPane
 import javafx.stage.Stage
 
 import fr.acinq.bitcoin.MilliSatoshi
+import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.gui.utils._
 import fr.acinq.eclair.payment.PaymentRequest
@@ -34,7 +35,7 @@ class ReceivePaymentController(val handlers: Handlers, val stage: Stage) extends
   @FXML var paymentRequestQRCode: ImageView = _
 
   @FXML def initialize = {
-    unit.setItems(CoinUtils.FX_UNITS_ARRAY)
+    unit.setItems(Constants.FX_UNITS_ARRAY)
     unit.setValue(FxApp.getUnit.label)
     resultBox.managedProperty().bind(resultBox.visibleProperty())
     stage.sizeToScene()

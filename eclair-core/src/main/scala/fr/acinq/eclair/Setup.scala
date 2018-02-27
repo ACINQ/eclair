@@ -42,6 +42,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
+  logger.info(s"datadir=${datadir.getCanonicalPath}")
 
   val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
