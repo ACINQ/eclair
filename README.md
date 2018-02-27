@@ -131,7 +131,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   getinfo      |                                                                                        | return basic node information (id, chain hash, current block height) 
   connect      | nodeId, host, port                                                                     | open a secure connection to a lightning node
   connect      | uri                                                                                    | open a secure connection to a lightning node
-  open         | nodeId, funding in sat, push in msat, feerate in sat/byte, channelFlags                | open a channel with another lightning node. By default push = 0, feerate targets 1st conf in 6 blocks, and channel is announced
+  open         | nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01      | open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced
   peers        |                                                                                        | list existing local peers
   channels     |                                                                                        | list existing local channels
   channels     | nodeId                                                                                 | list existing local channels opened with a particular nodeId
