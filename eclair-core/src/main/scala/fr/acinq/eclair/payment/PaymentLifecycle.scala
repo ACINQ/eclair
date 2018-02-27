@@ -1,6 +1,6 @@
 package fr.acinq.eclair.payment
 
-import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
+import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
@@ -42,7 +42,7 @@ case object WAITING_FOR_PAYMENT_COMPLETE extends State
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends LoggingFSM[State, Data] {
+class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[State, Data] {
 
   import PaymentLifecycle._
 
@@ -232,7 +232,7 @@ object PaymentLifecycle {
     */
   def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
     failures.map {
-      case LocalFailure(AddHtlcFailed(_, t, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
+      case LocalFailure(AddHtlcFailed(_, _, t, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
       case other => other
     } match {
       case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures

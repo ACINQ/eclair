@@ -4,7 +4,8 @@ import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto, MilliSatoshi}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, PerHopPayload}
+import fr.acinq.eclair.router.Router.getValidAnnouncements
+import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -181,42 +182,65 @@ class RouteCalculationSpec extends FunSuite {
     // set current block height
     Globals.blockCount.set(500000)
 
-    // we only care about timestamps
-    def channelAnnouncement(shortChannelId: Long) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
+    def nodeAnnouncement(nodeId: PublicKey) = NodeAnnouncement("", "", 0, nodeId, Color(0, 0, 0), "", Nil)
+
+    // we only care about timestamps and nodes ids
+    def channelAnnouncement(shortChannelId: Long, node1: PublicKey, node2: PublicKey) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, node1, node2, randomKey.publicKey, randomKey.publicKey)
 
     def channelUpdate(shortChannelId: Long, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
-
-    def desc(shortChannelId: Long) = ChannelDesc(shortChannelId, randomKey.publicKey, randomKey.publicKey)
 
     def daysAgoInBlocks(daysAgo: Int): Int = Globals.blockCount.get().toInt - 144 * daysAgo
 
     def daysAgoInSeconds(daysAgo: Int): Long = Platform.currentTime / 1000 - daysAgo * 24 * 3600
 
+    // note: those are *ordered*
+    val (node_1, node_2, node_3, node_4) = (nodeAnnouncement(PublicKey("02ca1f8792292fd2ad4001b578e962861cc1120f0140d050e87ce1d143f7179031")), nodeAnnouncement(PublicKey("028689a991673e0888580fc7cd3fb3e8a1b62e7e7f65a5fc9899f44b88307331d8")), nodeAnnouncement(PublicKey("036eee3325d246a54e32aa5c215777493e4867b2b22570c307283f5e160c1997cd")), nodeAnnouncement(PublicKey("039311b2ee0e47fe40e9d35a72416e7c3b6263abb12bce15d250e0e5e20f11029d")))
+
     // a is an old channel with an old channel update => PRUNED
     val id_a = toShortId(daysAgoInBlocks(16), 0, 0)
-    val chan_a = channelAnnouncement(id_a)
+    val chan_a = channelAnnouncement(id_a, node_1.nodeId, node_2.nodeId)
     val upd_a = channelUpdate(id_a, daysAgoInSeconds(30))
-    // b is an old channel with no channel update  => KEPT
+    // b is an old channel with no channel update  => PRUNED
     val id_b = toShortId(daysAgoInBlocks(16), 1, 0)
-    val chan_b = channelAnnouncement(id_b)
+    val chan_b = channelAnnouncement(id_b, node_2.nodeId, node_3.nodeId)
     // c is an old channel with a recent channel update  => KEPT
     val id_c = toShortId(daysAgoInBlocks(16), 2, 0)
-    val chan_c = channelAnnouncement(id_c)
+    val chan_c = channelAnnouncement(id_c, node_1.nodeId, node_3.nodeId)
     val upd_c = channelUpdate(id_c, daysAgoInSeconds(2))
     // d is a recent channel with a recent channel update  => KEPT
     val id_d = toShortId(daysAgoInBlocks(2), 0, 0)
-    val chan_d = channelAnnouncement(id_d)
+    val chan_d = channelAnnouncement(id_d, node_3.nodeId, node_4.nodeId)
     val upd_d = channelUpdate(id_d, daysAgoInSeconds(2))
     // e is a recent channel with no channel update  => KEPT
     val id_e = toShortId(daysAgoInBlocks(1), 0, 0)
-    val chan_e = channelAnnouncement(id_e)
+    val chan_e = channelAnnouncement(id_e, node_1.nodeId, randomKey.publicKey)
 
-    val channels = Set(chan_a, chan_b, chan_c, chan_d, chan_e)
-    val updates = Set(upd_a, upd_c, upd_d)
+    val nodes = Map(
+      node_1.nodeId -> node_1,
+      node_2.nodeId -> node_2,
+      node_3.nodeId -> node_3,
+      node_4.nodeId -> node_4
+    )
+    val channels = Map(
+      chan_a.shortChannelId -> chan_a,
+      chan_b.shortChannelId -> chan_b,
+      chan_c.shortChannelId -> chan_c,
+      chan_d.shortChannelId -> chan_d,
+      chan_e.shortChannelId -> chan_e
+    )
+    val updates = Map(
+      ChannelDesc(chan_a.shortChannelId, chan_a.nodeId1, chan_a.nodeId2) -> upd_a,
+      ChannelDesc(chan_c.shortChannelId, chan_c.nodeId1, chan_c.nodeId2) -> upd_c,
+      ChannelDesc(chan_d.shortChannelId, chan_d.nodeId1, chan_d.nodeId2) -> upd_d
+    )
 
-    val staleChannels = Router.getStaleChannels(channels, updates).toSet
+    val staleChannels = Router.getStaleChannels(channels.values, updates).toSet
+    assert(staleChannels === Set(id_a, id_b))
 
-    assert(staleChannels === Set(id_a))
+    val (validChannels, validNodes, validUpdates) = getValidAnnouncements(channels, nodes, updates)
+    assert(validChannels.toSet === Set(chan_c, chan_d, chan_e))
+    assert(validNodes.toSet === Set(node_1, node_3, node_4)) // node 2 has been pruned because its only channel was pruned
+    assert(validUpdates.toSet === Set(upd_c, upd_d))
 
   }
 

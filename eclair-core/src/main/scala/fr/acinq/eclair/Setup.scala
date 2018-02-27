@@ -10,12 +10,11 @@ import akka.stream.{ActorMaterializer, BindFailedException}
 import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
-import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
+import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
 import fr.acinq.eclair.api.{GetInfoResponse, Service}
-import fr.acinq.eclair.blockchain.bitcoind.rpc.{BitcoinJsonRPCClient, ExtendedBitcoinClient}
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.bitcoinj.{BitcoinjKit, BitcoinjWallet, BitcoinjWatcher}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
@@ -24,8 +23,8 @@ import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
+import org.json4s.JsonAST.JArray
 
-import scala.collection.JavaConversions._
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
@@ -50,6 +49,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
+  DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
@@ -67,19 +67,19 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val bitcoin = nodeParams.watcherType match {
     case BITCOIND =>
-      val bitcoinClient = new ExtendedBitcoinClient(new BitcoinJsonRPCClient(
+      val bitcoinClient = new BasicBitcoinJsonRPCClient(
         user = config.getString("bitcoind.rpcuser"),
         password = config.getString("bitcoind.rpcpassword"),
         host = config.getString("bitcoind.host"),
-        port = config.getInt("bitcoind.rpcport")))
+        port = config.getInt("bitcoind.rpcport"))
       val future = for {
-        json <- bitcoinClient.rpcClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
+        json <- bitcoinClient.invoke("getblockchaininfo").recover { case _ => throw BitcoinRPCConnectionException }
         // Make sure wallet support is enabled in bitcoind.
-        _ <- bitcoinClient.rpcClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
+        _ <- bitcoinClient.invoke("getbalance").recover { case _ => throw BitcoinWalletDisabledException }
         progress = (json \ "verificationprogress").extract[Double]
-        chainHash <- bitcoinClient.rpcClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
-        bitcoinVersion <- bitcoinClient.rpcClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
-        unspentAddresses <- bitcoinClient.listUnspentAddresses
+        chainHash <- bitcoinClient.invoke("getblockhash", 0).map(_.extract[String]).map(BinaryData(_)).map(x => BinaryData(x.reverse))
+        bitcoinVersion <- bitcoinClient.invoke("getnetworkinfo").map(json => (json \ "version")).map(_.extract[String])
+        unspentAddresses <- bitcoinClient.invoke("listunspent").collect { case JArray(values) => values.map(value => (value \ "address").extract[String]) }
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 10 seconds)
@@ -91,14 +91,6 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       // TODO: add a check on bitcoin version?
 
       Bitcoind(bitcoinClient)
-    case BITCOINJ =>
-      logger.warn("EXPERIMENTAL BITCOINJ MODE ENABLED!!!")
-      val staticPeers = config.getConfigList("bitcoinj.static-peers").map(c => new InetSocketAddress(c.getString("host"), c.getInt("port"))).toList
-      logger.info(s"using staticPeers=$staticPeers")
-      val bitcoinjKit = new BitcoinjKit(chain, datadir, staticPeers)
-      bitcoinjKit.startAsync()
-      Await.ready(bitcoinjKit.initialized, 10 seconds)
-      Bitcoinj(bitcoinjKit)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
       val addressesFile = chain match {
@@ -121,7 +113,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
     val feeProvider = (chain, bitcoin) match {
       case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
-      case (_, Bitcoind(client)) => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(client.rpcClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
+      case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
       case _ => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
@@ -135,18 +127,14 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val watcher = bitcoin match {
       case Bitcoind(bitcoinClient) =>
         system.actorOf(SimpleSupervisor.props(Props(new ZMQActor(config.getString("bitcoind.zmq"), Some(zmqConnected))), "zmq", SupervisorStrategy.Restart))
-        system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(bitcoinClient), "watcher", SupervisorStrategy.Resume))
-      case Bitcoinj(bitcoinj) =>
-        zmqConnected.success(true)
-        system.actorOf(SimpleSupervisor.props(BitcoinjWatcher.props(bitcoinj), "watcher", SupervisorStrategy.Resume))
+        system.actorOf(SimpleSupervisor.props(ZmqWatcher.props(new ExtendedBitcoinClient(new BatchingBitcoinJsonRPCClient(bitcoinClient))), "watcher", SupervisorStrategy.Resume))
       case Electrum(electrumClient) =>
         zmqConnected.success(true)
         system.actorOf(SimpleSupervisor.props(Props(new ElectrumWatcher(electrumClient)), "watcher", SupervisorStrategy.Resume))
     }
 
     val wallet = bitcoin match {
-      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient.rpcClient)
-      case Bitcoinj(bitcoinj) => new BitcoinjWallet(bitcoinj.initialized.map(_ => bitcoinj.wallet()))
+      case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
       case Electrum(electrumClient) => seed_opt match {
         case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
           new ElectrumEclairWallet(electrumWallet)
@@ -221,8 +209,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
 // @formatter:off
 sealed trait Bitcoin
-case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
-case class Bitcoinj(bitcoinjKit: BitcoinjKit) extends Bitcoin
+case class Bitcoind(bitcoinClient: BasicBitcoinJsonRPCClient) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 
@@ -245,3 +232,7 @@ case object BitcoinRPCConnectionException extends RuntimeException("could not co
 case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
 
 case object EmptyAPIPasswordException extends RuntimeException("must set a password for the json-rpc api")
+
+case object IncompatibleDBException extends RuntimeException("database is not compatible with this version of eclair")
+
+case object IncompatibleNetworkDBException extends RuntimeException("network database is not compatible with this version of eclair")

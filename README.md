@@ -27,7 +27,7 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ## Installation
 
-:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha8](https://github.com/ACINQ/eclair/blob/v0.2-alpha8/README.md#installation)**.
+:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha10](https://github.com/ACINQ/eclair/blob/v0.2-alpha10/README.md#installation)**.
 
 ### Configuring Bitcoin Core
 

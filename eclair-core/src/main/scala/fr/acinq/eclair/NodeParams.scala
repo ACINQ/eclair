@@ -44,7 +44,7 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       channelsDb: ChannelsDb,
                       peersDb: PeersDb,
                       networkDb: NetworkDb,
-                      preimagesDb: PreimagesDb,
+                      pendingRelayDb: PendingRelayDb,
                       paymentsDb: PaymentsDb,
                       routerBroadcastInterval: FiniteDuration,
                       routerValidateInterval: FiniteDuration,
@@ -66,8 +66,6 @@ object NodeParams {
   sealed trait WatcherType
 
   object BITCOIND extends WatcherType
-
-  object BITCOINJ extends WatcherType
 
   object ELECTRUM extends WatcherType
 
@@ -113,15 +111,16 @@ object NodeParams {
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
-    val networkDb = new SqliteNetworkDb(sqlite)
-    val preimagesDb = new SqlitePreimagesDb(sqlite)
+    val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
+
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "network.sqlite")}")
+    val networkDb = new SqliteNetworkDb(sqliteNetwork)
 
     val color = BinaryData(config.getString("node-color"))
     require(color.size == 3, "color should be a 3-bytes hex buffer")
 
     val watcherType = config.getString("watcher-type") match {
-      case "bitcoinj" => BITCOINJ
       case "electrum" => ELECTRUM
       case _ => BITCOIND
     }
@@ -157,7 +156,7 @@ object NodeParams {
       channelsDb = channelsDb,
       peersDb = peersDb,
       networkDb = networkDb,
-      preimagesDb = preimagesDb,
+      pendingRelayDb = pendingRelayDb,
       paymentsDb = paymentsDb,
       routerBroadcastInterval = FiniteDuration(config.getDuration("router-broadcast-interval").getSeconds, TimeUnit.SECONDS),
       routerValidateInterval = FiniteDuration(config.getDuration("router-validate-interval").getSeconds, TimeUnit.SECONDS),

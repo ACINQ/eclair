@@ -1,6 +1,6 @@
 package fr.acinq.eclair.blockchain.electrum
 
-import akka.actor.{ActorRef, LoggingFSM, Props}
+import akka.actor.{ActorRef, FSM, Props}
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, derivePrivateKey, hardened}
 import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, Crypto, DeterministicWallet, OP_PUSHDATA, OutPoint, SIGHASH_ALL, Satoshi, Script, ScriptWitness, SigVersion, Transaction, TxIn, TxOut}
@@ -28,7 +28,7 @@ import scala.util.{Failure, Success, Try}
   * @param client
   * @param params
   */
-class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.WalletParameters) extends LoggingFSM[ElectrumWallet.State, ElectrumWallet.Data] {
+class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.WalletParameters) extends FSM[ElectrumWallet.State, ElectrumWallet.Data] {
 
   import ElectrumWallet._
   import params._

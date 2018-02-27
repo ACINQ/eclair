@@ -47,6 +47,9 @@ class FxApp extends Application with Logging {
       notifyPreloader(new ErrorNotification("Setup", "Breaking changes!", e))
       notifyPreloader(new AppNotification(InfoAppNotification, "Eclair is still in alpha, and under heavy development. Last update was not backward compatible."))
       notifyPreloader(new AppNotification(InfoAppNotification, "Please reset your datadir."))
+    case e@IncompatibleNetworkDBException =>
+      notifyPreloader(new ErrorNotification("Setup", "Unreadable network database!", e))
+      notifyPreloader(new AppNotification(InfoAppNotification, "Could not read the network database. Please remove the file and restart."))
     case t: Throwable =>
       notifyPreloader(new ErrorNotification("Setup", s"Error: ${t.getLocalizedMessage}", t))
   }
