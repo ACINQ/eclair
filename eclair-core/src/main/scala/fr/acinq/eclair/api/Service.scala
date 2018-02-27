@@ -139,7 +139,7 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(fr.acinq.eclair.feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
                         case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: JInt(flags) :: Nil =>
                           completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(fr.acinq.eclair.feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
-                        case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshi], [nodeId, fundingSatoshi, pushMsat], [nodeId, fundingSatoshi, pushMsat, feerate] or [nodeId, fundingSatoshi, pushMsat, feerate, flag]"))
+                        case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshi], [nodeId, fundingSatoshi, pushMsat], [nodeId, fundingSatoshi, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshi, pushMsat, feerateSatPerByte, flag]"))
                       }
                       case "close"        => req.params match {
                         case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
