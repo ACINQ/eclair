@@ -4,7 +4,7 @@ import akka.actor.{ActorRef, FSM, LoggingFSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -230,12 +230,12 @@ object PaymentLifecycle {
     *
     * @param failures a list of payment failures for a payment
     */
-  def distillPaymentFailures(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
-    failures.lastOption match {
-      case Some(LocalFailure(t)) => t match {
-        case RouteNotFound => if (failures.size > 1) failures.dropRight(1) else failures
-        case _ => failures
-      }
+  def transformForUser(failures: Seq[PaymentFailure]): Seq[PaymentFailure] = {
+    failures.map {
+      case LocalFailure(AddHtlcFailed(_, t, _, _)) => LocalFailure(t) // we're interested in the error which caused the add-htlc to fail
+      case other => other
+    } match {
+      case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures
       case _ => failures
     }
   }

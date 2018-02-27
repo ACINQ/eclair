@@ -73,7 +73,7 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
           val message = CoinUtils.formatAmountInUnit(MilliSatoshi(amountMsat), FxApp.getUnit, withUnit = true)
           notification("Payment Sent", message, NOTIFICATION_SUCCESS)
         case Success(PaymentFailed(_, failures)) =>
-          val distilledFailures = PaymentLifecycle.distillPaymentFailures(failures)
+          val distilledFailures = PaymentLifecycle.transformForUser(failures)
           val message = s"${distilledFailures.size} attempts:\n${
             distilledFailures.map {
               case LocalFailure(t) => s"- (local) ${t.getMessage}"
