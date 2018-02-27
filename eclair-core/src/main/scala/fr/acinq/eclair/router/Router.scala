@@ -20,7 +20,6 @@ import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge, SimpleGraph}
 
 import scala.collection.JavaConversions._
-import scala.collection.immutable.Queue
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -275,8 +274,29 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         stay
       } else {
         log.info("broadcasting routing messages")
-        log.debug("staggered broadcast details: channels={} updates={} nodes={}", d.rebroadcast.channels.size, d.rebroadcast.updates.size, d.rebroadcast.nodes.size)
-        context.actorSelection(context.system / "*" / "switchboard") ! d.rebroadcast
+        // we don't want to rebroadcast old channels if we don't have a recent channel_update, otherwise we will keep sending zombies channels back and forth
+        // instead, we base the rebroadcast on updates, and only keep only the ones that are younger than 2 weeks
+        val rebroadcastUpdates1 = d.rebroadcast.updates.filterKeys(u => !isStale(u))
+        // for each update, we rebroadcast the corresponding channel announcement (suboptimal)
+        // we have to do this because we didn't broadcast old channels for which we didn't yet receive the channel_update
+        val rebroadcastChannels1 = rebroadcastUpdates1.foldLeft(Map.empty[ChannelAnnouncement, Set[ActorRef]]) {
+          case (channels, (u, updateOrigins)) =>
+            d.channels.get(u.shortChannelId) match {
+              case Some(c) => d.rebroadcast.channels.get(c) match {
+                case Some(channelOrigins) => channels + (c -> channelOrigins) // we have origin peers for this channel
+                case None => channels + (c -> updateOrigins) // we don't have origin peers for this channel, let's use the same origin list as corresponding update (they must know the channel)
+              }
+              case None => channels // weird, we don't know this channel, that should never happen and we can ignore it anyway
+            }
+        }
+        // and we only keep nodes that have at least one valid channel
+        val staleChannels = getStaleChannels(d.channels.values, d.updates)
+        val validChannels = (d.channels -- staleChannels).values
+        val rebroadcastNodes1 = d.rebroadcast.nodes.filterKeys(n => hasChannels(n.nodeId, validChannels))
+        // then we're ready to broadcast
+        val rebroadcast1 = d.rebroadcast.copy(channels = rebroadcastChannels1, updates = rebroadcastUpdates1, nodes = rebroadcastNodes1)
+        log.debug("staggered broadcast details: channels={} updates={} nodes={}", rebroadcast1.channels.size, rebroadcast1.updates.size, rebroadcast1.nodes.size)
+        context.actorSelection(context.system / "*" / "switchboard") ! rebroadcast1
         stay using d.copy(rebroadcast = Rebroadcast(channels = Map.empty, updates = Map.empty, nodes = Map.empty))
       }
 
@@ -365,7 +385,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val origins = d.rebroadcast.nodes(n) + origin
       d.copy(rebroadcast = d.rebroadcast.copy(nodes = d.rebroadcast.nodes + (n -> origins)))
     } else if (d.nodes.contains(n.nodeId) && d.nodes(n.nodeId).timestamp >= n.timestamp) {
-      log.debug("ignoring {} (old timestamp or duplicate)", n)
+      log.debug("ignoring {} (duplicate)", n)
       d
     } else if (!Announcements.checkSig(n)) {
       log.warning("bad signature for {}", n)
@@ -401,8 +421,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("ignoring {} (pending rebroadcast)", u)
         val origins = d.rebroadcast.updates(u) + origin
         d.copy(rebroadcast = d.rebroadcast.copy(updates = d.rebroadcast.updates + (u -> origins)))
+      } else if (isStale(u)) {
+        log.debug("ignoring {} (stale)", u)
+        d
       } else if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-        log.debug("ignoring {} (old timestamp or duplicate)", u)
+        log.debug("ignoring {} (duplicate)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
@@ -434,8 +457,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val remoteNodeId = d.privateChannels(u.shortChannelId)
       val (a, b) = if (Announcements.isNode1(nodeParams.nodeId, remoteNodeId)) (nodeParams.nodeId, remoteNodeId) else (remoteNodeId, nodeParams.nodeId)
       val desc = if (Announcements.isNode1(u.flags)) ChannelDesc(u.shortChannelId, a, b) else ChannelDesc(u.shortChannelId, b, a)
-      if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
-        log.debug("ignoring {} (old timestamp or duplicate)", u)
+      if (isStale(u)) {
+        log.debug("ignoring {} (stale)", u)
+        d
+      } else if (d.updates.contains(desc) && d.updates(desc).timestamp >= u.timestamp) {
+        log.debug("ignoring {} (already know same or newer)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
         log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
@@ -484,26 +510,37 @@ object Router {
 
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
+  def isStale(u: ChannelUpdate): Boolean = {
+    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
+    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
+    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    u.timestamp < staleThresholdSeconds
+  }
+
   /**
     * Is stale a channel that:
     * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
     * AND
     * (2) has no channel_update younger than 2 weeks
     *
-    * @param channels
-    * @param updates
+    * @param channel
+    * @param update1_opt update corresponding to one side of the channel, if we have it
+    * @param update2_opt update corresponding to the other side of the channel, if we have it
     * @return
     */
-  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
+  def isStale(channel: ChannelAnnouncement, update1_opt: Option[ChannelUpdate], update2_opt: Option[ChannelUpdate]): Boolean = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
-    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
+    val (blockHeight, _, _) = fromShortId(channel.shortChannelId)
+    blockHeight < staleThresholdBlocks && update1_opt.map(isStale).getOrElse(true) && update2_opt.map(isStale).getOrElse(true)
+  }
+
+  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
     val staleChannels = channels.filter { c =>
-      val (blockHeight, _, _) = fromShortId(c.shortChannelId)
-      val latestUpdate_opt = (updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)) ++ updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))).toSeq.map(_.timestamp).sorted.reverse.headOption
-      blockHeight < staleThresholdBlocks && // consider only channels older than 2 weeks
-        (latestUpdate_opt.isEmpty || latestUpdate_opt.get < staleThresholdSeconds) // channel must have updates more recent than two weeks
+      val update1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+      val update2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+      isStale(c, update1, update2)
     }
     staleChannels.map(_.shortChannelId)
   }
@@ -586,8 +623,5 @@ object Router {
     } finally {
       writer.close()
     }
-
   }
-
-
 }
