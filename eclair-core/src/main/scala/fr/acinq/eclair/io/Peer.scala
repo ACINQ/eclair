@@ -355,6 +355,7 @@ object Peer {
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long, channelNumber: Long): LocalParams = {
     LocalParams(
+      nodeParams.nodeId,
       channelNumber,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,

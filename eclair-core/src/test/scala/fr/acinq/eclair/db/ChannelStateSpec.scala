@@ -36,6 +36,7 @@ class ChannelStateSpec extends FunSuite {
 object ChannelStateSpec {
   val keyManager = new LocalKeyManager("01" * 32)
   val localParams = LocalParams(
+    keyManager.nodeId,
     channelNumber = 42,
     dustLimitSatoshis = Satoshi(546).toLong,
     maxHtlcValueInFlightMsat = UInt64(50),

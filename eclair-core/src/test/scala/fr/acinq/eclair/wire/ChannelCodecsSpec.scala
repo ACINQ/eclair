@@ -28,6 +28,7 @@ class ChannelCodecsSpec extends FunSuite {
 
   test("encode/decode localparams") {
     val o = LocalParams(
+      nodeId = randomKey.publicKey,
       channelNumber = 42,
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
