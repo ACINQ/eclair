@@ -28,9 +28,9 @@ object ChannelCodecs extends Logging {
       ("toSelfDelay" | uint16) ::
       ("maxAcceptedHtlcs" | uint16) ::
       ("isFunder" | bool) ::
+      ("defaultFinalScriptPubKey" | varsizebinarydata) ::
       ("globalFeatures" | varsizebinarydata) ::
-      ("localFeatures" | varsizebinarydata) ::
-      ("defaultFinalScriptPubKey" | varsizebinarydata)).as[LocalParams]
+      ("localFeatures" | varsizebinarydata)).as[LocalParams]
 
   val remoteParamsCodec: Codec[RemoteParams] = (
     ("nodeId" | publicKey) ::

@@ -176,9 +176,9 @@ final case class LocalParams(nodeId: PublicKey,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
                              isFunder: Boolean,
+                             defaultFinalScriptPubKey: BinaryData,
                              globalFeatures: BinaryData,
-                             localFeatures: BinaryData,
-                             defaultFinalScriptPubKey: BinaryData)
+                             localFeatures: BinaryData)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,
