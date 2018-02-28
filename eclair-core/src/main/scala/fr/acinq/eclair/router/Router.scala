@@ -1,28 +1,24 @@
 package fr.acinq.eclair.router
 
-import akka.actor.{ActorRef, FSM, Props, Terminated}
+import akka.actor.{ActorRef, FSM, Props}
 import akka.pattern.pipe
-import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
+import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.router.Announcements.zip
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 
 import scala.collection.JavaConversions._
-import scala.collection.immutable.Queue
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Random, Success, Try}
+import scala.util.{Success, Try}
 
 // @formatter:off
 
@@ -32,7 +28,7 @@ case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Se
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-case class SendRoutingState(to: ActorRef)
+case object GetRoutingState
 case class SendChannelQuery(to: ActorRef)
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
@@ -71,20 +67,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
   val db = nodeParams.networkDb
 
-  // Note: It is possible that some channels have been closed while we were shutdown. Since we are directly loading channels
-  // in memory without checking they are still alive, we may advertise closed channels if someone connects to us right after
-  // startup. That being said, if we stay down long enough that a significant numbers of channels are closed, there is a chance
-  // other peers forgot about us in the meantime.
   {
     log.info("loading network announcements from db...")
     // On Android, we discard the node announcements
     val channels = db.listChannels()
     val updates = db.listChannelUpdates()
+    log.info("loaded from db: channels={} nodes={} updates={}", channels.size, 0, updates.size)
 
     val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
     val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
 
-    log.info("loaded from db: channels={} nodes={} updates={}", channels.size, 0, updates.size)
+    log.info(s"initialization completed, ready to process messages")
     startWith(NORMAL, Data(Map.empty, initChannels, initChannelUpdates, Stash(Map.empty, Map.empty), awaiting = Map.empty, privateChannels = Map.empty, privateUpdates = Map.empty, excludedChannels = Set.empty))
   }
 
@@ -119,7 +112,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId.toHexString)
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
 
-    case Event(SendRoutingState(remote), d: Data) => stay // ignored on Android
+    case Event(GetRoutingState, d: Data) =>
+      stay // ignored on Android
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
@@ -150,7 +144,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(n: NodeAnnouncement, d: Data) =>
       sender ! TransportHandler.ReadAck(n)
-      stay // we just ignore node_announcements on android
+      stay // we just ignore node_announcements on Android
 
     case Event(u: ChannelUpdate, d: Data) =>
       sender ! TransportHandler.ReadAck(u)
@@ -182,12 +176,15 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(TickPruneStaleChannels, d) =>
       // first we select channels that we will prune
-      val staleChannels = getStaleChannels(d.channels.values, d.updates.values)
+      val staleChannels = getStaleChannels(d.channels.values, d.updates)
       // then we clean up the related channel updates
-      val staleUpdates = d.updates.keys.filter(desc => staleChannels.contains(desc.id))
+      val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
       // finally we remove nodes that aren't tied to any channels anymore
+      val potentialStaleNodes = staleChannels.map(d.channels).flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet // deduped
       val channels1 = d.channels -- staleChannels
-      val staleNodes = d.nodes.keys.filterNot(nodeId => hasChannels(nodeId, channels1.values))
+      // no need to iterate on all nodes, just on those that are affected by current pruning
+      val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
+
       // let's clean the db and send the events
       staleChannels.foreach {
         case shortChannelId =>
@@ -417,23 +414,41 @@ object Router {
     * Is stale a channel that:
     * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
     * AND
-    * (2) has 1 or 2 channel_update and they are older than 2 weeks
+    * (2) has no channel_update younger than 2 weeks
     *
     * @param channels
     * @param updates
     * @return
     */
-  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate]): Iterable[Long] = {
+  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update
     val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
-    val staleChannels = channels
-      .filter(c =>
-        fromShortId(c.shortChannelId)._1 < staleThresholdBlocks // consider only channels older than 2 weeks
-          && updates.exists(_.shortChannelId == c.shortChannelId) // channel must have updates
-          && updates.filter(_.shortChannelId == c.shortChannelId).map(_.timestamp).max < staleThresholdSeconds) // updates are all older than 2 weeks (can have 1 or 2)
+    val staleChannels = channels.filter { c =>
+      val (blockHeight, _, _) = fromShortId(c.shortChannelId)
+      val latestUpdate_opt = (updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)) ++ updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))).toSeq.map(_.timestamp).sorted.reverse.headOption
+      blockHeight < staleThresholdBlocks && // consider only channels older than 2 weeks
+        (latestUpdate_opt.isEmpty || latestUpdate_opt.get < staleThresholdSeconds) // channel must have updates more recent than two weeks
+    }
     staleChannels.map(_.shortChannelId)
+  }
+
+  /**
+    * Filters announcements that we want to send to nodes asking an `initial_routing_sync`
+    *
+    * @param channels
+    * @param nodes
+    * @param updates
+    * @return
+    */
+  def getValidAnnouncements(channels: Map[Long, ChannelAnnouncement], nodes: Map[PublicKey, NodeAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): (Iterable[ChannelAnnouncement], Iterable[NodeAnnouncement], Iterable[ChannelUpdate]) = {
+    val staleChannels = getStaleChannels(channels.values, updates)
+    val validChannels = (channels -- staleChannels).values
+    val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
+    val validUpdates = (updates -- staleUpdates).values
+    val validNodes = validChannels.flatMap(c => nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2)).toSet
+    (validChannels, validNodes, validUpdates)
   }
 
   /**
@@ -450,10 +465,10 @@ object Router {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     case class DescEdge(desc: ChannelDesc) extends DefaultEdge
     val g = new DefaultDirectedGraph[PublicKey, DescEdge](classOf[DescEdge])
-    Random.shuffle(channels).foreach(d => {
+    channels.foreach(d => {
       g.addVertex(d.a)
       g.addVertex(d.b)
-      g.addEdge(d.a, d.b, new DescEdge(d))
+      g.addEdge(d.a, d.b, DescEdge(d))
     })
     Try(Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))) match {
       case Success(Some(path)) => path.map(_.desc)

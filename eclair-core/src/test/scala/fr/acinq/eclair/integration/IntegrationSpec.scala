@@ -143,8 +143,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       remoteNodeId = node2.nodeParams.privateKey.publicKey,
       fundingSatoshis = Satoshi(fundingSatoshis),
       pushMsat = MilliSatoshi(pushMsat),
+      fundingTxFeeratePerKw_opt = None,
       channelFlags = None))
-    sender.expectMsgAnyOf(10 seconds, "channel created")
+    assert(sender.expectMsgType[String](10 seconds).startsWith("created channel"))
   }
 
   test("connect nodes") {
@@ -201,15 +202,15 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
       case (_, setup) =>
         awaitCond({
           sender.send(setup.router, 'nodes)
-          sender.expectMsgType[Iterable[NodeAnnouncement]].size == nodes
+          sender.expectMsgType[Iterable[NodeAnnouncement]](20 seconds).size == nodes
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
           sender.send(setup.router, 'channels)
-          sender.expectMsgType[Iterable[ChannelAnnouncement]].size == channels
+          sender.expectMsgType[Iterable[ChannelAnnouncement]](20 seconds).size == channels
         }, max = 60 seconds, interval = 1 second)
         awaitCond({
           sender.send(setup.router, 'updates)
-          sender.expectMsgType[Iterable[ChannelUpdate]].size == updates
+          sender.expectMsgType[Iterable[ChannelUpdate]](20 seconds).size == updates
         }, max = 60 seconds, interval = 1 second)
     }
   }

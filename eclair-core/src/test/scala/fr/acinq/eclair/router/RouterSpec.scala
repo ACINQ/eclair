@@ -193,26 +193,6 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, RouteRequest(a, d))
     sender.expectMsgType[RouteResponse]
   }
-
-  ignore("export graph in dot format") { case (router, _) =>
-    val sender = TestProbe()
-    sender.send(router, 'dot)
-    val dot = sender.expectMsgType[String]
-    /*Files.write(dot.getBytes(), new File("graph.dot"))
-
-    import scala.sys.process._
-    val input = new ByteArrayInputStream(dot.getBytes)
-    val output = new ByteArrayOutputStream()
-    "dot -Tpng" #< input #> output !
-    val img = output.toByteArray
-    Files.write(img, new File("graph.png"))*/
-  }
-
-  ignore("send routing state") { case (router, _) =>
-    val sender = TestProbe()
-    val receiver = TestProbe()
-    sender.send(router, SendRoutingState(receiver.ref))
-    receiver.expectNoMsg(1 second)
-  }
+  
 
 }

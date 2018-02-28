@@ -116,7 +116,9 @@ object LightningMessageCodecs {
   val channelReestablishCodec: Codec[ChannelReestablish] = (
     ("channelId" | binarydata(32)) ::
       ("nextLocalCommitmentNumber" | uint64) ::
-      ("nextRemoteRevocationNumber" | uint64)).as[ChannelReestablish]
+      ("nextRemoteRevocationNumber" | uint64) ::
+      ("yourLastPerCommitmentSecret" | optional(bitsRemaining, scalar)) ::
+      ("myCurrentPerCommitmentPoint" | optional(bitsRemaining, point))).as[ChannelReestablish]
 
   val openChannelCodec: Codec[OpenChannel] = (
     ("chainHash" | binarydata(32)) ::

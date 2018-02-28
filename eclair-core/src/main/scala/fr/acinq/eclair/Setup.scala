@@ -8,7 +8,7 @@ import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.ELECTRUM
-import fr.acinq.eclair.blockchain.bitcoind.rpc.ExtendedBitcoinClient
+import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
@@ -17,6 +17,7 @@ import fr.acinq.eclair.io.{Authenticator, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import grizzled.slf4j.Logging
+import org.json4s.JsonAST.JArray
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -36,6 +37,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
+  logger.info(s"datadir=${datadir.getCanonicalPath}")
 
   val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
@@ -131,7 +133,6 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
 // @formatter:off
 sealed trait Bitcoin
-case class Bitcoind(extendedBitcoinClient: ExtendedBitcoinClient) extends Bitcoin
 case class Electrum(electrumClient: ActorRef) extends Bitcoin
 // @formatter:on
 
