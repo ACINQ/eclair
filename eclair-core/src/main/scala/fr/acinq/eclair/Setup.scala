@@ -2,7 +2,6 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
-import java.nio.file.Files
 
 import akka.actor.{ActorRef, ActorSystem, Props, SupervisorStrategy}
 import akka.http.scaladsl.Http
