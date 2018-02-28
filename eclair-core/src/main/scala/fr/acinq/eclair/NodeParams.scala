@@ -2,6 +2,7 @@ package fr.acinq.eclair
 
 import java.io.File
 import java.net.InetSocketAddress
+import java.nio.file.Files
 import java.sql.DriverManager
 import java.util.concurrent.TimeUnit
 
@@ -79,6 +80,17 @@ object NodeParams {
       .withFallback(ConfigFactory.parseFile(new File(datadir, "eclair.conf")))
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
+
+  def getSeed(datadir: File): BinaryData = {
+    val seedPath = new File(datadir, "seed.dat")
+    seedPath.exists() match {
+      case true => Files.readAllBytes(seedPath.toPath)
+      case false =>
+        val seed = randomKey.toBin
+        Files.write(seedPath.toPath, seed)
+        seed
+    }
+  }
 
   def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
 

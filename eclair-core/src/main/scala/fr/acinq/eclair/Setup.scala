@@ -32,7 +32,7 @@ import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /**
   * Setup eclair from a datadir.
-  * <p>
+  * 
   * Created by PM on 25/01/2016.
   *
   * @param datadir  directory where eclair-core will write/read its data
@@ -45,22 +45,11 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
 
-  val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val seed: BinaryData = seed_opt match {
-    case Some(s) => s
-    case None =>
-      val seedPath = new File(datadir, "seed.dat")
-      seedPath.exists() match {
-        case true => Files.readAllBytes(seedPath.toPath)
-        case false =>
-          val seed = randomKey.toBin
-          Files.write(seedPath.toPath, seed)
-          seed
-      }
-  }
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
   val keyManager = new LocalKeyManager(seed)
-  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
-  val chain: String = config.getString("chain")
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
+  val chain = config.getString("chain")
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
