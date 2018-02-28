@@ -18,7 +18,7 @@ class QueryChannelsSpec extends FunSuite {
   test("create `reply_channel_range` messages") {
     val reply = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, zip(shortChannelIds))
     val unzipped = Announcements.unzip(reply.data)
-    assert(unzipped == shortChannelIds)
+    assert(unzipped == shortChannelIds.toSet)
   }
 }
 

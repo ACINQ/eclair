@@ -75,20 +75,23 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   when(INITIALIZING) {
     case Event(remoteInit: wire.Init, InitializingData(address_opt, transport, channels, origin_opt)) =>
       transport ! TransportHandler.ReadAck(remoteInit)
-      log.info(s"$remoteNodeId has features: initialRoutingSync=${Features.initialRoutingSync(remoteInit.localFeatures)}")
+      val remoteHasInitialRoutingSync = Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesOptional = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)
+      val remoteHasChannelRangeQueriesMandatory = Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_MANDATORY)
+      log.info(s"$remoteNodeId has features: initialRoutingSync=$remoteHasInitialRoutingSync channelRangeQueriesOptional=$remoteHasChannelRangeQueriesOptional channelRangeQueriesMandatory=$remoteHasChannelRangeQueriesMandatory")
       if (Features.areSupported(remoteInit.localFeatures)) {
         origin_opt.map(origin => origin ! "connected")
 
-        if (Features.hasFeature(remoteInit.localFeatures, Features.INITIAL_ROUTING_SYNC_BIT_OPTIONAL)) {
-          if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)) {
-            // if they support channel queries we do nothing, they will send us their filters
-            log.info("{} has set initial routing sync amd support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
+        if (remoteHasInitialRoutingSync) {
+          if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
+            // if they support channel queries so we do nothing, they will send us their filters
+            log.info("{} has set initial routing sync and support channel range queries, we do nothing (they will end us a query)", remoteNodeId)
           } else {
             // "old" nodes, do as before
             router ! GetRoutingState
           }
         }
-        if (Features.hasFeature(remoteInit.localFeatures, Features.CHANNEL_RANGE_QUERIES_BIT_OPTIONAL)) {
+        if (remoteHasChannelRangeQueriesOptional || remoteHasChannelRangeQueriesMandatory) {
           // if they support channel queries, always ask for their filter
           router ! SendChannelQuery(transport)
         }
@@ -210,6 +213,37 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
+
+    case Event(RoutingState(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
+      // let's send the messages
+      def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
+        case (c, ann) =>
+          transport ! ann
+          c + 1
+      }
+      log.info(s"sending all announcements to {}", remoteNodeId)
+      val channelsSent = send(channels)
+      val nodesSent = send(nodes)
+      val updatesSent = send(updates)
+      log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+      stay
+
+    case Event(Rebroadcast(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
+      // we filter out announcements that we received from this node
+      def sendIfNeeded(m: Map[_ <: LightningMessage, Set[ActorRef]]): Int = m.foldLeft(0) {
+        case (counter, (_, origins)) if origins.contains(self) =>
+          counter // won't send back announcement we received from this peer
+        case (counter, (announcement, _)) =>
+          transport ! announcement
+          counter + 1
+      }
+      val channelsSent = sendIfNeeded(channels)
+      val updatesSent = sendIfNeeded(updates)
+      val nodesSent = sendIfNeeded(nodes)
+      if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
+        log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
+      }
+      stay
 
     case Event(msg: wire.RoutingMessage, _) =>
       // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox

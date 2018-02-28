@@ -10,11 +10,13 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.router.Announcements.zip
 import fr.acinq.eclair.wire._
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DefaultDirectedGraph, DefaultEdge}
 
 import scala.collection.JavaConversions._
+import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -28,12 +30,14 @@ case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Se
 case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
-case object GetRoutingState
 case class SendChannelQuery(to: ActorRef)
+case object GetRoutingState
+case class RoutingState(channels: Iterable[ChannelAnnouncement], updates: Iterable[ChannelUpdate], nodes: Iterable[NodeAnnouncement])
 case class Stash(updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
+case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], updates: Map[ChannelUpdate, Set[ActorRef]], nodes: Map[NodeAnnouncement, Set[ActorRef]])
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: Map[Long, ChannelAnnouncement],
+                  channels: SortedMap[Long, ChannelAnnouncement], // critical for performance that keys are sorted
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
                   awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
@@ -74,7 +78,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     val updates = db.listChannelUpdates()
     log.info("loaded from db: channels={} nodes={} updates={}", channels.size, 0, updates.size)
 
-    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
+    val initChannels = channels.keys.foldLeft(TreeMap.empty[Long, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
     val initChannelUpdates = updates.map(u => (getDesc(u, initChannels(u.shortChannelId)) -> u)).toMap
 
     log.info(s"initialization completed, ready to process messages")
@@ -111,9 +115,6 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     case Event(LocalChannelDown(_, channelId, shortChannelId, _), d: Data) =>
       log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId.toHexString)
       stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
-
-    case Event(GetRoutingState, d: Data) =>
-      stay // ignored on Android
 
     case Event(c: ChannelAnnouncement, d) =>
       log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
@@ -250,7 +251,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       ignoreChannels.foreach(shortChannelId => self ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)))
       stay
 
-    case Event(SendChannelQuery(remote), d: Data) =>
+    case Event(GetRoutingState, d: Data) =>
+      stay // ignored on Android
+
+    case Event(SendChannelQuery(remote), _) =>
       // ask for everything
       val query = QueryChannelRange(nodeParams.chainHash, firstBlockNum = 0, numberOfBlocks = Int.MaxValue)
       log.debug("querying channel range {}", query)
@@ -268,14 +272,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
         val theirShortChannelIds = Announcements.unzip(data)
-
-        def keep(id: Long): Boolean = {
-          val (height, _, _) = fromShortId(id)
-          height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks)
-        }
-
-        val ourShortChannelIds = d.channels.keys.collect { case id if keep(id) => id }.toVector.sorted
-        val missing = theirShortChannelIds diff ourShortChannelIds
+        val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
+        val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
         sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
       }
@@ -411,6 +409,36 @@ object Router {
   def hasChannels(nodeId: PublicKey, channels: Iterable[ChannelAnnouncement]): Boolean = channels.exists(c => isRelatedTo(c, nodeId))
 
   /**
+    * Is valid (not stale) a channel that:
+    * (1) is younger than 2 weeks (2*7*144 = 2016 blocks)
+    * OR
+    * (2) has at least one channel_update younger than 2 weeks
+    * @param channel
+    * @param update1
+    * @param update2
+    */
+  def isValid(channel: ChannelAnnouncement, update1: Option[ChannelUpdate], update2: Option[ChannelUpdate]) = {
+    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
+    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
+    val staleThresholdBlocks = Globals.blockCount.get() - 2016
+    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
+    val (blockHeight, _, _) = fromShortId(channel.shortChannelId)
+    blockHeight >= staleThresholdBlocks || update1.map(_.timestamp).getOrElse(0L) > staleThresholdSeconds || update2.map(_.timestamp).getOrElse(0L) > staleThresholdSeconds
+  }
+
+  /**
+    * filter channel for advanced sync
+    */
+  def keep(firstBlockNum: Int, numberOfBlocks: Int, id: Long, channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
+    val (height, _, _) = fromShortId(id)
+    val c = channels(id)
+    val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+    val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+    height >= firstBlockNum && height <= (firstBlockNum + numberOfBlocks) && isValid(c, u1, u2)
+  }
+
+
+  /**
     * Is stale a channel that:
     * (1) is older than 2 weeks (2*7*144 = 2016 blocks)
     * AND
@@ -421,15 +449,10 @@ object Router {
     * @return
     */
   def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
-    // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
-    // but we don't want to prune brand new channels for which we didn't yet receive a channel update
-    val staleThresholdSeconds = Platform.currentTime / 1000 - 1209600
-    val staleThresholdBlocks = Globals.blockCount.get() - 2016
     val staleChannels = channels.filter { c =>
-      val (blockHeight, _, _) = fromShortId(c.shortChannelId)
-      val latestUpdate_opt = (updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)) ++ updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))).toSeq.map(_.timestamp).sorted.reverse.headOption
-      blockHeight < staleThresholdBlocks && // consider only channels older than 2 weeks
-        (latestUpdate_opt.isEmpty || latestUpdate_opt.get < staleThresholdSeconds) // channel must have updates more recent than two weeks
+      val update1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
+      val update2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
+      !isValid(c, update1, update2)
     }
     staleChannels.map(_.shortChannelId)
   }
