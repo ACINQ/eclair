@@ -6,7 +6,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.getValidAnnouncements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, randomKey, toShortId}
-import org.jgrapht.graph.DefaultDirectedWeightedGraph
+import org.jgrapht.graph.{DefaultDirectedWeightedGraph, DirectedWeightedPseudograph}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -26,7 +26,7 @@ class RouteCalculationSpec extends FunSuite {
   }
 
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
-    val g = new DefaultDirectedWeightedGraph[PublicKey, DescEdge](classOf[DescEdge])
+    val g = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
     updates.foreach { case (d, u) => Router.addEdge(g, d, u) }
     g
   }
@@ -46,8 +46,28 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e, updates)
+    val route = Router.findRoute(g, a, e)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+
+  }
+
+  test("calculate simple route (add and remove edges") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+
+    Router.removeEdge(g, ChannelDesc(3L, c, d))
+    val route2 = Router.findRoute(g, a, e)
+    assert(route2.map(hops2Ids) === Failure(RouteNotFound))
 
   }
 
@@ -63,7 +83,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e, updates)
+    val route = Router.findRoute(g, a, e)
     assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
@@ -76,7 +96,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e, updates)
+    val route = Router.findRoute(g, a, e)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -90,7 +110,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e, updates)
+    val route = Router.findRoute(g, a, e)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -104,7 +124,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, e, updates)
+    val route = Router.findRoute(g, a, e)
     assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -118,7 +138,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, a, updates)
+    val route = Router.findRoute(g, a, a)
     assert(route.map(hops2Ids) === Failure(CannotRouteToSelf))
   }
 
@@ -133,7 +153,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route = Router.findRoute(g, a, b, updates)
+    val route = Router.findRoute(g, a, b)
     assert(route.map(hops2Ids) === Success(1 :: Nil))
   }
 
@@ -149,10 +169,10 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, updates)
+    val route1 = Router.findRoute(g, a, e)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    val route2 = Router.findRoute(g, e, a, updates)
+    val route2 = Router.findRoute(g, e, a)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
   }
 
@@ -189,7 +209,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val hops = Router.findRoute(g, a, e, updates).get
+    val hops = Router.findRoute(g, a, e).get
 
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
   }

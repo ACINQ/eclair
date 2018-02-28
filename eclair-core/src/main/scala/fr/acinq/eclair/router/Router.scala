@@ -15,7 +15,8 @@ import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
-import org.jgrapht.alg.shortestpath.DijkstraShortestPath
+import org.jgrapht.WeightedGraph
+import org.jgrapht.alg.shortestpath.BidirectionalDijkstraShortestPath
 import org.jgrapht.ext._
 import org.jgrapht.graph.{DefaultDirectedWeightedGraph, _}
 
@@ -49,7 +50,7 @@ case class Data(nodes: Map[PublicKey, NodeAnnouncement],
                   privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
-                  graph: DefaultDirectedWeightedGraph[PublicKey, DescEdge]
+                  graph: DirectedWeightedPseudograph[PublicKey, DescEdge]
                )
 
 sealed trait State
@@ -86,7 +87,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     log.info("loaded from db: channels={} nodes={} updates={}", channels.size, nodes.size, updates.size)
 
     // this will be used to calculate routes
-    val graph = new DefaultDirectedWeightedGraph[PublicKey, DescEdge](classOf[DescEdge])
+    val graph = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
 
     val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
     val initChannelUpdates = updates.map { u =>
@@ -579,7 +580,7 @@ object Router {
     *
     * Note that we only add the edge if the corresponding channel is enabled
     */
-  def addEdge(g: DefaultDirectedWeightedGraph[PublicKey, DescEdge], d: ChannelDesc, u: ChannelUpdate) = {
+  def addEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc, u: ChannelUpdate) = {
     if (Announcements.isEnabled(u.flags)) {
       g.addVertex(d.a)
       g.addVertex(d.b)
@@ -595,7 +596,7 @@ object Router {
     *
     * Note that we don't clean up vertices
     */
-  def removeEdge(g: DefaultDirectedWeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
+  def removeEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
     g.removeEdge(d.a, d.b)
   }
 
@@ -609,22 +610,26 @@ object Router {
     * @param withoutUpdates those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
     */
-  def findRoute(g: DefaultDirectedWeightedGraph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, withUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, withUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
     try {
-      withUpdates.foreach { case (d, u) => addEdge(g, d, u) }
-      withoutUpdates.foreach { case (d, _) => removeEdge(g, d) }
-
-      val route_opt = Option(DijkstraShortestPath.findPathBetween(g, localNodeId, targetNodeId))
+      val workingGraph = if (withUpdates.isEmpty && withoutUpdates.isEmpty) {
+        // no filtering, let's work on the base graph
+        g
+      } else {
+        // we duplicate the graph and add/remove updates from the duplicated version
+        val clonedGraph = g.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
+        withUpdates.foreach { case (d, u) => addEdge(clonedGraph, d, u) }
+        withoutUpdates.foreach { case (d, _) => removeEdge(clonedGraph, d) }
+        clonedGraph
+      }
+      val route_opt = Option(BidirectionalDijkstraShortestPath.findPathBetween(workingGraph, localNodeId, targetNodeId))
       route_opt match {
         case Some(path) => path.getEdgeList.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u))
         case None => throw RouteNotFound
       }
     } catch {
       case _: Throwable => throw RouteNotFound
-    } finally {
-      withUpdates.foreach { case (d, _) => removeEdge(g, d) }
-      withoutUpdates.foreach { case (d, u) => addEdge(g, d, u) }
     }
   }
 
