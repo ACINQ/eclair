@@ -127,7 +127,6 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
         val channels = sender.expectMsgType[Iterable[ChannelAnnouncement]]
         sender.send(router, 'updates)
         val updates = sender.expectMsgType[Iterable[ChannelUpdate]]
-        println(nodes.size, channels.size, updates.size)
         nodes.size === 6 && channels.size === 4 && updates.size === 8
       }, max = 10 seconds, interval = 1 second)
 
