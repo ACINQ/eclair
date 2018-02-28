@@ -1,7 +1,6 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{BinaryData, OutPoint}
-import fr.acinq.eclair.randomExtendedPrivateKey
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}

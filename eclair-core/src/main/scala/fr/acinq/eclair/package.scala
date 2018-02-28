@@ -22,8 +22,6 @@ package object eclair {
     buffer
   }
 
-  def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes(32))
-
   def randomKey: PrivateKey = PrivateKey(randomBytes(32), compressed = true)
 
   def toLongId(fundingTxHash: BinaryData, fundingOutputIndex: Int): BinaryData = {

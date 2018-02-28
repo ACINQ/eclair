@@ -1,12 +1,14 @@
 package fr.acinq.eclair.payment
 
-import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
+import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, DeterministicWallet}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.{TestConstants, randomExtendedPrivateKey, randomKey}
+import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
+import fr.acinq.eclair.TestConstants
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -132,6 +134,9 @@ class HtlcGenerationSpec extends FunSuite {
 }
 
 object HtlcGenerationSpec {
+
+  def randomExtendedPrivateKey: ExtendedPrivateKey = DeterministicWallet.generate(randomBytes(32))
+
   val (priv_a, priv_b, priv_c, priv_d, priv_e) = (TestConstants.Alice.keyManager.nodeKey, TestConstants.Bob.keyManager.nodeKey, randomExtendedPrivateKey, randomExtendedPrivateKey, randomExtendedPrivateKey)
   val (a, b, c, d, e) = (priv_a.publicKey, priv_b.publicKey, priv_c.publicKey, priv_d.publicKey, priv_e.publicKey)
   val sig = Crypto.encodeSignature(Crypto.sign(Crypto.sha256(BinaryData.empty), priv_a.privateKey)) :+ 1.toByte
