@@ -7,7 +7,6 @@ import akka.util.Timeout
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
-import fr.acinq.eclair.gui.utils.CoinUtils
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
@@ -41,16 +40,24 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
     (for {
       kit <- fKit
       conn <- kit.switchboard ? Peer.Connect(nodeUri)
-      _ <- channel match {
-        case Some(o) =>
-          logger.info(s"opening a channel with remoteNodeId=${o.remoteNodeId}")
-          kit.switchboard ? o
-        case None => Future.successful(0) // nothing to do
-      }
-    } yield conn) onFailure {
-      case t: Throwable =>
-        logger.error("Could not open channel ", t)
-        notification("Connection failed", nodeUri.address.toString, NOTIFICATION_ERROR)
+    } yield (kit, conn)) onComplete {
+      case Success((k, _)) =>
+        logger.info(s"connection to $nodeUri successful")
+        channel match {
+          case Some(openChannel) =>
+            k.switchboard ? openChannel onComplete {
+              case Success(s) =>
+                logger.info(s"successfully opened channel $s")
+                notification("Channel created", s.toString, NOTIFICATION_SUCCESS)
+              case Failure(t) =>
+                logger.info("could not open channel ", t)
+                notification("Channel creation failed", t.getMessage, NOTIFICATION_ERROR)
+            }
+          case None =>
+        }
+      case Failure(t) =>
+        logger.error(s"could not create connection to $nodeUri ", t)
+        notification("Connection failed", t.getMessage, NOTIFICATION_ERROR)
     }
   }
 
@@ -73,13 +80,14 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
           val message = CoinUtils.formatAmountInUnit(MilliSatoshi(amountMsat), FxApp.getUnit, withUnit = true)
           notification("Payment Sent", message, NOTIFICATION_SUCCESS)
         case Success(PaymentFailed(_, failures)) =>
-          val message = s"${
-            failures.lastOption match {
-              case Some(LocalFailure(t)) => t.getMessage
-              case Some(RemoteFailure(_, e)) => e.failureMessage
-              case _ => "Unknown error"
-            }
-          } (${failures.size} attempts)"
+          val distilledFailures = PaymentLifecycle.transformForUser(failures)
+          val message = s"${distilledFailures.size} attempts:\n${
+            distilledFailures.map {
+              case LocalFailure(t) => s"- (local) ${t.getMessage}"
+              case RemoteFailure(_, e) => s"- (remote) ${e.failureMessage.message}"
+              case _ => "- Unknown error"
+            }.mkString("\n")
+          }"
           notification("Payment Failed", message, NOTIFICATION_ERROR)
         case Failure(t) =>
           val message = t.getMessage
