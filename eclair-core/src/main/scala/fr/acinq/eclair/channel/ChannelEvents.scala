@@ -25,4 +25,6 @@ case class LocalChannelDown(channel: ActorRef, channelId: BinaryData, shortChann
 
 case class ChannelStateChanged(channel: ActorRef, peer: ActorRef, remoteNodeId: PublicKey, previousState: State, currentState: State, currentData: Data) extends ChannelEvent
 
+case class ChannelSignatureSent(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
+
 case class ChannelSignatureReceived(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
