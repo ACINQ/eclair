@@ -3,16 +3,15 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.router.Router.getValidAnnouncements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, randomKey, toShortId}
+import org.jgrapht.graph.DirectedWeightedPseudograph
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
 
 import scala.compat.Platform
-import scala.concurrent.Await
-import scala.concurrent.duration._
+import scala.util.{Failure, Success}
 
 /**
   * Created by PM on 31/05/2016.
@@ -20,106 +19,160 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class RouteCalculationSpec extends FunSuite {
 
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int): (ChannelDesc, ChannelUpdate) = {
+    val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
+    (ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, shortChannelId, 0L, "0000", 1, 42, feeBaseMsat, feeProportionalMillionth))
+  }
+
+  def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
+    val g = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
+    updates.foreach { case (d, u) => Router.addEdge(g, d, u) }
+    g
+  }
+
+  def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId)
+
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
   test("calculate simple route") {
 
-    val channels = List(
-      ChannelDesc(1L, a, b),
-      ChannelDesc(2L, b, c),
-      ChannelDesc(3L, c, d),
-      ChannelDesc(4L, d, e)
-    )
+    val updates = List(
+       makeUpdate(1L, a, b, 0, 0),
+       makeUpdate(2L, b, c, 0, 0),
+       makeUpdate(3L, c, d, 0, 0),
+       makeUpdate(4L, d, e, 0, 0)
+    ).toMap
 
-    val route = Router.findRouteDijkstra(a, e, channels)
-    assert(route.map(_.id) === 1 :: 2 :: 3 :: 4 :: Nil)
+    val g = makeGraph(updates)
 
+    val route = Router.findRoute(g, a, e)
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+
+  }
+
+  test("calculate simple route (add and remove edges") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+
+    Router.removeEdge(g, ChannelDesc(3L, c, d))
+    val route2 = Router.findRoute(g, a, e)
+    assert(route2.map(hops2Ids) === Failure(RouteNotFound))
+
+  }
+
+  test("calculate longer but cheaper route") {
+
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0),
+      makeUpdate(5L, a, e, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e)
+    assert(route.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
   }
 
   test("no local channels") {
 
-    val channels = List(
-      ChannelDesc(2L, b, c),
-      ChannelDesc(4L, d, e)
-    )
+    val updates = List(
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
 
-    val exc = intercept[RuntimeException] {
-      Router.findRouteDijkstra(a, e, channels)
-    }
-    assert(exc == RouteNotFound)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("route not found") {
 
-    val channels = List(
-      ChannelDesc(1L, a, b),
-      ChannelDesc(2L, b, c),
-      ChannelDesc(4L, d, e)
-    )
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
 
-    val exc = intercept[RuntimeException] {
-      Router.findRouteDijkstra(a, e, channels)
-    }
-    assert(exc == RouteNotFound)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("route not found (unknown destination)") {
 
-    val channels = List(
-      ChannelDesc(1L, a, b),
-      ChannelDesc(2L, b, c),
-      ChannelDesc(3L, c, d)
-    )
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0)
+    ).toMap
 
-    val exc = intercept[RuntimeException] {
-      Router.findRouteDijkstra(a, e, channels)
-    }
-    assert(exc == RouteNotFound)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, e)
+    assert(route.map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("route to self") {
 
-    val channels = List(
-      ChannelDesc(1L, a, b),
-      ChannelDesc(2L, b, c),
-      ChannelDesc(3L, c, d),
-      ChannelDesc(4L, d, e)
-    )
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0)
+    ).toMap
 
-    val exc = intercept[RuntimeException] {
-      Router.findRouteDijkstra(a, a, channels)
-    }
-    assert(exc == CannotRouteToSelf)
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, a)
+    assert(route.map(hops2Ids) === Failure(CannotRouteToSelf))
   }
 
   test("route to immediate neighbor") {
-    val channels = List(
-      ChannelDesc(1L, a, b),
-      ChannelDesc(2L, b, c),
-      ChannelDesc(3L, c, d),
-      ChannelDesc(4L, d, e)
-    )
 
-    val route = Router.findRouteDijkstra(a, b, channels)
-    assert(route.map(_.id) === 1 :: Nil)
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route = Router.findRoute(g, a, b)
+    assert(route.map(hops2Ids) === Success(1 :: Nil))
   }
 
   test("directed graph") {
-    val channels = List(
-      ChannelDesc(1L, a, b),
-      ChannelDesc(2L, b, c),
-      ChannelDesc(3L, c, d),
-      ChannelDesc(4L, d, e)
-    )
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
 
     // a->e works, e->a fails
 
-    Router.findRouteDijkstra(a, e, channels)
+    val g = makeGraph(updates)
 
-    intercept[RuntimeException] {
-      Router.findRouteDijkstra(e, a, channels)
-    }
+    val route1 = Router.findRoute(g, a, e)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
+    val route2 = Router.findRoute(g, e, a)
+    assert(route2.map(hops2Ids) === Failure(RouteNotFound))
   }
 
   test("compute an example sig") {
@@ -153,8 +206,9 @@ class RouteCalculationSpec extends FunSuite {
       ChannelDesc(4L, e, d) -> ued
     )
 
-    import scala.concurrent.ExecutionContext.Implicits.global
-    val hops = Await.result(Router.findRoute(a, e, updates), 3 seconds)
+    val g = makeGraph(updates)
+
+    val hops = Router.findRoute(g, a, e).get
 
     assert(hops === Hop(a, b, uab) :: Hop(b, c, ubc) :: Hop(c, d, ucd) :: Hop(d, e, ude) :: Nil)
   }
@@ -218,7 +272,7 @@ class RouteCalculationSpec extends FunSuite {
     val staleChannels = Router.getStaleChannels(channels.values, updates).toSet
     assert(staleChannels === Set(id_a, id_b))
 
-    val (validChannels, validNodes, validUpdates) = getValidAnnouncements(channels, nodes, updates)
+    val (validChannels, validNodes, validUpdates) = Router.getValidAnnouncements(channels, nodes, updates)
     assert(validChannels.toSet === Set(chan_c, chan_d, chan_e))
     assert(validNodes.toSet === Set(node_1, node_3, node_4)) // node 2 has been pruned because its only channel was pruned
     assert(validUpdates.toSet === Set(upd_c, upd_d))

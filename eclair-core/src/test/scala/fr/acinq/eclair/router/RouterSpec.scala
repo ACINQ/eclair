@@ -193,6 +193,6 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, RouteRequest(a, d))
     sender.expectMsgType[RouteResponse]
   }
-  
+
 
 }

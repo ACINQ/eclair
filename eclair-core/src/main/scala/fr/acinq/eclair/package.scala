@@ -79,4 +79,13 @@ package object eclair {
     * @param data to check
     */
   def isAsciiPrintable(data: BinaryData): Boolean = data.data.forall(ch => ch >= 32 && ch < 127)
+
+  /**
+    *
+    * @param baseMsat     fixed fee
+    * @param proportional proportional fee
+    * @param msat         amount in millisatoshi
+    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
+    */
+  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
 }
