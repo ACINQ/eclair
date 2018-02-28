@@ -136,7 +136,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
     case ForwardFulfill(fulfill, Local(None), add) =>
       // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
-      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, fulfill.paymentPreimage, Nil))
+      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil))
 
     case ForwardFulfill(fulfill, Local(Some(sender)), _) =>
       sender ! fulfill

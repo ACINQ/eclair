@@ -20,7 +20,7 @@ case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: 
 case class CheckPayment(paymentHash: BinaryData)
 
 sealed trait PaymentResult
-case class PaymentSucceeded(amountMsat: Long, paymentPreimage: BinaryData, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
+case class PaymentSucceeded(amountMsat: Long, paymentHash: BinaryData, paymentPreimage: BinaryData, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
 sealed trait PaymentFailure
 case class LocalFailure(t: Throwable) extends PaymentFailure
 case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
@@ -72,7 +72,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event("ok", _) => stay()
 
     case Event(fulfill: UpdateFulfillHtlc, WaitingForComplete(s, c, cmd, _, _, _, _, hops)) =>
-      reply(s, PaymentSucceeded(cmd.amountMsat, fulfill.paymentPreimage, hops))
+      reply(s, PaymentSucceeded(cmd.amountMsat, c.paymentHash, fulfill.paymentPreimage, hops))
       context.system.eventStream.publish(PaymentSent(MilliSatoshi(c.amountMsat), MilliSatoshi(cmd.amountMsat - c.amountMsat), cmd.paymentHash, fulfill.paymentPreimage))
       stop(FSM.Normal)
 
