@@ -2,7 +2,7 @@ package fr.acinq.eclair.channel.states.h
 
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{OutPoint, Transaction, TxIn}
+import fr.acinq.bitcoin.{OutPoint, ScriptFlags, Transaction, TxIn}
 import fr.acinq.eclair.TestkitBaseClass
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
@@ -230,6 +230,50 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
       awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].remoteCommitPublished.isDefined)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].copy(remoteCommitPublished = None) == initialState)
+
+      // actual test starts here
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0)
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
+  test("recv BITCOIN_TX_CONFIRMED (future remote commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, bobCommitTxes) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val oldStateData = alice.stateData
+      val (ra1, htlca1) = addHtlc(25000000, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
+      fulfillHtlc(htlca1.id, ra1, bob, alice, bob2alice, alice2bob)
+      crossSign(bob, alice, bob2alice, alice2bob)
+      // we simulate a disconnection
+      sender.send(alice, INPUT_DISCONNECTED)
+      sender.send(bob, INPUT_DISCONNECTED)
+      awaitCond(alice.stateName == OFFLINE)
+      awaitCond(bob.stateName == OFFLINE)
+      // then we manually replace alice's state with an older one
+      alice.setState(OFFLINE, oldStateData)
+      // then we reconnect them
+      sender.send(alice, INPUT_RECONNECTED(alice2bob.ref))
+      sender.send(bob, INPUT_RECONNECTED(bob2alice.ref))
+      // peers exchange channel_reestablish messages
+      alice2bob.expectMsgType[ChannelReestablish]
+      bob2alice.expectMsgType[ChannelReestablish]
+      // alice then realizes it has an old state...
+      bob2alice.forward(alice)
+      // ... and ask bob to publish its current commitment
+      val error = alice2bob.expectMsgType[Error]
+      assert(new String(error.data) === PleasePublishYourCommitment(channelId(alice)).getMessage)
+      // alice now waits for bob to publish its commitment
+      awaitCond(alice.stateName == WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT)
+      // bob is nice and publishes its commitment
+      val bobCommitTx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
+      // alice is able to claim its main output
+      val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      Transaction.correctlySpends(claimMainTx, bobCommitTx :: Nil, ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      alice2blockchain.expectMsgType[WatchConfirmed].txId == bobCommitTx.txid
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].futureRemoteCommitPublished.isDefined)
 
       // actual test starts here
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobCommitTx), 0, 0)

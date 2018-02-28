@@ -302,7 +302,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
       // finally we remove nodes that aren't tied to any channels anymore
       val potentialStaleNodes = staleChannels.map(d.channels).flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet // deduped
-    val channels1 = d.channels -- staleChannels
+      val channels1 = d.channels -- staleChannels
       // no need to iterate on all nodes, just on those that are affected by current pruning
       val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
 
@@ -369,7 +369,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
       findRoute(d.graph, start, end, withUpdates = assistedUpdates, withoutUpdates = blacklistedUpdates ++ excludedUpdates)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
-        .recover { case t => sender ! Status.Failure(t) }
+        .recover { case t =>
+          t.printStackTrace()
+          sender ! Status.Failure(t) }
       stay
   }
 

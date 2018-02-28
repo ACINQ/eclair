@@ -7,7 +7,7 @@ import fr.acinq.eclair.UInt64
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
-import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
+import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
 
 /**
@@ -43,6 +43,7 @@ case object CLOSING extends State
 case object CLOSED extends State
 case object OFFLINE extends State
 case object SYNCING extends State
+case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends State
 case object ERR_FUNDING_PUBLISH_FAILED extends State
 case object ERR_FUNDING_LOST extends State
 case object ERR_FUNDING_TIMEOUT extends State
@@ -59,7 +60,7 @@ case object ERR_INFORMATION_LEAK extends State
       8888888888     Y8P     8888888888 888    Y888     888     "Y8888P"
  */
 
-case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte)
+case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: BinaryData, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
 case object INPUT_PUBLISH_LOCALCOMMIT // used in tests
@@ -123,6 +124,8 @@ trait HasCommitments extends Data {
   def channelId = commitments.channelId
 }
 
+case class ClosingTxProposed(unsignedTx: Transaction, localClosingSigned: ClosingSigned)
+
 case class LocalCommitPublished(commitTx: Transaction, claimMainDelayedOutputTx: Option[Transaction], htlcSuccessTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], claimHtlcDelayedTx: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
 case class RemoteCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], claimHtlcSuccessTxs: List[Transaction], claimHtlcTimeoutTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
 case class RevokedCommitPublished(commitTx: Transaction, claimMainOutputTx: Option[Transaction], mainPenaltyTx: Option[Transaction], claimHtlcTimeoutTxs: List[Transaction], htlcTimeoutTxs: List[Transaction], htlcPenaltyTxs: List[Transaction], irrevocablySpent: Map[OutPoint, BinaryData])
@@ -144,17 +147,25 @@ final case class DATA_NORMAL(commitments: Commitments,
 final case class DATA_SHUTDOWN(commitments: Commitments,
                                localShutdown: Shutdown, remoteShutdown: Shutdown) extends Data with HasCommitments
 final case class DATA_NEGOTIATING(commitments: Commitments,
-                                  localShutdown: Shutdown, remoteShutdown: Shutdown, localClosingSigned: List[ClosingSigned]) extends Data with HasCommitments
+                                  localShutdown: Shutdown, remoteShutdown: Shutdown,
+                                  closingTxProposed: List[List[ClosingTxProposed]], // one list for every negotiation (there can be several in case of disconnection)
+                                  bestUnpublishedClosingTx_opt: Option[Transaction]) extends Data with HasCommitments {
+  require(!closingTxProposed.isEmpty, "there must always be a list for the current negotiation")
+  require(!commitments.localParams.isFunder || closingTxProposed.forall(!_.isEmpty), "funder must have at least one closing signature for every negotation attempt because it initiates the closing")
+}
 final case class DATA_CLOSING(commitments: Commitments,
-                              localClosingSigned: List[ClosingSigned],
+                              mutualCloseProposed: List[Transaction], // all exchanged closing sigs are flattened, we use this only to keep track of what publishable tx they have
                               mutualClosePublished: List[Transaction] = Nil,
                               localCommitPublished: Option[LocalCommitPublished] = None,
                               remoteCommitPublished: Option[RemoteCommitPublished] = None,
                               nextRemoteCommitPublished: Option[RemoteCommitPublished] = None,
+                              futureRemoteCommitPublished: Option[RemoteCommitPublished] = None,
                               revokedCommitPublished: List[RevokedCommitPublished] = Nil) extends Data with HasCommitments {
-  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
+  val spendingTxes = mutualClosePublished ::: localCommitPublished.map(_.commitTx).toList ::: remoteCommitPublished.map(_.commitTx).toList ::: nextRemoteCommitPublished.map(_.commitTx).toList ::: futureRemoteCommitPublished.map(_.commitTx).toList ::: revokedCommitPublished.map(_.commitTx)
   require(spendingTxes.size > 0, "there must be at least one tx published in this state")
 }
+
+final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
                              dustLimitSatoshis: Long,
