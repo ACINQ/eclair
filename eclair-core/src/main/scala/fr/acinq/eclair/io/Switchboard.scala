@@ -7,7 +7,6 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.eclair.NodeParams
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel.HasCommitments
-import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.router.Rebroadcast
 
 /**

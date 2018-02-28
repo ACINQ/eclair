@@ -3,7 +3,6 @@ package fr.acinq
 import java.security.SecureRandom
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
 import fr.acinq.bitcoin.{BinaryData, _}
 import scodec.Attempt
 import scodec.bits.BitVector

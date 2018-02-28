@@ -4,9 +4,8 @@ import java.net.InetSocketAddress
 import java.sql.DriverManager
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet, Script}
+import fr.acinq.bitcoin.{BinaryData, Block, Script}
 import fr.acinq.eclair.NodeParams.BITCOIND
-import fr.acinq.eclair.TestConstants.Alice.keyManager
 import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.io.Peer
