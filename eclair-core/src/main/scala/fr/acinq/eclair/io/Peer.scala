@@ -349,7 +349,8 @@ object Peer {
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    val channelNumber = secureRandom.nextInt(1000).toLong
+    // TODO: entropy for channelNumber is too low
+    val channelNumber = secureRandom.nextInt(1000000).toLong
     makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelNumber)
   }
 
