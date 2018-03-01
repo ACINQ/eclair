@@ -5,7 +5,7 @@ import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
-import fr.acinq.eclair.randomKey
+import fr.acinq.eclair.{randomKey, nodeFee}
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
 import org.junit.runner.RunWith
