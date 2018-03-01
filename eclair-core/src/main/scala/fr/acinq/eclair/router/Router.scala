@@ -355,16 +355,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(RouteRequest(start, end, assistedRoutes, ignoreNodes, ignoreChannels), d) =>
       // we convert extra routing info provided in the payment request to fake channel_update
-      // it has precedence over all other channel_updates we know
+      // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
-      val excludedUpdates = d.excludedChannels.map(desc => (desc -> d.updates.get(desc))).map {
-        case (desc, Some(u)) => Some(desc -> u)
-        case _ => None
-      }.flatten.toMap
-      val blacklistedUpdates = getBlacklistedUpdates(d.channels, d.updates ++ assistedUpdates, ignoreNodes, ignoreChannels)
-      log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
-      findRoute(d.graph, start, end, withUpdates = assistedUpdates, withoutUpdates = blacklistedUpdates ++ excludedUpdates)
+      val blacklisted = getBlacklistedChannels(d.channels, d.updates ++ assistedUpdates, ignoreNodes, ignoreChannels) ++ d.excludedChannels
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.map(_.id.toHexString).mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","), d.excludedChannels.map(_.id.toHexString).mkString(","))
+      findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = blacklisted)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -555,21 +551,20 @@ object Router {
   /**
     * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
     */
-  def getBlacklistedUpdates(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]): Map[ChannelDesc, ChannelUpdate] = {
-    // expensive, but node blacklisting shouldn't happen often
-    val u1 = if (ignoreNodes.isEmpty) {
-      Map.empty[ChannelDesc, ChannelUpdate]
+  def getBlacklistedChannels(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]): Iterable[ChannelDesc] = {
+    val descNode = if (ignoreNodes.isEmpty) {
+      Iterable.empty[ChannelDesc]
     } else {
-      updates.filterKeys(desc => !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b))
+      // expensive, but node blacklisting shouldn't happen often
+      updates.keys.filter(desc => !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b))
     }
-    val u2 = ignoreChannels.map(channels).flatMap { c =>
-      val desc1 = ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2)
-      val desc2 = ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)
-      updates.get(desc1).map(desc1 -> _) ++ updates.get(desc2).map(desc2 -> _)
-    }.toMap
-    u1 ++ u2
+    val descChannel = ignoreChannels.map(channels).flatMap { c => Vector(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)) }
+    descNode ++ descChannel
   }
 
+  /**
+    * Routing fee have a variable part, as a simplification we compute fees using a default constant value for the amount
+    */
   val DEFAULT_AMOUNT_MSAT = 10000000
 
   /**
@@ -608,20 +603,20 @@ object Router {
     * @param g
     * @param localNodeId
     * @param targetNodeId
-    * @param withUpdates    those will be added before computing the route, and removed after so that g is left unchanged
-    * @param withoutUpdates those will be removed before computing the route, and added back after so that g is left unchanged
+    * @param withEdges    those will be added before computing the route, and removed after so that g is left unchanged
+    * @param withoutEdges those will be removed before computing the route, and added back after so that g is left unchanged
     * @return
     */
-  def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, withUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty): Try[Seq[Hop]] = Try {
+  def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, withEdges: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutEdges: Iterable[ChannelDesc] = Iterable.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
-    val workingGraph = if (withUpdates.isEmpty && withoutUpdates.isEmpty) {
+    val workingGraph = if (withEdges.isEmpty && withoutEdges.isEmpty) {
       // no filtering, let's work on the base graph
       g
     } else {
-      // we duplicate the graph and add/remove updates from the duplicated version
+      // slower but safer: we duplicate the graph and add/remove updates from the duplicated version
       val clonedGraph = g.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
-      withUpdates.foreach { case (d, u) => addEdge(clonedGraph, d, u) }
-      withoutUpdates.foreach { case (d, _) => removeEdge(clonedGraph, d) }
+      withEdges.foreach { case (d, u) => addEdge(clonedGraph, d, u) }
+      withoutEdges.foreach { d => removeEdge(clonedGraph, d) }
       clonedGraph
     }
     if (!workingGraph.containsVertex(localNodeId)) throw RouteNotFound
