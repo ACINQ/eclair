@@ -178,15 +178,6 @@ object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
 
-  /**
-    *
-    * @param baseMsat     fixed fee
-    * @param proportional proportional fee
-    * @param msat         amount in millisatoshi
-    * @return the fee (in msat) that a node should be paid to forward an HTLC of 'amount' millisatoshis
-    */
-  def nodeFee(baseMsat: Long, proportional: Long, msat: Long): Long = baseMsat + (proportional * msat) / 1000000
-
   def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
     val sessionKey = randomKey

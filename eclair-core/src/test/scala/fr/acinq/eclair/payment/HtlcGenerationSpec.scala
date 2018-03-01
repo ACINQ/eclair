@@ -8,7 +8,7 @@ import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.router.Hop
 import fr.acinq.eclair.wire.{ChannelUpdate, LightningMessageCodecs, PerHopPayload}
-import fr.acinq.eclair.{TestConstants, randomBytes}
+import fr.acinq.eclair.{TestConstants, nodeFee, randomBytes}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
