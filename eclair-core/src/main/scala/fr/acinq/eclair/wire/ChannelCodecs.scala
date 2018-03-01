@@ -17,11 +17,8 @@ import scodec.{Attempt, Codec}
   * Created by PM on 02/06/2017.
   */
 object ChannelCodecs extends Logging {
-  def list2keypath(input: List[Long]): KeyPath = new KeyPath(input)
 
-  def keypath2list(input: KeyPath): List[Long] = input.path.toList
-
-  val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap(list2keypath, keypath2list).as[KeyPath]
+  val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap[KeyPath](l => new KeyPath(l), keyPath => keyPath.path.toList).as[KeyPath]
 
   val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
     ("secretkeybytes" | binarydata(32)) ::
