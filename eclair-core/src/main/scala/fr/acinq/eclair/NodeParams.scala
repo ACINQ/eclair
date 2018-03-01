@@ -86,6 +86,7 @@ object NodeParams {
     seedPath.exists() match {
       case true => Files.readAllBytes(seedPath.toPath)
       case false =>
+        datadir.mkdirs()
         val seed = randomKey.toBin
         Files.write(seedPath.toPath, seed)
         seed
