@@ -1,4 +1,4 @@
-package fr.acinq.eclair.gui.utils
+package fr.acinq.eclair
 
 import fr.acinq.bitcoin.{Btc, MilliBtc, MilliSatoshi, Satoshi}
 import org.junit.runner.RunWith

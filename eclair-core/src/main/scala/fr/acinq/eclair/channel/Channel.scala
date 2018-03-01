@@ -18,7 +18,7 @@ import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
-import scala.util.{Failure, Left, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 
 /**
@@ -26,7 +26,7 @@ import scala.util.{Failure, Left, Success, Try}
   */
 
 object Channel {
-  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer))
+  def props(nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef]) = Props(new Channel(nodeParams, wallet, remoteNodeId, blockchain, router, relayer, origin_opt))
 
   // see https://github.com/lightningnetwork/lightning-rfc/blob/master/07-routing-gossip.md#requirements
   val ANNOUNCEMENTS_MINCONF = 6
@@ -42,11 +42,14 @@ object Channel {
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
 
-  case object TickRefreshChannelUpdate
+  // this is defined in BOLT 11
+  val MIN_CLTV_EXPIRY = 9L
+  val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
+  case object TickRefreshChannelUpdate
 }
 
-class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
+class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: PublicKey, blockchain: ActorRef, router: ActorRef, relayer: ActorRef, origin_opt: Option[ActorRef] = None)(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends FSM[State, Data] with FSMDiagnosticActorLogging[State, Data] {
 
   import Channel._
   import nodeParams.keyManager
@@ -101,7 +104,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   startWith(WAIT_FOR_INIT_INTERNAL, Nothing)
 
   when(WAIT_FOR_INIT_INTERNAL)(handleExceptions {
-    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, remote, remoteInit, channelFlags), Nothing) =>
+    case Event(initFunder@INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, remote, remoteInit, channelFlags), Nothing) =>
       context.system.eventStream.publish(ChannelCreated(self, context.parent, remoteNodeId, true, temporaryChannelId))
       forwarder ! remote
       val open = OpenChannel(nodeParams.chainHash,
@@ -225,11 +228,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   })
 
   when(WAIT_FOR_ACCEPT_CHANNEL)(handleExceptions {
-    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, localParams, _, remoteInit, _), open)) =>
+    case Event(accept: AcceptChannel, DATA_WAIT_FOR_ACCEPT_CHANNEL(INPUT_INIT_FUNDER(temporaryChannelId, fundingSatoshis, pushMsat, initialFeeratePerKw, fundingTxFeeratePerKw, localParams, _, remoteInit, _), open)) =>
       Try(Helpers.validateParamsFunder(nodeParams, open, accept)) match {
         case Failure(t) =>
           log.warning(t.getMessage)
           val error = Error(temporaryChannelId, t.getMessage.getBytes)
+          replyToUser(Left(Left(t)))
           goto(CLOSED) sending error
         case _ =>
           // TODO: check equality of temporaryChannelId? or should be done upstream
@@ -251,16 +255,21 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           log.debug(s"remote params: $remoteParams")
           val localFundingPubkey = keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey
           val fundingPubkeyScript = Script.write(Script.pay2wsh(Scripts.multiSig2of2(localFundingPubkey, remoteParams.fundingPubKey)))
-          val fundingTxFeeratePerKw = Globals.feeratesPerKw.get.blocks_6
           wallet.makeFundingTx(fundingPubkeyScript, Satoshi(fundingSatoshis), fundingTxFeeratePerKw).pipeTo(self)
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+    case Event(CMD_CLOSE(_), _) =>
+      replyToUser(Right("closed"))
+      goto(CLOSED)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) => handleRemoteError(e, d)
+    case Event(e: Error, d: DATA_WAIT_FOR_ACCEPT_CHANNEL) =>
+      replyToUser(Left(Right(e)))
+      handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, _) =>
+      replyToUser(Left(Left(new RuntimeException("disconnected"))))
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_INTERNAL)(handleExceptions {
@@ -279,19 +288,27 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       val channelId = toLongId(fundingTx.hash, fundingTxOutputIndex)
       context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
       context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
+      // NB: we don't send a ChannelSignatureSent for the first commit
       goto(WAIT_FOR_FUNDING_SIGNED) using DATA_WAIT_FOR_FUNDING_SIGNED(channelId, localParams, remoteParams, fundingTx, localSpec, localCommitTx, RemoteCommit(0, remoteSpec, remoteCommitTx.tx.txid, remoteFirstPerCommitmentPoint), open.channelFlags, fundingCreated) sending fundingCreated
 
     case Event(Status.Failure(t), d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
       log.error(t, s"wallet returned error: ")
       val exc = ChannelFundingError(d.temporaryChannelId)
       val error = Error(d.temporaryChannelId, exc.getMessage.getBytes)
+      replyToUser(Left(Left(t)))
       goto(CLOSED) sending error
 
-    case Event(CMD_CLOSE(_), _) => goto(CLOSED)
+    case Event(CMD_CLOSE(_), _) =>
+      replyToUser(Right("closed"))
+      goto(CLOSED)
 
-    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) => handleRemoteError(e, d)
+    case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_INTERNAL) =>
+      replyToUser(Left(Right(e)))
+      handleRemoteError(e, d)
 
-    case Event(INPUT_DISCONNECTED, _) => goto(CLOSED)
+    case Event(INPUT_DISCONNECTED, _) =>
+      replyToUser(Left(Left(new RuntimeException("disconnected"))))
+      goto(CLOSED)
   })
 
   when(WAIT_FOR_FUNDING_CREATED)(handleExceptions {
@@ -328,6 +345,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           context.parent ! ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId) // we notify the peer asap so it knows how to route messages
           context.system.eventStream.publish(ChannelIdAssigned(self, remoteNodeId, temporaryChannelId, channelId))
           context.system.eventStream.publish(ChannelSignatureReceived(self, commitments))
+          // NB: we don't send a ChannelSignatureSent for the first commit
           log.info(s"waiting for them to publish the funding tx for channelId=$channelId fundingTxid=${commitInput.outPoint.txid}")
           blockchain ! WatchSpent(self, commitInput.outPoint.txid, commitInput.outPoint.index.toInt, commitments.commitInput.txOut.publicKeyScript, BITCOIN_FUNDING_SPENT) // TODO: should we wait for an acknowledgment from the watcher?
           blockchain ! WatchConfirmed(self, commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
@@ -353,6 +371,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           val error = Error(channelId, exc.getMessage.getBytes)
           // we rollback the funding tx, it will never be published
           wallet.rollback(fundingTx)
+          replyToUser(Left(Left(cause)))
           // we haven't published anything yet, we can just stop
           goto(CLOSED) sending error
         case Success(_) =>
@@ -372,9 +391,14 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           blockchain ! WatchConfirmed(self, commitments.commitInput.outPoint.txid, commitments.commitInput.txOut.publicKeyScript, nodeParams.minDepthBlocks, BITCOIN_FUNDING_DEPTHOK)
           log.info(s"committing txid=${fundingTx.txid}")
           wallet.commit(fundingTx).onComplete {
-            case Success(true) => ()
-            case Success(false) => self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
-            case Failure(t) => log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
+            case Success(true) =>
+              replyToUser(Right(s"created channel $channelId"))
+            case Success(false) =>
+              replyToUser(Left(Left(new RuntimeException("couldn't publish funding tx"))))
+              self ! BITCOIN_FUNDING_PUBLISH_FAILED // fail-fast: this should be returned only when we are really sure the tx has *not* been published
+            case Failure(t) =>
+              replyToUser(Left(Left(t)))
+              log.error(t, s"error while committing funding tx: ") // tx may still have been published, can't fail-fast
           }
           goto(WAIT_FOR_FUNDING_CONFIRMED) using nextState
       }
@@ -382,11 +406,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     case Event(CMD_CLOSE(_), d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
+      replyToUser(Right("closed"))
       goto(CLOSED)
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
+      replyToUser(Left(Right(e)))
       handleRemoteError(e, d)
   })
 
@@ -571,6 +597,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
               }
+              context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause, c)
           }
@@ -879,6 +906,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
               }
+              context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause, c)
           }
@@ -1426,6 +1454,18 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           888    888  d8888888888 888   Y8888 888  .d88P 888      888        888  T88b  Y88b  d88P
           888    888 d88P     888 888    Y888 8888888P"  88888888 8888888888 888   T88b  "Y8888P"
    */
+
+  /**
+    * This function is used to return feedback to user at channel opening
+    */
+  def replyToUser(message: Either[Either[Throwable, Error], String]) = {
+    val m = message match {
+      case Left(Left(t)) => Status.Failure(t)
+      case Left(Right(e)) => Status.Failure(new RuntimeException(s"peer sent error: '${if (isAsciiPrintable(e.data)) new String(e.data, StandardCharsets.US_ASCII) else e.data.toString()}'"))
+      case Right(s) => s
+    }
+    origin_opt.map(_ ! m)
+  }
 
   def handleCommandSuccess(sender: ActorRef, newData: Data) = {
     stay using newData replying "ok"

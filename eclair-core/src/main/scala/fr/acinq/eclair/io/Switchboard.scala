@@ -46,7 +46,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       peer forward c
       context become main(peers + (remoteNodeId -> peer))
 
-    case o@Peer.OpenChannel(remoteNodeId, _, _, _) =>
+    case o@Peer.OpenChannel(remoteNodeId, _, _, _, _) =>
       peers.get(remoteNodeId) match {
         case Some(peer) => peer forward o
         case None => sender ! Status.Failure(new RuntimeException("no connection to peer"))
@@ -85,7 +85,8 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
       case Some(peer) => peer
       case None =>
         log.info(s"creating new peer current=${peers.size}")
-        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, previousKnownAddress, authenticator, watcher, router, relayer, wallet, offlineChannels), name = s"peer-$remoteNodeId")
+        val peer = context.actorOf(Peer.props(nodeParams, remoteNodeId, authenticator, watcher, router, relayer, wallet), name = s"peer-$remoteNodeId")
+        peer ! Peer.Init(previousKnownAddress, offlineChannels)
         context watch (peer)
         peer
     }

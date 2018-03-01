@@ -3,7 +3,7 @@ package fr.acinq.eclair.channel
 import akka.event.LoggingAdapter
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, sha256}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi, Transaction}
-import fr.acinq.eclair.crypto._
+import fr.acinq.eclair.crypto.{Generators, KeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.Origin
 import fr.acinq.eclair.transactions.Transactions._
 import fr.acinq.eclair.transactions._
@@ -87,6 +87,16 @@ object Commitments {
     if (cmd.expiry <= blockCount) {
       return Left(ExpiryCannotBeInThePast(commitments.channelId, cmd.expiry, blockCount))
     }
+    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
+    // we reject expiry=minExpiry, because if a new block has just been found maybe the counterparty will get notified before us, consider that the expiry is too soon and close the channel
+    if (cmd.expiry <= minExpiry) {
+      return Left(ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = cmd.expiry, blockCount = blockCount))
+    }
+    val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
+    // we reject expiry=maxExpiry, because if a new block has just been found maybe the counterparty will get notified before us, consider that the expiry is too big and close the channel
+    if (cmd.expiry >= maxExpiry) {
+      return Left(ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = cmd.expiry, blockCount = blockCount))
+    }
 
     if (cmd.amountMsat < commitments.remoteParams.htlcMinimumMsat) {
       return Left(HtlcValueTooSmall(commitments.channelId, minimum = commitments.remoteParams.htlcMinimumMsat, actual = cmd.amountMsat))
@@ -133,10 +143,17 @@ object Commitments {
     }
 
     val blockCount = Globals.blockCount.get()
-    // we need a reasonable amount of time to pull the funds before the sender can get refunded
-    val minExpiry = blockCount + 3
+    if (add.expiry <= blockCount) {
+      throw ExpiryCannotBeInThePast(commitments.channelId, add.expiry, blockCount)
+    }
+    // we need a reasonable amount of time to pull the funds before the sender can get refunded (see BOLT 2 and BOLT 11 for a calculation and rationale)
+    val minExpiry = blockCount + Channel.MIN_CLTV_EXPIRY
     if (add.expiry < minExpiry) {
       throw ExpiryTooSmall(commitments.channelId, minimum = minExpiry, actual = add.expiry, blockCount = blockCount)
+    }
+    val maxExpiry = blockCount + Channel.MAX_CLTV_EXPIRY
+    if (add.expiry > maxExpiry) {
+      throw ExpiryTooBig(commitments.channelId, maximum = maxExpiry, actual = add.expiry, blockCount = blockCount)
     }
 
     if (add.amountMsat < commitments.localParams.htlcMinimumMsat) {

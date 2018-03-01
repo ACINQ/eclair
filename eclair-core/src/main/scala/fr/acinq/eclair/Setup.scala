@@ -43,6 +43,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   logger.info(s"hello!")
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
+  logger.info(s"datadir=${datadir.getCanonicalPath}")
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
