@@ -304,4 +304,46 @@ class RouteCalculationSpec extends FunSuite {
 
   }
 
+  test("blacklist routes") {
+    val updates = List(
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e, withoutEdges = ChannelDesc(3L, c, d) :: Nil)
+    assert(route1.map(hops2Ids) === Failure(RouteNotFound))
+
+    // verify that we left the graph untouched
+    assert(g.containsEdge(c, d))
+    assert(g.containsVertex(c))
+    assert(g.containsVertex(d))
+
+    // make sure we can find a route if without the blacklist
+    val route2 = Router.findRoute(g, a, e)
+    assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+  }
+
+  test("verify that extra hops takes precedence over known channels") {
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(3L, c, d, 10, 10),
+      makeUpdate(4L, d, e, 10, 10)
+    ).toMap
+
+    val g = makeGraph(updates)
+
+    val route1 = Router.findRoute(g, a, e)
+    assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    assert(route1.get.head.lastUpdate.feeBaseMsat == 10)
+
+    val route2 = Router.findRoute(g, a, e, withEdges = Map(makeUpdate(1L, a, b, 5, 5)))
+    assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
+    assert(route2.get.head.lastUpdate.feeBaseMsat == 5)
+  }
+
 }
