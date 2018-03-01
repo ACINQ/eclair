@@ -34,16 +34,16 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val sender = TestProbe()
       // alice initiates a closing
       if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4319)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(10000))
-      sender.send(alice, CMD_CLOSE(None))
-      alice2bob.expectMsgType[Shutdown]
-      alice2bob.forward(bob)
+      sender.send(bob, CMD_CLOSE(None))
       bob2alice.expectMsgType[Shutdown]
-      // NB: at this point, bob has already computed and sent the first ClosingSigned message
+      bob2alice.forward(alice)
+      alice2bob.expectMsgType[Shutdown]
+      awaitCond(alice.stateName == NEGOTIATING)
+      // NB: at this point, alice has already computed and sent the first ClosingSigned message
       // In order to force a fee negotiation, we will change the current fee before forwarding
       // the Shutdown message to alice, so that alice computes a different initial closing fee.
       if (test.tags.contains("fee2")) Globals.feeratesPerKw.set(FeeratesPerKw.single(4316)) else Globals.feeratesPerKw.set(FeeratesPerKw.single(5000))
-      bob2alice.forward(alice)
-      awaitCond(alice.stateName == NEGOTIATING)
+      alice2bob.forward(bob)
       awaitCond(bob.stateName == NEGOTIATING)
       test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain))
     }
@@ -61,18 +61,21 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, _, alice2bob, bob2alice, _, _) =>
+  test("recv ClosingSigned (theirCloseFee != ourCloseFee)") { case (alice, bob, alice2bob, bob2alice, _, _) =>
     within(30 seconds) {
+      // alice initiates the negotiation
       val aliceCloseSig1 = alice2bob.expectMsgType[ClosingSigned]
-      val bobCloseSig = bob2alice.expectMsgType[ClosingSigned]
-      assert(bobCloseSig.feeSatoshis == 2 * aliceCloseSig1.feeSatoshis)
+      alice2bob.forward(bob)
+      // bob answers with a counter proposition
+      val bobCloseSig1 = bob2alice.expectMsgType[ClosingSigned]
+      assert(aliceCloseSig1.feeSatoshis > bobCloseSig1.feeSatoshis)
       // actual test starts here
       val initialState = alice.stateData.asInstanceOf[DATA_NEGOTIATING]
       bob2alice.forward(alice)
       val aliceCloseSig2 = alice2bob.expectMsgType[ClosingSigned]
       // BOLT 2: If the receiver [doesn't agree with the fee] it SHOULD propose a value strictly between the received fee-satoshis and its previously-sent fee-satoshis
-      assert(aliceCloseSig2.feeSatoshis > aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis < bobCloseSig.feeSatoshis)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING] == initialState.copy(localClosingSigned = initialState.localClosingSigned :+ aliceCloseSig2))
+      assert(aliceCloseSig2.feeSatoshis < aliceCloseSig1.feeSatoshis && aliceCloseSig2.feeSatoshis > bobCloseSig1.feeSatoshis)
+      awaitCond(alice.stateData.asInstanceOf[DATA_NEGOTIATING].closingTxProposed.last.map(_.localClosingSigned) == initialState.closingTxProposed.last.map(_.localClosingSigned) :+ aliceCloseSig2)
     }
   }
 
@@ -87,16 +90,11 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       do {
         aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
         alice2bob.forward(bob)
-        bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
-        bob2alice.forward(alice)
-      } while (aliceCloseFee != bobCloseFee)
-      val closingTxA = alice2blockchain.expectMsgType[PublishAsap].tx
-      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(closingTxA))
-      val closingTxB = bob2blockchain.expectMsgType[PublishAsap].tx
-      assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(closingTxB))
-      assert(closingTxA === closingTxB)
-      awaitCond(alice.stateName == CLOSING)
-      awaitCond(bob.stateName == CLOSING)
+        if (!bob2blockchain.msgAvailable) {
+          bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
+          bob2alice.forward(alice)
+        }
+      } while (!alice2blockchain.msgAvailable && !bob2blockchain.msgAvailable)
     }
   }
 
@@ -108,12 +106,12 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     testFeeConverge(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
   }
 
-  test("recv ClosingSigned (fee too high)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  test("recv ClosingSigned (fee too high)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      val closingSigned = bob2alice.expectMsgType[ClosingSigned]
+      val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
       val sender = TestProbe()
       val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-      sender.send(bob, closingSigned.copy(feeSatoshis = 99000)) // sig doesn't matter, it is checked later
+      sender.send(bob, aliceCloseSig.copy(feeSatoshis = 99000)) // sig doesn't matter, it is checked later
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data).startsWith("invalid close fee: fee_satoshis=99000"))
       bob2blockchain.expectMsg(PublishAsap(tx))
@@ -122,12 +120,12 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
     }
   }
 
-  test("recv ClosingSigned (invalid sig)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain) =>
+  test("recv ClosingSigned (invalid sig)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain) =>
     within(30 seconds) {
-      val closingSigned = bob2alice.expectMsgType[ClosingSigned]
+      val aliceCloseSig = alice2bob.expectMsgType[ClosingSigned]
       val sender = TestProbe()
       val tx = bob.stateData.asInstanceOf[DATA_NEGOTIATING].commitments.localCommit.publishableTxs.commitTx.tx
-      sender.send(bob, closingSigned.copy(signature = "00" * 64))
+      sender.send(bob, aliceCloseSig.copy(signature = "00" * 64))
       val error = bob2alice.expectMsgType[Error]
       assert(new String(error.data).startsWith("invalid close signature"))
       bob2blockchain.expectMsg(PublishAsap(tx))
@@ -142,11 +140,13 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       do {
         aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
         alice2bob.forward(bob)
-        bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
-        if (aliceCloseFee != bobCloseFee) {
-          bob2alice.forward(alice)
+        if (!bob2blockchain.msgAvailable) {
+          bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
+          if (aliceCloseFee != bobCloseFee) {
+            bob2alice.forward(alice)
+          }
         }
-      } while (aliceCloseFee != bobCloseFee)
+      } while (!alice2blockchain.msgAvailable && !bob2blockchain.msgAvailable)
       // at this point alice and bob have converged on closing fees, but alice has not yet received the final signature whereas bob has
       // bob publishes the mutual close and alice is notified that the funding tx has been spent
       // actual test starts here
@@ -154,7 +154,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val mutualCloseTx = bob2blockchain.expectMsgType[PublishAsap].tx
       assert(bob2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(mutualCloseTx))
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
-      alice2blockchain.expectNoMsg(1 second)
+      alice2blockchain.expectMsgType[PublishAsap]
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectNoMsg(100 millis)
       assert(alice.stateName == CLOSING)
     }
   }
@@ -173,7 +175,9 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       val Success(bobClosingTx) = Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(aliceClose1.feeSatoshis), aliceClose1.signature)
 
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
-      alice2blockchain.expectNoMsg(1 second)
+      alice2blockchain.expectMsgType[PublishAsap]
+      alice2blockchain.expectMsgType[WatchConfirmed]
+      alice2blockchain.expectNoMsg(100 millis)
       assert(alice.stateName == CLOSING)
     }
   }

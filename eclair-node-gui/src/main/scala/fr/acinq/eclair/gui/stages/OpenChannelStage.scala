@@ -14,12 +14,12 @@ import fr.acinq.eclair.gui.controllers.OpenChannelController
 class OpenChannelStage(handlers: Handlers) extends Stage() {
   initModality(Modality.WINDOW_MODAL)
   initStyle(StageStyle.DECORATED)
-  getIcons().add(new Image("/gui/commons/images/eclair-square.png", false))
+  getIcons.add(new Image("/gui/commons/images/eclair-square.png", false))
   setTitle("Open a new channel")
   setMinWidth(550)
   setWidth(550)
-  setMinHeight(350)
-  setHeight(350)
+  setMinHeight(400)
+  setHeight(400)
 
   // get fxml/controller
   val openFXML = new FXMLLoader(getClass.getResource("/gui/modals/openChannel.fxml"))

@@ -10,10 +10,10 @@
 <?import javafx.scene.layout.GridPane?>
 <?import javafx.scene.layout.RowConstraints?>
 
-<GridPane fx:id="rootPane" maxWidth="300.0" minWidth="300.0" onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit" prefWidth="300.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
+<GridPane fx:id="rootPane" maxWidth="400.0" minWidth="400.0" onMouseEntered="#handleMouseEnter" onMouseExited="#handleMouseExit" prefWidth="400.0" xmlns="http://javafx.com/javafx/8" xmlns:fx="http://javafx.com/fxml/1">
     <columnConstraints>
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="25.0" prefWidth="25.0" />
-        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="220.0" />
+        <ColumnConstraints hgrow="SOMETIMES" minWidth="10.0" prefWidth="320.0" />
         <ColumnConstraints hgrow="SOMETIMES" maxWidth="30.0" minWidth="5.0" prefWidth="20.0" />
     </columnConstraints>
     <rowConstraints>
@@ -33,7 +33,7 @@
     <ImageView fx:id="icon" fitWidth="25.0" pickOnBounds="true" preserveRatio="true" GridPane.rowSpan="2">
         <Image url="@../commons/images/eclair-square.png" />
     </ImageView>
-    <Button fx:id="closeButton" maxHeight="18.0" maxWidth="18.0" minHeight="18.0" minWidth="18.0" mnemonicParsing="false" styleClass="notification-close" text="" GridPane.columnIndex="2" />
-    <Label fx:id="messageLabel" styleClass="notification-message" wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" />
-    <Button fx:id="copyButton" mnemonicParsing="false" styleClass="notification-copy" text="Copy Message" GridPane.rowIndex="2" GridPane.columnIndex="1" />
+    <Button fx:id="closeButton" maxHeight="18.0" maxWidth="18.0" minHeight="18.0" minWidth="18.0" mnemonicParsing="false" styleClass="notification-close" GridPane.columnIndex="2" />
+    <Label fx:id="messageLabel" styleClass="notification-message" wrapText="true" GridPane.columnIndex="1" GridPane.columnSpan="2" GridPane.rowIndex="1" maxHeight="280.0" />
+    <Button fx:id="copyButton" mnemonicParsing="false" styleClass="notification-copy" text="Copy the whole message" GridPane.rowIndex="2" GridPane.columnIndex="1" />
 </GridPane>

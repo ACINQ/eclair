@@ -14,8 +14,8 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
-import fr.acinq.eclair.Kit
 import fr.acinq.eclair.channel._
+import fr.acinq.eclair.{Kit, feerateByte2Kw}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment, _}
@@ -51,7 +51,7 @@ trait Service extends Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -131,13 +131,15 @@ trait Service extends Logging {
                         case _ => reject(UnknownParamsRejection(req.id, "[nodeId@host:port] or [nodeId, host, port]"))
                       }
                       case "open"         => req.params match {
-                        case JString(nodeId) :: JInt(fundingSatoshi) :: Nil =>
-                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(0), channelFlags = None)).mapTo[String])
-                        case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: Nil =>
-                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None)).mapTo[String])
-                        case JString(nodeId) :: JInt(fundingSatoshi) :: JInt(pushMsat) :: JInt(flags) :: Nil =>
-                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshi.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = Some(flags.toByte))).mapTo[String])
-                        case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshi], [nodeId, fundingSatoshi, pushMsat] or [nodeId, fundingSatoshi, pushMsat, newChannel]"))
+                        case JString(nodeId) :: JInt(fundingSatoshis) :: Nil =>
+                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(0), fundingTxFeeratePerKw_opt = None, channelFlags = None)).mapTo[String])
+                        case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: Nil =>
+                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), channelFlags = None, fundingTxFeeratePerKw_opt = None)).mapTo[String])
+                        case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: Nil =>
+                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = None)).mapTo[String])
+                        case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: JInt(fundingFeerateSatPerByte) :: JInt(flags) :: Nil =>
+                          completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
+                        case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                       }
                       case "close"        => req.params match {
                         case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
@@ -257,7 +259,7 @@ trait Service extends Logging {
   def help = List(
     "connect (uri): open a secure connection to a lightning node",
     "connect (nodeId, host, port): open a secure connection to a lightning node",
-    "open (nodeId, fundingSatoshi, pushMsat = 0, channelFlags = 0x01): open a channel with another lightning node",
+    "open (nodeId, fundingSatoshis, pushMsat = 0, feerateSatPerByte = ?, channelFlags = 0x01): open a channel with another lightning node, by default push = 0, feerate for the funding tx targets 6 blocks, and channel is announced",
     "peers: list existing local peers",
     "channels: list existing local channels",
     "channels (nodeId): list existing local channels to a particular nodeId",

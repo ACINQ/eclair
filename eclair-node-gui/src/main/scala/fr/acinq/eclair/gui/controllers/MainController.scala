@@ -26,10 +26,10 @@ import javafx.util.{Callback, Duration}
 
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
-import fr.acinq.eclair.NodeParams.{BITCOIND, BITCOINJ, ELECTRUM}
-import fr.acinq.eclair.Setup
+import fr.acinq.eclair.NodeParams.{BITCOIND, ELECTRUM}
+import fr.acinq.eclair.{CoinUtils, Setup}
 import fr.acinq.eclair.gui.stages._
-import fr.acinq.eclair.gui.utils.{CoinUtils, ContextMenuUtils, CopyAction}
+import fr.acinq.eclair.gui.utils.{ContextMenuUtils, CopyAction}
 import fr.acinq.eclair.gui.{FxApp, Handlers}
 import fr.acinq.eclair.payment.{PaymentEvent, PaymentReceived, PaymentRelayed, PaymentSent}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, NodeAnnouncement}
@@ -330,7 +330,6 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     val wallet = setup.nodeParams.watcherType match {
       case BITCOIND => "Bitcoin-core"
       case ELECTRUM => "Electrum"
-      case BITCOINJ => "BitcoinJ"
     }
     bitcoinWallet.setText(wallet)
     bitcoinChain.setText(s"${setup.chain.toUpperCase()}")
@@ -472,7 +471,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     row
   }
 
-  @FXML def handleExportDot = {
+  @FXML def handleExportDot() = {
     val fileChooser = new FileChooser
     fileChooser.setTitle("Save as")
     fileChooser.getExtensionFilters.addAll(new ExtensionFilter("DOT File (*.dot)", "*.dot"))
@@ -480,21 +479,21 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     if (file != null) handlers.exportToDot(file)
   }
 
-  @FXML def handleOpenChannel = {
+  @FXML def handleOpenChannel() = {
     val openChannelStage = new OpenChannelStage(handlers)
     openChannelStage.initOwner(getWindow.orNull)
     positionAtCenter(openChannelStage)
     openChannelStage.show()
   }
 
-  @FXML def handleSendPayment = {
+  @FXML def handleSendPayment() = {
     val sendPaymentStage = new SendPaymentStage(handlers)
     sendPaymentStage.initOwner(getWindow.orNull)
     positionAtCenter(sendPaymentStage)
     sendPaymentStage.show()
   }
 
-  @FXML def handleReceivePayment = {
+  @FXML def handleReceivePayment() = {
     val receiveStage = new ReceivePaymentStage(handlers)
     receiveStage.initOwner(getWindow.orNull)
     positionAtCenter(receiveStage)

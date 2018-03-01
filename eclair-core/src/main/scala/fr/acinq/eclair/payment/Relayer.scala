@@ -19,9 +19,9 @@ case class Local(sender: Option[ActorRef]) extends Origin // we don't persist re
 case class Relayed(originChannelId: BinaryData, originHtlcId: Long, amountMsatIn: Long, amountMsatOut: Long) extends Origin
 
 case class ForwardAdd(add: UpdateAddHtlc)
-case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin)
-case class ForwardFail(fail: UpdateFailHtlc, to: Origin)
-case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin)
+case class ForwardFulfill(fulfill: UpdateFulfillHtlc, to: Origin, htlc: UpdateAddHtlc)
+case class ForwardFail(fail: UpdateFailHtlc, to: Origin, htlc: UpdateAddHtlc)
+case class ForwardFailMalformed(fail: UpdateFailMalformedHtlc, to: Origin, htlc: UpdateAddHtlc)
 
 // @formatter:on
 
@@ -114,6 +114,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
 
+    case Status.Failure(AddHtlcFailed(_, paymentHash, _, Local(None), _)) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
+      context.system.eventStream.publish(PaymentFailed(paymentHash, Nil))
+
     case Status.Failure(AddHtlcFailed(_, _, error, Local(Some(sender)), _)) =>
       sender ! Status.Failure(error)
 
@@ -130,25 +134,37 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       log.info(s"rejecting htlc #$originHtlcId paymentHash=$paymentHash from channelId=$originChannelId reason=${cmdFail.reason}")
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmdFail)
 
-    case ForwardFulfill(fulfill, Local(Some(sender))) =>
+    case ForwardFulfill(fulfill, Local(None), add) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
+      context.system.eventStream.publish(PaymentSucceeded(add.amountMsat, add.paymentHash, fulfill.paymentPreimage, Nil))
+
+    case ForwardFulfill(fulfill, Local(Some(sender)), _) =>
       sender ! fulfill
 
-    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut)) =>
+    case ForwardFulfill(fulfill, Relayed(originChannelId, originHtlcId, amountMsatIn, amountMsatOut), _) =>
       val cmd = CMD_FULFILL_HTLC(originHtlcId, fulfill.paymentPreimage, commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
       context.system.eventStream.publish(PaymentRelayed(MilliSatoshi(amountMsatIn), MilliSatoshi(amountMsatOut), Crypto.sha256(fulfill.paymentPreimage)))
 
-    case ForwardFail(fail, Local(Some(sender))) =>
+    case ForwardFail(_, Local(None), add) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
+      context.system.eventStream.publish(PaymentFailed(add.paymentHash, Nil))
+
+    case ForwardFail(fail, Local(Some(sender)), _) =>
       sender ! fail
 
-    case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
+    case ForwardFail(fail, Relayed(originChannelId, originHtlcId, _, _), _) =>
       val cmd = CMD_FAIL_HTLC(originHtlcId, Left(fail.reason), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
 
-    case ForwardFailMalformed(fail, Local(Some(sender))) =>
+    case ForwardFailMalformed(_, Local(None), add) =>
+      // we sent the payment, but we probably restarted and the reference to the original sender was lost, we just publish the failure on the event stream
+      context.system.eventStream.publish(PaymentFailed(add.paymentHash, Nil))
+
+    case ForwardFailMalformed(fail, Local(Some(sender)), _) =>
       sender ! fail
 
-    case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _)) =>
+    case ForwardFailMalformed(fail, Relayed(originChannelId, originHtlcId, _, _), _) =>
       val cmd = CMD_FAIL_MALFORMED_HTLC(originHtlcId, fail.onionHash, fail.failureCode, commit = true)
       commandBuffer ! CommandBuffer.CommandSend(originChannelId, originHtlcId, cmd)
 
