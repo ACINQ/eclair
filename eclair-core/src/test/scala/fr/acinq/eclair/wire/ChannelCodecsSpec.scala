@@ -1,6 +1,7 @@
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
@@ -25,22 +26,31 @@ class ChannelCodecsSpec extends FunSuite {
     bin
   }
 
+  test("encode/decode key paths (all 0s)") {
+    val keyPath = KeyPath(Seq(0, 0, 0, 0))
+    val encoded = keyPathCodec.encode(keyPath).require
+    val decoded = keyPathCodec.decode(encoded).require
+    assert(keyPath === decoded.value)
+  }
+
+  test("encode/decode key paths (all 1s)") {
+    val keyPath = KeyPath(Seq(0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL))
+    val encoded = keyPathCodec.encode(keyPath).require
+    val decoded = keyPathCodec.decode(encoded).require
+    assert(keyPath === decoded.value)
+  }
+
   test("encode/decode localparams") {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
+      channelKeyPath = DeterministicWallet.KeyPath(Seq(42)),
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),
       htlcMinimumMsat = Random.nextInt(Int.MaxValue),
       toSelfDelay = Random.nextInt(Short.MaxValue),
       maxAcceptedHtlcs = Random.nextInt(Short.MaxValue),
-      fundingPrivKey = randomKey,
-      revocationSecret = randomKey.value,
-      paymentKey = randomKey,
-      delayedPaymentKey = randomKey.value,
-      htlcKey = randomKey,
       defaultFinalScriptPubKey = randomBytes(10 + Random.nextInt(200)),
-      shaSeed = randomBytes(32),
       isFunder = Random.nextBoolean(),
       globalFeatures = randomBytes(256),
       localFeatures = randomBytes(256))

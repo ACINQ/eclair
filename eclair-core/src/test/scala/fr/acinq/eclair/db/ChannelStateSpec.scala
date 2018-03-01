@@ -1,16 +1,16 @@
 package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi, Satoshi, Transaction}
+import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, MilliSatoshi, Satoshi, Transaction}
 import fr.acinq.eclair.channel.Helpers.Funding
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.crypto.{ShaChain, Sphinx}
+import fr.acinq.eclair.crypto.{LocalKeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment.{Local, Relayed}
+import fr.acinq.eclair.{UInt64, randomKey}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.transactions._
-import fr.acinq.eclair.wire.{ChannelCodecs, ChannelUpdate, UpdateAddHtlc}
-import fr.acinq.eclair.{UInt64, randomKey}
+import fr.acinq.eclair.wire.{ChannelCodecs, UpdateAddHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -33,21 +33,17 @@ class ChannelStateSpec extends FunSuite {
 }
 
 object ChannelStateSpec {
+  val keyManager = new LocalKeyManager("01" * 32)
   val localParams = LocalParams(
-    nodeId = randomKey.publicKey,
+    keyManager.nodeId,
+    channelKeyPath = DeterministicWallet.KeyPath(Seq(42)),
     dustLimitSatoshis = Satoshi(546).toLong,
     maxHtlcValueInFlightMsat = UInt64(50),
     channelReserveSatoshis = 10000,
     htlcMinimumMsat = 50000,
     toSelfDelay = 144,
     maxAcceptedHtlcs = 50,
-    fundingPrivKey = PrivateKey(BinaryData("01" * 32) :+ 1.toByte),
-    revocationSecret = Scalar(BinaryData("02" * 32)),
-    paymentKey = PrivateKey(BinaryData("03" * 32) :+ 1.toByte),
-    delayedPaymentKey = Scalar(BinaryData("04" * 32)),
-    htlcKey = PrivateKey(BinaryData("06" * 32) :+ 1.toByte),
     defaultFinalScriptPubKey = Nil,
-    shaSeed = BinaryData("05" * 32),
     isFunder = true,
     globalFeatures = "foo".getBytes(),
     localFeatures = "bar".getBytes())
@@ -86,7 +82,7 @@ object ChannelStateSpec {
 
   val fundingTx = Transaction.read("0200000001adbb20ea41a8423ea937e76e8151636bf6093b70eaff942930d20576600521fd000000006b48304502210090587b6201e166ad6af0227d3036a9454223d49a1f11839c1a362184340ef0240220577f7cd5cca78719405cbf1de7414ac027f0239ef6e214c90fcaab0454d84b3b012103535b32d5eb0a6ed0982a0479bbadc9868d9836f6ba94dd5a63be16d875069184ffffffff028096980000000000220020c015c4a6be010e21657068fc2e6a9d02b27ebe4d490a25846f7237f104d1a3cd20256d29010000001600143ca33c2e4446f4a305f23c80df8ad1afdcf652f900000000")
   val fundingAmount = fundingTx.txOut(0).amount
-  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey)
+  val commitmentInput = Funding.makeFundingInputInfo(fundingTx.hash, 0, fundingAmount, keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
 
   val localCommit = LocalCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000, 700000), PublishableTxs(CommitTx(commitmentInput, Transaction(2, Nil, Nil, 0)), Nil))
   val remoteCommit = RemoteCommit(0, CommitmentSpec(htlcs.toSet, 1500, 50000, 700000), BinaryData("0303030303030303030303030303030303030303030303030303030303030303"), Scalar(BinaryData("04" * 32)).toPoint)
