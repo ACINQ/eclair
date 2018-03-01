@@ -306,9 +306,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
       // let's clean the db and send the events
       staleChannels.foreach { shortChannelId =>
-          log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
-          db.removeChannel(shortChannelId) // NB: this also removes channel updates
-          context.system.eventStream.publish(ChannelLost(shortChannelId))
+        log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
+        db.removeChannel(shortChannelId) // NB: this also removes channel updates
+        context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
       // we also need to remove updates from the graph
       staleChannels.map(d.channels).foreach { c =>
@@ -589,10 +589,13 @@ object Router {
     * NB: we don't clean up vertices
     *
     */
-  def removeEdge(g: DirectedWeightedPseudograph[PublicKey, DescEdge], d: ChannelDesc) = {
+  def removeEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
     import scala.collection.JavaConversions._
-    g.getAllEdges(d.a, d.b).find(_.desc == d) match {
-      case Some(e) => g.removeEdge(e)
+    Option(g.getAllEdges(d.a, d.b)) match {
+      case Some(edges) => edges.find(_.desc == d) match {
+        case Some(e) => g.removeEdge(e)
+        case None => ()
+      }
       case None => ()
     }
   }
@@ -615,7 +618,10 @@ object Router {
     } else {
       // slower but safer: we duplicate the graph and add/remove updates from the duplicated version
       val clonedGraph = g.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
-      withEdges.foreach { case (d, u) => addEdge(clonedGraph, d, u) }
+      withEdges.foreach { case (d, u) =>
+        removeEdge(clonedGraph, d)
+        addEdge(clonedGraph, d, u)
+      }
       withoutEdges.foreach { d => removeEdge(clonedGraph, d) }
       clonedGraph
     }
