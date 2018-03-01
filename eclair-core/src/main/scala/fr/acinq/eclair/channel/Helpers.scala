@@ -96,7 +96,7 @@ object Helpers {
   def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: Long) = {
     // TODO: empty features
     val features = BinaryData("")
-    val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(commitments.localParams.channelNumber, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
+    val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(commitments.localParams.channelKeyPath, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
 
@@ -146,8 +146,8 @@ object Helpers {
         }
       }
 
-      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), keyManager.fundingPublicKey(localParams.channelNumber).publicKey, remoteParams.fundingPubKey)
-      val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelNumber, 0)
+      val commitmentInput = makeFundingInputInfo(fundingTxHash, fundingTxOutputIndex, Satoshi(fundingSatoshis), keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, 0)
       val (localCommitTx, _, _) = Commitments.makeLocalTxs(keyManager, 0, localParams, remoteParams, commitmentInput, localPerCommitmentPoint, localSpec)
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, 0, localParams, remoteParams, commitmentInput, remoteFirstPerCommitmentPoint, remoteSpec)
 
@@ -197,7 +197,7 @@ object Helpers {
       // TODO: check that
       val dustLimitSatoshis = Satoshi(Math.max(localParams.dustLimitSatoshis, remoteParams.dustLimitSatoshis))
       val closingTx = Transactions.makeClosingTx(commitInput, localScriptPubkey, remoteScriptPubkey, localParams.isFunder, dustLimitSatoshis, closingFee, localCommit.spec)
-      val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelNumber))
+      val localClosingSig = keyManager.sign(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath))
       val closingSigned = ClosingSigned(channelId, closingFee.amount, localClosingSig)
       log.info(s"signed closing txid=${closingTx.tx.txid} with closingFeeSatoshis=${closingSigned.feeSatoshis}")
       log.debug(s"closingTxid=${closingTx.tx.txid} closingTx=${closingTx.tx}}")
@@ -212,7 +212,7 @@ object Helpers {
         throw new InvalidCloseFee(commitments.channelId, remoteClosingFee.amount)
       }
       val (closingTx, closingSigned) = makeClosingTx(keyManager, commitments, localScriptPubkey, remoteScriptPubkey, remoteClosingFee)
-      val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelNumber).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
+      val signedClosingTx = Transactions.addSigs(closingTx, keyManager.fundingPublicKey(commitments.localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, closingSigned.signature, remoteClosingSig)
       Transactions.checkSpendable(signedClosingTx).map(x => signedClosingTx.tx).recover { case _ => throw InvalidCloseSignature(commitments.channelId, signedClosingTx.tx) }
     }
 
@@ -242,9 +242,9 @@ object Helpers {
       import commitments._
       require(localCommit.publishableTxs.commitTx.tx.txid == tx.txid, "txid mismatch, provided tx is not the current local commit tx")
 
-      val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelNumber, commitments.localCommit.index.toInt)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index.toInt)
       val localRevocationPubkey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-      val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelNumber).publicKey, localPerCommitmentPoint)
+      val localDelayedPubkey = Generators.derivePubKey(keyManager.delayedPaymentPoint(localParams.channelKeyPath).publicKey, localPerCommitmentPoint)
 
       // no need to use a high fee rate for delayed transactions (we are the only one who can spend them)
       val feeratePerKwDelayed = Globals.feeratesPerKw.get.blocks_6
@@ -252,7 +252,7 @@ object Helpers {
       // first we will claim our main output as soon as the delay is over
       val mainDelayedTx = generateTx("main-delayed-output")(Try {
         val claimDelayed = Transactions.makeClaimDelayedOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localRevocationPubkey, remoteParams.toSelfDelay, localDelayedPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-        val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelNumber), localPerCommitmentPoint)
+        val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
         Transactions.addSigs(claimDelayed, sig)
       })
 
@@ -287,7 +287,7 @@ object Helpers {
             remoteParams.toSelfDelay,
             localDelayedPubkey,
             localParams.defaultFinalScriptPubKey, feeratePerKwDelayed)
-          val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelNumber), localPerCommitmentPoint)
+          val sig = keyManager.sign(claimDelayed, keyManager.delayedPaymentPoint(localParams.channelKeyPath), localPerCommitmentPoint)
           Transactions.addSigs(claimDelayed, sig)
         })
       }
@@ -320,12 +320,12 @@ object Helpers {
       val (remoteCommitTx, _, _) = Commitments.makeRemoteTxs(keyManager, remoteCommit.index, localParams, remoteParams, commitInput, remoteCommit.remotePerCommitmentPoint, remoteCommit.spec)
       require(remoteCommitTx.tx.txid == tx.txid, "txid mismatch, cannot recompute the current remote commit tx")
 
-      val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(localParams.channelNumber).publicKey, remoteCommit.remotePerCommitmentPoint)
-      val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelNumber).publicKey, remoteCommit.remotePerCommitmentPoint)
+      val localPaymentPubkey = Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
+      val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
       val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remoteCommit.remotePerCommitmentPoint)
-      val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelNumber, commitments.localCommit.index.toInt)
+      val localPerCommitmentPoint = keyManager.commitmentPoint(localParams.channelKeyPath, commitments.localCommit.index.toInt)
       val localRevocationPubKey = Generators.revocationPubKey(remoteParams.revocationBasepoint, localPerCommitmentPoint)
-      val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelNumber).publicKey, remoteCommit.remotePerCommitmentPoint)
+      val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
 
       // we need to use a rather high fee for htlc-claim because we compete with the counterparty
       val feeratePerKwHtlc = Globals.feeratesPerKw.get.block_1
@@ -339,7 +339,7 @@ object Helpers {
         case DirectedHtlc(OUT, add: UpdateAddHtlc) if preimages.exists(r => sha256(r) == add.paymentHash) => generateTx("claim-htlc-success")(Try {
           val preimage = preimages.find(r => sha256(r) == add.paymentHash).get
           val tx = Transactions.makeClaimHtlcSuccessTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
-          val sig = keyManager.sign(tx, keyManager.htlcPoint(localParams.channelNumber), remoteCommit.remotePerCommitmentPoint)
+          val sig = keyManager.sign(tx, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(tx, sig, preimage)
         })
 
@@ -348,7 +348,7 @@ object Helpers {
         // outgoing htlc: they may or may not have the preimage, the only thing to do is try to get back our funds after timeout
         case DirectedHtlc(IN, add: UpdateAddHtlc) => generateTx("claim-htlc-timeout")(Try {
           val tx = Transactions.makeClaimHtlcTimeoutTx(remoteCommitTx.tx, Satoshi(localParams.dustLimitSatoshis), localHtlcPubkey, remoteHtlcPubkey, remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, add, feeratePerKwHtlc)
-          val sig = keyManager.sign(tx, keyManager.htlcPoint(localParams.channelNumber), remoteCommit.remotePerCommitmentPoint)
+          val sig = keyManager.sign(tx, keyManager.htlcPoint(localParams.channelKeyPath), remoteCommit.remotePerCommitmentPoint)
           Transactions.addSigs(tx, sig)
         })
       }.toSeq.flatten
@@ -374,7 +374,7 @@ object Helpers {
       * @return a list of transactions (one per HTLC that we can claim)
       */
     def claimRemoteCommitMainOutput(keyManager: KeyManager, commitments: Commitments, remotePerCommitmentPoint: Point, tx: Transaction)(implicit log: LoggingAdapter): RemoteCommitPublished = {
-      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelNumber).publicKey, remotePerCommitmentPoint)
+      val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(commitments.localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
       // no need to use a high fee rate for our main output (we are the only one who can spend it)
       val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
@@ -382,7 +382,7 @@ object Helpers {
       val mainTx = generateTx("claim-p2wpkh-output")(Try {
         val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(commitments.localParams.dustLimitSatoshis),
           localPubkey, commitments.localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelNumber), remotePerCommitmentPoint)
+        val sig = keyManager.sign(claimMain, keyManager.paymentPoint(commitments.localParams.channelKeyPath), remotePerCommitmentPoint)
         Transactions.addSigs(claimMain, localPubkey, sig)
       })
 
@@ -409,7 +409,7 @@ object Helpers {
       require(tx.txIn.size == 1, "commitment tx should have 1 input")
       val obscuredTxNumber = Transactions.decodeTxNumber(tx.txIn(0).sequence, tx.lockTime)
       // this tx has been published by remote, so we need to invert local/remote params
-      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelNumber).publicKey)
+      val txnumber = Transactions.obscuredCommitTxNumber(obscuredTxNumber, !localParams.isFunder, remoteParams.paymentBasepoint, keyManager.paymentPoint(localParams.channelKeyPath).publicKey)
       require(txnumber <= 0xffffffffffffL, "txnumber must be lesser than 48 bits long")
       log.warning(s"counterparty has published revoked commit txnumber=$txnumber")
       // now we know what commit number this tx is referring to, we can derive the commitment point from the shachain
@@ -419,8 +419,8 @@ object Helpers {
           val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
 
           val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-          val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelNumber).publicKey, remotePerCommitmentSecret.toPoint)
-          val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(localParams.channelNumber).publicKey, remotePerCommitmentPoint)
+          val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentSecret.toPoint)
+          val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
           // no need to use a high fee rate for our main output (we are the only one who can spend it)
           val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
@@ -430,7 +430,7 @@ object Helpers {
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {
             val claimMain = Transactions.makeClaimP2WPKHOutputTx(tx, Satoshi(localParams.dustLimitSatoshis), localPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwMain)
-            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelNumber), remotePerCommitmentPoint)
+            val sig = keyManager.sign(claimMain, keyManager.paymentPoint(localParams.channelKeyPath), remotePerCommitmentPoint)
             Transactions.addSigs(claimMain, localPubkey, sig)
           })
 
@@ -438,7 +438,7 @@ object Helpers {
           val mainPenaltyTx = generateTx("main-penalty")(Try {
             // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
             val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
-            val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelNumber), remotePerCommitmentSecret)
+            val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
             Transactions.addSigs(txinfo, sig)
           })
 

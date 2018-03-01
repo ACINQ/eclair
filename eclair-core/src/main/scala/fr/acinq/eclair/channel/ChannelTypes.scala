@@ -168,7 +168,7 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
-                             channelNumber: Long,
+                             channelKeyPath: DeterministicWallet.KeyPath,
                              dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: UInt64,
                              channelReserveSatoshis: Long,

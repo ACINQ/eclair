@@ -1,19 +1,19 @@
 package fr.acinq.eclair.io
 
+import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
+import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, MilliSatoshi, Satoshi}
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
-import fr.acinq.eclair.crypto.LocalKeyManager
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire
-import fr.acinq.eclair.wire.LightningMessage
+import fr.acinq.eclair.{wire, _}
+import fr.acinq.eclair.wire._
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -349,15 +349,17 @@ object Peer {
   // @formatter:on
 
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    // TODO: entropy for channelNumber is too low
-    val channelNumber = secureRandom.nextInt(1000000).toLong
-    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelNumber)
+    val entropy = new Array[Byte](16)
+    secureRandom.nextBytes(entropy)
+    val bis = new ByteArrayInputStream(entropy)
+    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
   }
 
-  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long, channelNumber: Long): LocalParams = {
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
       nodeParams.nodeId,
-      channelNumber,
+      channelKeyPath,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,

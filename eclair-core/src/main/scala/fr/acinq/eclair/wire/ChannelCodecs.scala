@@ -1,5 +1,6 @@
 package fr.acinq.eclair.wire
 
+import fr.acinq.bitcoin.DeterministicWallet.{ExtendedPrivateKey, KeyPath}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction, TxOut}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.ShaChain
@@ -16,10 +17,22 @@ import scodec.{Attempt, Codec}
   * Created by PM on 02/06/2017.
   */
 object ChannelCodecs extends Logging {
+  def list2keypath(input: List[Long]): KeyPath = new KeyPath(input)
+
+  def keypath2list(input: KeyPath): List[Long] = input.path.toList
+
+  val keyPathCodec: Codec[KeyPath] = ("path" | listOfN(uint16, uint32)).xmap(list2keypath, keypath2list).as[KeyPath]
+
+  val extendedPrivateKeyCodec: Codec[ExtendedPrivateKey] = (
+    ("secretkeybytes" | binarydata(32)) ::
+      ("chaincode" | binarydata(32)) ::
+      ("depth" | uint16) ::
+      ("path" | keyPathCodec) ::
+      ("parent" | int64)).as[ExtendedPrivateKey]
 
   val localParamsCodec: Codec[LocalParams] = (
     ("nodeId" | publicKey) ::
-      ("channelNumber" | uint64) ::
+      ("channelPath" | keyPathCodec) ::
       ("dustLimitSatoshis" | uint64) ::
       ("maxHtlcValueInFlightMsat" | uint64ex) ::
       ("channelReserveSatoshis" | uint64) ::

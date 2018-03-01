@@ -10,19 +10,19 @@ trait KeyManager {
 
   def nodeId: PublicKey
 
-  def fundingPublicKey(channelNumber: Long): ExtendedPublicKey
+  def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
-  def revocationPoint(channelNumber: Long): ExtendedPublicKey
+  def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
-  def paymentPoint(channelNumber: Long): ExtendedPublicKey
+  def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
-  def delayedPaymentPoint(channelNumber: Long): ExtendedPublicKey
+  def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
-  def htlcPoint(channelNumber: Long): ExtendedPublicKey
+  def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath): ExtendedPublicKey
 
-  def commitmentSecret(channelNumber: Long, index: Long): Crypto.Scalar
+  def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.Scalar
 
-  def commitmentPoint(channelNumber: Long, index: Long): Crypto.Point
+  def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long): Crypto.Point
 
   /**
     *
@@ -55,5 +55,5 @@ trait KeyManager {
     */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): BinaryData
 
-  def signChannelAnnouncement(channelNumber: Long, chainHash: BinaryData, shortChannelId: Long, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData)
+  def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: Long, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData)
 }

@@ -1,6 +1,7 @@
 package fr.acinq.eclair.wire
 
-import fr.acinq.bitcoin.{BinaryData, OutPoint}
+import fr.acinq.bitcoin.DeterministicWallet.KeyPath
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint}
 import fr.acinq.eclair.channel.{LocalParams, RemoteParams}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.payment.{Local, Relayed}
@@ -25,10 +26,24 @@ class ChannelCodecsSpec extends FunSuite {
     bin
   }
 
+  test("encode/decode key paths (all 0s)") {
+    val keyPath = KeyPath(Seq(0, 0, 0, 0))
+    val encoded = keyPathCodec.encode(keyPath).require
+    val decoded = keyPathCodec.decode(encoded).require
+    assert(keyPath === decoded.value)
+  }
+
+  test("encode/decode key paths (all 1s)") {
+    val keyPath = KeyPath(Seq(0xffffffffL, 0xffffffffL, 0xffffffffL, 0xffffffffL))
+    val encoded = keyPathCodec.encode(keyPath).require
+    val decoded = keyPathCodec.decode(encoded).require
+    assert(keyPath === decoded.value)
+  }
+
   test("encode/decode localparams") {
     val o = LocalParams(
       nodeId = randomKey.publicKey,
-      channelNumber = 42,
+      channelKeyPath = DeterministicWallet.KeyPath(Seq(42)),
       dustLimitSatoshis = Random.nextInt(Int.MaxValue),
       maxHtlcValueInFlightMsat = UInt64(Random.nextInt(Int.MaxValue)),
       channelReserveSatoshis = Random.nextInt(Int.MaxValue),

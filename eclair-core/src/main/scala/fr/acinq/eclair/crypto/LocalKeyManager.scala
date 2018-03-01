@@ -9,7 +9,8 @@ import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 
 object LocalKeyManager {
-  val nodeKeyPath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
+  val channelKeyBasePath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
+  val nodeKeyBasePath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
 }
 
 /**
@@ -21,7 +22,7 @@ object LocalKeyManager {
 class LocalKeyManager(seed: BinaryData) extends KeyManager {
   private val master = DeterministicWallet.generate(seed)
 
-  override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyPath)
+  override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath)
   override val nodeId = nodeKey.publicKey
 
   private val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()
@@ -36,33 +37,33 @@ class LocalKeyManager(seed: BinaryData) extends KeyManager {
     override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
   })
 
-  private def channelKeyPath(channelNumber: Long, index: Long): List[Long] = LocalKeyManager.nodeKeyPath ::: channelNumber :: index :: Nil
+  private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): List[Long] = (LocalKeyManager.channelKeyBasePath ++ channelKeyPath.path) :+ index
 
-  private def fundingPrivateKey(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 0))
+  private def fundingPrivateKey(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 
-  private def revocationSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 1))
+  private def revocationSecret(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 
-  private def paymentSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 2))
+  private def paymentSecret(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
 
-  private def delayedPaymentSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 3))
+  private def delayedPaymentSecret(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
-  private def htlcSecret(channelNumber: Long) = privateKeys.get(channelKeyPath(channelNumber, 4))
+  private def htlcSecret(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
 
-  private def shaSeed(channelNumber: Long) = Crypto.sha256(privateKeys.get(channelKeyPath(channelNumber, 5)).privateKey.toBin)
+  private def shaSeed(channelKeyPath: DeterministicWallet.KeyPath) = Crypto.sha256(privateKeys.get(internalKeyPath(channelKeyPath, hardened(5))).privateKey.toBin)
 
-  override def fundingPublicKey(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 0))
+  override def fundingPublicKey(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 
-  override def revocationPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 1))
+  override def revocationPoint(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(1)))
 
-  override def paymentPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 2))
+  override def paymentPoint(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(2)))
 
-  override def delayedPaymentPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 3))
+  override def delayedPaymentPoint(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(3)))
 
-  override def htlcPoint(channelNumber: Long) = publicKeys.get(channelKeyPath(channelNumber, 4))
+  override def htlcPoint(channelKeyPath: DeterministicWallet.KeyPath) = publicKeys.get(internalKeyPath(channelKeyPath, hardened(4)))
 
-  override def commitmentSecret(channelNumber: Long, index: Long) = Generators.perCommitSecret(shaSeed(channelNumber), index)
+  override def commitmentSecret(channelKeyPath: DeterministicWallet.KeyPath, index: Long) = Generators.perCommitSecret(shaSeed(channelKeyPath), index)
 
-  override def commitmentPoint(channelNumber: Long, index: Long) = Generators.perCommitPoint(shaSeed(channelNumber), index)
+  override def commitmentPoint(channelKeyPath: DeterministicWallet.KeyPath, index: Long) = Generators.perCommitPoint(shaSeed(channelKeyPath), index)
 
   /**
     *
@@ -106,14 +107,14 @@ class LocalKeyManager(seed: BinaryData) extends KeyManager {
     Transactions.sign(tx, currentKey)
   }
 
-  def signChannelAnnouncement(channelNumber: Long, chainHash: BinaryData, shortChannelId: Long, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
+  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: Long, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
     val witness = if (Announcements.isNode1(nodeId.toBin, remoteNodeId.toBin)) {
-      Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelNumber).publicKey, remoteFundingKey, features)
+      Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelKeyPath).publicKey, remoteFundingKey, features)
     } else {
-      Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, nodeId, remoteFundingKey, fundingPublicKey(channelNumber).publicKey, features)
+      Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, remoteNodeId, nodeId, remoteFundingKey, fundingPublicKey(channelKeyPath).publicKey, features)
     }
     val nodeSig = Crypto.encodeSignature(Crypto.sign(witness, nodeKey.privateKey)) :+ 1.toByte
-    val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, fundingPrivateKey(channelNumber).privateKey)) :+ 1.toByte
+    val bitcoinSig = Crypto.encodeSignature(Crypto.sign(witness, fundingPrivateKey(channelKeyPath).privateKey)) :+ 1.toByte
     (nodeSig, bitcoinSig)
   }
 }
