@@ -35,15 +35,14 @@ class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
     }
   }
 
-  @throws(classOf[NoSuchElementException])
-  override def findByPaymentHash(paymentHash: BinaryData): Payment = {
+  override def findByPaymentHash(paymentHash: BinaryData): Option[Payment] = {
     using(sqlite.prepareStatement("SELECT payment_hash, amount_msat, timestamp FROM payments WHERE payment_hash = ?")) { statement =>
       statement.setBytes(1, paymentHash)
       val rs = statement.executeQuery()
       if (rs.next()) {
-        Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp"))
+        Some(Payment(BinaryData(rs.getBytes("payment_hash")), rs.getLong("amount_msat"), rs.getLong("timestamp")))
       } else {
-        throw new NoSuchElementException("payment not found")
+        None
       }
     }
   }

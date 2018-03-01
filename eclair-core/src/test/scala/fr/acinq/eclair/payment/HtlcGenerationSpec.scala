@@ -1,6 +1,7 @@
 package fr.acinq.eclair.payment
 
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
+import fr.acinq.eclair.channel.Channel
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{PacketAndSecrets, ParsedPacket}
 import fr.acinq.eclair.payment.PaymentLifecycle._
@@ -151,11 +152,11 @@ object HtlcGenerationSpec {
 
   val finalAmountMsat = 42000000L
   val currentBlockCount = 420000
-  val finalExpiry = currentBlockCount + defaultMinFinalCltvExpiry
+  val finalExpiry = currentBlockCount + Channel.MIN_CLTV_EXPIRY
   val paymentPreimage = BinaryData("42" * 32)
   val paymentHash = Crypto.sha256(paymentPreimage)
 
-  val expiry_de = currentBlockCount + defaultMinFinalCltvExpiry
+  val expiry_de = currentBlockCount + Channel.MIN_CLTV_EXPIRY
   val amount_de = finalAmountMsat
   val fee_d = nodeFee(channelUpdate_de.feeBaseMsat, channelUpdate_de.feeProportionalMillionths, amount_de)
 

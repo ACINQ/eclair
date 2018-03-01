@@ -29,7 +29,7 @@ class SqlitePaymentsDbSpec extends FunSuite {
     db.addPayment(p1)
     db.addPayment(p2)
     assert(db.listPayments().toList === List(p1, p2))
-    assert(db.findByPaymentHash(p1.payment_hash) === p1)
-    intercept[NoSuchElementException](db.findByPaymentHash(BinaryData("6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187")))
+    assert(db.findByPaymentHash(p1.payment_hash) === Some(p1))
+    assert(db.findByPaymentHash("6e7e8018f05e169cf1d99e77dc22cb372d09f10b6a81f1eae410718c56cad187") === None)
   }
 }

@@ -4,12 +4,15 @@ import akka.actor.{ActorSystem, Status}
 import akka.actor.Status.Failure
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
+import fr.acinq.eclair.Globals
 import fr.acinq.eclair.TestConstants.Alice
-import fr.acinq.eclair.channel.CMD_FULFILL_HTLC
-import fr.acinq.eclair.wire.UpdateAddHtlc
+import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike
 import org.scalatest.junit.JUnitRunner
+
+import scala.concurrent.duration._
 
 /**
   * Created by PM on 24/03/2017.
@@ -17,7 +20,7 @@ import org.scalatest.junit.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike {
 
-  test("LocalPaymentHandler should send PaymentReceived and adds payment in DB") {
+  test("LocalPaymentHandler should reply with a fulfill/fail, emit a PaymentReceived and adds payment in DB") {
     val nodeParams = Alice.nodeParams
     val handler = system.actorOf(LocalPaymentHandler.props(nodeParams))
     val sender = TestProbe()
@@ -25,26 +28,46 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     system.eventStream.subscribe(eventListener.ref, classOf[PaymentReceived])
 
     val amountMsat = MilliSatoshi(42000)
-    sender.send(handler, ReceivePayment(Some(amountMsat), "1 coffee"))
-    val pr = sender.expectMsgType[PaymentRequest]
+    val expiry = Globals.blockCount.get() + 12
 
-    val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, 0, "")
-    sender.send(handler, add)
-    sender.expectMsgType[CMD_FULFILL_HTLC]
-    eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+    {
+      sender.send(handler, ReceivePayment(Some(amountMsat), "1 coffee"))
+      val pr = sender.expectMsgType[PaymentRequest]
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === false)
+      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      sender.send(handler, add)
+      sender.expectMsgType[CMD_FULFILL_HTLC]
+      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === true)
+    }
 
-    sender.send(handler, ReceivePayment(Some(amountMsat), "another coffee"))
-    val pr_2 = sender.expectMsgType[PaymentRequest]
+    {
+      sender.send(handler, ReceivePayment(Some(amountMsat), "another coffee"))
+      val pr = sender.expectMsgType[PaymentRequest]
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === false)
+      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry, "")
+      sender.send(handler, add)
+      sender.expectMsgType[CMD_FULFILL_HTLC]
+      eventListener.expectMsg(PaymentReceived(amountMsat, add.paymentHash))
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === true)
+    }
 
-    val add_2 = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr_2.paymentHash, 0, "")
-    sender.send(handler, add_2)
-    sender.expectMsgType[CMD_FULFILL_HTLC]
-    eventListener.expectMsg(PaymentReceived(amountMsat, add_2.paymentHash))
-
-    val checkPayment_2 = CheckPayment(add_2.paymentHash)
-    sender.send(handler, checkPayment_2)
-    val found = sender.expectMsgType[Boolean]
-    assert(found)
+    {
+      sender.send(handler, ReceivePayment(Some(amountMsat), "bad expiry"))
+      val pr = sender.expectMsgType[PaymentRequest]
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === false)
+      val add = UpdateAddHtlc("11" * 32, 0, amountMsat.amount, pr.paymentHash, expiry = Globals.blockCount.get() + 3, "")
+      sender.send(handler, add)
+      assert(sender.expectMsgType[CMD_FAIL_HTLC].reason == Right(FinalExpiryTooSoon))
+      eventListener.expectNoMsg(300 milliseconds)
+      sender.send(handler, CheckPayment(pr.paymentHash))
+      assert(sender.expectMsgType[Boolean] === false)
+    }
   }
 
   test("Payment request generation should fail when the amount asked in not valid") {
