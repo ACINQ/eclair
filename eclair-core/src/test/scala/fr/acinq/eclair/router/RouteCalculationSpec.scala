@@ -6,7 +6,7 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Router.getValidAnnouncements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, randomKey, toShortId}
-import org.jgrapht.graph.{DefaultDirectedWeightedGraph, DirectedWeightedPseudograph}
+import org.jgrapht.graph.DirectedWeightedPseudograph
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner

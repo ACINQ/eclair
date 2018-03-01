@@ -16,9 +16,9 @@ import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.WeightedGraph
-import org.jgrapht.alg.shortestpath.BidirectionalDijkstraShortestPath
+import org.jgrapht.alg.shortestpath.DijkstraShortestPath
 import org.jgrapht.ext._
-import org.jgrapht.graph.{DefaultDirectedWeightedGraph, _}
+import org.jgrapht.graph._
 
 import scala.collection.JavaConversions._
 import scala.compat.Platform
@@ -272,10 +272,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.info("pruning shortChannelId={} (spent)", shortChannelId.toHexString)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
       // we also need to remove updates from the graph
-      channels1.values.foreach { c =>
-        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
-        removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
-      }
+      removeEdge(d.graph, ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
+      removeEdge(d.graph, ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId2, lostChannel.nodeId1))
       context.system.eventStream.publish(ChannelLost(shortChannelId))
       lostNodes.foreach {
         case nodeId =>
@@ -300,21 +298,20 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val staleChannels = getStaleChannels(d.channels.values, d.updates)
       // then we clean up the related channel updates
       val staleUpdates = staleChannels.map(d.channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
-      // finally we remove nodes that aren't tied to any channels anymore
-      val potentialStaleNodes = staleChannels.map(d.channels).flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet // deduped
+      // finally we remove nodes that aren't tied to any channels anymore (and deduplicate them)
+      val potentialStaleNodes = staleChannels.map(d.channels).flatMap(c => Set(c.nodeId1, c.nodeId2)).toSet
       val channels1 = d.channels -- staleChannels
       // no need to iterate on all nodes, just on those that are affected by current pruning
       val staleNodes = potentialStaleNodes.filterNot(nodeId => hasChannels(nodeId, channels1.values))
 
       // let's clean the db and send the events
-      staleChannels.foreach {
-        case shortChannelId =>
+      staleChannels.foreach { shortChannelId =>
           log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
           db.removeChannel(shortChannelId) // NB: this also removes channel updates
           context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
       // we also need to remove updates from the graph
-      channels1.values.foreach { c =>
+      staleChannels.map(d.channels).foreach { c =>
         removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
         removeEdge(d.graph, ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
       }
@@ -369,9 +366,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.info("finding a route {}->{} with ignoreNodes={} ignoreChannels={}", start, end, ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","))
       findRoute(d.graph, start, end, withUpdates = assistedUpdates, withoutUpdates = blacklistedUpdates ++ excludedUpdates)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
-        .recover { case t =>
-          t.printStackTrace()
-          sender ! Status.Failure(t) }
+        .recover { case t => sender ! Status.Failure(t) }
       stay
   }
 
@@ -572,8 +567,8 @@ object Router {
       val desc2 = ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)
       updates.get(desc1).map(desc1 -> _) ++ updates.get(desc2).map(desc2 -> _)
     }.toMap
-      u1 ++ u2
-    }
+    u1 ++ u2
+  }
 
   val DEFAULT_AMOUNT_MSAT = 10000000
 
@@ -596,10 +591,15 @@ object Router {
   /**
     * Careful: this function *mutates* the graph
     *
-    * Note that we don't clean up vertices
+    * NB: we don't clean up vertices
+    *
     */
-  def removeEdge(g: WeightedGraph[PublicKey, DescEdge], d: ChannelDesc) = {
-    g.removeEdge(d.a, d.b)
+  def removeEdge(g: DirectedWeightedPseudograph[PublicKey, DescEdge], d: ChannelDesc) = {
+    import scala.collection.JavaConversions._
+    g.getAllEdges(d.a, d.b).find(_.desc == d) match {
+      case Some(e) => g.removeEdge(e)
+      case None => ()
+    }
   }
 
   /**
@@ -614,24 +614,22 @@ object Router {
     */
   def findRoute(g: DirectedWeightedPseudograph[PublicKey, DescEdge], localNodeId: PublicKey, targetNodeId: PublicKey, withUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty, withoutUpdates: Map[ChannelDesc, ChannelUpdate] = Map.empty): Try[Seq[Hop]] = Try {
     if (localNodeId == targetNodeId) throw CannotRouteToSelf
-    try {
-      val workingGraph = if (withUpdates.isEmpty && withoutUpdates.isEmpty) {
-        // no filtering, let's work on the base graph
-        g
-      } else {
-        // we duplicate the graph and add/remove updates from the duplicated version
-        val clonedGraph = g.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
-        withUpdates.foreach { case (d, u) => addEdge(clonedGraph, d, u) }
-        withoutUpdates.foreach { case (d, _) => removeEdge(clonedGraph, d) }
-        clonedGraph
-      }
-      val route_opt = Option(BidirectionalDijkstraShortestPath.findPathBetween(workingGraph, localNodeId, targetNodeId))
-      route_opt match {
-        case Some(path) => path.getEdgeList.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u))
-        case None => throw RouteNotFound
-      }
-    } catch {
-      case _: Throwable => throw RouteNotFound
+    val workingGraph = if (withUpdates.isEmpty && withoutUpdates.isEmpty) {
+      // no filtering, let's work on the base graph
+      g
+    } else {
+      // we duplicate the graph and add/remove updates from the duplicated version
+      val clonedGraph = g.clone().asInstanceOf[DirectedWeightedPseudograph[PublicKey, DescEdge]]
+      withUpdates.foreach { case (d, u) => addEdge(clonedGraph, d, u) }
+      withoutUpdates.foreach { case (d, _) => removeEdge(clonedGraph, d) }
+      clonedGraph
+    }
+    if (!workingGraph.containsVertex(localNodeId)) throw RouteNotFound
+    if (!workingGraph.containsVertex(targetNodeId)) throw RouteNotFound
+    val route_opt = Option(DijkstraShortestPath.findPathBetween(workingGraph, localNodeId, targetNodeId))
+    route_opt match {
+      case Some(path) => path.getEdgeList.map(edge => Hop(edge.desc.a, edge.desc.b, edge.u))
+      case None => throw RouteNotFound
     }
   }
 
