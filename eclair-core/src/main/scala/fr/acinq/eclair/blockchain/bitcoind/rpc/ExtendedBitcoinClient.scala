@@ -159,16 +159,4 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   } recover { case t: Throwable => ValidateResult(c, None, false, Some(t)) }
 
-  /**
-    *
-    * @return the list of bitcoin addresses for which the wallet has UTXOs
-    */
-  def listUnspentAddresses: Future[Seq[String]] = {
-    import ExecutionContext.Implicits.global
-    implicit val formats = org.json4s.DefaultFormats
-
-    rpcClient.invoke("listunspent").collect {
-      case JArray(values) => values.map(value => (value \ "address").extract[String])
-    }
-  }
 }
