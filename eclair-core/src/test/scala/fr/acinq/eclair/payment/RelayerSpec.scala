@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.randomBytes
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.HtlcGenerationSpec.channelUpdate_bc
 import fr.acinq.eclair.payment.PaymentLifecycle.buildCommand
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
@@ -33,7 +34,8 @@ class RelayerSpec extends TestkitBaseClass {
       val register = TestProbe()
       val paymentHandler = TestProbe()
       // we are node B in the route A -> B -> C -> ....
-      val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(privateKey = priv_b), register.ref, paymentHandler.ref))
+      //val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams.copy(nodeKey = priv_b), register.ref, paymentHandler.ref))
+      val relayer = system.actorOf(Relayer.props(TestConstants.Bob.nodeParams, register.ref, paymentHandler.ref))
       test((relayer, register, paymentHandler))
     }
   }
@@ -216,24 +218,6 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when expiry is too soon") { case (relayer, register, paymentHandler) =>
-    val sender = TestProbe()
-
-    val (cmd, _) = buildCommand(finalAmountMsat, 0, paymentHash, hops)
-    // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
-    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc)
-
-    sender.send(relayer, ForwardAdd(add_ab))
-
-    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(ExpiryTooSoon(channelUpdate_bc)))
-
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
-  }
-
   test("fail an htlc-add at the final node when amount has been modified by second-to-last node") { case (relayer, register, paymentHandler) =>
     val sender = TestProbe()
 
@@ -274,73 +258,30 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
   }
 
-  test("fail to relay an htlc-add when next channel's balance is too low") { case (relayer, register, paymentHandler) =>
+  test("correctly translates errors returned by channel when attempting to add an htlc") { case (relayer, register, paymentHandler) =>
     val sender = TestProbe()
 
-    val (cmd, _) = buildCommand(finalAmountMsat, Globals.blockCount.get().toInt + 10, paymentHash, hops)
-    // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
-    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc)
+    val paymentHash = randomBytes(32)
+    val origin = Relayed(channelId_ab, originHtlcId = 42, amountMsatIn = 1100000, amountMsatOut = 1000000)
 
-    sender.send(relayer, ForwardAdd(add_ab))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ExpiryTooSmall(channelId_bc, 100, 0, 0), origin, Some(channelUpdate_bc))))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ExpiryTooSoon(channelUpdate_bc)))
 
-    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
-    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd.message.upstream_opt === Some(add_ab))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ExpiryTooBig(channelId_bc, 100, 200, 0), origin, Some(channelUpdate_bc))))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ExpiryTooFar))
 
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, add_ab.paymentHash, new InsufficientFunds(channelId_bc, cmd.amountMsat, 100, 0, 0), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc))))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, InsufficientFunds(channelId_bc, origin.amountMsatOut, 100, 0, 0), origin, Some(channelUpdate_bc))))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(TemporaryChannelFailure(channelUpdate_bc)))
 
-    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(TemporaryChannelFailure(channelUpdate_bc)))
+    val channelUpdate_bc_disabled = channelUpdate_bc.copy(flags = "0002")
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, ChannelUnavailable(channelId_bc), origin, Some(channelUpdate_bc_disabled))))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(ChannelDisabled(channelUpdate_bc_disabled.flags, channelUpdate_bc_disabled)))
 
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
-  }
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc), origin, None)))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
-  test("fail to relay an htlc-add when next channel has too many inflight htlcs") { case (relayer, register, paymentHandler) =>
-    val sender = TestProbe()
-
-    val (cmd, _) = buildCommand(finalAmountMsat, Globals.blockCount.get().toInt + 10, paymentHash, hops)
-    // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
-    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc)
-
-    sender.send(relayer, ForwardAdd(add_ab))
-
-    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
-    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd.message.upstream_opt === Some(add_ab))
-
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, add_ab.paymentHash, new TooManyAcceptedHtlcs(channelId_bc, 30), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc))))
-
-    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(TemporaryChannelFailure(channelUpdate_bc)))
-
-    register.expectNoMsg(100 millis)
-    paymentHandler.expectNoMsg(100 millis)
-  }
-
-  test("fail to relay an htlc-add when next channel has a timed out htlc (and is thus closing)") { case (relayer, register, paymentHandler) =>
-    val sender = TestProbe()
-
-    val (cmd, _) = buildCommand(finalAmountMsat, Globals.blockCount.get().toInt + 10, paymentHash, hops)
-    // and then manually build an htlc
-    val add_ab = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd.amountMsat, cmd.paymentHash, cmd.expiry, cmd.onion)
-    relayer ! LocalChannelUpdate(null, channelId_bc, channelUpdate_bc.shortChannelId, c, None, channelUpdate_bc)
-
-    sender.send(relayer, ForwardAdd(add_ab))
-
-    val fwd = register.expectMsgType[Register.ForwardShortId[CMD_ADD_HTLC]]
-    assert(fwd.shortChannelId === channelUpdate_bc.shortChannelId)
-    assert(fwd.message.upstream_opt === Some(add_ab))
-
-    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, add_ab.paymentHash, new HtlcTimedout(channelId_bc), Relayed(add_ab.channelId, add_ab.id, add_ab.amountMsat, cmd.amountMsat), Some(channelUpdate_bc))))
-
-    val fail = register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message
-    assert(fail.id === add_ab.id)
-    assert(fail.reason == Right(PermanentChannelFailure))
+    sender.send(relayer, Status.Failure(AddHtlcFailed(channelId_bc, paymentHash, HtlcTimedout(channelId_bc), origin, Some(channelUpdate_bc))))
+    assert(register.expectMsgType[Register.Forward[CMD_FAIL_HTLC]].message.reason === Right(PermanentChannelFailure))
 
     register.expectNoMsg(100 millis)
     paymentHandler.expectNoMsg(100 millis)

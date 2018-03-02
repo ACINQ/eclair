@@ -104,13 +104,42 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
+  test("recv CMD_ADD_HTLC (expiry in the past)") { case (alice, _, alice2bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val currentBlockCount = Globals.blockCount.get
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 1)
+      sender.send(alice, add)
+      val error = ExpiryCannotBeInThePast(channelId(alice), 1, currentBlockCount)
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate))))
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
   test("recv CMD_ADD_HTLC (expiry too small)") { case (alice, _, alice2bob, _, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
-      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = 300000)
+      val currentBlockCount = Globals.blockCount.get
+      val expiryTooSmall = currentBlockCount + 3
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = expiryTooSmall)
       sender.send(alice, add)
-      val error = ExpiryCannotBeInThePast(channelId(alice), 300000, 400000)
+      val error = ExpiryTooSmall(channelId(alice), minimum = currentBlockCount + Channel.MIN_CLTV_EXPIRY, actual = expiryTooSmall, blockCount = currentBlockCount)
+      sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate))))
+      alice2bob.expectNoMsg(200 millis)
+    }
+  }
+
+  test("recv CMD_ADD_HTLC (expiry too big)") { case (alice, _, alice2bob, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
+      val currentBlockCount = Globals.blockCount.get
+      val expiryTooBig = currentBlockCount + Channel.MAX_CLTV_EXPIRY + 1
+      val add = CMD_ADD_HTLC(500000000, "11" * 32, expiry = expiryTooBig)
+      sender.send(alice, add)
+      val error = ExpiryTooBig(channelId(alice), maximum = currentBlockCount + Channel.MAX_CLTV_EXPIRY, actual = expiryTooBig, blockCount = currentBlockCount)
       sender.expectMsg(Failure(AddHtlcFailed(channelId(alice), add.paymentHash, error, Local(Some(sender.ref)), Some(initialState.channelUpdate))))
       alice2bob.expectNoMsg(200 millis)
     }
@@ -312,13 +341,46 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv UpdateAddHtlc (expiry too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+  test("recv UpdateAddHtlc (expiry in the past)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
     within(30 seconds) {
       val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val currentBlockCount = Globals.blockCount.get
       val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), expiry = 1, defaultOnion)
       alice2bob.forward(bob, htlc)
       val error = bob2alice.expectMsgType[Error]
-      assert(new String(error.data) === ExpiryTooSmall(channelId(bob), minimum = 400003, actual = 1, blockCount = 400000).getMessage)
+      assert(new String(error.data) === ExpiryCannotBeInThePast(channelId(bob), expiry = 1, blockCount = currentBlockCount).getMessage)
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateAddHtlc (expiry too small)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val currentBlockCount = Globals.blockCount.get
+      val expiryTooSmall = currentBlockCount + 3
+      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), expiry = expiryTooSmall, defaultOnion)
+      alice2bob.forward(bob, htlc)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === ExpiryTooSmall(channelId(bob), minimum = currentBlockCount + Channel.MIN_CLTV_EXPIRY, actual = expiryTooSmall, blockCount = currentBlockCount).getMessage)
+      awaitCond(bob.stateName == CLOSING)
+      bob2blockchain.expectMsg(PublishAsap(tx))
+      bob2blockchain.expectMsgType[PublishAsap]
+      bob2blockchain.expectMsgType[WatchConfirmed]
+    }
+  }
+
+  test("recv UpdateAddHtlc (expiry too big)") { case (_, bob, alice2bob, bob2alice, _, bob2blockchain, _) =>
+    within(30 seconds) {
+      val tx = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+      val currentBlockCount = Globals.blockCount.get
+      val expiryTooBig = currentBlockCount + Channel.MAX_CLTV_EXPIRY + 1
+      val htlc = UpdateAddHtlc("00" * 32, 0, 150000, BinaryData("42" * 32), expiry = expiryTooBig, defaultOnion)
+      alice2bob.forward(bob, htlc)
+      val error = bob2alice.expectMsgType[Error]
+      assert(new String(error.data) === ExpiryTooBig(channelId(bob), maximum = currentBlockCount + Channel.MAX_CLTV_EXPIRY, actual = expiryTooBig, blockCount = currentBlockCount).getMessage)
       awaitCond(bob.stateName == CLOSING)
       bob2blockchain.expectMsg(PublishAsap(tx))
       bob2blockchain.expectMsgType[PublishAsap]
@@ -1809,7 +1871,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
       import initialState.commitments.localParams
       import initialState.commitments.remoteParams
-      val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
+      val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
       val channelUpdate = Announcements.makeChannelUpdate(Alice.nodeParams.chainHash, Alice.nodeParams.privateKey, remoteParams.nodeId, annSigsA.shortChannelId, Alice.nodeParams.expiryDeltaBlocks, Bob.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth)
       // actual test starts here
       bob2alice.forward(alice)
@@ -1828,7 +1890,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
       import initialState.commitments.localParams
       import initialState.commitments.remoteParams
-      val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, localParams.nodeId, remoteParams.nodeId, localParams.fundingPrivKey.publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
+      val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
       bob2alice.forward(alice)
       awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL].channelAnnouncement === Some(channelAnn))
 

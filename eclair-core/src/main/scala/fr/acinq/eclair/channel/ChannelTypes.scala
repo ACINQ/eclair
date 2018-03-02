@@ -2,10 +2,10 @@ package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
-import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Transaction}
 import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.crypto.Sphinx
-import fr.acinq.eclair.transactions.CommitmentSpec
+import fr.acinq.eclair.crypto.{Sphinx}
+import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
@@ -168,28 +168,17 @@ final case class DATA_CLOSING(commitments: Commitments,
 final case class DATA_WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT(commitments: Commitments, remoteChannelReestablish: ChannelReestablish) extends Data with HasCommitments
 
 final case class LocalParams(nodeId: PublicKey,
+                             channelKeyPath: DeterministicWallet.KeyPath,
                              dustLimitSatoshis: Long,
                              maxHtlcValueInFlightMsat: UInt64,
                              channelReserveSatoshis: Long,
                              htlcMinimumMsat: Long,
                              toSelfDelay: Int,
                              maxAcceptedHtlcs: Int,
-                             fundingPrivKey: PrivateKey,
-                             revocationSecret: Scalar,
-                             paymentKey: Scalar,
-                             delayedPaymentKey: Scalar,
-                             htlcKey: Scalar,
-                             defaultFinalScriptPubKey: BinaryData,
-                             shaSeed: BinaryData,
                              isFunder: Boolean,
+                             defaultFinalScriptPubKey: BinaryData,
                              globalFeatures: BinaryData,
-                             localFeatures: BinaryData) {
-  // precomputed for performance reasons
-  val paymentBasepoint = paymentKey.toPoint
-  val delayedPaymentBasepoint = delayedPaymentKey.toPoint
-  val revocationBasepoint = revocationSecret.toPoint
-  val htlcBasepoint = htlcKey.toPoint
-}
+                             localFeatures: BinaryData)
 
 final case class RemoteParams(nodeId: PublicKey,
                               dustLimitSatoshis: Long,

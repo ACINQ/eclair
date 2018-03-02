@@ -21,8 +21,7 @@ trait PaymentsDb {
 
   def addPayment(payment: Payment)
 
-  @throws(classOf[NoSuchElementException])
-  def findByPaymentHash(paymentHash: BinaryData): Payment
+  def findByPaymentHash(paymentHash: BinaryData): Option[Payment]
 
   def listPayments(): Seq[Payment]
 

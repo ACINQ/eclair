@@ -10,7 +10,7 @@ import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
 import fr.acinq.eclair.transactions.Scripts
-import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, Error, NodeAnnouncement}
+import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{randomKey, toShortId}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -24,7 +24,7 @@ import scala.concurrent.duration._
 class RouterSpec extends BaseRouterSpec {
   import BaseRouterSpec._
 
-  ignore("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
+  test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 

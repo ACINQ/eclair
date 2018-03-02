@@ -6,12 +6,13 @@ import akka.http.scaladsl.model._
 import akka.http.scaladsl.unmarshalling.Unmarshal
 import akka.stream.ActorMaterializer
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport._
-import org.json4s.JsonAST.{JArray, JInt, JValue}
+import fr.acinq.bitcoin.{BinaryData, Block}
+import org.json4s.JsonAST.{JInt, JValue}
 import org.json4s.{DefaultFormats, jackson}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 
@@ -20,9 +21,14 @@ class BitgoFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) exten
   implicit val serialization = jackson.Serialization
   implicit val formats = DefaultFormats
 
+  val uri = chainHash match {
+    case Block.LivenetGenesisBlock.hash => Uri("https://www.bitgo.com/api/v2/btc/tx/fee")
+    case _ => Uri("https://test.bitgo.com/api/v2/tbtc/tx/fee")
+  }
+
   override def getFeerates: Future[FeeratesPerByte] =
     for {
-      httpRes <- httpClient.singleRequest(HttpRequest(uri = Uri("https://www.bitgo.com/api/v1/tx/fee"), method = HttpMethods.GET))
+      httpRes <- httpClient.singleRequest(HttpRequest(uri = uri, method = HttpMethods.GET))
       json <- Unmarshal(httpRes).to[JValue]
       feeRanges = parseFeeRanges(json)
     } yield extractFeerates(feeRanges)
