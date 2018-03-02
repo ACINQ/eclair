@@ -20,10 +20,16 @@ import scala.util.{Failure, Success}
 @RunWith(classOf[JUnitRunner])
 class RouteCalculationSpec extends FunSuite {
 
-  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int): (ChannelDesc, ChannelUpdate) = {
-    val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
-    (ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, shortChannelId, 0L, "0000", 1, 42, feeBaseMsat, feeProportionalMillionth))
+  val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
+
+  def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey) = {
+    val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeIdA, nodeIdB)) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
+    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, "", Block.RegtestGenesisBlock.hash, shortChannelId, nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
+
+  def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int): (ChannelDesc, ChannelUpdate) =
+    (ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, shortChannelId, 0L, "0000", 1, 42, feeBaseMsat, feeProportionalMillionth))
+
 
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
     val g = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
@@ -38,10 +44,10 @@ class RouteCalculationSpec extends FunSuite {
   test("calculate simple route") {
 
     val updates = List(
-       makeUpdate(1L, a, b, 0, 0),
-       makeUpdate(2L, b, c, 0, 0),
-       makeUpdate(3L, c, d, 0, 0),
-       makeUpdate(4L, d, e, 0, 0)
+      makeUpdate(1L, a, b, 0, 0),
+      makeUpdate(2L, b, c, 0, 0),
+      makeUpdate(3L, c, d, 0, 0),
+      makeUpdate(4L, d, e, 0, 0)
     ).toMap
 
     val g = makeGraph(updates)
@@ -345,6 +351,49 @@ class RouteCalculationSpec extends FunSuite {
     val route2 = Router.findRoute(g, a, e, withEdges = Map(makeUpdate(1L, a, b, 5, 5)))
     assert(route2.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
     assert(route2.get.head.lastUpdate.feeBaseMsat == 5)
+  }
+
+  test("compute ignored channels") {
+
+    val f = randomKey.publicKey
+    val g = randomKey.publicKey
+    val h = randomKey.publicKey
+    val i = randomKey.publicKey
+    val j = randomKey.publicKey
+
+    val channels = Map(
+      1L -> makeChannel(1L, a, b),
+      2L -> makeChannel(2L, b, c),
+      3L -> makeChannel(3L, c, d),
+      4L -> makeChannel(4L, d, e),
+      5L -> makeChannel(5L, f, g),
+      6L -> makeChannel(6L, f, h),
+      7L -> makeChannel(7L, h, i),
+      8L -> makeChannel(8L, i, j)
+
+    )
+    val updates = List(
+      makeUpdate(1L, a, b, 10, 10),
+      makeUpdate(2L, b, c, 10, 10),
+      makeUpdate(2L, c, b, 10, 10),
+      makeUpdate(3L, c, d, 10, 10),
+      makeUpdate(4L, d, e, 10, 10),
+      makeUpdate(5L, f, g, 10, 10),
+      makeUpdate(6L, f, h, 10, 10),
+      makeUpdate(7L, h, i, 10, 10),
+      makeUpdate(8L, i, j, 10, 10)
+    ).toMap
+
+    val ignored = Router.getIgnoredUpdates(channels, updates, ignoreNodes = Set(c, j, randomKey.publicKey), ignoreChannels = Set(3L, 6L, 10L))
+
+    assert(ignored.toSet === Set(
+      ChannelDesc(2L, b, c),
+      ChannelDesc(2L, c, b),
+      ChannelDesc(3L, c, d),
+      ChannelDesc(6L, f, h),
+      ChannelDesc(8L, i, j)
+    ))
+
   }
 
 }

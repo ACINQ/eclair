@@ -23,7 +23,7 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class RouterSpec extends BaseRouterSpec {
 
-  ignore("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
+  test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
     val eventListener = TestProbe()
     system.eventStream.subscribe(eventListener.ref, classOf[NetworkEvent])
 
