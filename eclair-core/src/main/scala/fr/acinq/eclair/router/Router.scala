@@ -379,9 +379,9 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // it takes precedence over all other channel_updates we know
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
-      val blacklisted = getBlacklistedChannels(d.channels, d.updates ++ assistedUpdates, ignoreNodes, ignoreChannels) ++ d.excludedChannels
+      val ignoredUpdates = getIgnoredUpdates(d.channels, d.updates ++ assistedUpdates, ignoreNodes, ignoreChannels) ++ d.excludedChannels
       log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.map(_.id.toHexString).mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","), d.excludedChannels.map(_.id.toHexString).mkString(","))
-      findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = blacklisted)
+      findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
       stay
@@ -589,14 +589,17 @@ object Router {
   /**
     * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
     */
-  def getBlacklistedChannels(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]): Iterable[ChannelDesc] = {
+  def getIgnoredUpdates(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]): Iterable[ChannelDesc] = {
     val descNode = if (ignoreNodes.isEmpty) {
       Iterable.empty[ChannelDesc]
     } else {
       // expensive, but node blacklisting shouldn't happen often
-      updates.keys.filter(desc => !ignoreNodes.contains(desc.a) && !ignoreNodes.contains(desc.b))
+      updates.keys.filter(desc => ignoreNodes.contains(desc.a) || ignoreNodes.contains(desc.b))
     }
-    val descChannel = ignoreChannels.map(channels).flatMap { c => Vector(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)) }
+    val descChannel = ignoreChannels.map(channels.get)
+      .flatten
+      .flatMap { c => Vector(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)) }
+      .filter(updates.contains)
     descNode ++ descChannel
   }
 
