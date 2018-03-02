@@ -1,14 +1,14 @@
 package fr.acinq.eclair.channel.states.e
 
 import akka.testkit.{TestFSMRef, TestProbe}
-import fr.acinq.bitcoin.{BinaryData, ScriptFlags, Transaction}
 import fr.acinq.bitcoin.Crypto.Scalar
-import fr.acinq.eclair.TestkitBaseClass
+import fr.acinq.bitcoin.{BinaryData, ScriptFlags, Transaction}
 import fr.acinq.eclair.blockchain.{PublishAsap, WatchEventSpent}
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
-import fr.acinq.eclair.crypto.{Generators, Sphinx}
+import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.wire._
+import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -58,8 +58,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = Generators.perCommitPoint(bobCommitments.localParams.shaSeed, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = Generators.perCommitPoint(aliceCommitments.localParams.shaSeed, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint =  TestConstants.Bob.keyManager.commitmentPoint(bobCommitments.localParams.channelKeyPath, bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
 
 
     // a didn't receive any update or sig
@@ -141,8 +141,8 @@ class OfflineStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     val bobCommitments = bob.stateData.asInstanceOf[HasCommitments].commitments
     val aliceCommitments = alice.stateData.asInstanceOf[HasCommitments].commitments
 
-    val bobCurrentPerCommitmentPoint = Generators.perCommitPoint(bobCommitments.localParams.shaSeed, bobCommitments.localCommit.index)
-    val aliceCurrentPerCommitmentPoint = Generators.perCommitPoint(aliceCommitments.localParams.shaSeed, aliceCommitments.localCommit.index)
+    val bobCurrentPerCommitmentPoint =  TestConstants.Bob.keyManager.commitmentPoint(bobCommitments.localParams.channelKeyPath, bobCommitments.localCommit.index)
+    val aliceCurrentPerCommitmentPoint = TestConstants.Alice.keyManager.commitmentPoint(aliceCommitments.localParams.channelKeyPath, aliceCommitments.localCommit.index)
 
     // a didn't receive the sig
     val ab_reestablish = alice2bob.expectMsg(ChannelReestablish(ab_add_0.channelId, 1, 0, Some(Scalar(Sphinx zeroes 32)), Some(aliceCurrentPerCommitmentPoint)))

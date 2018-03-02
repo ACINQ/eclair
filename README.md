@@ -42,14 +42,19 @@ rpcpassword=bar
 txindex=1
 zmqpubrawblock=tcp://127.0.0.1:29000
 zmqpubrawtx=tcp://127.0.0.1:29000
+
+# lines below only needed with Bitcoin Core 0.16+
+deprecatedrpc=addwitnessaddress
+addresstype=p2sh-segwit
 ```
 
 Eclair will use any BTC it finds in the Bitcoin Core wallet to fund any channels you choose to open. Eclair will return BTC from closed channels to this wallet.
 
-On **__testnet__**, you also need to make sure that all your UTXOs are `p2sh-of-p2wpkh`.
-To do this, use the debug console, create a new address with `getnewaddress`, import it as a witness address with `addwitnessaddress`, and
-send all your balance to this witness address. 
-If you need to create and send funds manually, don't forget to create and specify a witness address for the change output (this option is available on the GUI once you set the `Enable coin control features` wallet option).
+On **__testnet__**, the addresstype of all your UTXOs needs to be `p2sh-of-p2wpkh`. This is the default addresstype starting with Bitcoin Core 0.16, which provides native segwit support. For earlier versions of Bitcoin Core, additional steps are necessary.
+
+* for new wallets created with Bitcoin Core 0.16 or later, no additional steps are necessary. 
+* for existing wallets migrated to Bitcoin Core 0.16 or later, you need to create a new address and send all your funds to that address.
+* if you are running Bitcoin 0.15.1 or earlier, you need to create a segwit address manually. To do this, use the debug console, create a new address with `getnewaddress`, import it as a witness address with `addwitnessaddress`, and send all your balance to this witness address. If you need to create and send funds manually, don't forget to create and specify a witness address for the change output (this option is available on the GUI once you set the `Enable coin control features` wallet option).
 
 
 ### Installing Eclair

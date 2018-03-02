@@ -11,6 +11,8 @@ import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
+import fr.acinq.eclair.crypto.LocalKeyManager
+import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.io.{Authenticator, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -22,7 +24,7 @@ import scala.concurrent.{ExecutionContext, Future}
 
 /**
   * Setup eclair from a datadir.
-  * <p>
+  *
   * Created by PM on 25/01/2016.
   *
   * @param datadir  directory where eclair-core will write/read its data
@@ -36,9 +38,11 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   logger.info(s"version=${getClass.getPackage.getImplementationVersion} commit=${getClass.getPackage.getSpecificationVersion}")
   logger.info(s"datadir=${datadir.getCanonicalPath}")
 
-  val config: Config = NodeParams.loadConfiguration(datadir, overrideDefaults)
-  val nodeParams: NodeParams = NodeParams.makeNodeParams(datadir, config, seed_opt)
-  val chain: String = config.getString("chain")
+  val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
+  val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
+  val keyManager = new LocalKeyManager(seed)
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
+  val chain = config.getString("chain")
 
   logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
@@ -70,7 +74,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
     val feeProvider = (chain, bitcoin) match {
       case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
-      case _ => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
+      case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>

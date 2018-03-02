@@ -7,11 +7,10 @@ import java.util.concurrent.TimeUnit
 
 import com.google.common.io.Files
 import com.typesafe.config.{Config, ConfigFactory}
-import fr.acinq.bitcoin.Crypto.PrivateKey
-import fr.acinq.bitcoin.DeterministicWallet.ExtendedPrivateKey
-import fr.acinq.bitcoin.{BinaryData, Block, DeterministicWallet}
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.WatcherType
 import fr.acinq.eclair.channel.Channel
+import fr.acinq.eclair.crypto.KeyManager
 import fr.acinq.eclair.db._
 import fr.acinq.eclair.db.sqlite._
 import fr.acinq.eclair.wire.Color
@@ -22,8 +21,7 @@ import scala.concurrent.duration.FiniteDuration
 /**
   * Created by PM on 26/02/2017.
   */
-case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
-                      privateKey: PrivateKey,
+case class NodeParams(keyManager: KeyManager,
                       alias: String,
                       color: Color,
                       publicAddresses: List[InetSocketAddress],
@@ -34,7 +32,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       maxAcceptedHtlcs: Int,
                       expiryDeltaBlocks: Int,
                       htlcMinimumMsat: Int,
-                      delayBlocks: Int,
+                      toRemoteDelayBlocks: Int,
+                      maxToLocalDelayBlocks: Int,
                       minDepthBlocks: Int,
                       smartfeeNBlocks: Int,
                       feeBaseMsat: Int,
@@ -58,7 +57,8 @@ case class NodeParams(extendedPrivateKey: ExtendedPrivateKey,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
                       maxPendingPaymentRequests: Int) {
-  val nodeId = privateKey.publicKey
+  val privateKey = keyManager.nodeKey.privateKey
+  val nodeId = keyManager.nodeId
 }
 
 object NodeParams {
@@ -82,24 +82,21 @@ object NodeParams {
       .withFallback(overrideDefaults)
       .withFallback(ConfigFactory.load()).getConfig("eclair")
 
-  def makeNodeParams(datadir: File, config: Config, seed_opt: Option[BinaryData] = None): NodeParams = {
+  def getSeed(datadir: File): BinaryData = {
+    val seedPath = new File(datadir, "seed.dat")
+    seedPath.exists() match {
+      case true => Files.toByteArray(seedPath)
+      case false =>
+        val seed = randomKey.toBin
+        Files.write(seed, seedPath)
+        seed
+    }
+  }
+
+
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
 
     datadir.mkdirs()
-
-    val seed: BinaryData = seed_opt match {
-      case Some(s) => s
-      case None =>
-        val seedPath = new File(datadir, "seed.dat")
-        seedPath.exists() match {
-          case true => Files.toByteArray(seedPath)
-          case false =>
-            val seed = randomKey.toBin
-            Files.write(seed, seedPath)
-            seed
-        }
-    }
-    val master = DeterministicWallet.generate(seed)
-    val extendedPrivateKey = DeterministicWallet.derivePrivateKey(master, DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil)
 
     val chain = config.getString("chain")
     val chainHash = chain match {
@@ -134,8 +131,7 @@ object NodeParams {
     require(maxAcceptedHtlcs <= Channel.MAX_ACCEPTED_HTLCS, s"max-accepted-htlcs must be lower than ${Channel.MAX_ACCEPTED_HTLCS}")
 
     NodeParams(
-      extendedPrivateKey = extendedPrivateKey,
-      privateKey = extendedPrivateKey.privateKey,
+      keyManager = keyManager,
       alias = config.getString("node-alias").take(32),
       color = Color(color.data(0), color.data(1), color.data(2)),
       publicAddresses = config.getStringList("server.public-ips").toList.map(ip => new InetSocketAddress(ip, config.getInt("server.port"))),
@@ -146,7 +142,8 @@ object NodeParams {
       maxAcceptedHtlcs = maxAcceptedHtlcs,
       expiryDeltaBlocks = config.getInt("expiry-delta-blocks"),
       htlcMinimumMsat = config.getInt("htlc-minimum-msat"),
-      delayBlocks = config.getInt("delay-blocks"),
+      toRemoteDelayBlocks = config.getInt("to-remote-delay-blocks"),
+      maxToLocalDelayBlocks = config.getInt("max-to-local-delay-blocks"),
       minDepthBlocks = config.getInt("mindepth-blocks"),
       smartfeeNBlocks = 3,
       feeBaseMsat = config.getInt("fee-base-msat"),

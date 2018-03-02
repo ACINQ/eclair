@@ -4,7 +4,7 @@ import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Register}
+import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -16,7 +16,10 @@ import scala.util.{Failure, Success}
 
 // @formatter:off
 case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String)
-case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, minFinalCltvExpiry: Long = PaymentLifecycle.defaultMinFinalCltvExpiry, maxAttempts: Int = 5)
+/**
+  * @param finalCltvExpiry by default we choose finalCltvExpiry = Channel.MIN_CLTV_EXPIRY + 1 to not have our htlc fail when a new block has just been found
+  */
+case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY + 1, maxAttempts: Int = 5)
 case class CheckPayment(paymentHash: BinaryData)
 
 sealed trait PaymentResult
@@ -58,7 +61,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
     case Event(RouteResponse(hops, ignoreNodes, ignoreChannels), WaitingForRoute(s, c, failures)) =>
       log.info(s"route found: attempt=${failures.size + 1}/${c.maxAttempts} route=${hops.map(_.nextNodeId).mkString("->")} channels=${hops.map(_.lastUpdate.shortChannelId.toHexString).mkString("->")}")
       val firstHop = hops.head
-      val finalExpiry = Globals.blockCount.get().toInt + c.minFinalCltvExpiry.toInt
+      val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
       register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
       goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
@@ -203,9 +206,6 @@ object PaymentLifecycle {
         val nextFee = nodeFee(hop.lastUpdate.feeBaseMsat, hop.lastUpdate.feeProportionalMillionths, msat)
         (msat + nextFee, expiry + hop.lastUpdate.cltvExpiryDelta, PerHopPayload(hop.lastUpdate.shortChannelId, msat, expiry) +: payloads)
     }
-
-  // this is defined in BOLT 11
-  val defaultMinFinalCltvExpiry:Long = 9L
 
   def buildCommand(finalAmountMsat: Long, finalExpiry: Long, paymentHash: BinaryData, hops: Seq[Hop]): (CMD_ADD_HTLC, Seq[(BinaryData, PublicKey)]) = {
     val (firstAmountMsat, firstExpiry, payloads) = buildPayloads(finalAmountMsat, finalExpiry, hops.drop(1))

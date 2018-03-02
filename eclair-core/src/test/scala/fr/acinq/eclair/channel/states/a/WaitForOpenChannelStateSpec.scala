@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
-import fr.acinq.eclair.wire.{Error, Init, OpenChannel}
+import fr.acinq.eclair.wire.{AcceptChannel, Error, Init, OpenChannel}
 import fr.acinq.eclair.{TestConstants, TestkitBaseClass}
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
@@ -82,6 +82,17 @@ class WaitForOpenChannelStateSpec extends TestkitBaseClass with StateTestsHelper
       bob ! open.copy(pushMsat = invalidPushMsat)
       val error = bob2alice.expectMsgType[Error]
       assert(error === Error(open.temporaryChannelId, new InvalidPushAmount(open.temporaryChannelId, invalidPushMsat, 1000 * open.fundingSatoshis).getMessage.getBytes("UTF-8")))
+      awaitCond(bob.stateName == CLOSED)
+    }
+  }
+
+  test("recv OpenChannel (to_self_delay too high)") { case (bob, alice2bob, bob2alice, _) =>
+    within(30 seconds) {
+      val open = alice2bob.expectMsgType[OpenChannel]
+      val delayTooHigh = 10000
+      bob ! open.copy(toSelfDelay = delayTooHigh)
+      val error = bob2alice.expectMsgType[Error]
+      assert(error === Error(open.temporaryChannelId, ToSelfDelayTooHigh(open.temporaryChannelId, delayTooHigh, Alice.nodeParams.maxToLocalDelayBlocks).getMessage.getBytes("UTF-8")))
       awaitCond(bob.stateName == CLOSED)
     }
   }

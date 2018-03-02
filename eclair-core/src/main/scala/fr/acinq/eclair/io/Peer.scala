@@ -1,18 +1,19 @@
 package fr.acinq.eclair.io
 
+import java.io.ByteArrayInputStream
 import java.net.InetSocketAddress
+import java.nio.ByteOrder
 
 import akka.actor.{ActorRef, FSM, OneForOneStrategy, PoisonPill, Props, Status, SupervisorStrategy, Terminated}
-import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet, MilliSatoshi, Satoshi}
-import fr.acinq.eclair._
+import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, MilliSatoshi, Protocol, Satoshi}
 import fr.acinq.eclair.blockchain.EclairWallet
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.crypto.TransportHandler.Listener
 import fr.acinq.eclair.router._
-import fr.acinq.eclair.wire
-import fr.acinq.eclair.wire.{LightningMessage, QueryChannelRange, QueryShortChannelId, ReplyChannelRange}
+import fr.acinq.eclair.{wire, _}
+import fr.acinq.eclair.wire._
 
 import scala.concurrent.duration._
 import scala.util.Random
@@ -378,31 +379,27 @@ object Peer {
 
   // @formatter:on
 
-
-  def generateKey(nodeParams: NodeParams, keyPath: Seq[Long]): PrivateKey = DeterministicWallet.derivePrivateKey(nodeParams.extendedPrivateKey, keyPath).privateKey
-
   def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long): LocalParams = {
-    // all secrets are generated from the main seed
-    // TODO: check this
-    val keyIndex = secureRandom.nextInt(1000).toLong
+    val entropy = new Array[Byte](16)
+    secureRandom.nextBytes(entropy)
+    val bis = new ByteArrayInputStream(entropy)
+    val channelKeyPath = DeterministicWallet.KeyPath(Seq(Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN), Protocol.uint32(bis, ByteOrder.BIG_ENDIAN)))
+    makeChannelParams(nodeParams, defaultFinalScriptPubKey, isFunder, fundingSatoshis, channelKeyPath)
+  }
+
+  def makeChannelParams(nodeParams: NodeParams, defaultFinalScriptPubKey: BinaryData, isFunder: Boolean, fundingSatoshis: Long, channelKeyPath: DeterministicWallet.KeyPath): LocalParams = {
     LocalParams(
-      nodeId = nodeParams.privateKey.publicKey,
+      nodeParams.nodeId,
+      channelKeyPath,
       dustLimitSatoshis = nodeParams.dustLimitSatoshis,
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,
-      toSelfDelay = nodeParams.delayBlocks,
+      toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
-      fundingPrivKey = generateKey(nodeParams, keyIndex :: 0L :: Nil),
-      revocationSecret = generateKey(nodeParams, keyIndex :: 1L :: Nil),
-      paymentKey = generateKey(nodeParams, keyIndex :: 2L :: Nil),
-      delayedPaymentKey = generateKey(nodeParams, keyIndex :: 3L :: Nil),
-      htlcKey = generateKey(nodeParams, keyIndex :: 4L :: Nil),
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
-      shaSeed = Crypto.sha256(generateKey(nodeParams, keyIndex :: 5L :: Nil).toBin), // TODO: check that
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures)
   }
-
 }

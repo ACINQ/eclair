@@ -1,18 +1,24 @@
 package fr.acinq.eclair.blockchain.fee
 
 import akka.actor.ActorSystem
+import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.HttpHelper.get
 import org.json4s.JsonAST.{JInt, JValue}
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class BitgoFeeProvider(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
+class BitgoFeeProvider(chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext) extends FeeProvider {
 
   import BitgoFeeProvider._
 
+  val uri = chainHash match {
+    case Block.LivenetGenesisBlock.hash => "https://www.bitgo.com/api/v2/btc/tx/fee"
+    case _ => "https://test.bitgo.com/api/v2/tbtc/tx/fee"
+  }
+
   override def getFeerates: Future[FeeratesPerByte] =
     for {
-      json <- get("https://www.bitgo.com/api/v1/tx/fee")
+      json <- get(uri)
       feeRanges = parseFeeRanges(json)
     } yield extractFeerates(feeRanges)
 }

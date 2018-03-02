@@ -3,6 +3,7 @@ package fr.acinq.eclair.channel.states.g
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.TestConstants.Bob
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.Helpers.Closing
@@ -172,7 +173,7 @@ class NegotiatingStateSpec extends TestkitBaseClass with StateTestsHelperMethods
       // at this point alice and bob have not yet converged on closing fees, but bob decides to publish a mutual close with one of the previous sigs
       val d = bob.stateData.asInstanceOf[DATA_NEGOTIATING]
       implicit val log = bob.underlyingActor.implicitLog
-      val Success(bobClosingTx) = Closing.checkClosingSignature(d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(aliceClose1.feeSatoshis), aliceClose1.signature)
+      val Success(bobClosingTx) = Closing.checkClosingSignature(Bob.keyManager, d.commitments, d.localShutdown.scriptPubKey, d.remoteShutdown.scriptPubKey, Satoshi(aliceClose1.feeSatoshis), aliceClose1.signature)
 
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobClosingTx)
       alice2blockchain.expectMsgType[PublishAsap]
