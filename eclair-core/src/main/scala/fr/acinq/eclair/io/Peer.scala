@@ -375,7 +375,7 @@ object Peer {
       maxHtlcValueInFlightMsat = nodeParams.maxHtlcValueInFlightMsat,
       channelReserveSatoshis = (nodeParams.reserveToFundingRatio * fundingSatoshis).toLong,
       htlcMinimumMsat = nodeParams.htlcMinimumMsat,
-      toSelfDelay = nodeParams.delayBlocks,
+      toSelfDelay = nodeParams.toRemoteDelayBlocks, // we choose their delay
       maxAcceptedHtlcs = nodeParams.maxAcceptedHtlcs,
       defaultFinalScriptPubKey = defaultFinalScriptPubKey,
       isFunder = isFunder,
