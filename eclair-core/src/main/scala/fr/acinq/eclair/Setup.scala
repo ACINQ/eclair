@@ -117,8 +117,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
     val feeProvider = (chain, bitcoin) match {
       case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
-      case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
-      case _ => new FallbackFeeProvider(new BitgoFeeProvider() :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
+      case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
+      case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>
