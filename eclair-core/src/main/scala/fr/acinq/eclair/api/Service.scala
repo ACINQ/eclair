@@ -221,7 +221,18 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
                         case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description]"))
                       }
-                      case "send" => req.params match {
+                      
+                      case "checkinvoice" => req.params match {
+                        case JString(paymentRequest) :: Nil  => Try(PaymentRequest.read(paymentRequest)) match {
+                          case Success(pr) => {
+                            completeRpc(req.id,pr)
+                          }
+                            // setting the payment amount
+                          case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))
+                        }
+                      }
+                      
+                      case "send"         => req.params match {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
@@ -293,6 +304,7 @@ trait Service extends Logging {
     "allupdates: list all channels updates",
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
+    "checkinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
