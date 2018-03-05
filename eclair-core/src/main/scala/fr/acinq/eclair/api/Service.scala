@@ -36,7 +36,7 @@ import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment.PaymentRequest
-import fr.acinq.eclair.router.ChannelDesc
+import fr.acinq.eclair.router.{ChannelDesc,RouteRequest,RouteResponse}
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
@@ -221,17 +221,33 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
                         case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description]"))
                       }
-                      
+
                       case "checkinvoice" => req.params match {
                         case JString(paymentRequest) :: Nil  => Try(PaymentRequest.read(paymentRequest)) match {
                           case Success(pr) => {
                             completeRpc(req.id,pr)
                           }
-                            // setting the payment amount
-                          case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))
+                          case Failure(f) => reject(RpcValidationRejection(req.id, s"Payment request is not valid - could not parse: "+f.toString()))
                         }
+                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request]"))
                       }
-                      
+
+                      case "findroute" => req.params match {
+                        case JString(nodeId) :: Nil if nodeId.length()==66 =>
+                          Try(PublicKey(nodeId)) match {
+                            case Success(pk) =>  completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk)  ).mapTo[RouteResponse]  )
+                            case (Failure(_)) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash: '$nodeId'"))
+                          }
+
+                        case JString(paymentRequest) :: Nil  => Try(PaymentRequest.read(paymentRequest)) match {
+                          case pr@Success(PaymentRequest(_,_,_,_,_,_)) =>
+                            completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pr.get.nodeId)  ).mapTo[RouteResponse]  )
+                          case Failure(f) => reject(RpcValidationRejection(req.id, s"payment request is not valid: "+f.toString()))
+                        }
+                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request|nodeId]"))
+
+                      }
+
                       case "send"         => req.params match {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
@@ -305,6 +321,7 @@ trait Service extends Logging {
     "allupdates (nodeId): list all channels updates for this nodeId",
     "receive (amountMsat, description): generate a payment request for a given amount",
     "checkinvoice (paymentRequest): returns node, amount and payment hash in an invoice/paymentRequest",
+    "findroute (paymentRequest|nodeId): given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route",
     "send (amountMsat, paymentHash, nodeId): send a payment to a lightning node",
     "send (paymentRequest): send a payment to a lightning node using a BOLT11 payment request",
     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
