@@ -120,7 +120,7 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
               case _: TemporaryChannelFailure =>
                 // node indicates that its outgoing channel is experiencing a transient issue (eg. channel capacity reached, too many in-flight htlc)
                 hops.find(_.nodeId == nodeId).map(_.lastUpdate) match {
-                  case Some(u) if u.copy(signature = BinaryData.empty, timestamp = 0) == failureMessage.update.copy(signature = BinaryData.empty, timestamp = 0) =>
+                  case Some(u) if u.copy(signature = BinaryData.empty, chainHash = BinaryData.empty, timestamp = 0) == failureMessage.update.copy(signature = BinaryData.empty, chainHash = BinaryData.empty, timestamp = 0) =>
                     // node returned the exact same update we used: in that case, let's temporarily exclude the channel from future routes, giving it time to recover
                     val nextNodeId = hops.find(_.nodeId == nodeId).get.nextNodeId
                     router ! ExcludeChannel(ChannelDesc(failureMessage.update.shortChannelId, nodeId, nextNodeId))
