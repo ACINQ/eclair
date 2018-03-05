@@ -3,9 +3,8 @@ package fr.acinq.eclair.router
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, Block, Crypto}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.router.Router.getValidAnnouncements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, randomKey, toShortId}
+import fr.acinq.eclair.{Globals, ShortChannelId, randomKey}
 import org.jgrapht.graph.DirectedWeightedPseudograph
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -24,11 +23,11 @@ class RouteCalculationSpec extends FunSuite {
 
   def makeChannel(shortChannelId: Long, nodeIdA: PublicKey, nodeIdB: PublicKey) = {
     val (nodeId1, nodeId2) = if (Announcements.isNode1(nodeIdA, nodeIdB)) (nodeIdA, nodeIdB) else (nodeIdB, nodeIdA)
-    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, "", Block.RegtestGenesisBlock.hash, shortChannelId, nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
+    ChannelAnnouncement(DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, DUMMY_SIG, "", Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), nodeId1, nodeId2, randomKey.publicKey, randomKey.publicKey)
   }
 
   def makeUpdate(shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, feeBaseMsat: Int, feeProportionalMillionth: Int): (ChannelDesc, ChannelUpdate) =
-    (ChannelDesc(shortChannelId, nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, shortChannelId, 0L, "0000", 1, 42, feeBaseMsat, feeProportionalMillionth))
+    (ChannelDesc(ShortChannelId(shortChannelId), nodeId1, nodeId2) -> ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(shortChannelId), 0L, "0000", 1, 42, feeBaseMsat, feeProportionalMillionth))
 
 
   def makeGraph(updates: Map[ChannelDesc, ChannelUpdate]) = {
@@ -37,7 +36,7 @@ class RouteCalculationSpec extends FunSuite {
     g
   }
 
-  def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId)
+  def hops2Ids(route: Seq[Hop]) = route.map(hop => hop.lastUpdate.shortChannelId.toLong)
 
   val (a, b, c, d, e) = (randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey, randomKey.publicKey)
 
@@ -71,7 +70,7 @@ class RouteCalculationSpec extends FunSuite {
     val route1 = Router.findRoute(g, a, e)
     assert(route1.map(hops2Ids) === Success(1 :: 2 :: 3 :: 4 :: Nil))
 
-    Router.removeEdge(g, ChannelDesc(3L, c, d))
+    Router.removeEdge(g, ChannelDesc(ShortChannelId(3L), c, d))
     val route2 = Router.findRoute(g, a, e)
     assert(route2.map(hops2Ids) === Failure(RouteNotFound))
 
@@ -193,24 +192,24 @@ class RouteCalculationSpec extends FunSuite {
 
     val DUMMY_SIG = BinaryData("3045022100e0a180fdd0fe38037cc878c03832861b40a29d32bd7b40b10c9e1efc8c1468a002205ae06d1624896d0d29f4b31e32772ea3cb1b4d7ed4e077e5da28dcc33c0e781201")
 
-    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 1L, 0L, "0000", 1, 42, 2500, 140)
-    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 1L, 1L, "0001", 1, 43, 2501, 141)
-    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 2L, 1L, "0000", 1, 44, 2502, 142)
-    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 2L, 1L, "0001", 1, 45, 2503, 143)
-    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 3L, 1L, "0000", 1, 46, 2504, 144)
-    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 3L, 1L, "0001", 1, 47, 2505, 145)
-    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 4L, 1L, "0000", 1, 48, 2506, 146)
-    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, 4L, 1L, "0001", 1, 49, 2507, 147)
+    val uab = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 0L, "0000", 1, 42, 2500, 140)
+    val uba = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(1L), 1L, "0001", 1, 43, 2501, 141)
+    val ubc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, "0000", 1, 44, 2502, 142)
+    val ucb = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(2L), 1L, "0001", 1, 45, 2503, 143)
+    val ucd = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, "0000", 1, 46, 2504, 144)
+    val udc = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(3L), 1L, "0001", 1, 47, 2505, 145)
+    val ude = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, "0000", 1, 48, 2506, 146)
+    val ued = ChannelUpdate(DUMMY_SIG, Block.RegtestGenesisBlock.hash, ShortChannelId(4L), 1L, "0001", 1, 49, 2507, 147)
 
     val updates = Map(
-      ChannelDesc(1L, a, b) -> uab,
-      ChannelDesc(1L, b, a) -> uba,
-      ChannelDesc(2L, b, c) -> ubc,
-      ChannelDesc(2L, c, b) -> ucb,
-      ChannelDesc(3L, c, d) -> ucd,
-      ChannelDesc(3L, d, c) -> udc,
-      ChannelDesc(4L, d, e) -> ude,
-      ChannelDesc(4L, e, d) -> ued
+      ChannelDesc(ShortChannelId(1L), a, b) -> uab,
+      ChannelDesc(ShortChannelId(1L), b, a) -> uba,
+      ChannelDesc(ShortChannelId(2L), b, c) -> ubc,
+      ChannelDesc(ShortChannelId(2L), c, b) -> ucb,
+      ChannelDesc(ShortChannelId(3L), c, d) -> ucd,
+      ChannelDesc(ShortChannelId(3L), d, c) -> udc,
+      ChannelDesc(ShortChannelId(4L), d, e) -> ude,
+      ChannelDesc(ShortChannelId(4L), e, d) -> ued
     )
 
     val g = makeGraph(updates)
@@ -227,9 +226,9 @@ class RouteCalculationSpec extends FunSuite {
     def nodeAnnouncement(nodeId: PublicKey) = NodeAnnouncement("", "", 0, nodeId, Color(0, 0, 0), "", Nil)
 
     // we only care about timestamps and nodes ids
-    def channelAnnouncement(shortChannelId: Long, node1: PublicKey, node2: PublicKey) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, node1, node2, randomKey.publicKey, randomKey.publicKey)
+    def channelAnnouncement(shortChannelId: ShortChannelId, node1: PublicKey, node2: PublicKey) = ChannelAnnouncement("", "", "", "", "", "", shortChannelId, node1, node2, randomKey.publicKey, randomKey.publicKey)
 
-    def channelUpdate(shortChannelId: Long, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
+    def channelUpdate(shortChannelId: ShortChannelId, timestamp: Long) = ChannelUpdate("", "", shortChannelId, timestamp, "", 0, 0, 0, 0)
 
     def daysAgoInBlocks(daysAgo: Int): Int = Globals.blockCount.get().toInt - 144 * daysAgo
 
@@ -239,22 +238,22 @@ class RouteCalculationSpec extends FunSuite {
     val (node_1, node_2, node_3, node_4) = (nodeAnnouncement(PublicKey("02ca1f8792292fd2ad4001b578e962861cc1120f0140d050e87ce1d143f7179031")), nodeAnnouncement(PublicKey("028689a991673e0888580fc7cd3fb3e8a1b62e7e7f65a5fc9899f44b88307331d8")), nodeAnnouncement(PublicKey("036eee3325d246a54e32aa5c215777493e4867b2b22570c307283f5e160c1997cd")), nodeAnnouncement(PublicKey("039311b2ee0e47fe40e9d35a72416e7c3b6263abb12bce15d250e0e5e20f11029d")))
 
     // a is an old channel with an old channel update => PRUNED
-    val id_a = toShortId(daysAgoInBlocks(16), 0, 0)
+    val id_a = ShortChannelId(daysAgoInBlocks(16), 0, 0)
     val chan_a = channelAnnouncement(id_a, node_1.nodeId, node_2.nodeId)
     val upd_a = channelUpdate(id_a, daysAgoInSeconds(30))
     // b is an old channel with no channel update  => PRUNED
-    val id_b = toShortId(daysAgoInBlocks(16), 1, 0)
+    val id_b = ShortChannelId(daysAgoInBlocks(16), 1, 0)
     val chan_b = channelAnnouncement(id_b, node_2.nodeId, node_3.nodeId)
     // c is an old channel with a recent channel update  => KEPT
-    val id_c = toShortId(daysAgoInBlocks(16), 2, 0)
+    val id_c = ShortChannelId(daysAgoInBlocks(16), 2, 0)
     val chan_c = channelAnnouncement(id_c, node_1.nodeId, node_3.nodeId)
     val upd_c = channelUpdate(id_c, daysAgoInSeconds(2))
     // d is a recent channel with a recent channel update  => KEPT
-    val id_d = toShortId(daysAgoInBlocks(2), 0, 0)
+    val id_d = ShortChannelId(daysAgoInBlocks(2), 0, 0)
     val chan_d = channelAnnouncement(id_d, node_3.nodeId, node_4.nodeId)
     val upd_d = channelUpdate(id_d, daysAgoInSeconds(2))
     // e is a recent channel with no channel update  => KEPT
-    val id_e = toShortId(daysAgoInBlocks(1), 0, 0)
+    val id_e = ShortChannelId(daysAgoInBlocks(1), 0, 0)
     val chan_e = channelAnnouncement(id_e, node_1.nodeId, randomKey.publicKey)
 
     val nodes = Map(
@@ -279,7 +278,7 @@ class RouteCalculationSpec extends FunSuite {
     val staleChannels = Router.getStaleChannels(channels.values, updates).toSet
     assert(staleChannels === Set(id_a, id_b))
 
-    val (validChannels, validNodes, validUpdates) = getValidAnnouncements(channels, nodes, updates)
+    val (validChannels, validNodes, validUpdates) = Router.getValidAnnouncements(channels, nodes, updates)
     assert(validChannels.toSet === Set(chan_c, chan_d, chan_e))
     assert(validNodes.toSet === Set(node_1, node_3, node_4)) // node 2 has been pruned because its only channel was pruned
     assert(validUpdates.toSet === Set(upd_c, upd_d))
@@ -293,10 +292,10 @@ class RouteCalculationSpec extends FunSuite {
     val d = randomKey.publicKey
     val e = randomKey.publicKey
 
-    val extraHop1 = ExtraHop(a, 1, 10, 11, 12)
-    val extraHop2 = ExtraHop(b, 2, 20, 21, 22)
-    val extraHop3 = ExtraHop(c, 3, 30, 31, 32)
-    val extraHop4 = ExtraHop(d, 4, 40, 41, 42)
+    val extraHop1 = ExtraHop(a, ShortChannelId(1), 10, 11, 12)
+    val extraHop2 = ExtraHop(b, ShortChannelId(2), 20, 21, 22)
+    val extraHop3 = ExtraHop(c, ShortChannelId(3), 30, 31, 32)
+    val extraHop4 = ExtraHop(d, ShortChannelId(4), 40, 41, 42)
 
     val extraHops = extraHop1 :: extraHop2 :: extraHop3 :: extraHop4 :: Nil
 
@@ -321,7 +320,7 @@ class RouteCalculationSpec extends FunSuite {
 
     val g = makeGraph(updates)
 
-    val route1 = Router.findRoute(g, a, e, withoutEdges = ChannelDesc(3L, c, d) :: Nil)
+    val route1 = Router.findRoute(g, a, e, withoutEdges = ChannelDesc(ShortChannelId(3L), c, d) :: Nil)
     assert(route1.map(hops2Ids) === Failure(RouteNotFound))
 
     // verify that we left the graph untouched
@@ -362,14 +361,14 @@ class RouteCalculationSpec extends FunSuite {
     val j = randomKey.publicKey
 
     val channels = Map(
-      1L -> makeChannel(1L, a, b),
-      2L -> makeChannel(2L, b, c),
-      3L -> makeChannel(3L, c, d),
-      4L -> makeChannel(4L, d, e),
-      5L -> makeChannel(5L, f, g),
-      6L -> makeChannel(6L, f, h),
-      7L -> makeChannel(7L, h, i),
-      8L -> makeChannel(8L, i, j)
+      ShortChannelId(1L) -> makeChannel(1L, a, b),
+      ShortChannelId(2L) -> makeChannel(2L, b, c),
+      ShortChannelId(3L) -> makeChannel(3L, c, d),
+      ShortChannelId(4L) -> makeChannel(4L, d, e),
+      ShortChannelId(5L) -> makeChannel(5L, f, g),
+      ShortChannelId(6L) -> makeChannel(6L, f, h),
+      ShortChannelId(7L) -> makeChannel(7L, h, i),
+      ShortChannelId(8L) -> makeChannel(8L, i, j)
 
     )
     val updates = List(
@@ -384,14 +383,14 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(8L, i, j, 10, 10)
     ).toMap
 
-    val ignored = Router.getIgnoredUpdates(channels, updates, ignoreNodes = Set(c, j, randomKey.publicKey), ignoreChannels = Set(3L, 6L, 10L))
+    val ignored = Router.getIgnoredUpdates(channels, updates, ignoreNodes = Set(c, j, randomKey.publicKey), ignoreChannels = Set(ShortChannelId(3L), ShortChannelId(6L), ShortChannelId(10L)))
 
     assert(ignored.toSet === Set(
-      ChannelDesc(2L, b, c),
-      ChannelDesc(2L, c, b),
-      ChannelDesc(3L, c, d),
-      ChannelDesc(6L, f, h),
-      ChannelDesc(8L, i, j)
+      ChannelDesc(ShortChannelId(2L), b, c),
+      ChannelDesc(ShortChannelId(2L), c, b),
+      ChannelDesc(ShortChannelId(3L), c, d),
+      ChannelDesc(ShortChannelId(6L), f, h),
+      ChannelDesc(ShortChannelId(8L), i, j)
     ))
 
   }

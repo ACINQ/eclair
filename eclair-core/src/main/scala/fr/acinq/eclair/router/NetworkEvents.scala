@@ -2,6 +2,7 @@ package fr.acinq.eclair.router
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.Satoshi
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
 /**
@@ -17,6 +18,6 @@ case class NodeLost(nodeId: PublicKey) extends NetworkEvent
 
 case class ChannelDiscovered(ann: ChannelAnnouncement, capacity: Satoshi) extends NetworkEvent
 
-case class ChannelLost(channelId: Long) extends NetworkEvent
+case class ChannelLost(shortChannelId: ShortChannelId) extends NetworkEvent
 
 case class ChannelUpdateReceived(ann: ChannelUpdate) extends NetworkEvent

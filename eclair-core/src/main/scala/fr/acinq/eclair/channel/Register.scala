@@ -4,6 +4,7 @@ import akka.actor.Status.Failure
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.channel.Register._
 
 /**
@@ -19,7 +20,7 @@ class Register extends Actor with ActorLogging {
 
   override def receive: Receive = main(Map.empty, Map.empty, Map.empty)
 
-  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[Long, BinaryData], channelsTo: Map[BinaryData, PublicKey]): Receive = {
+  def main(channels: Map[BinaryData, ActorRef], shortIds: Map[ShortChannelId, BinaryData], channelsTo: Map[BinaryData, PublicKey]): Receive = {
     case ChannelCreated(channel, _, remoteNodeId, _, temporaryChannelId) =>
       context.watch(channel)
       context become main(channels + (temporaryChannelId -> channel), shortIds, channelsTo + (temporaryChannelId -> remoteNodeId))
@@ -36,7 +37,7 @@ class Register extends Actor with ActorLogging {
 
     case Terminated(actor) if channels.values.toSet.contains(actor) =>
       val channelId = channels.find(_._2 == actor).get._1
-      val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(0L)
+      val shortChannelId = shortIds.find(_._2 == channelId).map(_._1).getOrElse(ShortChannelId(0L))
       context become main(channels - channelId, shortIds - shortChannelId, channelsTo - channelId)
 
     case 'channels => sender ! channels
@@ -63,9 +64,9 @@ object Register {
 
   // @formatter:off
   case class Forward[T](channelId: BinaryData, message: T)
-  case class ForwardShortId[T](shortChannelId: Long, message: T)
+  case class ForwardShortId[T](shortChannelId: ShortChannelId, message: T)
 
   case class ForwardFailure[T](fwd: Forward[T]) extends RuntimeException(s"channel ${fwd.channelId} not found")
-  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId.toHexString} not found")
+  case class ForwardShortIdFailure[T](fwd: ForwardShortId[T]) extends RuntimeException(s"channel ${fwd.shortChannelId} not found")
   // @formatter:on
 }

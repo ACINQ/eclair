@@ -20,11 +20,4 @@ class PackageSpec extends FunSuite {
     data.foreach(x => assert(toLongId(x._1, x._2) === x._3))
   }
 
-  test("calculate simple route") {
-    val blockHeight = 42000
-    val txIndex = 27
-    val outputIndex = 3
-    assert(fromShortId(toShortId(blockHeight, txIndex, outputIndex)) === (blockHeight, txIndex, outputIndex))
-  }
-
 }
