@@ -5,7 +5,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
-import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
@@ -164,6 +164,10 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
       }
 
+  }
+
+  whenUnhandled {
+    case Event(_: TransportHandler.ReadAck, _) => stay // ignored, router replies with this when we forward a channel_update
   }
 
   def reply(to: ActorRef, e: PaymentResult) = {
