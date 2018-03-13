@@ -124,7 +124,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         case None =>
           channelAnnouncement_opt match {
             case Some(c) if d.awaiting.contains(c) =>
-              // channel is currently beeing verified, we can process the channel_update right away (it will be stashed)
+              // channel is currently being verified, we can process the channel_update right away (it will be stashed)
               stay using handle(u, self, d)
             case Some(c) =>
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update

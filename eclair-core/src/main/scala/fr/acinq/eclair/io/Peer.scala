@@ -131,14 +131,14 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
   }
 
   when(CONNECTED, stateTimeout = nodeParams.pingInterval) {
-    case Event(StateTimeout, ConnectedData(_, transport, _, _)) =>
+    case Event(StateTimeout, ConnectedData(_, transport, _, _, _)) =>
       // no need to use secure random here
       val pingSize = Random.nextInt(1000)
       val pongSize = Random.nextInt(1000)
       transport ! wire.Ping(pongSize, BinaryData("00" * pingSize))
       stay
 
-    case Event(ping@wire.Ping(pongLength, _), ConnectedData(_, transport, _, _)) =>
+    case Event(ping@wire.Ping(pongLength, _), ConnectedData(_, transport, _, _, _)) =>
       transport ! TransportHandler.ReadAck(ping)
       // TODO: (optional) check against the expected data size tat we requested when we sent ping messages
       if (pongLength > 0) {
@@ -146,20 +146,20 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(pong@wire.Pong(data), ConnectedData(_, transport, _, _)) =>
+    case Event(pong@wire.Pong(data), ConnectedData(_, transport, _, _, _)) =>
       transport ! TransportHandler.ReadAck(pong)
       // TODO: compute latency for remote peer ?
       log.debug(s"received pong with ${data.length} bytes")
       stay
 
-    case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels)) if channelId == CHANNELID_ZERO =>
+    case Event(err@wire.Error(channelId, reason), ConnectedData(_, transport, _, channels, _)) if channelId == CHANNELID_ZERO =>
       transport ! TransportHandler.ReadAck(err)
       log.error(s"connection-level error, failing all channels! reason=${new String(reason)}")
       channels.values.toSet[ActorRef].foreach(_ forward err) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       transport ! PoisonPill
       stay
 
-    case Event(err: wire.Error, ConnectedData(_, transport, _, channels)) =>
+    case Event(err: wire.Error, ConnectedData(_, transport, _, channels, _)) =>
       transport ! TransportHandler.ReadAck(err)
       // error messages are a bit special because they can contain either temporaryChannelId or channelId (see BOLT 1)
       channels.get(FinalChannelId(err.channelId)).orElse(channels.get(TemporaryChannelId(err.channelId))) match {
@@ -168,7 +168,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(c: Peer.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels)) =>
+    case Event(c: Peer.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels, _)) =>
       log.info(s"requesting a new channel to $remoteNodeId with fundingSatoshis=${c.fundingSatoshis}, pushMsat=${c.pushMsat} and fundingFeeratePerByte=${c.fundingTxFeeratePerKw_opt}")
       val (channel, localParams) = createNewChannel(nodeParams, funder = true, c.fundingSatoshis.toLong, origin_opt = Some(sender))
       val temporaryChannelId = randomBytes(32)
@@ -177,7 +177,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       channel ! INPUT_INIT_FUNDER(temporaryChannelId, c.fundingSatoshis.amount, c.pushMsat.amount, channelFeeratePerKw, fundingTxFeeratePerKw, localParams, transport, remoteInit, c.channelFlags.getOrElse(nodeParams.channelFlags))
       stay using d.copy(channels = channels + (TemporaryChannelId(temporaryChannelId) -> channel))
 
-    case Event(msg: wire.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels)) =>
+    case Event(msg: wire.OpenChannel, d@ConnectedData(_, transport, remoteInit, channels, _)) =>
       transport ! TransportHandler.ReadAck(msg)
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case None =>
@@ -192,7 +192,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           stay
       }
 
-    case Event(msg: wire.HasChannelId, ConnectedData(_, transport, _, channels)) =>
+    case Event(msg: wire.HasChannelId, ConnectedData(_, transport, _, channels, _)) =>
       transport ! TransportHandler.ReadAck(msg)
       channels.get(FinalChannelId(msg.channelId)) match {
         case Some(channel) => channel forward msg
@@ -200,7 +200,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(msg: wire.HasTemporaryChannelId, ConnectedData(_, transport, _, channels)) =>
+    case Event(msg: wire.HasTemporaryChannelId, ConnectedData(_, transport, _, channels, _)) =>
       transport ! TransportHandler.ReadAck(msg)
       channels.get(TemporaryChannelId(msg.temporaryChannelId)) match {
         case Some(channel) => channel forward msg
@@ -208,13 +208,13 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d@ConnectedData(_, _, _, channels)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
+    case Event(ChannelIdAssigned(channel, _, temporaryChannelId, channelId), d@ConnectedData(_, _, _, channels, _)) if channels.contains(TemporaryChannelId(temporaryChannelId)) =>
       log.info(s"channel id switch: previousId=$temporaryChannelId nextId=$channelId")
       // NB: we keep the temporary channel id because the switch is not always acknowledged at this point (see https://github.com/lightningnetwork/lightning-rfc/pull/151)
       // we won't clean it up, but we won't remember the temporary id on channel termination
       stay using d.copy(channels = channels + (FinalChannelId(channelId) -> channel))
 
-    case Event(RoutingState(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
+    case Event(RoutingState(channels, updates, nodes), ConnectedData(_, transport, _, _, _)) =>
       // let's send the messages
       def send(announcements: Iterable[_ <: LightningMessage]) = announcements.foldLeft(0) {
         case (c, ann) =>
@@ -228,23 +228,30 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       log.info(s"sent all announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       stay
 
-    case Event(Rebroadcast(channels, updates, nodes), ConnectedData(_, transport, _, _)) =>
-      // we filter out announcements that we received from this node
-      def sendIfNeeded(m: Map[_ <: LightningMessage, Set[ActorRef]]): Int = m.foldLeft(0) {
-        case (counter, (_, origins)) if origins.contains(self) =>
-          counter // won't send back announcement we received from this peer
-        case (counter, (announcement, _)) =>
-          transport ! announcement
-          counter + 1
-      }
-      val channelsSent = sendIfNeeded(channels)
-      val updatesSent = sendIfNeeded(updates)
-      val nodesSent = sendIfNeeded(nodes)
+    case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, gossipTimeRange)) =>
+      val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, gossipTimeRange)
+      val channelsSent = channels1.size
+      val updatesSent = updates1.size
+      val nodesSent = nodes1.size
+      channels1.foreach(transport ! _)
+      updates1.foreach(transport ! _)
+      nodes1.foreach(transport ! _)
       if (channelsSent > 0 || updatesSent > 0 || nodesSent > 0) {
         log.info(s"sent announcements to {}: channels={} updates={} nodes={}", remoteNodeId, channelsSent, updatesSent, nodesSent)
       }
       stay
 
+    case Event(msg: GossipTimeRange, data: ConnectedData) =>
+      // special case: time range filters are peer specific and must not be sent to
+      // the router
+      sender ! TransportHandler.ReadAck(msg)
+      if (msg.chainHash != nodeParams.chainHash) {
+        log.warning("received gossip_timestamp_range message for chain {}, we're on {}", msg.chainHash, nodeParams.chainHash)
+        stay
+      } else {
+        // update their timestamp filter
+        stay using data.copy(gossipTimeRange = Some(msg))
+      }
 
     case Event(msg: wire.RoutingMessage, _) =>
       // Note: we don't ack messages here because we don't want them to be stacked in the router's mailbox
@@ -259,21 +266,21 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay
 
-    case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _)) =>
+    case Event(readAck: TransportHandler.ReadAck, ConnectedData(_, transport, _, _, _)) =>
       // we just forward acks from router to transport
       transport forward readAck
       stay
 
-    case Event(Disconnect, ConnectedData(_, transport, _, _)) =>
+    case Event(Disconnect, ConnectedData(_, transport, _, _, _)) =>
       transport ! PoisonPill
       stay
 
-    case Event(Terminated(actor), ConnectedData(address_opt, transport, _, channels)) if actor == transport =>
+    case Event(Terminated(actor), ConnectedData(address_opt, transport, _, channels, _)) if actor == transport =>
       log.info(s"lost connection to $remoteNodeId")
       channels.values.toSet[ActorRef].foreach(_ ! INPUT_DISCONNECTED) // we deduplicate with toSet because there might be two entries per channel (tmp id and final id)
       goto(DISCONNECTED) using DisconnectedData(address_opt, channels.collect { case (k: FinalChannelId, v) => (k, v) })
 
-    case Event(Terminated(actor), d@ConnectedData(_, transport, _, channels)) if channels.values.toSet.contains(actor) =>
+    case Event(Terminated(actor), d@ConnectedData(_, transport, _, channels, _)) if channels.values.toSet.contains(actor) =>
       // we will have at most 2 ids: a TemporaryChannelId and a FinalChannelId
       val channelIds = channels.filter(_._2 == actor).keys
       log.info(s"channel closed: channelId=${channelIds.mkString("/")}")
@@ -283,7 +290,7 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
       }
       stay using d.copy(channels = channels -- channelIds)
 
-    case Event(h: Authenticator.Authenticated, ConnectedData(address_opt, oldTransport, _, channels)) =>
+    case Event(h: Authenticator.Authenticated, ConnectedData(address_opt, oldTransport, _, channels, _)) =>
       log.info(s"got new transport while already connected, switching to new transport")
       context unwatch oldTransport
       oldTransport ! PoisonPill
@@ -360,7 +367,7 @@ object Peer {
   case class Nothing() extends Data { override def address_opt = None; override def channels = Map.empty }
   case class DisconnectedData(address_opt: Option[InetSocketAddress], channels: Map[FinalChannelId, ActorRef], attempts: Int = 0) extends Data
   case class InitializingData(address_opt: Option[InetSocketAddress], transport: ActorRef, channels: Map[FinalChannelId, ActorRef], origin_opt: Option[ActorRef]) extends Data
-  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef]) extends Data
+  case class ConnectedData(address_opt: Option[InetSocketAddress], transport: ActorRef, remoteInit: wire.Init, channels: Map[ChannelId, ActorRef], gossipTimeRange: Option[GossipTimeRange] = None) extends Data
 
   sealed trait State
   case object INSTANTIATING extends State
@@ -406,5 +413,39 @@ object Peer {
       isFunder = isFunder,
       globalFeatures = nodeParams.globalFeatures,
       localFeatures = nodeParams.localFeatures)
+  }
+
+  /**
+    * filter out gossip messages using the provided origin and optional timestamp range
+    * @param rebroadcast rebroacast message
+    * @param self messages which have been sent by `self` will be filtered out
+    * @param gossipTimeRange optional gossip timestamp range
+    * @return a filtered (channel announcements, channel updates, node announcements) tuple
+    */
+  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimeRange: Option[GossipTimeRange]): (Iterable[ChannelAnnouncement], Iterable[ChannelUpdate], Iterable[NodeAnnouncement]) = {
+    // we filter out announcements that we received from this node
+    val channels1 = rebroadcast.channels.filterNot { case (_, origins) => origins.contains(self) } keys
+    val updates1 = rebroadcast.updates.filterNot { case (_, origins) => origins.contains(self) } keys
+    val nodes1 = rebroadcast.nodes.filterNot { case (_, origins) => origins.contains(self) } keys
+
+    // filter out updates against their timestamp range
+    val updates2 = gossipTimeRange match {
+      case None => updates1
+      case Some(GossipTimeRange(_, firstTimestamp, timestampRange)) => updates1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+    }
+
+    // filter out channels that don't have a matching channel update
+    // TODO ?: this is stricter than the BOLT, which says that if if there is no
+    // matching update for a channel annnouncement we should just make up a timestamp
+    // with the current time
+    val shortChannelIds = updates1.map(_.shortChannelId).toSet
+    val channels2 = channels1.filter(ca => shortChannelIds.contains(ca.shortChannelId))
+
+    // filter out nodes against their timestamp range
+    val nodes2 = gossipTimeRange match {
+      case None => nodes1
+      case Some(GossipTimeRange(_, firstTimestamp, timestampRange)) => nodes1.filter(cu => cu.timestamp >= firstTimestamp && cu.timestamp <= firstTimestamp + timestampRange)
+    }
+    (channels2, updates2, nodes2)
   }
 }
