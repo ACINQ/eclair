@@ -164,8 +164,8 @@ case class PerHopPayload(channel_id: Long,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 
-case class QueryShortChannelId(chainHash: BinaryData,
-                               data: BinaryData) extends RoutingMessage
+case class QueryShortChannelIds(chainHash: BinaryData,
+                                data: BinaryData) extends RoutingMessage
 
 case class QueryChannelRange(chainHash: BinaryData,
                              firstBlockNum: Int,
@@ -174,4 +174,8 @@ case class QueryChannelRange(chainHash: BinaryData,
 case class ReplyChannelRange(chainHash: BinaryData,
                              firstBlockNum: Int,
                              numberOfBlocks: Int,
+                             complete: Byte,
                              data: BinaryData) extends RoutingMessage
+
+case class ReplyShortChannelIdsEnd(chainHash: BinaryData,
+                                  complete: Byte) extends RoutingMessage

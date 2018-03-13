@@ -253,7 +253,8 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
           // because it makes more sense to have the router reply directly
         case _: QueryChannelRange => router forward msg
         case _: ReplyChannelRange => router forward msg
-        case _: QueryShortChannelId => router forward msg
+        case _: QueryShortChannelIds => router forward msg
+        case _: ReplyShortChannelIdsEnd => router forward msg
         case _ => router ! msg
       }
       stay

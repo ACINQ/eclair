@@ -1,18 +1,14 @@
 package fr.acinq.eclair.router
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.net.InetSocketAddress
-import java.nio.ByteOrder
-import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, Protocol}
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
 import fr.acinq.eclair.serializationResult
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import shapeless.HNil
 
-import scala.annotation.tailrec
 import scala.compat.Platform
 
 
@@ -141,59 +137,5 @@ object Announcements {
   def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean = {
     val witness = channelUpdateWitnessEncode(ann.chainHash, ann.shortChannelId, ann.timestamp, ann.flags, ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths)
     verifySignature(witness, ann.signature, nodeId)
-  }
-
-  /**
-    * Compressed a sequence of *sorted* short channel id.
-    *
-    * @param shortChannelIds must be sorted beforehand
-    * @return
-    */
-  def zip(shortChannelIds: Iterable[Long]) : BinaryData = {
-    val bos = new ByteArrayOutputStream()
-    val output = new GZIPOutputStream(bos)
-    shortChannelIds.map(id => Protocol.writeUInt64(id, output, ByteOrder.BIG_ENDIAN))
-    output.finish()
-    bos.toByteArray
-  }
-
-  /**
-    *  Uncompresses a zipped sequence of sorted short channel ids.
-    *
-    *  Does *not* preserve the order
-    *
-    * @param input
-    * @return
-    */
-  private def unzip(input: GZIPInputStream) : Set[Long] = {
-    val buffer = new Array[Byte](8)
-
-    // read 8 bytes from input
-    // zipped input stream often returns less bytes than what you want to read
-    @tailrec
-    def read8(offset: Int = 0): Int = input.read(buffer, offset, 8 - offset) match {
-      case len if len <= 0 => len
-      case 8 => 8
-      case len if offset + len == 8 => 8
-      case len => read8(offset + len)
-    }
-
-    // read until there's nothing left
-    @tailrec
-    def loop(acc: Set[Long] = Set()): Set[Long] = {
-      if (read8() <= 0) acc else loop(acc + Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN))
-    }
-
-    loop()
-  }
-
-  def unzip(input: BinaryData) : Set[Long] = {
-    val stream = new GZIPInputStream(new ByteArrayInputStream(input))
-    try {
-      unzip(stream)
-    }
-    finally {
-      stream.close()
-    }
   }
 }

@@ -22,7 +22,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   type FixtureParam = Tuple2[ActorRef, ActorRef]
 
-  val shortChannelIds = QueryChannelsSpec.readShortChannelIds().take(100)
+  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds().take(100)
 
   def makeFakeRoutingInfo(shortChannelId: Long): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate) = {
     val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)

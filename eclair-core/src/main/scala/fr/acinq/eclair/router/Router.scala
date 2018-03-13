@@ -13,7 +13,6 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
-import fr.acinq.eclair.router.Announcements.zip
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.WeightedGraph
@@ -403,31 +402,31 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         // sort channel ids and keep the ones which are in [firstBlockNum, firstBlockNum + numberOfBlocks]
         val shortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, zip(shortChannelIds))
-        log.info("sending back reply_channel_rang({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
+        val reply = ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, 1, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, shortChannelIds))
+        log.info("sending back reply_channel_range({}, {}) for {} channels", firstBlockNum, numberOfBlocks, shortChannelIds.size)
         sender ! reply
       }
       stay
 
-    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
+    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data), d) =>
       sender ! TransportHandler.ReadAck(reply)
       if (chainHash != nodeParams.chainHash) {
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val theirShortChannelIds = Announcements.unzip(data)
+        val (_, theirShortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        val missing = theirShortChannelIds -- ourShortChannelIds
+        val missing = theirShortChannelIds.toSet -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
-        sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
+        sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing))
       }
       stay
 
-    case Event(query@QueryShortChannelId(chainHash, data), d) =>
+    case Event(query@QueryShortChannelIds(chainHash, data), d) =>
       sender ! TransportHandler.ReadAck(query)
       if (chainHash != nodeParams.chainHash) {
         log.warning("received query_short_channel_id message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val shortChannelIds = Announcements.unzip(data)
+        val (_, shortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
         shortChannelIds.foreach(shortChannelId => {
           d.channels.get(shortChannelId) match {
             case None => log.warning("peer asked for a channel announcement {} that we don't have", shortChannelId)
@@ -437,6 +436,16 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
               d.updates.get(ChannelDesc(ca.shortChannelId, ca.nodeId2, ca.nodeId1)).map(u => sender ! u)
           }
         })
+        sender ! ReplyShortChannelIdsEnd(chainHash, 1)
+      }
+      stay
+
+    case Event(end@ReplyShortChannelIdsEnd(chainHash, complete), d) =>
+      sender ! TransportHandler.ReadAck(end)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received reply_short_channel_ids_end message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        // TODO: how do we use this message ?
       }
       stay
   }
