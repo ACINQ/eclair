@@ -9,7 +9,7 @@ import fr.acinq.eclair.router.Announcements.{makeChannelUpdate, makeNodeAnnounce
 import fr.acinq.eclair.router.BaseRouterSpec.channelAnnouncement
 import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
-import fr.acinq.eclair.{Globals, TestkitBaseClass, randomKey}
+import fr.acinq.eclair._
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 
@@ -24,7 +24,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   type FixtureParam = Tuple2[ActorRef, ActorRef]
 
-  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds().take(100)
+  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds().take(100).map(id => ShortChannelId(id))
 
   val fakeRoutingInfo = shortChannelIds.map(makeFakeRoutingInfo)
   // A will be missing the last 20 items
@@ -37,7 +37,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
       case _: WatchSpentBasic => ()
       case ValidateRequest(ann) =>
         val txOut = TxOut(Satoshi(1000000), Script.pay2wsh(Scripts.multiSig2of2(ann.bitcoinKey1, ann.bitcoinKey2)))
-        val (_, _, outputIndex) = fr.acinq.eclair.fromShortId(ann.shortChannelId)
+        val TxCoordinates(_, _, outputIndex) = ShortChannelId.coordinates(ann.shortChannelId)
         sender ! ValidateResult(ann, Some(Transaction(version = 0, txIn = Nil, txOut = List.fill(outputIndex + 1)(txOut), lockTime = 0)), true, None)
       case unexpected => println(s"unexpected : $unexpected")
     }
@@ -87,7 +87,7 @@ class RoutingSyncSpec extends TestkitBaseClass {
 
   test("initial sync") {
     case (routerA, routerB) => {
-      Globals.blockCount.set(shortChannelIds.map(id => fr.acinq.eclair.fromShortId(id)._1).max)
+      Globals.blockCount.set(shortChannelIds.map(id => ShortChannelId.coordinates(id).blockHeight).max)
 
       val sender = TestProbe()
       sender.send(routerA, SendChannelQuery(routerB))
@@ -105,10 +105,10 @@ class RoutingSyncSpec extends TestkitBaseClass {
 }
 
 object RoutingSyncSpec {
-  def makeFakeRoutingInfo(shortChannelId: Long): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
+  def makeFakeRoutingInfo(shortChannelId: ShortChannelId): (ChannelAnnouncement, ChannelUpdate, ChannelUpdate, NodeAnnouncement, NodeAnnouncement) = {
     val (priv_a, priv_b, priv_funding_a, priv_funding_b) = (randomKey, randomKey, randomKey, randomKey)
     val channelAnn_ab = channelAnnouncement(shortChannelId, priv_a, priv_b, priv_funding_a, priv_funding_b)
-    val (blockHeight, _, _) = fr.acinq.eclair.fromShortId(shortChannelId)
+    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(shortChannelId)
     val channelUpdate_ab = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_a, priv_b.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = blockHeight)
     val channelUpdate_ba = makeChannelUpdate(Block.RegtestGenesisBlock.hash, priv_b, priv_a.publicKey, shortChannelId, cltvExpiryDelta = 7, 0, feeBaseMsat = 766000, feeProportionalMillionths = 10, timestamp = blockHeight)
     val nodeAnnouncement_a = makeNodeAnnouncement(priv_a, "a", Alice.nodeParams.color, List())

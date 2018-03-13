@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
-import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 
 /**
   * Created by PM on 15/11/2016.
@@ -16,6 +16,7 @@ sealed trait SetupMessage extends LightningMessage
 sealed trait ChannelMessage extends LightningMessage
 sealed trait HtlcMessage extends LightningMessage
 sealed trait RoutingMessage extends LightningMessage
+sealed trait HasTimestamp extends LightningMessage { def timestamp: Long }
 sealed trait HasTemporaryChannelId extends LightningMessage { def temporaryChannelId: BinaryData } // <- not in the spec
 sealed trait HasChannelId extends LightningMessage { def channelId: BinaryData } // <- not in the spec
 sealed trait UpdateMessage extends HtlcMessage // <- not in the spec
@@ -121,7 +122,7 @@ case class UpdateFee(channelId: BinaryData,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: BinaryData,
-                                  shortChannelId: Long,
+                                  shortChannelId: ShortChannelId,
                                   nodeSignature: BinaryData,
                                   bitcoinSignature: BinaryData) extends RoutingMessage with HasChannelId
 
@@ -131,7 +132,7 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                bitcoinSignature2: BinaryData,
                                features: BinaryData,
                                chainHash: BinaryData,
-                               shortChannelId: Long,
+                               shortChannelId: ShortChannelId,
                                nodeId1: PublicKey,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
@@ -148,19 +149,19 @@ case class NodeAnnouncement(signature: BinaryData,
                             rgbColor: Color,
                             alias: String,
                             // TODO: check address order + support padding data (type 0)
-                            addresses: List[InetSocketAddress]) extends RoutingMessage
+                            addresses: List[InetSocketAddress]) extends RoutingMessage with HasTimestamp
 
 case class ChannelUpdate(signature: BinaryData,
                          chainHash: BinaryData,
-                         shortChannelId: Long,
+                         shortChannelId: ShortChannelId,
                          timestamp: Long,
                          flags: BinaryData,
                          cltvExpiryDelta: Int,
                          htlcMinimumMsat: Long,
                          feeBaseMsat: Long,
-                         feeProportionalMillionths: Long) extends RoutingMessage
+                         feeProportionalMillionths: Long) extends RoutingMessage with HasTimestamp
 
-case class PerHopPayload(channel_id: Long,
+case class PerHopPayload(channel_id: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)
 

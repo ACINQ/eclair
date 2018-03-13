@@ -6,7 +6,7 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
-import fr.acinq.eclair.{Globals, NodeParams}
+import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId}
 import scodec.bits.BitVector
 import scodec.{Attempt, DecodeResult}
 
@@ -38,14 +38,14 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
 
   override def receive: Receive = main(Map())
 
-  def main(channelUpdates: Map[Long, ChannelUpdate]): Receive = {
+  def main(channelUpdates: Map[ShortChannelId, ChannelUpdate]): Receive = {
 
     case LocalChannelUpdate(_, channelId, shortChannelId, remoteNodeId, _, channelUpdate) =>
-      log.debug(s"updating channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString} remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
+      log.debug(s"updating channel_update for channelId=$channelId shortChannelId=$shortChannelId remoteNodeId=$remoteNodeId channelUpdate=$channelUpdate ")
       context become main(channelUpdates + (channelUpdate.shortChannelId -> channelUpdate))
 
     case LocalChannelDown(_, channelId, shortChannelId, _) =>
-      log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=${shortChannelId.toHexString}")
+      log.debug(s"removed local channel_update for channelId=$channelId shortChannelId=$shortChannelId")
       context become main(channelUpdates - shortChannelId)
 
     case ForwardAdd(add) =>
@@ -92,10 +92,10 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
           }
           cmd match {
             case Left(cmdFail) =>
-              log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id.toHexString} reason=${cmdFail.reason}")
+              log.info(s"rejecting htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id} reason=${cmdFail.reason}")
               commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
             case Right(cmdAdd) =>
-              log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id.toHexString}")
+              log.info(s"forwarding htlc #${add.id} paymentHash=${add.paymentHash} from channelId=${add.channelId} to shortChannelId=${perHopPayload.channel_id}")
               register ! Register.ForwardShortId(perHopPayload.channel_id, cmdAdd)
           }
         case Failure(t) =>
@@ -106,7 +106,7 @@ class Relayer(nodeParams: NodeParams, register: ActorRef, paymentHandler: ActorR
       }
 
     case Status.Failure(Register.ForwardShortIdFailure(Register.ForwardShortId(shortChannelId, CMD_ADD_HTLC(_, _, _, _, Some(add), _)))) =>
-      log.warning(s"couldn't resolve downstream channel ${shortChannelId.toHexString}, failing htlc #${add.id}")
+      log.warning(s"couldn't resolve downstream channel $shortChannelId, failing htlc #${add.id}")
       val cmdFail = CMD_FAIL_HTLC(add.id, Right(UnknownNextPeer), commit = true)
       commandBuffer ! CommandBuffer.CommandSend(add.channelId, add.id, cmdFail)
 

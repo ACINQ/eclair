@@ -3,6 +3,7 @@ package fr.acinq.eclair.router
 import java.nio.ByteOrder
 
 import fr.acinq.bitcoin.{Block, Protocol}
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.ReplyChannelRange
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
@@ -12,7 +13,7 @@ import scala.annotation.tailrec
 
 @RunWith(classOf[JUnitRunner])
 class ChannelRangeQueriesSpec extends FunSuite {
-  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds()
+  val shortChannelIds = ChannelRangeQueriesSpec.readShortChannelIds().map(id => ShortChannelId(id))
 
   test("create `reply_channel_range` messages (uncompressed format)") {
     val reply = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.UNCOMPRESSED_FORMAT, shortChannelIds))

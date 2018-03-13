@@ -230,9 +230,9 @@ class Peer(nodeParams: NodeParams, remoteNodeId: PublicKey, authenticator: Actor
 
     case Event(rebroadcast: Rebroadcast, ConnectedData(_, transport, _, _, gossipTimeRange)) =>
       val (channels1, updates1, nodes1) = Peer.filterGossipMessages(rebroadcast, self, gossipTimeRange)
-      val channelsSent = channels1.size
-      val updatesSent = updates1.size
-      val nodesSent = nodes1.size
+      val channelsSent = channels1.length
+      val updatesSent = updates1.length
+      val nodesSent = nodes1.length
       channels1.foreach(transport ! _)
       updates1.foreach(transport ! _)
       nodes1.foreach(transport ! _)
@@ -422,11 +422,11 @@ object Peer {
     * @param gossipTimeRange optional gossip timestamp range
     * @return a filtered (channel announcements, channel updates, node announcements) tuple
     */
-  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimeRange: Option[GossipTimeRange]): (Iterable[ChannelAnnouncement], Iterable[ChannelUpdate], Iterable[NodeAnnouncement]) = {
+  def filterGossipMessages(rebroadcast: Rebroadcast, self: ActorRef, gossipTimeRange: Option[GossipTimeRange]): (Vector[ChannelAnnouncement], Vector[ChannelUpdate], Vector[NodeAnnouncement]) = {
     // we filter out announcements that we received from this node
-    val channels1 = rebroadcast.channels.filterNot { case (_, origins) => origins.contains(self) } keys
-    val updates1 = rebroadcast.updates.filterNot { case (_, origins) => origins.contains(self) } keys
-    val nodes1 = rebroadcast.nodes.filterNot { case (_, origins) => origins.contains(self) } keys
+    val channels1 = rebroadcast.channels.collect { case (a, origins) if !origins.contains(self) => a } toVector
+    val updates1 = rebroadcast.updates.collect { case (a, origins) if !origins.contains(self) => a } toVector
+    val nodes1 = rebroadcast.nodes.collect { case (a, origins) if !origins.contains(self) => a } toVector
 
     // filter out updates against their timestamp range
     val updates2 = gossipTimeRange match {
