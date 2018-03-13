@@ -4,6 +4,7 @@ import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
@@ -107,7 +108,7 @@ class LocalKeyManager(seed: BinaryData) extends KeyManager {
     Transactions.sign(tx, currentKey)
   }
 
-  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: Long, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
+  override def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
     val witness = if (Announcements.isNode1(nodeId.toBin, remoteNodeId.toBin)) {
       Announcements.channelAnnouncementWitnessEncode(chainHash, shortChannelId, nodeId, remoteNodeId, fundingPublicKey(channelKeyPath).publicKey, remoteFundingKey, features)
     } else {

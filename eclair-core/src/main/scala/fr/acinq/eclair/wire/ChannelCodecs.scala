@@ -213,12 +213,12 @@ object ChannelCodecs extends Logging {
 
   val DATA_WAIT_FOR_FUNDING_LOCKED_Codec: Codec[DATA_WAIT_FOR_FUNDING_LOCKED] = (
     ("commitments" | commitmentsCodec) ::
-      ("shortChannelId" | uint64) ::
+      ("shortChannelId" | shortchannelid) ::
       ("lastSent" | fundingLockedCodec)).as[DATA_WAIT_FOR_FUNDING_LOCKED]
 
   val DATA_NORMAL_Codec: Codec[DATA_NORMAL] = (
     ("commitments" | commitmentsCodec) ::
-      ("shortChannelId" | uint64) ::
+      ("shortChannelId" | shortchannelid) ::
       ("buried" | bool) ::
       ("channelAnnouncement" | optional(bool, channelAnnouncementCodec)) ::
       ("channelUpdate" | channelUpdateCodec) ::

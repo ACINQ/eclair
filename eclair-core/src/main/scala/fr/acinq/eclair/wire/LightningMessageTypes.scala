@@ -4,7 +4,7 @@ import java.net.InetSocketAddress
 
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
-import fr.acinq.eclair.UInt64
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 
 /**
   * Created by PM on 15/11/2016.
@@ -121,7 +121,7 @@ case class UpdateFee(channelId: BinaryData,
                      feeratePerKw: Long) extends ChannelMessage with UpdateMessage with HasChannelId
 
 case class AnnouncementSignatures(channelId: BinaryData,
-                                  shortChannelId: Long,
+                                  shortChannelId: ShortChannelId,
                                   nodeSignature: BinaryData,
                                   bitcoinSignature: BinaryData) extends RoutingMessage with HasChannelId
 
@@ -131,7 +131,7 @@ case class ChannelAnnouncement(nodeSignature1: BinaryData,
                                bitcoinSignature2: BinaryData,
                                features: BinaryData,
                                chainHash: BinaryData,
-                               shortChannelId: Long,
+                               shortChannelId: ShortChannelId,
                                nodeId1: PublicKey,
                                nodeId2: PublicKey,
                                bitcoinKey1: PublicKey,
@@ -152,7 +152,7 @@ case class NodeAnnouncement(signature: BinaryData,
 
 case class ChannelUpdate(signature: BinaryData,
                          chainHash: BinaryData,
-                         shortChannelId: Long,
+                         shortChannelId: ShortChannelId,
                          timestamp: Long,
                          flags: BinaryData,
                          cltvExpiryDelta: Int,
@@ -160,6 +160,6 @@ case class ChannelUpdate(signature: BinaryData,
                          feeBaseMsat: Long,
                          feeProportionalMillionths: Long) extends RoutingMessage
 
-case class PerHopPayload(channel_id: Long,
+case class PerHopPayload(channel_id: ShortChannelId,
                          amtToForward: Long,
                          outgoingCltvValue: Long)

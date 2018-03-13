@@ -41,15 +41,15 @@ abstract class BaseRouterSpec extends TestkitBaseClass {
   val ann_e = makeNodeAnnouncement(priv_e, "node-E", Color(-50, 0, 10), Nil)
   val ann_f = makeNodeAnnouncement(priv_f, "node-F", Color(30, 10, -50), Nil)
 
-  val channelId_ab = toShortId(420000, 1, 0)
-  val channelId_bc = toShortId(420000, 2, 0)
-  val channelId_cd = toShortId(420000, 3, 0)
-  val channelId_ef = toShortId(420000, 4, 0)
+  val channelId_ab = ShortChannelId(420000, 1, 0)
+  val channelId_bc = ShortChannelId(420000, 2, 0)
+  val channelId_cd = ShortChannelId(420000, 3, 0)
+  val channelId_ef = ShortChannelId(420000, 4, 0)
 
-  def channelAnnouncement(channelId: Long, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
-    val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
-    val (node2_sig, funding2_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
-    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, channelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
+  def channelAnnouncement(shortChannelId: ShortChannelId, node1_priv: PrivateKey, node2_priv: PrivateKey, funding1_priv: PrivateKey, funding2_priv: PrivateKey) = {
+    val (node1_sig, funding1_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv, node2_priv.publicKey, funding1_priv, funding2_priv.publicKey, "")
+    val (node2_sig, funding2_sig) = signChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node2_priv, node1_priv.publicKey, funding2_priv, funding1_priv.publicKey, "")
+    makeChannelAnnouncement(Block.RegtestGenesisBlock.hash, shortChannelId, node1_priv.publicKey, node2_priv.publicKey, funding1_priv.publicKey, funding2_priv.publicKey, node1_sig, node2_sig, funding1_sig, funding2_sig)
   }
 
   val chan_ab = channelAnnouncement(channelId_ab, priv_a, priv_b, priv_funding_a, priv_funding_b)

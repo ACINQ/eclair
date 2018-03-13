@@ -15,7 +15,7 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.{Kit, feerateByte2Kw}
+import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment, _}
@@ -36,7 +36,6 @@ case class JsonRPCRes(result: AnyRef, error: Option[Error], id: String)
 case class Status(node_id: String)
 case class GetInfoResponse(nodeId: PublicKey, alias: String, port: Int, chainHash: BinaryData, blockHeight: Int)
 case class LocalChannelInfo(nodeId: BinaryData, channelId: BinaryData, state: String)
-case class ChannelInfo(shortChannelId: String, nodeId1: PublicKey, nodeId2: PublicKey)
 trait RPCRejection extends Rejection {
   def requestId: String
 }
@@ -51,7 +50,7 @@ trait Service extends Logging {
   implicit def ec: ExecutionContext = ExecutionContext.Implicits.global
 
   implicit val serialization = jackson.Serialization
-  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer
+  implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer + new ShortChannelIdSerializer
   implicit val timeout = Timeout(30 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
@@ -179,7 +178,7 @@ trait Service extends Logging {
 
                       // global network methods
                       case "allnodes"     => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
-                      case "allchannels"  => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelInfo(c.shortChannelId.toHexString, c.nodeId1, c.nodeId2))))
+                      case "allchannels"  => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))))
                       case "allupdates"   => req.params match {
                         case JString(nodeId) :: Nil => Try(PublicKey(nodeId)) match {
                           case Success(pk) => completeRpcFuture(req.id, (router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values))
@@ -288,7 +287,7 @@ trait Service extends Logging {
     */
   def sendToChannel(channelIdentifier: String, request: Any): Future[Any] =
     for {
-      fwdReq <- Future(Register.ForwardShortId(java.lang.Long.parseLong(channelIdentifier, 16), request))
+      fwdReq <- Future(Register.ForwardShortId(ShortChannelId(channelIdentifier), request))
         .recoverWith { case _ => Future(Register.Forward(BinaryData(channelIdentifier), request)) }
         .recoverWith { case _ => Future.failed(new RuntimeException(s"invalid channel identifier '$channelIdentifier'")) }
       res <- appKit.register ? fwdReq

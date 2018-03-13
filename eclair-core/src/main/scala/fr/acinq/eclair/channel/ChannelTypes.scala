@@ -1,11 +1,11 @@
 package fr.acinq.eclair.channel
 
 import akka.actor.ActorRef
-import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
+import fr.acinq.bitcoin.Crypto.{Point, PublicKey}
 import fr.acinq.bitcoin.{BinaryData, DeterministicWallet, OutPoint, Transaction}
-import fr.acinq.eclair.UInt64
-import fr.acinq.eclair.crypto.{Sphinx}
-import fr.acinq.eclair.transactions.{CommitmentSpec, Transactions}
+import fr.acinq.eclair.{ShortChannelId, UInt64}
+import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.transactions.CommitmentSpec
 import fr.acinq.eclair.transactions.Transactions.CommitTx
 import fr.acinq.eclair.wire.{AcceptChannel, ChannelAnnouncement, ChannelReestablish, ChannelUpdate, ClosingSigned, FailureMessage, FundingCreated, FundingLocked, FundingSigned, Init, OpenChannel, Shutdown, UpdateAddHtlc}
 
@@ -77,7 +77,7 @@ case object BITCOIN_FUNDING_TIMEOUT extends BitcoinEvent
 case object BITCOIN_FUNDING_SPENT extends BitcoinEvent
 case object BITCOIN_OUTPUT_SPENT extends BitcoinEvent
 case class BITCOIN_TX_CONFIRMED(tx: Transaction) extends BitcoinEvent
-case class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId: Long) extends BitcoinEvent
+case class BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId: ShortChannelId) extends BitcoinEvent
 case class BITCOIN_PARENT_TX_CONFIRMED(childTx: Transaction) extends BitcoinEvent
 
 /*
@@ -136,9 +136,9 @@ final case class DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId: BinaryData, 
 final case class DATA_WAIT_FOR_FUNDING_CREATED(temporaryChannelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, remoteFirstPerCommitmentPoint: Point, channelFlags: Byte, lastSent: AcceptChannel) extends Data
 final case class DATA_WAIT_FOR_FUNDING_SIGNED(channelId: BinaryData, localParams: LocalParams, remoteParams: RemoteParams, fundingTx: Transaction, localSpec: CommitmentSpec, localCommitTx: CommitTx, remoteCommit: RemoteCommit, channelFlags: Byte, lastSent: FundingCreated) extends Data
 final case class DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments: Commitments, deferred: Option[FundingLocked], lastSent: Either[FundingCreated, FundingSigned]) extends Data with HasCommitments
-final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: Long, lastSent: FundingLocked) extends Data with HasCommitments
+final case class DATA_WAIT_FOR_FUNDING_LOCKED(commitments: Commitments, shortChannelId: ShortChannelId, lastSent: FundingLocked) extends Data with HasCommitments
 final case class DATA_NORMAL(commitments: Commitments,
-                             shortChannelId: Long,
+                             shortChannelId: ShortChannelId,
                              buried: Boolean,
                              channelAnnouncement: Option[ChannelAnnouncement],
                              channelUpdate: ChannelUpdate,

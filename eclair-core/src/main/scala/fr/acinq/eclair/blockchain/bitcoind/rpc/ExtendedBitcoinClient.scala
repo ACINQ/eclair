@@ -1,8 +1,9 @@
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
+import fr.acinq.eclair.ShortChannelId.coordinates
+import fr.acinq.eclair.TxCoordinates
 import fr.acinq.eclair.blockchain.ValidateResult
-import fr.acinq.eclair.fromShortId
 import fr.acinq.eclair.wire.ChannelAnnouncement
 import org.json4s.JsonAST._
 
@@ -140,35 +141,20 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
 
   def validate(c: ChannelAnnouncement)(implicit ec: ExecutionContext): Future[ValidateResult] = {
-    case class TxCoordinate(blockHeight: Int, txIndex: Int, outputIndex: Int)
-
-    val (blockHeight, txIndex, outputIndex) = fromShortId(c.shortChannelId)
-    val coordinates = TxCoordinate(blockHeight, txIndex, outputIndex)
+    val TxCoordinates(blockHeight, txIndex, outputIndex) = coordinates(c.shortChannelId)
 
     for {
-      blockHash: String <- rpcClient.invoke("getblockhash", coordinates.blockHeight).map(_.extractOrElse[String]("00" * 32))
+      blockHash: String <- rpcClient.invoke("getblockhash", blockHeight).map(_.extractOrElse[String]("00" * 32))
       txid: String <- rpcClient.invoke("getblock", blockHash).map {
         case json => Try {
           val JArray(txs) = json \ "tx"
-          txs(coordinates.txIndex).extract[String]
+          txs(txIndex).extract[String]
         } getOrElse ("00" * 32)
       }
       tx <- getRawTransaction(txid)
-      unspent <- isTransactionOutputSpendable(txid, coordinates.outputIndex, includeMempool = true)
+      unspent <- isTransactionOutputSpendable(txid, outputIndex, includeMempool = true)
     } yield ValidateResult(c, Some(Transaction.read(tx)), unspent, None)
 
   } recover { case t: Throwable => ValidateResult(c, None, false, Some(t)) }
 
-  /**
-    *
-    * @return the list of bitcoin addresses for which the wallet has UTXOs
-    */
-  def listUnspentAddresses: Future[Seq[String]] = {
-    import ExecutionContext.Implicits.global
-    implicit val formats = org.json4s.DefaultFormats
-
-    rpcClient.invoke("listunspent").collect {
-      case JArray(values) => values.map(value => (value \ "address").extract[String])
-    }
-  }
 }
