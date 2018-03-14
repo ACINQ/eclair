@@ -66,8 +66,6 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000)
 
-    def id = nodeParams.privateKey.publicKey
-
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
       defaultFinalScriptPubKey = Script.write(Script.pay2wpkh(PrivateKey(Array.fill[Byte](32)(4), compressed = true).publicKey)),
@@ -120,8 +118,6 @@ object TestConstants {
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000)
-
-    def id = nodeParams.privateKey.publicKey
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

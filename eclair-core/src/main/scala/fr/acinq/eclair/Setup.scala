@@ -44,7 +44,7 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
   val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
   val chain = config.getString("chain")
 
-  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   implicit val system = actorSystem
