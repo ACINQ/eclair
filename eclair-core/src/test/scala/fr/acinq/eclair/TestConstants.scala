@@ -66,7 +66,7 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000)
 
-    def id = nodeParams.privateKey.publicKey
+    def id = nodeParams.nodeId
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -121,7 +121,7 @@ object TestConstants {
       paymentRequestExpiry = 1 hour,
       maxPendingPaymentRequests = 10000000)
 
-    def id = nodeParams.privateKey.publicKey
+    def id = nodeParams.nodeId
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

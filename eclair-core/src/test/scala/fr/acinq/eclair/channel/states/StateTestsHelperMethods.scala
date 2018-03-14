@@ -99,7 +99,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     Random.nextBytes(R)
     val H: BinaryData = Crypto.sha256(R)
     val sender = TestProbe()
-    val receiverPubkey = r.underlyingActor.nodeParams.privateKey.publicKey
+    val receiverPubkey = r.underlyingActor.nodeParams.nodeId
     val expiry = 400144
     val cmd = PaymentLifecycle.buildCommand(amountMsat, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
     sender.send(s, cmd)

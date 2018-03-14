@@ -56,7 +56,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
-  logger.info(s"nodeid=${nodeParams.privateKey.publicKey.toBin} alias=${nodeParams.alias}")
+  logger.info(s"nodeid=${nodeParams.nodeId.toBin} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   logger.info(s"initializing secure random generator")
@@ -159,7 +159,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val authenticator = system.actorOf(SimpleSupervisor.props(Authenticator.props(nodeParams), "authenticator", SupervisorStrategy.Resume))
     val switchboard = system.actorOf(SimpleSupervisor.props(Switchboard.props(nodeParams, authenticator, watcher, router, relayer, wallet), "switchboard", SupervisorStrategy.Resume))
     val server = system.actorOf(SimpleSupervisor.props(Server.props(nodeParams, authenticator, new InetSocketAddress(config.getString("server.binding-ip"), config.getInt("server.port")), Some(tcpBound)), "server", SupervisorStrategy.Restart))
-    val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.privateKey.publicKey, router, register), "payment-initiator", SupervisorStrategy.Restart))
+    val paymentInitiator = system.actorOf(SimpleSupervisor.props(PaymentInitiator.props(nodeParams.nodeId, router, register), "payment-initiator", SupervisorStrategy.Restart))
 
     val kit = Kit(
       nodeParams = nodeParams,
@@ -189,7 +189,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
           }
 
           override def getInfoResponse: Future[GetInfoResponse] = Future.successful(
-            GetInfoResponse(nodeId = nodeParams.privateKey.publicKey,
+            GetInfoResponse(nodeId = nodeParams.nodeId,
               alias = nodeParams.alias,
               port = config.getInt("server.port"),
               chainHash = nodeParams.chainHash,

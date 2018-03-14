@@ -27,7 +27,7 @@ class Authenticator(nodeParams: NodeParams) extends Actor with ActorLogging {
     case pending@PendingAuth(connection, remoteNodeId_opt, address, _) =>
       log.debug(s"authenticating connection to ${address.getHostString}:${address.getPort} (pending=${authenticating.size} handlers=${context.children.size})")
       val transport = context.actorOf(TransportHandler.props(
-        KeyPair(nodeParams.privateKey.publicKey.toBin, nodeParams.privateKey.toBin),
+        KeyPair(nodeParams.nodeId.toBin, nodeParams.privateKey.toBin),
         remoteNodeId_opt.map(_.toBin),
         connection = connection,
         codec = LightningMessageCodecs.lightningMessageCodec))
