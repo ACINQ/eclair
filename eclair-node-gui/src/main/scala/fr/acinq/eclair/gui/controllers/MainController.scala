@@ -321,7 +321,7 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
 
   def initInfoFields(setup: Setup) = {
     // init status bar
-    labelNodeId.setText(s"${setup.nodeParams.privateKey.publicKey}")
+    labelNodeId.setText(s"${setup.nodeParams.nodeId}")
     labelAlias.setText(s"${setup.nodeParams.alias}")
     rectRGB.setFill(Color.web(setup.nodeParams.color.toString))
     labelApi.setText(s"${setup.config.getInt("api.port")}")
@@ -336,10 +336,10 @@ class MainController(val handlers: Handlers, val hostServices: HostServices) ext
     bitcoinChain.getStyleClass.add(setup.chain)
 
     val nodeURI_opt = setup.nodeParams.publicAddresses.headOption.map(address => {
-      s"${setup.nodeParams.privateKey.publicKey}@${HostAndPort.fromParts(address.getHostString, address.getPort)}"
+      s"${setup.nodeParams.nodeId}@${HostAndPort.fromParts(address.getHostString, address.getPort)}"
     })
 
-    contextMenu = ContextMenuUtils.buildCopyContext(List(CopyAction("Copy Pubkey", setup.nodeParams.privateKey.publicKey.toString())))
+    contextMenu = ContextMenuUtils.buildCopyContext(List(CopyAction("Copy Pubkey", setup.nodeParams.nodeId.toString())))
     nodeURI_opt.map(nodeURI => {
       val nodeInfoAction = new MenuItem("Node Info")
       nodeInfoAction.setOnAction(new EventHandler[ActionEvent] {

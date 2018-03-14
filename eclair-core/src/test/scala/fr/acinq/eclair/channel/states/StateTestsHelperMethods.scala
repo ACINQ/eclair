@@ -45,8 +45,8 @@ trait StateTestsHelperMethods extends TestKitBase {
 //    probe.expectMsg(fakeUpdate)
     val router = TestProbe()
     val wallet = new TestWallet
-    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.id, alice2blockchain.ref, router.ref, relayer.ref))
-    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.id, bob2blockchain.ref, router.ref, relayer.ref))
+    val alice: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsA, wallet, Bob.nodeParams.nodeId, alice2blockchain.ref, router.ref, relayer.ref))
+    val bob: TestFSMRef[State, Data, Channel] = TestFSMRef(new Channel(nodeParamsB, wallet, Alice.nodeParams.nodeId, bob2blockchain.ref, router.ref, relayer.ref))
     Setup(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, router, relayer)
   }
 
@@ -99,7 +99,7 @@ trait StateTestsHelperMethods extends TestKitBase {
     Random.nextBytes(R)
     val H: BinaryData = Crypto.sha256(R)
     val sender = TestProbe()
-    val receiverPubkey = r.underlyingActor.nodeParams.privateKey.publicKey
+    val receiverPubkey = r.underlyingActor.nodeParams.nodeId
     val expiry = 400144
     val cmd = PaymentLifecycle.buildCommand(amountMsat, expiry, H, Hop(null, receiverPubkey, null) :: Nil)._1.copy(commit = false)
     sender.send(s, cmd)

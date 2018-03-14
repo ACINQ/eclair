@@ -95,7 +95,7 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
     // success with 1 mBTC
     sender.send(handler, ReceivePayment(Some(MilliSatoshi(100000000L)), "1 coffee"))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount.contains(MilliSatoshi(100000000L)) && pr.nodeId.toString == nodeParams.privateKey.publicKey.toString)
+    assert(pr.amount.contains(MilliSatoshi(100000000L)) && pr.nodeId.toString == nodeParams.nodeId.toString)
   }
 
   test("Payment request generation should fail when there are too many pending requests") {
@@ -121,6 +121,6 @@ class PaymentHandlerSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
 
     sender.send(handler, ReceivePayment(None, "This is a donation PR"))
     val pr = sender.expectMsgType[PaymentRequest]
-    assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.privateKey.publicKey.toString)
+    assert(pr.amount.isEmpty && pr.nodeId.toString == Alice.nodeParams.nodeId.toString)
   }
 }
