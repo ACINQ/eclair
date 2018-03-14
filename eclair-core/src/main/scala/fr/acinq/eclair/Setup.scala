@@ -56,7 +56,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
   DBCompatChecker.checkNetworkDBCompatibility(nodeParams)
   PortChecker.checkAvailable(config.getString("server.binding-ip"), config.getInt("server.port"))
 
-  logger.info(s"nodeid=${nodeParams.nodeId.toBin} alias=${nodeParams.alias}")
+  logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
 
   logger.info(s"initializing secure random generator")

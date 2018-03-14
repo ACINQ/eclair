@@ -12,8 +12,8 @@ import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 object LocalKeyManager {
   val channelKeyBasePath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
 
-  // WARNING: if you change this path, you will change your node id even if the seed remains the same !!!
-  // make sure that the node path and the above key path are on different branches so even if the
+  // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
+  // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
   val nodeKeyBasePath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
 }
