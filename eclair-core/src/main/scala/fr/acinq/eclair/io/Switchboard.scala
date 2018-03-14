@@ -37,7 +37,7 @@ class Switchboard(nodeParams: NodeParams, authenticator: ActorRef, watcher: Acto
 
   def main(peers: Map[PublicKey, ActorRef]): Receive = {
 
-    case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.privateKey.publicKey =>
+    case Peer.Connect(NodeURI(publicKey, _)) if publicKey == nodeParams.nodeId =>
       sender ! Status.Failure(new RuntimeException("cannot open connection with oneself"))
 
     case c@Peer.Connect(NodeURI(remoteNodeId, _)) =>

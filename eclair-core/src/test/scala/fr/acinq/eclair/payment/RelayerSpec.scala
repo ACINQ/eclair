@@ -127,7 +127,7 @@ class RelayerSpec extends TestkitBaseClass {
     paymentHandler.expectNoMsg(100 millis)
 
     // now tell the relayer that the channel is down and try again
-    relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId =  channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.privateKey.publicKey)
+    relayer ! LocalChannelDown(sender.ref, channelId = channelId_bc, shortChannelId =  channelUpdate_bc.shortChannelId, remoteNodeId = TestConstants.Bob.nodeParams.nodeId)
 
     val (cmd1, _) = buildCommand(finalAmountMsat, finalExpiry, "02" * 32, hops)
     val add_ab1 = UpdateAddHtlc(channelId = channelId_ab, id = 123456, cmd1.amountMsat, cmd1.paymentHash, cmd1.expiry, cmd1.onion)
