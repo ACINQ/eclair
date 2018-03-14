@@ -2,6 +2,7 @@ package fr.acinq.eclair.db
 
 import fr.acinq.bitcoin.{BinaryData, Satoshi}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 
 trait NetworkDb {
@@ -22,7 +23,7 @@ trait NetworkDb {
     * @param shortChannelId
     * @return
     */
-  def removeChannel(shortChannelId: Long)
+  def removeChannel(shortChannelId: ShortChannelId)
 
   def listChannels(): Map[ChannelAnnouncement, (BinaryData, Satoshi)]
 

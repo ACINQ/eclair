@@ -4,6 +4,7 @@ import java.sql.Connection
 
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Crypto, Satoshi}
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.db.NetworkDb
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire.LightningMessageCodecs.nodeAnnouncementCodec
@@ -55,18 +56,18 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   override def addChannel(c: ChannelAnnouncement, txid: BinaryData, capacity: Satoshi): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channels VALUES (?, ?, ?)")) { statement =>
-      statement.setLong(1, c.shortChannelId)
+      statement.setLong(1, c.shortChannelId.toLong)
       statement.setBytes(2, c.nodeId1.value.toBin(false).toArray) // we store uncompressed public keys
       statement.setBytes(3, c.nodeId2.value.toBin(false).toArray)
       statement.executeUpdate()
     }
   }
 
-  override def removeChannel(shortChannelId: Long): Unit = {
+  override def removeChannel(shortChannelId: ShortChannelId): Unit = {
     using(sqlite.createStatement) { statement =>
       statement.execute("BEGIN TRANSACTION")
-      statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id=$shortChannelId")
-      statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=$shortChannelId")
+      statement.executeUpdate(s"DELETE FROM channel_updates WHERE short_channel_id=${shortChannelId.toLong}")
+      statement.executeUpdate(s"DELETE FROM channels WHERE short_channel_id=${shortChannelId.toLong}")
       statement.execute("COMMIT TRANSACTION")
     }
   }
@@ -85,7 +86,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
           bitcoinSignature2 = null,
           features = null,
           chainHash = null,
-          shortChannelId = rs.getLong("short_channel_id"),
+          shortChannelId = ShortChannelId(rs.getLong("short_channel_id")),
           nodeId1 = PublicKey(PublicKey(rs.getBytes("node_id_1")).value, compressed = true), // we read as uncompressed, and convert to compressed
           nodeId2 = PublicKey(PublicKey(rs.getBytes("node_id_2")).value, compressed = true),
           bitcoinKey1 = null,
@@ -97,7 +98,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   override def addChannelUpdate(u: ChannelUpdate): Unit = {
     using(sqlite.prepareStatement("INSERT OR IGNORE INTO channel_updates VALUES (?, ?, ?, ?, ?, ?, ?, ?)")) { statement =>
-      statement.setLong(1, u.shortChannelId)
+      statement.setLong(1, u.shortChannelId.toLong)
       statement.setBoolean(2, Announcements.isNode1(u.flags))
       statement.setLong(3, u.timestamp)
       statement.setBytes(4, u.flags)
@@ -117,7 +118,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
       statement.setLong(4, u.htlcMinimumMsat)
       statement.setLong(5, u.feeBaseMsat)
       statement.setLong(6, u.feeProportionalMillionths)
-      statement.setLong(7, u.shortChannelId)
+      statement.setLong(7, u.shortChannelId.toLong)
       statement.setBoolean(8, Announcements.isNode1(u.flags))
       statement.executeUpdate()
     }
@@ -131,7 +132,7 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
         q = q :+ ChannelUpdate(
           signature = null,
           chainHash = null,
-          shortChannelId = rs.getLong("short_channel_id"),
+          shortChannelId = ShortChannelId(rs.getLong("short_channel_id")),
           timestamp = rs.getLong("timestamp"),
           flags = rs.getBytes("flags"),
           cltvExpiryDelta = rs.getInt("cltv_expiry_delta"),

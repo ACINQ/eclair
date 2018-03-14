@@ -75,7 +75,7 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     logger.info(s"stopping bitcoind")
     val sender = TestProbe()
     sender.send(bitcoincli, BitcoinReq("stop"))
-    sender.expectMsgType[JValue]
+    sender.expectMsgType[JValue](20 seconds)
     bitcoind.exitValue()
     nodes.foreach {
       case (name, setup) =>

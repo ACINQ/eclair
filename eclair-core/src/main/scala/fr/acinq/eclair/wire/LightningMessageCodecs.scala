@@ -7,7 +7,7 @@ import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, Crypto}
 import fr.acinq.eclair.crypto.{Generators, Sphinx}
 import fr.acinq.eclair.wire.FixedSizeStrictCodec.bytesStrict
-import fr.acinq.eclair.{UInt64, wire}
+import fr.acinq.eclair.{ShortChannelId, UInt64, wire}
 import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
@@ -22,7 +22,7 @@ object LightningMessageCodecs {
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
   val uint64: Codec[Long] = int64.narrow(l => if (l >= 0) Attempt.Successful(l) else Attempt.failure(Err(s"overflow for value $l")), l => l)
 
-  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.toArray), a => ByteVector(a.underlying.toByteArray).takeRight(8).padLeft(8))
+  val uint64ex: Codec[UInt64] = bytes(8).xmap(b => UInt64(b.toArray), a => ByteVector(a.toByteArray).padLeft(8))
 
   def binarydata(size: Int): Codec[BinaryData] = limitedSizeBytes(size, bytesStrict(size).xmap(d => BinaryData(d.toArray), d => ByteVector(d.data)))
 
@@ -44,6 +44,8 @@ object LightningMessageCodecs {
   // in the list but rather the  number of bytes of the encoded list. The rationale is once we've read this
   // number of bytes we can just skip to the next field
   def listofsocketaddresses: Codec[List[InetSocketAddress]] = variableSizeBytes(uint16, list(socketaddress))
+
+  def shortchannelid: Codec[ShortChannelId] = int64.xmap(l => ShortChannelId(l), s => s.toLong)
 
   def signature: Codec[BinaryData] = Codec[BinaryData](
     (der: BinaryData) => bytes(64).encode(ByteVector(der2wire(der).toArray)),
@@ -220,14 +222,14 @@ object LightningMessageCodecs {
 
   val announcementSignaturesCodec: Codec[AnnouncementSignatures] = (
     ("channelId" | binarydata(32)) ::
-      ("shortChannelId" | int64) ::
+      ("shortChannelId" | shortchannelid) ::
       ("nodeSignature" | signature) ::
       ("bitcoinSignature" | signature)).as[AnnouncementSignatures]
 
   val channelAnnouncementWitnessCodec = (
     ("features" | varsizebinarydata) ::
       ("chainHash" | binarydata(32)) ::
-      ("shortChannelId" | int64) ::
+      ("shortChannelId" | shortchannelid) ::
       ("nodeId1" | publicKey) ::
       ("nodeId2" | publicKey) ::
       ("bitcoinKey1" | publicKey) ::
@@ -254,7 +256,7 @@ object LightningMessageCodecs {
 
   val channelUpdateWitnessCodec = (
     ("chainHash" | binarydata(32)) ::
-      ("shortChannelId" | int64) ::
+      ("shortChannelId" | shortchannelid) ::
       ("timestamp" | uint32) ::
       ("flags" | binarydata(2)) ::
       ("cltvExpiryDelta" | uint16) ::
@@ -266,10 +268,15 @@ object LightningMessageCodecs {
     ("signature" | signature) ::
       channelUpdateWitnessCodec).as[ChannelUpdate]
 
-  val queryShortChannelIdCodec: Codec[QueryShortChannelId] = (
+  val queryShortChannelIdsCodec: Codec[QueryShortChannelIds] = (
     ("chainHash" | binarydata(32)) ::
       ("data" | varsizebinarydata)
-    ).as[QueryShortChannelId]
+    ).as[QueryShortChannelIds]
+
+  val replyShortChanelIdsEndCodec: Codec[ReplyShortChannelIdsEnd] = (
+    ("chainHash" | binarydata(32)) ::
+      ("complete" | byte)
+    ).as[ReplyShortChannelIdsEnd]
 
   val queryChannelRangeCodec: Codec[QueryChannelRange] = (
     ("chainHash" | binarydata(32)) ::
@@ -281,8 +288,15 @@ object LightningMessageCodecs {
     ("chainHash" | binarydata(32)) ::
       ("firstBlockNum" | int32) ::
       ("numberOfBlocks" | int32) ::
+      ("complete" | byte) ::
       ("data" | varsizebinarydata)
     ).as[ReplyChannelRange]
+
+  val gossipTimeRangeCodec: Codec[GossipTimeRange] = (
+    ("chainHash" | binarydata(32)) ::
+      ("firstTimestamp" | uint32) ::
+      ("timestampRange" | uint32)
+  ).as[GossipTimeRange]
 
   val lightningMessageCodec = discriminated[LightningMessage].by(uint16)
     .typecase(16, initCodec)
@@ -308,13 +322,15 @@ object LightningMessageCodecs {
     .typecase(257, nodeAnnouncementCodec)
     .typecase(258, channelUpdateCodec)
     .typecase(259, announcementSignaturesCodec)
-    .typecase(260, queryShortChannelIdCodec)
-    .typecase(261, queryChannelRangeCodec)
-    .typecase(262, replyChannelRangeCodec)
+    .typecase(261, queryShortChannelIdsCodec)
+    .typecase(262, replyShortChanelIdsEndCodec)
+    .typecase(263, queryChannelRangeCodec)
+    .typecase(264, replyChannelRangeCodec)
+    .typecase(265, gossipTimeRangeCodec)
 
   val perHopPayloadCodec: Codec[PerHopPayload] = (
     ("realm" | constant(ByteVector.fromByte(0))) ::
-      ("channel_id" | uint64) ::
+      ("short_channel_id" | shortchannelid) ::
       ("amt_to_forward" | uint64) ::
       ("outgoing_cltv_value" | uint32) ::
       ("unused_with_v0_version_on_header" | ignore(8 * 12))).as[PerHopPayload]

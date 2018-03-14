@@ -3,6 +3,7 @@ package fr.acinq.eclair.crypto
 import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.ExtendedPublicKey
+import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 
 trait KeyManager {
@@ -55,5 +56,5 @@ trait KeyManager {
     */
   def sign(tx: TransactionWithInputInfo, publicKey: ExtendedPublicKey, remoteSecret: Scalar): BinaryData
 
-  def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: Long, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData)
+  def signChannelAnnouncement(channelKeyPath: DeterministicWallet.KeyPath, chainHash: BinaryData, shortChannelId: ShortChannelId, remoteNodeId: PublicKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData)
 }

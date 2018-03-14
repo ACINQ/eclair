@@ -1,18 +1,14 @@
 package fr.acinq.eclair.router
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.net.InetSocketAddress
-import java.nio.ByteOrder
-import java.util.zip.{GZIPInputStream, GZIPOutputStream}
 
 import fr.acinq.bitcoin.Crypto.{PrivateKey, PublicKey, sha256, verifySignature}
-import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering, Protocol}
-import fr.acinq.eclair.serializationResult
+import fr.acinq.bitcoin.{BinaryData, Crypto, LexicographicalOrdering}
+import fr.acinq.eclair.{ShortChannelId, serializationResult}
 import fr.acinq.eclair.wire._
 import scodec.bits.BitVector
 import shapeless.HNil
 
-import scala.annotation.tailrec
 import scala.compat.Platform
 
 
@@ -21,16 +17,16 @@ import scala.compat.Platform
   */
 object Announcements {
 
-  def channelAnnouncementWitnessEncode(chainHash: BinaryData, shortChannelId: Long, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData): BinaryData =
+  def channelAnnouncementWitnessEncode(chainHash: BinaryData, shortChannelId: ShortChannelId, nodeId1: PublicKey, nodeId2: PublicKey, bitcoinKey1: PublicKey, bitcoinKey2: PublicKey, features: BinaryData): BinaryData =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelAnnouncementWitnessCodec.encode(features :: chainHash :: shortChannelId :: nodeId1 :: nodeId2 :: bitcoinKey1 :: bitcoinKey2 :: HNil))))
 
   def nodeAnnouncementWitnessEncode(timestamp: Long, nodeId: PublicKey, rgbColor: Color, alias: String, features: BinaryData, addresses: List[InetSocketAddress]): BinaryData =
     sha256(sha256(serializationResult(LightningMessageCodecs.nodeAnnouncementWitnessCodec.encode(features :: timestamp :: nodeId :: (rgbColor) :: alias :: addresses :: HNil))))
 
-  def channelUpdateWitnessEncode(chainHash: BinaryData, shortChannelId: Long, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long): BinaryData =
+  def channelUpdateWitnessEncode(chainHash: BinaryData, shortChannelId: ShortChannelId, timestamp: Long, flags: BinaryData, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long): BinaryData =
     sha256(sha256(serializationResult(LightningMessageCodecs.channelUpdateWitnessCodec.encode(chainHash :: shortChannelId :: timestamp :: flags :: cltvExpiryDelta :: htlcMinimumMsat :: feeBaseMsat :: feeProportionalMillionths :: HNil))))
 
-  def signChannelAnnouncement(chainHash: BinaryData, shortChannelId: Long, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
+  def signChannelAnnouncement(chainHash: BinaryData, shortChannelId: ShortChannelId, localNodeSecret: PrivateKey, remoteNodeId: PublicKey, localFundingPrivKey: PrivateKey, remoteFundingKey: PublicKey, features: BinaryData): (BinaryData, BinaryData) = {
     val witness = if (isNode1(localNodeSecret.publicKey.toBin, remoteNodeId.toBin)) {
       channelAnnouncementWitnessEncode(chainHash, shortChannelId, localNodeSecret.publicKey, remoteNodeId, localFundingPrivKey.publicKey, remoteFundingKey, features)
     } else {
@@ -41,7 +37,7 @@ object Announcements {
     (nodeSig, bitcoinSig)
   }
 
-  def makeChannelAnnouncement(chainHash: BinaryData, shortChannelId: Long, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: BinaryData, remoteNodeSignature: BinaryData, localBitcoinSignature: BinaryData, remoteBitcoinSignature: BinaryData): ChannelAnnouncement = {
+  def makeChannelAnnouncement(chainHash: BinaryData, shortChannelId: ShortChannelId, localNodeId: PublicKey, remoteNodeId: PublicKey, localFundingKey: PublicKey, remoteFundingKey: PublicKey, localNodeSignature: BinaryData, remoteNodeSignature: BinaryData, localBitcoinSignature: BinaryData, remoteBitcoinSignature: BinaryData): ChannelAnnouncement = {
     val (nodeId1, nodeId2, bitcoinKey1, bitcoinKey2, nodeSignature1, nodeSignature2, bitcoinSignature1, bitcoinSignature2) =
       if (isNode1(localNodeId.toBin, remoteNodeId.toBin)) {
         (localNodeId, remoteNodeId, localFundingKey, remoteFundingKey, localNodeSignature, remoteNodeSignature, localBitcoinSignature, remoteBitcoinSignature)
@@ -107,7 +103,7 @@ object Announcements {
 
   def makeFlags(isNode1: Boolean, enable: Boolean): BinaryData = BitVector.bits(!enable :: !isNode1 :: Nil).padLeft(16).toByteArray
 
-  def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: Long, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
+  def makeChannelUpdate(chainHash: BinaryData, nodeSecret: PrivateKey, remoteNodeId: PublicKey, shortChannelId: ShortChannelId, cltvExpiryDelta: Int, htlcMinimumMsat: Long, feeBaseMsat: Long, feeProportionalMillionths: Long, enable: Boolean = true, timestamp: Long = Platform.currentTime / 1000): ChannelUpdate = {
     val flags = makeFlags(isNode1 = isNode1(nodeSecret.publicKey.toBin, remoteNodeId.toBin), enable = enable)
     require(flags.size == 2, "flags must be a 2-bytes field")
     val witness = channelUpdateWitnessEncode(chainHash, shortChannelId, timestamp, flags, cltvExpiryDelta, htlcMinimumMsat, feeBaseMsat, feeProportionalMillionths)
@@ -141,59 +137,5 @@ object Announcements {
   def checkSig(ann: ChannelUpdate, nodeId: PublicKey): Boolean = {
     val witness = channelUpdateWitnessEncode(ann.chainHash, ann.shortChannelId, ann.timestamp, ann.flags, ann.cltvExpiryDelta, ann.htlcMinimumMsat, ann.feeBaseMsat, ann.feeProportionalMillionths)
     verifySignature(witness, ann.signature, nodeId)
-  }
-
-  /**
-    * Compressed a sequence of *sorted* short channel id.
-    *
-    * @param shortChannelIds must be sorted beforehand
-    * @return
-    */
-  def zip(shortChannelIds: Iterable[Long]) : BinaryData = {
-    val bos = new ByteArrayOutputStream()
-    val output = new GZIPOutputStream(bos)
-    shortChannelIds.map(id => Protocol.writeUInt64(id, output, ByteOrder.BIG_ENDIAN))
-    output.finish()
-    bos.toByteArray
-  }
-
-  /**
-    *  Uncompresses a zipped sequence of sorted short channel ids.
-    *
-    *  Does *not* preserve the order
-    *
-    * @param input
-    * @return
-    */
-  private def unzip(input: GZIPInputStream) : Set[Long] = {
-    val buffer = new Array[Byte](8)
-
-    // read 8 bytes from input
-    // zipped input stream often returns less bytes than what you want to read
-    @tailrec
-    def read8(offset: Int = 0): Int = input.read(buffer, offset, 8 - offset) match {
-      case len if len <= 0 => len
-      case 8 => 8
-      case len if offset + len == 8 => 8
-      case len => read8(offset + len)
-    }
-
-    // read until there's nothing left
-    @tailrec
-    def loop(acc: Set[Long] = Set()): Set[Long] = {
-      if (read8() <= 0) acc else loop(acc + Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN))
-    }
-
-    loop()
-  }
-
-  def unzip(input: BinaryData) : Set[Long] = {
-    val stream = new GZIPInputStream(new ByteArrayInputStream(input))
-    try {
-      unzip(stream)
-    }
-    finally {
-      stream.close()
-    }
   }
 }

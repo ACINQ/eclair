@@ -1,6 +1,7 @@
 package fr.acinq.eclair.wire
 
 import fr.acinq.bitcoin.{BinaryData, Block}
+import fr.acinq.eclair.ShortChannelId
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
@@ -15,7 +16,7 @@ class FailureMessageCodecsSpec extends FunSuite {
   val channelUpdate = ChannelUpdate(
     signature = BinaryData("3045022100c451cd65c88f55b1767941a247e849e12f5f4d4a93a07316659e22f5267d2088022009042a595c6bc8942cd9d729317b82b306edc259fb6b3a3cecb3dd1bd446e90601"),
     chainHash = Block.RegtestGenesisBlock.hash,
-    shortChannelId = 12345,
+    shortChannelId = ShortChannelId(12345),
     timestamp = 1234567L,
     cltvExpiryDelta = 100,
     flags = BinaryData("0001"),

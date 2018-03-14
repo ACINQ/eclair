@@ -10,13 +10,13 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.io.Peer
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
+import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire._
 import org.jgrapht.WeightedGraph
 import org.jgrapht.alg.DijkstraShortestPath
 import org.jgrapht.graph.{DirectedWeightedPseudograph, _}
 
 import scala.collection.JavaConversions._
-import scala.collection.immutable.{SortedMap, TreeMap}
 import scala.compat.Platform
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
@@ -24,10 +24,10 @@ import scala.util.Try
 
 // @formatter:off
 
-case class ChannelDesc(id: Long, a: PublicKey, b: PublicKey)
+case class ChannelDesc(shortChannelId: ShortChannelId, a: PublicKey, b: PublicKey)
 case class Hop(nodeId: PublicKey, nextNodeId: PublicKey, lastUpdate: ChannelUpdate)
-case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[Long] = Set.empty)
-case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]) { require(hops.size > 0, "route cannot be empty") }
+case class RouteRequest(source: PublicKey, target: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, ignoreNodes: Set[PublicKey] = Set.empty, ignoreChannels: Set[ShortChannelId] = Set.empty)
+case class RouteResponse(hops: Seq[Hop], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ShortChannelId]) { require(hops.size > 0, "route cannot be empty") }
 case class ExcludeChannel(desc: ChannelDesc) // this is used when we get a TemporaryChannelFailure, to give time for the channel to recover (note that exclusions are directed)
 case class LiftChannelExclusion(desc: ChannelDesc)
 case class SendChannelQuery(to: ActorRef)
@@ -39,11 +39,11 @@ case class Rebroadcast(channels: Map[ChannelAnnouncement, Set[ActorRef]], update
 case class DescEdge(desc: ChannelDesc, u: ChannelUpdate) extends DefaultWeightedEdge
 
 case class Data(nodes: Map[PublicKey, NodeAnnouncement],
-                  channels: SortedMap[Long, ChannelAnnouncement], // critical for performance that keys are sorted
+                  channels: Map[ShortChannelId, ChannelAnnouncement],
                   updates: Map[ChannelDesc, ChannelUpdate],
                   stash: Stash,
                   awaiting: Map[ChannelAnnouncement, Seq[ActorRef]], // note: this is a seq because we want to preserve order: first actor is the one who we need to send a tcp-ack when validation is done
-                  privateChannels: Map[Long, PublicKey], // short_channel_id -> node_id
+                  privateChannels: Map[ShortChannelId, PublicKey], // short_channel_id -> node_id
                   privateUpdates: Map[ChannelDesc, ChannelUpdate],
                   excludedChannels: Set[ChannelDesc], // those channels are temporarily excluded from route calculation, because their node returned a TemporaryChannelFailure
                   graph: DirectedWeightedPseudograph[PublicKey, DescEdge]
@@ -85,7 +85,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
     // this will be used to calculate routes
     val graph = new DirectedWeightedPseudograph[PublicKey, DescEdge](classOf[DescEdge])
 
-    val initChannels = channels.keys.foldLeft(TreeMap.empty[Long, ChannelAnnouncement]) { case (m, c) => m + (c.shortChannelId -> c) }
+    val initChannels = channels.keys.map(c => (c.shortChannelId -> c)).toMap
     val initChannelUpdates = updates.map { u =>
       val desc = getDesc(u, initChannels(u.shortChannelId))
       addEdge(graph, desc, u)
@@ -105,7 +105,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         case None =>
           channelAnnouncement_opt match {
             case Some(c) if d.awaiting.contains(c) =>
-              // channel is currently beeing verified, we can process the channel_update right away (it will be stashed)
+              // channel is currently being verified, we can process the channel_update right away (it will be stashed)
               stay using handle(u, self, d)
             case Some(c) =>
               // channel wasn't announced but here is the announcement, we will process it *before* the channel_update
@@ -118,17 +118,17 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
             case None =>
               // channel isn't announced and we never heard of it (maybe it is a private channel or maybe it is a public channel that doesn't yet have 6 confirmations)
               // let's create a corresponding private channel and process the channel_update
-              log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId.toHexString)
+              log.info("adding unannounced local channel to remote={} shortChannelId={}", remoteNodeId, shortChannelId)
               stay using handle(u, self, d.copy(privateChannels = d.privateChannels + (shortChannelId -> remoteNodeId)))
           }
       }
 
     case Event(LocalChannelDown(_, channelId, shortChannelId, _), d: Data) =>
-      log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId.toHexString)
-      stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.id != shortChannelId))
+      log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+      stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.shortChannelId != shortChannelId))
 
     case Event(c: ChannelAnnouncement, d) =>
-      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId.toHexString, c.nodeId1, c.nodeId2, sender)
+      log.debug("received channel announcement for shortChannelId={} nodeId1={} nodeId2={} from {}", c.shortChannelId, c.nodeId1, c.nodeId2, sender)
       if (d.channels.contains(c.shortChannelId)) {
         sender ! TransportHandler.ReadAck(c)
         log.debug("ignoring {} (duplicate)", c)
@@ -160,18 +160,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(u: ChannelUpdate, d: Data) =>
       sender ! TransportHandler.ReadAck(u)
-      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId.toHexString, sender)
+      log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, sender)
       stay using handle(u, sender, d)
 
     case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d)
       if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
-      log.info("funding tx of channelId={} has been spent", shortChannelId.toHexString)
+      log.info("funding tx of channelId={} has been spent", shortChannelId)
       // we need to remove nodes that aren't tied to any channels anymore
       val channels1 = d.channels - lostChannel.shortChannelId
       val lostNodes = Seq(lostChannel.nodeId1, lostChannel.nodeId2).filterNot(nodeId => hasChannels(nodeId, channels1.values))
       // let's clean the db and send the events
-      log.info("pruning shortChannelId={} (spent)", shortChannelId.toHexString)
+      log.info("pruning shortChannelId={} (spent)", shortChannelId)
       db.removeChannel(shortChannelId) // NB: this also removes channel updates
       // we also need to remove updates from the graph
       removeEdge(d.graph, ChannelDesc(lostChannel.shortChannelId, lostChannel.nodeId1, lostChannel.nodeId2))
@@ -183,7 +183,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           db.removeNode(nodeId)
           context.system.eventStream.publish(NodeLost(nodeId))
       }
-      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.id != shortChannelId))
+      stay using d.copy(nodes = d.nodes -- lostNodes, channels = d.channels - shortChannelId, updates = d.updates.filterKeys(_.shortChannelId != shortChannelId))
 
     case Event(TickBroadcast, d) =>
       // On Android we don't rebroadcast announcements
@@ -202,7 +202,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
       // let's clean the db and send the events
       staleChannels.foreach { shortChannelId =>
-        log.info("pruning shortChannelId={} (stale)", shortChannelId.toHexString)
+        log.info("pruning shortChannelId={} (stale)", shortChannelId)
         db.removeChannel(shortChannelId) // NB: this also removes channel updates
         context.system.eventStream.publish(ChannelLost(shortChannelId))
       }
@@ -221,12 +221,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
 
     case Event(ExcludeChannel(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
       val banDuration = nodeParams.channelExcludeDuration
-      log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId.toHexString, nodeId, banDuration)
+      log.info("excluding shortChannelId={} from nodeId={} for duration={}", shortChannelId, nodeId, banDuration)
       context.system.scheduler.scheduleOnce(banDuration, self, LiftChannelExclusion(desc))
       stay using d.copy(excludedChannels = d.excludedChannels + desc)
 
     case Event(LiftChannelExclusion(desc@ChannelDesc(shortChannelId, nodeId, _)), d) =>
-      log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId.toHexString, nodeId)
+      log.info("reinstating shortChannelId={} from nodeId={}", shortChannelId, nodeId)
       stay using d.copy(excludedChannels = d.excludedChannels - desc)
 
     case Event('nodes, d) =>
@@ -255,7 +255,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       val assistedUpdates = assistedRoutes.flatMap(toFakeUpdates(_, end)).toMap
       // we also filter out updates corresponding to channels/nodes that are blacklisted for this particular request
       val ignoredUpdates = getIgnoredUpdates(d.channels, d.updates ++ assistedUpdates, ignoreNodes, ignoreChannels) ++ d.excludedChannels
-      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.map(_.id.toHexString).mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.map(_.toHexString).mkString(","), d.excludedChannels.map(_.id.toHexString).mkString(","))
+      log.info(s"finding a route $start->$end with assistedChannels={} ignoreNodes={} ignoreChannels={} excludedChannels={}", assistedUpdates.keys.mkString(","), ignoreNodes.map(_.toBin).mkString(","), ignoreChannels.mkString(","), d.excludedChannels.mkString(","))
       findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
@@ -276,22 +276,31 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // On Android we ignore queries
       stay
 
-    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, data), d) =>
+    case Event(reply@ReplyChannelRange(chainHash, firstBlockNum, numberOfBlocks, _, data), d) =>
       sender ! TransportHandler.ReadAck(reply)
       if (chainHash != nodeParams.chainHash) {
         log.warning("received reply_channel_range message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
       } else {
-        val theirShortChannelIds = Announcements.unzip(data)
+        val (_, theirShortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
         val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
-        sender ! QueryShortChannelId(chainHash, Announcements.zip(missing))
+        sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing))
       }
       stay
 
-    case Event(query@QueryShortChannelId(chainHash, data), d) =>
+    case Event(query@QueryShortChannelIds(chainHash, data), d) =>
       sender ! TransportHandler.ReadAck(query)
       // On Android we ignore queries
+      stay
+
+    case Event(end@ReplyShortChannelIdsEnd(chainHash, complete), d) =>
+      sender ! TransportHandler.ReadAck(end)
+      if (chainHash != nodeParams.chainHash) {
+        log.warning("received reply_short_channel_ids_end message for chain {}, we're on {}", chainHash, nodeParams.chainHash)
+      } else {
+        // TODO: how do we use this message ?
+      }
       stay
   }
 
@@ -342,11 +351,11 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("ignoring {} (duplicate)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
-        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
+        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         d
       } else if (d.updates.contains(desc)) {
-        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.updateChannelUpdate(u)
         // we also need to update the graph
@@ -354,7 +363,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         addEdge(d.graph, desc, u)
         d.copy(updates = d.updates + (desc -> u))
       } else {
-        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         db.addChannelUpdate(u)
         // we also need to update the graph
@@ -383,18 +392,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         log.debug("ignoring {} (already know same or newer)", u)
         d
       } else if (!Announcements.checkSig(u, desc.a)) {
-        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId.toHexString, u)
+        log.warning("bad signature for announcement shortChannelId={} {}", u.shortChannelId, u)
         origin ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         d
       } else if (d.privateUpdates.contains(desc)) {
-        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
         removeEdge(d.graph, desc)
         addEdge(d.graph, desc, u)
         d.copy(privateUpdates = d.privateUpdates + (desc -> u))
       } else {
-        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId.toHexString, publicChannel, u.flags, u)
+        log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
         addEdge(d.graph, desc, u)
@@ -456,11 +465,11 @@ object Router {
     // BOLT 7: "nodes MAY prune channels should the timestamp of the latest channel_update be older than 2 weeks (1209600 seconds)"
     // but we don't want to prune brand new channels for which we didn't yet receive a channel update, so we keep them as long as they are less than 2 weeks (2016 blocks) old
     val staleThresholdBlocks = Globals.blockCount.get() - 2016
-    val (blockHeight, _, _) = fromShortId(channel.shortChannelId)
+    val TxCoordinates(blockHeight, _, _) = ShortChannelId.coordinates(channel.shortChannelId)
     blockHeight < staleThresholdBlocks && update1_opt.map(isStale).getOrElse(true) && update2_opt.map(isStale).getOrElse(true)
   }
 
-  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[Long] = {
+  def getStaleChannels(channels: Iterable[ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Iterable[ShortChannelId] = {
     val staleChannels = channels.filter { c =>
       val update1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
       val update2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
@@ -472,8 +481,8 @@ object Router {
   /**
     * Filters channels that we want to send to nodes asking for a channel range
     */
-  def keep(firstBlockNum: Int, numberOfBlocks: Int, id: Long, channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
-    val (height, _, _) = fromShortId(id)
+  def keep(firstBlockNum: Int, numberOfBlocks: Int, id: ShortChannelId, channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): Boolean = {
+    val TxCoordinates(height, _, _) = ShortChannelId.coordinates(id)
     val c = channels(id)
     val u1 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))
     val u2 = updates.get(ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1))
@@ -488,19 +497,19 @@ object Router {
     * @param updates
     * @return
     */
-  def getValidAnnouncements(channels: Map[Long, ChannelAnnouncement], nodes: Map[PublicKey, NodeAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): (Iterable[ChannelAnnouncement], Iterable[NodeAnnouncement], Iterable[ChannelUpdate]) = {
+  def getValidAnnouncements(channels: Map[ShortChannelId, ChannelAnnouncement], nodes: Map[PublicKey, NodeAnnouncement], updates: Map[ChannelDesc, ChannelUpdate]): (Iterable[ChannelAnnouncement], Iterable[NodeAnnouncement], Iterable[ChannelUpdate]) = {
     val staleChannels = getStaleChannels(channels.values, updates)
     val validChannels = (channels -- staleChannels).values
     val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
     val validUpdates = (updates -- staleUpdates).values
-    val validNodes = validChannels.flatMap(c => nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2)).toSet
+    val validNodes = validChannels.foldLeft(Set.empty[NodeAnnouncement]) { case (nodesAcc, c) => nodesAcc ++  nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2) } // using a set deduplicates nodes
     (validChannels, validNodes, validUpdates)
   }
 
   /**
     * This method is used after a payment failed, and we want to exclude some nodes/channels that we know are failing
     */
-  def getIgnoredUpdates(channels: Map[Long, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[Long]): Iterable[ChannelDesc] = {
+  def getIgnoredUpdates(channels: Map[ShortChannelId, ChannelAnnouncement], updates: Map[ChannelDesc, ChannelUpdate], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ShortChannelId]): Iterable[ChannelDesc] = {
     val descNode = if (ignoreNodes.isEmpty) {
       Iterable.empty[ChannelDesc]
     } else {
@@ -586,7 +595,7 @@ object Router {
     }
   }
 
-  def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[Long, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = ???
+  def graph2dot(nodes: Map[PublicKey, NodeAnnouncement], channels: Map[ShortChannelId, ChannelAnnouncement])(implicit ec: ExecutionContext): Future[String] = ???
 
 
 }
