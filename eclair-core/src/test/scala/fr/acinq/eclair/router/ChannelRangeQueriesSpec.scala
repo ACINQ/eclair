@@ -18,13 +18,13 @@ class ChannelRangeQueriesSpec extends FunSuite {
   test("create `reply_channel_range` messages (uncompressed format)") {
     val reply = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.UNCOMPRESSED_FORMAT, shortChannelIds))
     val (_, decoded) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
-    assert(decoded == shortChannelIds)
+    assert(decoded == shortChannelIds.toSet)
   }
 
   test("create `reply_channel_range` messages (GZIP format)") {
     val reply = ReplyChannelRange(Block.RegtestGenesisBlock.blockId, 0, 2000000, 1, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, shortChannelIds))
     val (_, decoded) = ChannelRangeQueries.decodeShortChannelIds(reply.data)
-    assert(decoded == shortChannelIds)
+    assert(decoded == shortChannelIds.toSet)
   }
 }
 

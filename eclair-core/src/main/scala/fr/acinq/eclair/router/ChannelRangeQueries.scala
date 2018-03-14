@@ -14,21 +14,35 @@ object ChannelRangeQueries {
   val UNCOMPRESSED_FORMAT = 0.toByte
   val GZIP_FORMAT = 1.toByte
 
+  /**
+    * Compressed a sequence of *sorted* short channel id.
+    *
+    * @param shortChannelIds must be sorted beforehand
+    * @return
+    */
   def encodeShortChannelIds(format: Byte, shortChannelIds: Iterable[ShortChannelId]): BinaryData = {
     val bos = new ByteArrayOutputStream()
     bos.write(format)
     format match {
       case UNCOMPRESSED_FORMAT =>
-        shortChannelIds.map(id => Protocol.writeUInt64(id.toLong, bos, ByteOrder.BIG_ENDIAN))
+        shortChannelIds.foreach(id => Protocol.writeUInt64(id.toLong, bos, ByteOrder.BIG_ENDIAN))
       case GZIP_FORMAT =>
         val output = new GZIPOutputStream(bos)
-        shortChannelIds.map(id => Protocol.writeUInt64(id.toLong, output, ByteOrder.BIG_ENDIAN))
+        shortChannelIds.foreach(id => Protocol.writeUInt64(id.toLong, output, ByteOrder.BIG_ENDIAN))
         output.finish()
     }
     bos.toByteArray
   }
 
-  def decodeShortChannelIds(data: BinaryData): (Byte, Vector[ShortChannelId]) = {
+  /**
+    * Uncompresses a zipped sequence of sorted short channel ids.
+    *
+    * Does *not* preserve the order, we dontt need it and a Set is better suited to our access patterns
+    *
+    * @param data
+    * @return
+    */
+  def decodeShortChannelIds(data: BinaryData): (Byte, Set[ShortChannelId]) = {
     val format = data.head
     val bis = new ByteArrayInputStream(data.tail.toArray)
     val input = format match {
@@ -49,12 +63,12 @@ object ChannelRangeQueries {
 
     // read until there's nothing left
     @tailrec
-    def loop(acc: Vector[ShortChannelId] = Vector()): Vector[ShortChannelId] = {
-      if (read8() <= 0) acc else loop(acc :+ ShortChannelId(Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN)))
+    def loop(acc: Set[ShortChannelId]): Set[ShortChannelId] = {
+      if (read8() <= 0) acc else loop(acc + ShortChannelId(Protocol.uint64(buffer, ByteOrder.BIG_ENDIAN)))
     }
 
     try {
-      (format, loop(Vector.empty[ShortChannelId]))
+      (format, loop(Set.empty[ShortChannelId]))
     }
     finally {
       input.close()

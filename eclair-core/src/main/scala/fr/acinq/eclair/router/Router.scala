@@ -290,7 +290,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         log.info("broadcasting routing messages")
         // we don't want to rebroadcast old channels if we don't have a recent channel_update, otherwise we will keep sending zombies channels back and forth
-        // instead, we base the rebroadcast on updates, and only keep only the ones that are younger than 2 weeks
+        // instead, we base the rebroadcast on updates, and only keep the ones that are younger than 2 weeks
         val rebroadcastUpdates1 = d.rebroadcast.updates.filterKeys(u => !isStale(u))
         // for each update, we rebroadcast the corresponding channel announcement (suboptimal)
         // we have to do this because we didn't broadcast old channels for which we didn't yet receive the channel_update
@@ -414,7 +414,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else {
         val (_, theirShortChannelIds) = ChannelRangeQueries.decodeShortChannelIds(data)
         val ourShortChannelIds = d.channels.keys.filter(keep(firstBlockNum, numberOfBlocks, _, d.channels, d.updates)) // note: order is preserved
-        val missing = theirShortChannelIds.toSet -- ourShortChannelIds
+        val missing = theirShortChannelIds -- ourShortChannelIds
         log.info("we received their reply, we're missing {} channel announcements/updates", missing.size)
         sender ! QueryShortChannelIds(chainHash, ChannelRangeQueries.encodeShortChannelIds(ChannelRangeQueries.GZIP_FORMAT, missing))
       }
@@ -655,7 +655,7 @@ object Router {
     val validChannels = (channels -- staleChannels).values
     val staleUpdates = staleChannels.map(channels).flatMap(c => Seq(ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2), ChannelDesc(c.shortChannelId, c.nodeId2, c.nodeId1)))
     val validUpdates = (updates -- staleUpdates).values
-    val validNodes = validChannels.flatMap(c => nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2)).toSet
+    val validNodes = validChannels.foldLeft(Set.empty[NodeAnnouncement]) { case (nodesAcc, c) => nodesAcc ++  nodes.get(c.nodeId1) ++ nodes.get(c.nodeId2) } // using a set deduplicates nodes
     (validChannels, validNodes, validUpdates)
   }
 

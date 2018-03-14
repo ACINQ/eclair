@@ -435,10 +435,9 @@ object Peer {
     }
 
     // filter out channels that don't have a matching channel update
-    // TODO ?: this is stricter than the BOLT, which says that if if there is no
-    // matching update for a channel annnouncement we should just make up a timestamp
-    // with the current time
     val shortChannelIds = updates1.map(_.shortChannelId).toSet
+    // note that we filter out channel_announcements that don't have a corresponding channel_update, instead of making up a timestamp (e.g. based on the blockheight) like the spec suggests.
+    // we can do that because our implementation of rebroadcast ensures that we resend channel_announcement every time there is a channel_update
     val channels2 = channels1.filter(ca => shortChannelIds.contains(ca.shortChannelId))
 
     // filter out nodes against their timestamp range
