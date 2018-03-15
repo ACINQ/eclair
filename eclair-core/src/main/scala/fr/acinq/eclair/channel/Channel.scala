@@ -175,7 +175,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(OFFLINE) using data
       }
 
-    case Event(c: CMD_CLOSE, _) => goto(CLOSED) replying "ok"
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
@@ -222,7 +222,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_CREATED) using DATA_WAIT_FOR_FUNDING_CREATED(open.temporaryChannelId, localParams, remoteParams, open.fundingSatoshis, open.pushMsat, open.feeratePerKw, open.firstPerCommitmentPoint, open.channelFlags, accept) sending accept
       }
 
-    case Event(c: CMD_CLOSE, _) => goto(CLOSED) replying "ok"
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"
 
     case Event(e: Error, d: DATA_WAIT_FOR_OPEN_CHANNEL) => handleRemoteError(e, d)
 
@@ -261,7 +261,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_INTERNAL) using DATA_WAIT_FOR_FUNDING_INTERNAL(temporaryChannelId, localParams, remoteParams, fundingSatoshis, pushMsat, initialFeeratePerKw, accept.firstPerCommitmentPoint, open)
       }
 
-    case Event(c: CMD_CLOSE, _) =>
+    case Event(CMD_CLOSE(_), _) =>
       replyToUser(Right("closed"))
       goto(CLOSED) replying "ok"
 
@@ -300,7 +300,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       replyToUser(Left(Left(t)))
       goto(CLOSED) sending error
 
-    case Event(c: CMD_CLOSE, _) =>
+    case Event(CMD_CLOSE(_), _) =>
       replyToUser(Right("closed"))
       goto(CLOSED) replying "ok"
 
@@ -354,7 +354,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_CONFIRMED) using store(DATA_WAIT_FOR_FUNDING_CONFIRMED(commitments, None, Right(fundingSigned))) sending fundingSigned
       }
 
-    case Event(c: CMD_CLOSE, _) => goto(CLOSED) replying "ok"
+    case Event(CMD_CLOSE(_), _) => goto(CLOSED) replying "ok"
 
     case Event(e: Error, d: DATA_WAIT_FOR_FUNDING_CREATED) => handleRemoteError(e, d)
 
