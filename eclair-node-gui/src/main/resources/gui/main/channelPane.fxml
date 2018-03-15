@@ -29,8 +29,8 @@
             <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
                        HBox.hgrow="ALWAYS" GridPane.valignment="BOTTOM" focusTraversable="false"/>
             <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT" alignment="CENTER_RIGHT" HBox.hgrow="NEVER" spacing="5">
-                <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"/>
-                <Button fx:id="forceclose" mnemonicParsing="false" styleClass="forceclose-channel" text="Force close"/>
+                <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close" visible="false"/>
+                <Button fx:id="forceclose" mnemonicParsing="false" styleClass="forceclose-channel" text="Force close" visible="false"/>
             </HBox>
         </HBox>
 
