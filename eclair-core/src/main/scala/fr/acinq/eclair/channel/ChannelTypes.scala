@@ -63,7 +63,6 @@ case object ERR_INFORMATION_LEAK extends State
 case class INPUT_INIT_FUNDER(temporaryChannelId: BinaryData, fundingSatoshis: Long, pushMsat: Long, initialFeeratePerKw: Long, fundingTxFeeratePerKw: Long, localParams: LocalParams, remote: ActorRef, remoteInit: Init, channelFlags: Byte)
 case class INPUT_INIT_FUNDEE(temporaryChannelId: BinaryData, localParams: LocalParams, remote: ActorRef, remoteInit: Init)
 case object INPUT_CLOSE_COMPLETE_TIMEOUT // when requesting a mutual close, we wait for as much as this timeout, then unilateral close
-case object INPUT_PUBLISH_LOCALCOMMIT // used in tests
 case object INPUT_DISCONNECTED
 case class INPUT_RECONNECTED(remote: ActorRef)
 case class INPUT_RESTORED(data: HasCommitments)
@@ -98,7 +97,10 @@ final case class CMD_FAIL_HTLC(id: Long, reason: Either[BinaryData, FailureMessa
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: BinaryData, failureCode: Int, commit: Boolean = false) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
 case object CMD_SIGN extends Command
-final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
+sealed trait CloseType
+case object MUTUAL extends CloseType
+case object FORCE extends CloseType
+final case class CMD_CLOSE(scriptPubKey: Option[BinaryData], closeType: CloseType = MUTUAL) extends Command
 case object CMD_GETSTATE extends Command
 case object CMD_GETSTATEDATA extends Command
 case object CMD_GETINFO extends Command

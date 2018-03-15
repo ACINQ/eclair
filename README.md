@@ -154,6 +154,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   checkpayment | paymentRequest                                                                         | returns true if the payment has been received, false otherwise
   close        | channelId                                                                              | close a channel
   close        | channelId, scriptPubKey                                                                | close a channel and send the funds to the given scriptPubKey
+  forceclose   | channelId                                                                              | force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)"
   help         |                                                                                        | display available methods
 
 ## Docker

@@ -141,9 +141,13 @@ trait Service extends Logging {
                         case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                       }
                       case "close"        => req.params match {
-                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
-                        case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String])
+                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None, closeType = MUTUAL)).mapTo[String])
+                        case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey), closeType = MUTUAL)).mapTo[String])
                         case _ => reject(UnknownParamsRejection(req.id, "[channelId] or [channelId, scriptPubKey]"))
+                      }
+                      case "forceclose"   => req.params match {
+                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None, closeType = FORCE)).mapTo[String])
+                        case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                       }
 
                       // local network methods
@@ -273,6 +277,7 @@ trait Service extends Logging {
     "send (paymentRequest, amountMsat): send a payment to a lightning node using a BOLT11 payment request and a custom amount",
     "close (channelId): close a channel",
     "close (channelId, scriptPubKey): close a channel and send the funds to the given scriptPubKey",
+    "forceclose (channelId): force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)",
     "checkpayment (paymentHash): returns true if the payment has been received, false otherwise",
     "checkpayment (paymentRequest): returns true if the payment has been received, false otherwise",
     "getinfo: returns info about the blockchain and this node",
