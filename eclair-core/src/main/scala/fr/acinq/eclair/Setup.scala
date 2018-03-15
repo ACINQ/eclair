@@ -12,7 +12,6 @@ import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
 import fr.acinq.eclair.crypto.LocalKeyManager
-import fr.acinq.eclair.io.{Authenticator, Server, Switchboard}
 import fr.acinq.eclair.io.{Authenticator, Switchboard}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
@@ -92,11 +91,9 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
     val wallet = bitcoin match {
       case _ if wallet_opt.isDefined => wallet_opt.get
-      case Electrum(electrumClient) => seed_opt match {
-        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
-          new ElectrumEclairWallet(electrumWallet)
-        case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
-      }
+      case Electrum(electrumClient) =>
+        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
+        new ElectrumEclairWallet(electrumWallet)
       case _ => ???
     }
 
