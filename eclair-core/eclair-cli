@@ -35,7 +35,7 @@ call() {
     # set password
     if [ -z ${PASSWORD} ]; then auth="eclair-cli";
     else auth="eclair-cli:"${PASSWORD}; fi
-    eval curl "--max-time 90 --user ${auth} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
+    eval curl "--user ${auth} --silent --show-error -X POST -H \"Content-Type: application/json\" -d '{ \"method\": \"'${1}'\", \"params\": '${2}' }' ${URL}" | jq -r "$jqexp"
 }
 
 # get script options
