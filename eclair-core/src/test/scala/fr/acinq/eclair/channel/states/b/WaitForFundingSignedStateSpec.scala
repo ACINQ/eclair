@@ -40,7 +40,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     test((alice, alice2bob, bob2alice, alice2blockchain))
   }
 
-  test("recv FundingSigned with valid signature") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv FundingSigned with valid signature") { case (alice, _, bob2alice, alice2blockchain) =>
     within(30 seconds) {
       bob2alice.expectMsgType[FundingSigned]
       bob2alice.forward(alice)
@@ -50,7 +50,7 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv FundingSigned with invalid signature") { case (alice, alice2bob, bob2alice, alice2blockchain) =>
+  test("recv FundingSigned with invalid signature") { case (alice, alice2bob, _, _) =>
     within(30 seconds) {
       // sending an invalid sig
       alice ! FundingSigned("00" * 32, BinaryData("00" * 64))
@@ -59,9 +59,16 @@ class WaitForFundingSignedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, alice2bob, bob2alice, _) =>
+  test("recv CMD_CLOSE") { case (alice, _, _, _) =>
     within(30 seconds) {
       alice ! CMD_CLOSE(None)
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
+  test("recv CMD_FORCECLOSE") { case (alice, _, _, _) =>
+    within(30 seconds) {
+      alice ! CMD_FORCECLOSE
       awaitCond(alice.stateName == CLOSED)
     }
   }

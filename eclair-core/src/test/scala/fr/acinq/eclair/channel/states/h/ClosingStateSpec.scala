@@ -3,8 +3,9 @@ package fr.acinq.eclair.channel.states.h
 import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.{OutPoint, ScriptFlags, Transaction, TxIn}
-import fr.acinq.eclair.TestkitBaseClass
+import fr.acinq.eclair.{Globals, TestkitBaseClass}
 import fr.acinq.eclair.blockchain._
+import fr.acinq.eclair.blockchain.fee.FeeratesPerKw
 import fr.acinq.eclair.channel.states.StateTestsHelperMethods
 import fr.acinq.eclair.channel.{Data, State, _}
 import fr.acinq.eclair.payment.{CommandBuffer, ForwardAdd, ForwardFulfill, Local}
@@ -101,7 +102,6 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-
   test("recv CMD_FULFILL_HTLC (unexisting htlc)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
@@ -112,6 +112,36 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       sender.expectMsg(Failure(UnknownHtlcId(channelId(alice), 42)))
 
       // NB: nominal case is tested in IntegrationSpec
+    }
+  }
+
+  test("recv BITCOIN_FUNDING_SPENT (mutual close before converging)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      // alice initiates a closing
+      sender.send(alice, CMD_CLOSE(None))
+      alice2bob.expectMsgType[Shutdown]
+      alice2bob.forward(bob)
+      bob2alice.expectMsgType[Shutdown]
+      bob2alice.forward(alice)
+      // agreeing on a closing fee
+      val aliceCloseFee = alice2bob.expectMsgType[ClosingSigned].feeSatoshis
+      Globals.feeratesPerKw.set(FeeratesPerKw.single(100))
+      alice2bob.forward(bob)
+      val bobCloseFee = bob2alice.expectMsgType[ClosingSigned].feeSatoshis
+      bob2alice.forward(alice)
+      // they don't converge yet, but alice has a publishable commit tx now
+      assert(aliceCloseFee != bobCloseFee)
+      val Some(mutualCloseTx) = alice.stateData.asInstanceOf[DATA_NEGOTIATING].bestUnpublishedClosingTx_opt
+      // let's make alice publish this closing tx
+      alice ! Error("00" * 32, "")
+      awaitCond(alice.stateName == CLOSING)
+      assert(mutualCloseTx === alice.stateData.asInstanceOf[DATA_CLOSING].mutualClosePublished.last)
+
+      // actual test starts here
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, mutualCloseTx)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(mutualCloseTx), 0, 0)
+      awaitCond(alice.stateName == CLOSED)
     }
   }
 
