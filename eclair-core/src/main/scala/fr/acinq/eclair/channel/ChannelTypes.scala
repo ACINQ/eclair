@@ -33,7 +33,6 @@ case object WAIT_FOR_ACCEPT_CHANNEL extends State
 case object WAIT_FOR_FUNDING_INTERNAL extends State
 case object WAIT_FOR_FUNDING_CREATED extends State
 case object WAIT_FOR_FUNDING_SIGNED extends State
-case object WAIT_FOR_FUNDING_PUBLISHED extends State
 case object WAIT_FOR_FUNDING_CONFIRMED extends State
 case object WAIT_FOR_FUNDING_LOCKED extends State
 case object NORMAL extends State
@@ -96,14 +95,12 @@ final case class CMD_FULFILL_HTLC(id: Long, r: BinaryData, commit: Boolean = fal
 final case class CMD_FAIL_HTLC(id: Long, reason: Either[BinaryData, FailureMessage], commit: Boolean = false) extends Command
 final case class CMD_FAIL_MALFORMED_HTLC(id: Long, onionHash: BinaryData, failureCode: Int, commit: Boolean = false) extends Command
 final case class CMD_UPDATE_FEE(feeratePerKw: Long, commit: Boolean = false) extends Command
-case object CMD_SIGN extends Command
-sealed trait CloseType
-case object MUTUAL extends CloseType
-case object FORCE extends CloseType
-final case class CMD_CLOSE(scriptPubKey: Option[BinaryData], closeType: CloseType = MUTUAL) extends Command
-case object CMD_GETSTATE extends Command
-case object CMD_GETSTATEDATA extends Command
-case object CMD_GETINFO extends Command
+final case object CMD_SIGN extends Command
+final case class CMD_CLOSE(scriptPubKey: Option[BinaryData]) extends Command
+final case object CMD_FORCECLOSE extends Command
+final case object CMD_GETSTATE extends Command
+final case object CMD_GETSTATEDATA extends Command
+final case object CMD_GETINFO extends Command
 final case class RES_GETINFO(nodeId: BinaryData, channelId: BinaryData, state: State, data: Data)
 
 /*

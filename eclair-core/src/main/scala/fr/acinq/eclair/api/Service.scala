@@ -141,12 +141,12 @@ trait Service extends Logging {
                         case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                       }
                       case "close"        => req.params match {
-                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None, closeType = MUTUAL)).mapTo[String])
-                        case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey), closeType = MUTUAL)).mapTo[String])
+                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
+                        case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String])
                         case _ => reject(UnknownParamsRejection(req.id, "[channelId] or [channelId, scriptPubKey]"))
                       }
                       case "forceclose"   => req.params match {
-                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None, closeType = FORCE)).mapTo[String])
+                        case JString(identifier) :: Nil => completeRpc(req.id, sendToChannel(identifier, CMD_FORCECLOSE).mapTo[String])
                         case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                       }
 

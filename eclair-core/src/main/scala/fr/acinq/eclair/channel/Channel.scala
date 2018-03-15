@@ -174,6 +174,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           blockchain ! WatchLost(self, data.commitments.commitInput.outPoint.txid, nodeParams.minDepthBlocks, BITCOIN_FUNDING_LOST)
           goto(OFFLINE) using data
       }
+
+    case Event(c: CMD_CLOSE, _) => goto(CLOSED) replying "ok"
   })
 
   when(WAIT_FOR_OPEN_CHANNEL)(handleExceptions {
@@ -403,7 +405,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           goto(WAIT_FOR_FUNDING_CONFIRMED) using nextState
       }
 
-    case Event(c: CMD_CLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
+    case Event(CMD_CLOSE(_) | CMD_FORCECLOSE, d: DATA_WAIT_FOR_FUNDING_SIGNED) =>
       // we rollback the funding tx, it will never be published
       wallet.rollback(d.fundingTx)
       replyToUser(Right("closed"))
@@ -644,7 +646,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case Failure(cause) => handleLocalError(cause, d, Some(revocation))
       }
 
-    case Event(c@CMD_CLOSE(localScriptPubKey_opt, MUTUAL), d: DATA_NORMAL) =>
+    case Event(c@CMD_CLOSE(localScriptPubKey_opt), d: DATA_NORMAL) =>
       val localScriptPubKey = localScriptPubKey_opt.getOrElse(d.commitments.localParams.defaultFinalScriptPubKey)
       if (d.localShutdown.isDefined)
         handleCommandError(ClosingAlreadyInProgress((d.channelId)), c)
@@ -986,7 +988,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_SHUTDOWN) => handleRemoteSpentOther(tx, d)
 
-    case Event(c@CMD_CLOSE(_, MUTUAL), d: DATA_SHUTDOWN) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+    case Event(c@CMD_CLOSE(_), d: DATA_SHUTDOWN) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(e: Error, d: DATA_SHUTDOWN) => handleRemoteError(e, d)
 
@@ -1035,7 +1037,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
 
     case Event(WatchEventSpent(BITCOIN_FUNDING_SPENT, tx), d: DATA_NEGOTIATING) => handleRemoteSpentOther(tx, d)
 
-    case Event(c@CMD_CLOSE(_, MUTUAL), d: DATA_NEGOTIATING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
+    case Event(c@CMD_CLOSE(_), d: DATA_NEGOTIATING) => handleCommandError(ClosingAlreadyInProgress(d.channelId), c)
 
     case Event(e: Error, d: DATA_NEGOTIATING) => handleRemoteError(e, d)
 
@@ -1386,10 +1388,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         case _ => handleCommandError(AddHtlcFailed(d.channelId, c.paymentHash, error, origin(c), None), c) // we don't provide a channel_update: this will be a permanent channel failure
       }
 
-    case Event(c: CMD_CLOSE, d) =>
+    case Event(c: CMD_CLOSE, d) => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
+
+    case Event(c@CMD_FORCECLOSE, d) =>
       d match {
-        case data: HasCommitments if c.closeType == FORCE => handleLocalError(ForcedLocalCommit(data.channelId, "forced local commit"), data, Some(c)) replying "ok"
-        case _ => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName, c.closeType), c)
+        case data: HasCommitments => handleLocalError(ForcedLocalCommit(data.channelId, "forced local commit"), data, Some(c)) replying "ok"
+        case _ => handleCommandError(CannotCloseInThisState(Helpers.getChannelId(d), stateName), c)
       }
 
     // we only care about this event in NORMAL and SHUTDOWN state, and we never unregister to the event stream
