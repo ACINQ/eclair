@@ -1,7 +1,8 @@
 package fr.acinq.eclair.api
+
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
@@ -15,12 +16,12 @@ import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment, _}
 import fr.acinq.eclair.router.ChannelDesc
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -51,7 +52,7 @@ trait Service extends Logging {
 
   implicit val serialization = jackson.Serialization
   implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer + new ShortChannelIdSerializer
-  implicit val timeout = Timeout(30 seconds)
+  implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   import Json4sSupport.{marshaller, unmarshaller}
@@ -74,7 +75,7 @@ trait Service extends Logging {
   val myExceptionHandler = ExceptionHandler {
     case t: Throwable =>
       extractRequest { _ =>
-        logger.info(s"API call failed with cause=${t.getMessage}")
+        logger.error(s"API call failed with cause=${t.getMessage}")
         complete(StatusCodes.InternalServerError, JsonRPCRes(null, Some(Error(StatusCodes.InternalServerError.intValue, t.getMessage)), "-1"))
       }
   }
@@ -83,6 +84,7 @@ trait Service extends Logging {
     case Success(s) => completeRpc(requestId, s)
     case Failure(t) => reject(ExceptionRejection(requestId, t.getLocalizedMessage))
   }
+
   def completeRpc(requestId: String, result: AnyRef): Route = complete(JsonRPCRes(result, None, requestId))
 
   val myRejectionHandler: RejectionHandler = RejectionHandler.newBuilder()
@@ -106,6 +108,7 @@ trait Service extends Logging {
 
   val route: Route =
     respondWithDefaultHeaders(customHeaders) {
+      withRequestTimeoutResponse(r => HttpResponse(StatusCodes.RequestTimeout).withEntity(ContentTypes.`application/json`, """{ "result": null, "error": { "code": 408, "message": "request timed out"} } """)) {
       handleExceptions(myExceptionHandler) {
         handleRejections(myRejectionHandler) {
           authenticateBasic(realm = "Access restricted", userPassAuthenticator) { _ =>
@@ -118,18 +121,18 @@ trait Service extends Logging {
 
                     req.method match {
                       // utility methods
-                      case "getinfo"      => completeRpcFuture(req.id, getInfoResponse)
-                      case "help"         => completeRpc(req.id, help)
+                      case "getinfo" => completeRpcFuture(req.id, getInfoResponse)
+                      case "help" => completeRpc(req.id, help)
 
                       // channel lifecycle methods
-                      case "connect"      => req.params match {
+                      case "connect" => req.params match {
                         case JString(pubkey) :: JString(host) :: JInt(port) :: Nil =>
                           completeRpcFuture(req.id, (switchboard ? Peer.Connect(NodeURI.parse(s"$pubkey@$host:$port"))).mapTo[String])
                         case JString(uri) :: Nil =>
                           completeRpcFuture(req.id, (switchboard ? Peer.Connect(NodeURI.parse(uri))).mapTo[String])
                         case _ => reject(UnknownParamsRejection(req.id, "[nodeId@host:port] or [nodeId, host, port]"))
                       }
-                      case "open"         => req.params match {
+                      case "open" => req.params match {
                         case JString(nodeId) :: JInt(fundingSatoshis) :: Nil =>
                           completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(0), fundingTxFeeratePerKw_opt = None, channelFlags = None)).mapTo[String])
                         case JString(nodeId) :: JInt(fundingSatoshis) :: JInt(pushMsat) :: Nil =>
@@ -140,7 +143,7 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (switchboard ? Peer.OpenChannel(PublicKey(nodeId), Satoshi(fundingSatoshis.toLong), MilliSatoshi(pushMsat.toLong), fundingTxFeeratePerKw_opt = Some(feerateByte2Kw(fundingFeerateSatPerByte.toLong)), channelFlags = Some(flags.toByte))).mapTo[String])
                         case _ => reject(UnknownParamsRejection(req.id, s"[nodeId, fundingSatoshis], [nodeId, fundingSatoshis, pushMsat], [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte] or [nodeId, fundingSatoshis, pushMsat, feerateSatPerByte, flag]"))
                       }
-                      case "close"        => req.params match {
+                      case "close" => req.params match {
                         case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = None)).mapTo[String])
                         case JString(identifier) :: JString(scriptPubKey) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_CLOSE(scriptPubKey = Some(scriptPubKey))).mapTo[String])
                         case _ => reject(UnknownParamsRejection(req.id, "[channelId] or [channelId, scriptPubKey]"))
@@ -151,11 +154,11 @@ trait Service extends Logging {
                       }
 
                       // local network methods
-                      case "peers"        => completeRpcFuture(req.id, for {
+                      case "peers" => completeRpcFuture(req.id, for {
                         peers <- (switchboard ? 'peers).mapTo[Map[PublicKey, ActorRef]]
                         peerinfos <- Future.sequence(peers.values.map(peer => (peer ? GetPeerInfo).mapTo[PeerInfo]))
                       } yield peerinfos)
-                      case "channels"     => req.params match {
+                      case "channels" => req.params match {
                         case Nil =>
                           val f = for {
                             channels_id <- (register ? 'channels).mapTo[Map[BinaryData, ActorRef]].map(_.keys)
@@ -164,26 +167,26 @@ trait Service extends Logging {
                           } yield channels
                           completeRpcFuture(req.id, f)
                         case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
-                            case Success(pk) =>
-                              val f = for {
-                                channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
-                                channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                  .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
-                              } yield channels
-                              completeRpcFuture(req.id, f)
-                            case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
-                          }
+                          case Success(pk) =>
+                            val f = for {
+                              channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
+                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+                                .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                            } yield channels
+                            completeRpcFuture(req.id, f)
+                          case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
+                        }
                         case _ => reject(UnknownParamsRejection(req.id, "no arguments or [remoteNodeId]"))
                       }
-                      case "channel"      => req.params match {
+                      case "channel" => req.params match {
                         case JString(identifier) :: Nil => completeRpcFuture(req.id, sendToChannel(identifier, CMD_GETINFO).mapTo[RES_GETINFO])
                         case _ => reject(UnknownParamsRejection(req.id, "[channelId]"))
                       }
 
                       // global network methods
-                      case "allnodes"     => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
-                      case "allchannels"  => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))))
-                      case "allupdates"   => req.params match {
+                      case "allnodes" => completeRpcFuture(req.id, (router ? 'nodes).mapTo[Iterable[NodeAnnouncement]])
+                      case "allchannels" => completeRpcFuture(req.id, (router ? 'channels).mapTo[Iterable[ChannelAnnouncement]].map(_.map(c => ChannelDesc(c.shortChannelId, c.nodeId1, c.nodeId2))))
+                      case "allupdates" => req.params match {
                         case JString(nodeId) :: Nil => Try(PublicKey(nodeId)) match {
                           case Success(pk) => completeRpcFuture(req.id, (router ? 'updatesMap).mapTo[Map[ChannelDesc, ChannelUpdate]].map(_.filter(e => e._1.a == pk || e._1.b == pk).values))
                           case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$nodeId'"))
@@ -192,7 +195,7 @@ trait Service extends Logging {
                       }
 
                       // payment methods
-                      case "receive"      => req.params match {
+                      case "receive" => req.params match {
                         // only the payment description is given: user may want to generate a donation payment request
                         case JString(description) :: Nil =>
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(None, description)).mapTo[PaymentRequest].map(PaymentRequest.write))
@@ -201,7 +204,7 @@ trait Service extends Logging {
                           completeRpcFuture(req.id, (paymentHandler ? ReceivePayment(Some(MilliSatoshi(amountMsat.toLong)), description)).mapTo[PaymentRequest].map(PaymentRequest.write))
                         case _ => reject(UnknownParamsRejection(req.id, "[description] or [amount, description]"))
                       }
-                      case "send"         => req.params match {
+                      case "send" => req.params match {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
@@ -253,6 +256,7 @@ trait Service extends Logging {
               }
             }
           }
+        }
         }
       }
     }
