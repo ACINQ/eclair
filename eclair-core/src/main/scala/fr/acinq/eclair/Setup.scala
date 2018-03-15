@@ -31,7 +31,7 @@ import scala.concurrent.{Await, ExecutionContext, Future, Promise}
 
 /**
   * Setup eclair from a datadir.
-  * 
+  *
   * Created by PM on 25/01/2016.
   *
   * @param datadir  directory where eclair-core will write/read its data
@@ -139,11 +139,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
-      case Electrum(electrumClient) => seed_opt match {
-        case Some(seed) => val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
-          new ElectrumEclairWallet(electrumWallet)
-        case _ => throw new RuntimeException("electrum wallet requires a seed to set up")
-      }
+      case Electrum(electrumClient) =>
+        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
+        new ElectrumEclairWallet(electrumWallet)
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
