@@ -15,7 +15,7 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
-import fr.acinq.eclair.payment.PaymentEvent
+import fr.acinq.eclair.payment.{PaymentEvent, PaymentResult}
 import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 
@@ -80,6 +80,7 @@ class FxApp extends Application with Logging {
           setup.system.eventStream.subscribe(guiUpdater, classOf[ChannelEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[NetworkEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentEvent])
+          setup.system.eventStream.subscribe(guiUpdater, classOf[PaymentResult])
           setup.system.eventStream.subscribe(guiUpdater, classOf[ZMQEvent])
           setup.system.eventStream.subscribe(guiUpdater, classOf[ElectrumEvent])
           pKit.completeWith(setup.bootstrap)

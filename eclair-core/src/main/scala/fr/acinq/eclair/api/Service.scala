@@ -1,26 +1,27 @@
 package fr.acinq.eclair.api
+
 import akka.actor.ActorRef
 import akka.http.scaladsl.model.HttpMethods._
-import akka.http.scaladsl.model.StatusCodes
+import akka.http.scaladsl.model._
 import akka.http.scaladsl.model.headers.CacheDirectives.{`max-age`, `no-store`, public}
 import akka.http.scaladsl.model.headers._
 import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server._
 import akka.http.scaladsl.server.directives.Credentials
 import akka.http.scaladsl.server.directives.RouteDirectives.reject
-import akka.pattern.ask
+import akka.pattern.{AskTimeoutException, ask}
 import akka.util.Timeout
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport
 import de.heikoseeberger.akkahttpjson4s.Json4sSupport.ShouldWritePretty
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
-import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
 import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment, _}
 import fr.acinq.eclair.router.ChannelDesc
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
 import grizzled.slf4j.Logging
 import org.json4s.JsonAST.{JBool, JInt, JString}
 import org.json4s.{JValue, jackson}
@@ -51,7 +52,7 @@ trait Service extends Logging {
 
   implicit val serialization = jackson.Serialization
   implicit val formats = org.json4s.DefaultFormats + new BinaryDataSerializer + new StateSerializer + new ShaChainSerializer + new PublicKeySerializer + new PrivateKeySerializer + new ScalarSerializer + new PointSerializer + new TransactionSerializer + new TransactionWithInputInfoSerializer + new InetSocketAddressSerializer + new OutPointKeySerializer + new ColorSerializer + new ShortChannelIdSerializer
-  implicit val timeout = Timeout(30 seconds)
+  implicit val timeout = Timeout(60 seconds)
   implicit val shouldWritePretty: ShouldWritePretty = ShouldWritePretty.True
 
   import Json4sSupport.{marshaller, unmarshaller}
@@ -74,15 +75,17 @@ trait Service extends Logging {
   val myExceptionHandler = ExceptionHandler {
     case t: Throwable =>
       extractRequest { _ =>
-        logger.info(s"API call failed with cause=${t.getMessage}")
+        logger.error(s"API call failed with cause=${t.getMessage}")
         complete(StatusCodes.InternalServerError, JsonRPCRes(null, Some(Error(StatusCodes.InternalServerError.intValue, t.getMessage)), "-1"))
       }
   }
 
   def completeRpcFuture(requestId: String, future: Future[AnyRef]): Route = onComplete(future) {
     case Success(s) => completeRpc(requestId, s)
+    case Failure(_: AskTimeoutException) => reject(ExceptionRejection(requestId, "operation is taking a long time and will continue asynchronously"))
     case Failure(t) => reject(ExceptionRejection(requestId, t.getLocalizedMessage))
   }
+
   def completeRpc(requestId: String, result: AnyRef): Route = complete(JsonRPCRes(result, None, requestId))
 
   val myRejectionHandler: RejectionHandler = RejectionHandler.newBuilder()
@@ -160,15 +163,15 @@ trait Service extends Logging {
                           } yield channels
                           completeRpcFuture(req.id, f)
                         case JString(remoteNodeId) :: Nil => Try(PublicKey(remoteNodeId)) match {
-                            case Success(pk) =>
-                              val f = for {
-                                channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
-                                channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
-                                  .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
-                              } yield channels
-                              completeRpcFuture(req.id, f)
-                            case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
-                          }
+                          case Success(pk) =>
+                            val f = for {
+                              channels_id <- (register ? 'channelsTo).mapTo[Map[BinaryData, PublicKey]].map(_.filter(_._2 == pk).keys)
+                              channels <- Future.sequence(channels_id.map(channel_id => sendToChannel(channel_id.toString(), CMD_GETINFO).mapTo[RES_GETINFO]
+                                .map(gi => LocalChannelInfo(gi.nodeId, gi.channelId, gi.state.toString))))
+                            } yield channels
+                            completeRpcFuture(req.id, f)
+                          case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid remote node id '$remoteNodeId'"))
+                        }
                         case _ => reject(UnknownParamsRejection(req.id, "no arguments or [remoteNodeId]"))
                       }
                       case "channel"      => req.params match {

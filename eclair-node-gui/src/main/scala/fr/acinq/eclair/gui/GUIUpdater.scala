@@ -15,7 +15,7 @@ import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDiscon
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, ElectrumDisconnected}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
-import fr.acinq.eclair.payment.{PaymentReceived, PaymentRelayed, PaymentSent}
+import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire.NodeAnnouncement
 
@@ -174,6 +174,22 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
           mainController.networkChannelsList.update(idx, c)
         }
       }
+
+    case p: PaymentSucceeded =>
+      val message = CoinUtils.formatAmountInUnit(MilliSatoshi(p.amountMsat), FxApp.getUnit, withUnit = true)
+      mainController.handlers.notification("Payment Sent", message, NOTIFICATION_SUCCESS)
+
+    case p: PaymentFailed =>
+      val distilledFailures = PaymentLifecycle.transformForUser(p.failures)
+      val message = s"${distilledFailures.size} attempts:\n${
+        distilledFailures.map {
+          case LocalFailure(t) => s"- (local) ${t.getMessage}"
+          case RemoteFailure(_, e) => s"- (remote) ${e.failureMessage.message}"
+          case _ => "- Unknown error"
+        }.mkString("\n")
+      }"
+      mainController.handlers.notification("Payment Failed", message, NOTIFICATION_ERROR)
+
     case p: PaymentSent =>
       log.debug(s"payment sent with h=${p.paymentHash}, amount=${p.amount}, fees=${p.feesPaid}")
       runInGuiThread(() => mainController.paymentSentList.prepend(new PaymentSentRecord(p, LocalDateTime.now())))
