@@ -259,6 +259,10 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       findRoute(d.graph, start, end, withEdges = assistedUpdates, withoutEdges = ignoredUpdates)
         .map(r => sender ! RouteResponse(r, ignoreNodes, ignoreChannels))
         .recover { case t => sender ! Status.Failure(t) }
+      // On Android, we don't monitor channels to see if their funding is spent because it is too expensive
+      // if the node that created this channel tells us it is unusable (only permanent channel failure) we forget about it
+      // note that if the channel is in fact still alive, we will get it again via network announcements anyway
+      ignoreChannels.foreach(shortChannelId => self ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)))
       stay
 
     case Event(GetRoutingState, d: Data) =>

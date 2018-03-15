@@ -2,14 +2,12 @@ package fr.acinq.eclair.router
 
 import akka.actor.Status.Failure
 import akka.testkit.TestProbe
-import fr.acinq.bitcoin.Script.{pay2wsh, write}
-import fr.acinq.bitcoin.{Block, Satoshi, Transaction, TxOut}
+import fr.acinq.bitcoin.Block
 import fr.acinq.eclair.blockchain._
 import fr.acinq.eclair.channel.BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT
 import fr.acinq.eclair.crypto.TransportHandler
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router.Announcements.makeChannelUpdate
-import fr.acinq.eclair.transactions.Scripts
 import fr.acinq.eclair.wire.Error
 import fr.acinq.eclair.{ShortChannelId, randomKey}
 import org.junit.runner.RunWith
@@ -22,7 +20,6 @@ import scala.concurrent.duration._
   */
 @RunWith(classOf[JUnitRunner])
 class RouterSpec extends BaseRouterSpec {
-  import BaseRouterSpec._
 
   test("properly announce valid new channels and ignore invalid ones") { case (router, watcher) =>
     val eventListener = TestProbe()
@@ -55,14 +52,14 @@ class RouterSpec extends BaseRouterSpec {
     router ! update_ax
     router ! update_ay
     router ! update_az
-//    watcher.expectMsg(ValidateRequest(chan_ac))
-//    watcher.expectMsg(ValidateRequest(chan_ax))
-//    watcher.expectMsg(ValidateRequest(chan_ay))
-//    watcher.expectMsg(ValidateRequest(chan_az))
-//    watcher.send(router, ValidateResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
-//    watcher.send(router, ValidateResult(chan_ax, None, false, None))
-//    watcher.send(router, ValidateResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true, None))
-//    watcher.send(router, ValidateResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false, None))
+    //    watcher.expectMsg(ValidateRequest(chan_ac))
+    //    watcher.expectMsg(ValidateRequest(chan_ax))
+    //    watcher.expectMsg(ValidateRequest(chan_ay))
+    //    watcher.expectMsg(ValidateRequest(chan_az))
+    //    watcher.send(router, ValidateResult(chan_ac, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, funding_c)))) :: Nil, lockTime = 0)), true, None))
+    //    watcher.send(router, ValidateResult(chan_ax, None, false, None))
+    //    watcher.send(router, ValidateResult(chan_ay, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, randomKey.publicKey)))) :: Nil, lockTime = 0)), true, None))
+    //    watcher.send(router, ValidateResult(chan_az, Some(Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(1000000), write(pay2wsh(Scripts.multiSig2of2(funding_a, priv_funding_z.publicKey)))) :: Nil, lockTime = 0)), false, None))
     //watcher.expectMsgType[WatchSpentBasic]
     watcher.expectNoMsg(1 second)
 
@@ -192,6 +189,17 @@ class RouterSpec extends BaseRouterSpec {
     sender.send(router, LiftChannelExclusion(bc))
     sender.send(router, RouteRequest(a, d))
     sender.expectMsgType[RouteResponse]
+  }
+
+  test("automatic pruning of filtered channel") { case (router, _) =>
+    // NB: this is an Android-specific test
+    val sender = TestProbe()
+    val listener = TestProbe()
+    system.eventStream.subscribe(listener.ref, classOf[ChannelLost])
+    // channel is ignored and will get pruned
+    sender.send(router, RouteRequest(a, d, ignoreChannels = Set(channelId_bc)))
+    sender.expectMsg(Failure(RouteNotFound))
+    listener.expectMsgType[ChannelLost]
   }
 
 
