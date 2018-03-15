@@ -5,6 +5,8 @@ import java.util.function.Predicate
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
+import javafx.scene.control.Alert.AlertType
+import javafx.scene.control.{Alert, ButtonType}
 import javafx.scene.layout.VBox
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
@@ -16,7 +18,7 @@ import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, El
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.payment._
-import fr.acinq.eclair.router._
+import fr.acinq.eclair.router.{NORMAL => _, _}
 import fr.acinq.eclair.wire.NodeAnnouncement
 
 import scala.collection.JavaConversions._
@@ -26,6 +28,9 @@ import scala.collection.JavaConversions._
   * Created by PM on 16/08/2016.
   */
 class GUIUpdater(mainController: MainController) extends Actor with ActorLogging {
+
+  val STATE_MUTUAL_CLOSE = Set(WAIT_FOR_INIT_INTERNAL, WAIT_FOR_OPEN_CHANNEL, WAIT_FOR_ACCEPT_CHANNEL, WAIT_FOR_FUNDING_INTERNAL, WAIT_FOR_FUNDING_CREATED, WAIT_FOR_FUNDING_SIGNED, NORMAL)
+  val STATE_FORCE_CLOSE = Set(WAIT_FOR_FUNDING_CONFIRMED, WAIT_FOR_FUNDING_LOCKED, NORMAL, SHUTDOWN, NEGOTIATING, OFFLINE, SYNCING)
 
   /**
     * Needed to stop JavaFX complaining about updates from non GUI thread
@@ -48,7 +53,16 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     channelPaneController.channelId.setText(temporaryChannelId.toString())
     channelPaneController.funder.setText(if (isFunder) "Yes" else "No")
     channelPaneController.close.setOnAction(new EventHandler[ActionEvent] {
-      override def handle(event: ActionEvent) = channel ! CMD_CLOSE(None)
+      override def handle(event: ActionEvent) = channel ! CMD_CLOSE(scriptPubKey = None)
+    })
+    channelPaneController.forceclose.setOnAction(new EventHandler[ActionEvent] {
+      override def handle(event: ActionEvent) = {
+        val alert = new Alert(AlertType.WARNING, "Careful: force-close is more expensive than a regular close and will incur a delay before funds are spendable.\n\nAre you sure you want to proceed?", ButtonType.YES, ButtonType.NO)
+        alert.showAndWait
+        if (alert.getResult eq ButtonType.YES) {
+          channel ! CMD_FORCECLOSE
+        }
+      }
     })
 
     // set the node alias if the node has already been announced
@@ -93,12 +107,8 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelStateChanged(channel, _, _, _, currentState, _) if m.contains(channel) =>
       val channelPaneController = m(channel)
       runInGuiThread { () =>
-        if (currentState == CLOSING || currentState == CLOSED) {
-          channelPaneController.close.setVisible(false)
-        } else {
-          channelPaneController.close.setVisible(true)
-        }
-        channelPaneController.close.setText(if (OFFLINE == currentState) "Force close" else "Close")
+        channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))
+        channelPaneController.forceclose.setVisible(STATE_FORCE_CLOSE.contains(currentState))
         channelPaneController.state.setText(currentState.toString)
       }
 

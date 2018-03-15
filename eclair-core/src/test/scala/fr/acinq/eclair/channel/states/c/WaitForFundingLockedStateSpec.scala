@@ -1,5 +1,7 @@
 package fr.acinq.eclair.channel.states.c
 
+import akka.actor.Status
+import akka.actor.Status.Failure
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.Transaction
 import fr.acinq.eclair.TestConstants.{Alice, Bob}
@@ -94,10 +96,18 @@ class WaitForFundingLockedStateSpec extends TestkitBaseClass with StateTestsHelp
     }
   }
 
-  test("recv CMD_CLOSE") { case (alice, _, alice2bob, bob2alice, alice2blockchain, router) =>
+  test("recv CMD_CLOSE") { case (alice, _, _, _, _, _) =>
+    within(30 seconds) {
+      val sender = TestProbe()
+      sender.send(alice, CMD_CLOSE(None))
+      sender.expectMsg(Failure(CannotCloseInThisState(channelId(alice), WAIT_FOR_FUNDING_LOCKED)))
+    }
+  }
+
+  test("recv CMD_FORCECLOSE") { case (alice, _, _, _, alice2blockchain, _) =>
     within(30 seconds) {
       val tx = alice.stateData.asInstanceOf[DATA_WAIT_FOR_FUNDING_LOCKED].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! CMD_CLOSE(None)
+      alice ! CMD_FORCECLOSE
       awaitCond(alice.stateName == CLOSING)
       alice2blockchain.expectMsg(PublishAsap(tx))
       alice2blockchain.expectMsgType[PublishAsap]

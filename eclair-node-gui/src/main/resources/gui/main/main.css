@@ -78,6 +78,10 @@
 	-fx-faint-focus-color: transparent;
 }
 
+.button.forceclose-channel {
+    -fx-base: #f5dcd8;
+}
+
 /* ---------- Table ---------- */
 
 .table-view {
