@@ -1863,11 +1863,9 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val sender = TestProbe()
-      sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
-      assert(relayer.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === None)
+      sender.send(alice, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
       val annSigsA = alice2bob.expectMsgType[AnnouncementSignatures]
-      sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 42, 10))
-      assert(relayer.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === None)
+      sender.send(bob, WatchEventConfirmed(BITCOIN_FUNDING_DEEPLYBURIED, 400000, 42))
       val annSigsB = bob2alice.expectMsgType[AnnouncementSignatures]
       import initialState.commitments.localParams
       import initialState.commitments.remoteParams
