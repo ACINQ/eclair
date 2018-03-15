@@ -20,7 +20,7 @@ import scala.util.{Failure, Success}
   */
 class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionContext.Implicits.global) extends Logging {
 
-  implicit val timeout = Timeout(60 seconds) // futures will timeout after 2 minutes
+  implicit val timeout = Timeout(60 seconds)
 
   private var notifsController: Option[NotificationsController] = None
 
