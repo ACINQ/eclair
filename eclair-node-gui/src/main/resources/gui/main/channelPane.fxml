@@ -24,11 +24,14 @@
             <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
             <RowConstraints minHeight="10.0" vgrow="SOMETIMES"/>
         </rowConstraints>
+
         <HBox GridPane.columnSpan="4" GridPane.columnIndex="0" alignment="CENTER" spacing="5.0">
             <TextField fx:id="channelId" text="N/A" editable="false" styleClass="noteditable, text-strong"
                        HBox.hgrow="ALWAYS" GridPane.valignment="BOTTOM" focusTraversable="false"/>
-            <Button fx:id="close" GridPane.columnIndex="4" GridPane.halignment="RIGHT" alignment="CENTER_RIGHT"
-                    HBox.hgrow="NEVER" mnemonicParsing="false" styleClass="close-channel" text="Close"/>
+            <HBox GridPane.columnIndex="4" GridPane.halignment="RIGHT" alignment="CENTER_RIGHT" HBox.hgrow="NEVER" spacing="5">
+                <Button fx:id="close" mnemonicParsing="false" styleClass="close-channel" text="Close"/>
+                <Button fx:id="forceclose" mnemonicParsing="false" styleClass="forceclose-channel" text="Force close"/>
+            </HBox>
         </HBox>
 
         <ProgressBar fx:id="balanceBar" minHeight="4.0" prefHeight="4.0" maxWidth="1.7976931348623157E308"
