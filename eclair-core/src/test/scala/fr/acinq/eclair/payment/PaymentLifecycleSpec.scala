@@ -1,9 +1,11 @@
 package fr.acinq.eclair.payment
 
 import akka.actor.FSM.{CurrentState, SubscribeTransitionCallBack, Transition}
+import akka.actor.Status
 import akka.testkit.{TestFSMRef, TestProbe}
 import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair.Globals
+import fr.acinq.eclair.channel.{AddHtlcFailed, ChannelUnavailable}
 import fr.acinq.eclair.channel.Register.ForwardShortId
 import fr.acinq.eclair.crypto.Sphinx
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
@@ -71,7 +73,33 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
 
     // we allow 2 tries, so we send a 2nd request to the router
     sender.expectMsg(PaymentFailed(request.paymentHash, UnreadableRemoteFailure(hops) :: UnreadableRemoteFailure(hops) :: Nil))
+  }
 
+  test("payment failed (local error)") { case (router, _) =>
+    val relayer = TestProbe()
+    val routerForwarder = TestProbe()
+    val paymentFSM = TestFSMRef(new PaymentLifecycle(a, routerForwarder.ref, relayer.ref))
+    val monitor = TestProbe()
+    val sender = TestProbe()
+
+    paymentFSM ! SubscribeTransitionCallBack(monitor.ref)
+    val CurrentState(_, WAITING_FOR_REQUEST) = monitor.expectMsgClass(classOf[CurrentState[_]])
+
+    val request = SendPayment(142000L, "42" * 32, d, maxAttempts = 2)
+    sender.send(paymentFSM, request)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
+    val WaitingForRoute(_, _, Nil) = paymentFSM.stateData
+    routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set.empty))
+    routerForwarder.forward(router)
+    awaitCond(paymentFSM.stateName == WAITING_FOR_PAYMENT_COMPLETE)
+    val WaitingForComplete(_, _, cmd1, Nil, _, _, _, hops) = paymentFSM.stateData
+
+    relayer.expectMsg(ForwardShortId(channelId_ab, cmd1))
+    sender.send(paymentFSM, Status.Failure(AddHtlcFailed("00" * 32, request.paymentHash, ChannelUnavailable("00" * 32), Local(Some(paymentFSM.underlying.self)), None)))
+
+    // then the payment lifecycle will ask for a new route excluding the channel
+    routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(channelId_ab)))
+    awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
   }
 
   test("payment failed (first hop returns an UpdateFailMalformedHtlc)") { case (router, _) =>
@@ -99,7 +127,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     // then the payment lifecycle will ask for a new route excluding the channel
     routerForwarder.expectMsg(RouteRequest(a, d, assistedRoutes = Nil, ignoreNodes = Set.empty, ignoreChannels = Set(channelId_ab)))
     awaitCond(paymentFSM.stateName == WAITING_FOR_ROUTE)
-
   }
 
   test("payment failed (TemporaryChannelFailure)") { case (router, _) =>
@@ -192,7 +219,6 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(paymentOK.amountMsat > request.amountMsat)
     val PaymentSent(MilliSatoshi(request.amountMsat), feesPaid, request.paymentHash, paymentOK.paymentPreimage) = eventListener.expectMsgType[PaymentSent]
     assert(feesPaid.amount > 0)
-
   }
 
 }
