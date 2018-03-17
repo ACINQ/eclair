@@ -439,7 +439,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       log.error(s"failed to publish funding tx")
       val exc = ChannelFundingError(d.channelId)
       val error = Error(d.channelId, exc.getMessage.getBytes)
-      goto(ERR_FUNDING_PUBLISH_FAILED) sending error
+      // note: implementation guarantees that the tx will not ever be published, so we can close the channel right away
+      goto(CLOSED) sending error
 
     // TODO: not implemented, users will have to manually close
     case Event(BITCOIN_FUNDING_TIMEOUT, d: DATA_WAIT_FOR_FUNDING_CONFIRMED) =>
@@ -1354,8 +1355,6 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   }
 
   when(ERR_INFORMATION_LEAK)(errorStateHandler)
-
-  when(ERR_FUNDING_PUBLISH_FAILED)(errorStateHandler)
 
   when(ERR_FUNDING_TIMEOUT)(errorStateHandler)
 

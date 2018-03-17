@@ -65,6 +65,14 @@ class WaitForFundingConfirmedStateSpec extends TestkitBaseClass with StateTestsH
     }
   }
 
+  test("recv BITCOIN_FUNDING_PUBLISH_FAILED") { case (alice, _, alice2bob, _, _) =>
+    within(30 seconds) {
+      alice ! BITCOIN_FUNDING_PUBLISH_FAILED
+      alice2bob.expectMsgType[Error]
+      awaitCond(alice.stateName == CLOSED)
+    }
+  }
+
   test("recv BITCOIN_FUNDING_TIMEOUT") { case (alice, _, alice2bob, _, _) =>
     within(30 seconds) {
       alice ! BITCOIN_FUNDING_TIMEOUT
