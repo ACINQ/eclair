@@ -31,7 +31,7 @@ import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
+import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
@@ -118,8 +118,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         case "regtest" => "/electrum/servers_regtest.json"
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
-      val addresses = ElectrumClient.readServerAddresses(stream)
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val addresses = ElectrumMultiClient.readServerAddresses(stream)
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumMultiClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 

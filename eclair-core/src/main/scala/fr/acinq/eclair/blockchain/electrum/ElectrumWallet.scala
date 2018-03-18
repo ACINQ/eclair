@@ -96,7 +96,7 @@ class ElectrumWallet(seed: BinaryData, client: ActorRef, params: ElectrumWallet.
   })
 
   when(DISCONNECTED) {
-    case Event(ElectrumClient.ElectrumReady, data) =>
+    case Event(ElectrumClient.ElectrumReady(_), data) =>
       client ! ElectrumClient.HeaderSubscription(self)
       goto(WAITING_FOR_TIP) using data
   }

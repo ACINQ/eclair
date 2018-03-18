@@ -82,7 +82,8 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.expectMsgType[JValue](10 seconds)
 
     startElectrum
-    electrumClient = system.actorOf(Props(new ElectrumClient(Seq(new InetSocketAddress("localhost", 51001)))))
+    // FIXME
+    electrumClient = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("localhost", 51001))))
     sender.send(electrumClient, ElectrumClient.AddStatusListener(sender.ref))
     sender.expectMsg(3 seconds, ElectrumClient.ElectrumReady)
   }
