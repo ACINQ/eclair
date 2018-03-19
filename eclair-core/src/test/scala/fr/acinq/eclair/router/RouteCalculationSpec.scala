@@ -383,13 +383,12 @@ class RouteCalculationSpec extends FunSuite {
       makeUpdate(8L, i, j, 10, 10)
     ).toMap
 
-    val ignored = Router.getIgnoredUpdates(channels, updates, ignoreNodes = Set(c, j, randomKey.publicKey), ignoreChannels = Set(ShortChannelId(3L), ShortChannelId(6L), ShortChannelId(10L)))
+    val ignored = Router.getIgnoredChannelDesc(updates, ignoreNodes = Set(c, j, randomKey.publicKey))
 
     assert(ignored.toSet === Set(
       ChannelDesc(ShortChannelId(2L), b, c),
       ChannelDesc(ShortChannelId(2L), c, b),
       ChannelDesc(ShortChannelId(3L), c, d),
-      ChannelDesc(ShortChannelId(6L), f, h),
       ChannelDesc(ShortChannelId(8L), i, j)
     ))
 
