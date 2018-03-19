@@ -43,7 +43,6 @@ case object CLOSED extends State
 case object OFFLINE extends State
 case object SYNCING extends State
 case object WAIT_FOR_REMOTE_PUBLISH_FUTURE_COMMITMENT extends State
-case object ERR_FUNDING_PUBLISH_FAILED extends State
 case object ERR_FUNDING_LOST extends State
 case object ERR_FUNDING_TIMEOUT extends State
 case object ERR_INFORMATION_LEAK extends State
