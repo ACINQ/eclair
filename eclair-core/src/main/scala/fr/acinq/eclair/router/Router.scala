@@ -161,12 +161,22 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         sender ! Error(Peer.CHANNELID_ZERO, "bad announcement sig!!!".getBytes())
         stay
       } else {
+        // On Android, after checking the sig we remove as much data as possible to reduce RAM consumption
+        val c1 = c.copy(
+          nodeSignature1 = null,
+          nodeSignature2 = null,
+          bitcoinSignature1 = null,
+          bitcoinSignature2 = null,
+          features = null,
+          chainHash = null,
+          bitcoinKey1 = null,
+          bitcoinKey2 = null)
         sender ! TransportHandler.ReadAck(c)
         // On Android, we don't validate announcements for now, it means that neither awaiting nor stashed announcements are used
-        db.addChannel(c, BinaryData(""), Satoshi(0))
+        db.addChannel(c1, BinaryData(""), Satoshi(0))
         stay using d.copy(
-          channels = d.channels + (c.shortChannelId -> c),
-          privateChannels = d.privateChannels - c.shortChannelId // we remove fake announcements that we may have made before)
+          channels = d.channels + (c1.shortChannelId -> c1),
+          privateChannels = d.privateChannels - c1.shortChannelId // we remove fake announcements that we may have made before)
         )
       }
 
@@ -357,7 +367,12 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       d
     }
 
-  def handle(u: ChannelUpdate, origin: ActorRef, d: Data): Data =
+  def handle(u: ChannelUpdate, origin: ActorRef, d: Data): Data = {
+    // On Android, after checking the sig we remove as much data as possible to reduce RAM consumption
+    val u1 = u.copy(
+      signature = null,
+      chainHash = null
+    )
     if (d.channels.contains(u.shortChannelId)) {
       // related channel is already known (note: this means no related channel_update is in the stash)
       val publicChannel = true
@@ -376,18 +391,18 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       } else if (d.updates.contains(desc)) {
         log.debug("updated channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
-        db.updateChannelUpdate(u)
+        db.updateChannelUpdate(u1)
         // we also need to update the graph
         removeEdge(d.graph, desc)
-        addEdge(d.graph, desc, u)
-        d.copy(updates = d.updates + (desc -> u))
+        addEdge(d.graph, desc, u1)
+        d.copy(updates = d.updates + (desc -> u1))
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
-        db.addChannelUpdate(u)
+        db.addChannelUpdate(u1)
         // we also need to update the graph
-        addEdge(d.graph, desc, u)
-        d.copy(updates = d.updates + (desc -> u), privateUpdates = d.privateUpdates - desc)
+        addEdge(d.graph, desc, u1)
+        d.copy(updates = d.updates + (desc -> u1), privateUpdates = d.privateUpdates - desc)
       }
     } else if (d.awaiting.keys.exists(c => c.shortChannelId == u.shortChannelId)) {
       // channel is currently being validated
@@ -419,19 +434,20 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
         removeEdge(d.graph, desc)
-        addEdge(d.graph, desc, u)
-        d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+        addEdge(d.graph, desc, u1)
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u1))
       } else {
         log.debug("added channel_update for shortChannelId={} public={} flags={} {}", u.shortChannelId, publicChannel, u.flags, u)
         context.system.eventStream.publish(ChannelUpdateReceived(u))
         // we also need to update the graph
-        addEdge(d.graph, desc, u)
-        d.copy(privateUpdates = d.privateUpdates + (desc -> u))
+        addEdge(d.graph, desc, u1)
+        d.copy(privateUpdates = d.privateUpdates + (desc -> u1))
       }
     } else {
       log.debug("ignoring announcement {} (unknown channel)", u)
       d
     }
+  }
 
 }
 
