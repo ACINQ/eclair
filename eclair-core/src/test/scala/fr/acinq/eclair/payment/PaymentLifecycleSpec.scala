@@ -221,4 +221,9 @@ class PaymentLifecycleSpec extends BaseRouterSpec {
     assert(feesPaid.amount > 0)
   }
 
+  test("filter errors properly") { case _ =>
+    val failures = LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(AddHtlcFailed("00" * 32, "00" * 32, ChannelUnavailable("00" * 32), Local(None), None)) :: LocalFailure(RouteNotFound) :: Nil
+    val filtered = PaymentLifecycle.transformForUser(failures)
+    assert(filtered == LocalFailure(RouteNotFound) :: RemoteFailure(Hop(a, b, channelUpdate_ab) :: Nil, ErrorPacket(a, TemporaryNodeFailure)) :: LocalFailure(ChannelUnavailable("00" * 32)) :: Nil)
+  }
 }
