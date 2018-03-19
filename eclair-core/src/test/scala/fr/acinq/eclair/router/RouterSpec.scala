@@ -191,16 +191,4 @@ class RouterSpec extends BaseRouterSpec {
     sender.expectMsgType[RouteResponse]
   }
 
-  test("automatic pruning of filtered channel") { case (router, _) =>
-    // NB: this is an Android-specific test
-    val sender = TestProbe()
-    val listener = TestProbe()
-    system.eventStream.subscribe(listener.ref, classOf[ChannelLost])
-    // channel is ignored and will get pruned
-    sender.send(router, RouteRequest(a, d, ignoreChannels = Set(channelId_bc)))
-    sender.expectMsg(Failure(RouteNotFound))
-    listener.expectMsgType[ChannelLost]
-  }
-
-
 }

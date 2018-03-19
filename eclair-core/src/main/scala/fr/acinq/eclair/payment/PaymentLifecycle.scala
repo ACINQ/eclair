@@ -4,7 +4,8 @@ import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
-import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
+import fr.acinq.eclair.blockchain.WatchEventSpentBasic
+import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
@@ -33,7 +34,7 @@ case class PaymentFailed(paymentHash: BinaryData, failures: Seq[PaymentFailure])
 sealed trait Data
 case object WaitingForRequest extends Data
 case class WaitingForRoute(sender: ActorRef, c: SendPayment, failures: Seq[PaymentFailure]) extends Data
-case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ShortChannelId], hops: Seq[Hop]) extends Data
+case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[Hop]) extends Data
 
 sealed trait State
 case object WAITING_FOR_REQUEST extends State
@@ -141,7 +142,13 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         case Success(e@ErrorPacket(nodeId, failureMessage)) =>
           log.info(s"received an error message from nodeId=$nodeId, trying to use a different channel (failure=$failureMessage)")
           // let's try again without the channel outgoing from nodeId
-          val faultyChannel = hops.find(_.nodeId == nodeId).map(_.lastUpdate.shortChannelId)
+          val faultyChannel = hops.find(_.nodeId == nodeId).map { hop =>
+            // On Android, we don't monitor channels to see if their funding is spent because it is too expensive
+            // if the node that created this channel tells us it is unusable (only permanent channel failure) we forget about it
+            // note that if the channel is in fact still alive, we will get it again via network announcements anyway
+            router ! WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(hop.lastUpdate.shortChannelId))
+            ChannelDesc(hop.lastUpdate.shortChannelId, hop.nodeId, hop.nextNodeId)
+          }
           router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes, ignoreChannels ++ faultyChannel.toSet)
           goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ RemoteFailure(hops, e))
       }
@@ -160,7 +167,8 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
         stop(FSM.Normal)
       } else {
         log.info(s"received an error message from local, trying to use a different channel (failure=${t.getMessage})")
-        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes, ignoreChannels + hops.head.lastUpdate.shortChannelId)
+        val faultyChannel = ChannelDesc(hops.head.lastUpdate.shortChannelId, hops.head.nodeId, hops.head.nextNodeId)
+        router ! RouteRequest(sourceNodeId, c.targetNodeId, c.assistedRoutes, ignoreNodes, ignoreChannels + faultyChannel)
         goto(WAITING_FOR_ROUTE) using WaitingForRoute(s, c, failures :+ LocalFailure(t))
       }
 
@@ -236,7 +244,7 @@ object PaymentLifecycle {
       case other => other
     } match {
       case previousFailures :+ LocalFailure(RouteNotFound) if previousFailures.nonEmpty => previousFailures
-      case _ => failures
+      case other => other
     }
   }
 }
