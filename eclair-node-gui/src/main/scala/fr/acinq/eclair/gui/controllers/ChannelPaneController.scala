@@ -25,6 +25,7 @@ class ChannelPaneController(val theirNodeIdValue: String) extends Logging {
   @FXML var funder: TextField = _
   @FXML var state: TextField = _
   @FXML var close: Button = _
+  @FXML var forceclose: Button = _
 
   var contextMenu: ContextMenu = _
 

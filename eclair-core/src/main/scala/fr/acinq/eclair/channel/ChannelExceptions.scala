@@ -22,6 +22,7 @@ case class ChannelReserveTooHigh               (override val channelId: BinaryDa
 case class ChannelFundingError                 (override val channelId: BinaryData) extends ChannelException(channelId, "channel funding error")
 case class NoMoreHtlcsClosingInProgress        (override val channelId: BinaryData) extends ChannelException(channelId, "cannot send new htlcs, closing in progress")
 case class ClosingAlreadyInProgress            (override val channelId: BinaryData) extends ChannelException(channelId, "closing already in progress")
+case class CannotCloseInThisState              (override val channelId: BinaryData, state: State) extends ChannelException(channelId, s"cannot close in state=$state")
 case class CannotCloseWithUnsignedOutgoingHtlcs(override val channelId: BinaryData) extends ChannelException(channelId, "cannot close when there are unsigned outgoing htlcs")
 case class ChannelUnavailable                  (override val channelId: BinaryData) extends ChannelException(channelId, "channel is unavailable (offline or closing)")
 case class InvalidFinalScript                  (override val channelId: BinaryData) extends ChannelException(channelId, "invalid final script")

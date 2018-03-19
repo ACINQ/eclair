@@ -141,9 +141,25 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
           }
       }
 
-    case Event(LocalChannelDown(_, channelId, shortChannelId, _), d: Data) =>
-      log.debug("removed local channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
-      stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates.filterKeys(_.shortChannelId != shortChannelId))
+    case Event(LocalChannelDown(_, channelId, shortChannelId, remoteNodeId), d: Data) =>
+      // a local channel has permanently gone down
+      if (d.channels.contains(shortChannelId)) {
+        // the channel was public, we will receive (or have already received) a WatchEventSpentBasic event, that will trigger a clean up of the channel
+        // so let's not do anything here
+        stay
+      } else if (d.privateChannels.contains(shortChannelId)) {
+        // the channel was private or public-but-not-yet-announced, let's do the clean up
+        log.debug("removing private local channel and channel_update for channelId={} shortChannelId={}", channelId, shortChannelId)
+        val desc1 = ChannelDesc(shortChannelId, nodeParams.nodeId, remoteNodeId)
+        val desc2 = ChannelDesc(shortChannelId, remoteNodeId, nodeParams.nodeId)
+        // we remove the corresponding updates from the graph
+        removeEdge(d.graph, desc1)
+        removeEdge(d.graph, desc2)
+        // and we remove the channel and channel_update from our state
+        stay using d.copy(privateChannels = d.privateChannels - shortChannelId, privateUpdates = d.privateUpdates - desc1 - desc2)
+      } else {
+        stay
+      }
 
     case Event(GetRoutingState, d: Data) =>
       log.info(s"getting valid announcements for $sender")
@@ -234,6 +250,8 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       // we remove channel from awaiting map
       val awaiting1 = d0.awaiting - c
       if (success) {
+        // note: if the channel is graduating from private to public, the implementation (in the LocalChannelUpdate handler) guarantees that we will process a new channel_update
+        // right after the channel_announcement, channel_updates will be moved from private to public at that time
         val d1 = d0.copy(
           channels = d0.channels + (c.shortChannelId -> c),
           privateChannels = d0.privateChannels - c.shortChannelId, // we remove fake announcements that we may have made before
@@ -262,8 +280,7 @@ class Router(nodeParams: NodeParams, watcher: ActorRef) extends FSM[State, Data]
       log.debug("received channel update for shortChannelId={} from {}", u.shortChannelId, sender)
       stay using handle(u, sender, d)
 
-    case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d)
-      if d.channels.contains(shortChannelId) =>
+    case Event(WatchEventSpentBasic(BITCOIN_FUNDING_EXTERNAL_CHANNEL_SPENT(shortChannelId)), d) if d.channels.contains(shortChannelId) =>
       val lostChannel = d.channels(shortChannelId)
       log.info("funding tx of channelId={} has been spent", shortChannelId)
       // we need to remove nodes that aren't tied to any channels anymore
