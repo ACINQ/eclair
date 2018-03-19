@@ -6,7 +6,7 @@
 
 **Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
-This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [lightning-c], [lit], and [lnd].
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning] and [lnd].
  
  ---
  
@@ -179,9 +179,6 @@ docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConso
 - [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 - [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to
 
-[Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
-[lightning-c]: https://github.com/ElementsProject/lightning
+[c-lightning]: https://github.com/ElementsProject/lightning
 [lnd]: https://github.com/LightningNetwork/lnd
-[lit]: https://github.com/mit-dci/lit
-[Thunder]: https://github.com/blockchain/thunder
 
