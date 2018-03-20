@@ -133,7 +133,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
       log.warning(s"connection to $remoteAddress failed, trying $nextAddress")
       connectionFailures.put(remoteAddress, connectionFailures.getOrElse(remoteAddress, 0L) + 1L)
       val count = connectionFailures.getOrElse(nextAddress, 0L)
-      val delay = Math.min(Math.pow(2.0, count), 60.0) seconds;
+      val delay = Math.min(Math.pow(2.0, count), 20.0) seconds;
       context.system.scheduler.scheduleOnce(delay, self, Tcp.Connect(nextAddress, options = socketOptions))
   }
 
