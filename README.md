@@ -67,7 +67,7 @@ Just use the windows installer, it should create a shortcut on your desktop.
 
 #### Linux, macOS or manual install on Windows
 
-You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html).
+You need to first install java, more precisely a [JRE 1.8](http://www.oracle.com/technetwork/java/javase/downloads/jre8-downloads-2133155.html), version 1.8u161 or newer (there are issues with older JDK/JRE).
 
  :warning: If you are using the OpenJDK JRE, you will need to build OpenJFX yourself, or run the application in headless mode (see below).
 
