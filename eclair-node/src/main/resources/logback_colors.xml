@@ -81,7 +81,7 @@
         <appender-ref ref="CYAN"/>
     </logger>
 
-    <logger name="fr.acinq.eclair.gui" level="WARN" additivity="false">
+    <logger name="fr.acinq.eclair.gui" level="INFO" additivity="false">
         <appender-ref ref="MAGENTA"/>
     </logger>
 

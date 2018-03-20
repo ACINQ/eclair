@@ -6,7 +6,7 @@
 
 **Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
-This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [lightning-c], [lit], and [lnd].
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning] and [lnd].
  
  ---
  
@@ -154,6 +154,7 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   checkpayment | paymentRequest                                                                         | returns true if the payment has been received, false otherwise
   close        | channelId                                                                              | close a channel
   close        | channelId, scriptPubKey                                                                | close a channel and send the funds to the given scriptPubKey
+  forceclose   | channelId                                                                              | force-close a channel by publishing the local commitment tx (careful: this is more expensive than a regular close and will incur a delay before funds are spendable)"
   help         |                                                                                        | display available methods
 
 ## Docker
@@ -178,9 +179,6 @@ docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConso
 - [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 - [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to
 
-[Amiko-Pay]: https://github.com/cornwarecjp/amiko-pay
-[lightning-c]: https://github.com/ElementsProject/lightning
+[c-lightning]: https://github.com/ElementsProject/lightning
 [lnd]: https://github.com/LightningNetwork/lnd
-[lit]: https://github.com/mit-dci/lit
-[Thunder]: https://github.com/blockchain/thunder
 
