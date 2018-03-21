@@ -3,7 +3,7 @@ package fr.acinq.eclair.blockchain.electrum
 import java.io.InputStream
 import java.net.InetSocketAddress
 
-import akka.actor.{Actor, ActorLogging, ActorRef, Stash, Terminated}
+import akka.actor.{Actor, ActorLogging, ActorRef, Props, Stash, Terminated}
 import akka.io.{IO, Tcp}
 import akka.util.ByteString
 import fr.acinq.bitcoin._
@@ -83,7 +83,7 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     }) ~ ("id" -> request.id) ~ ("jsonrpc" -> request.jsonrpc)
     val serialized = compact(render(json))
     val bytes = (serialized + newline).getBytes
-    connection ! Tcp.Write(ByteString.fromArray(bytes))
+    connection ! ByteString.fromArray(bytes)
   }
 
   private def nextPeer() = {
@@ -119,8 +119,8 @@ class ElectrumClient(serverAddresses: Seq[InetSocketAddress]) extends Actor with
     case Tcp.Connected(remote, _) =>
       log.info(s"connected to $remote")
       connectionFailures.clear()
-      val connection = sender()
-      connection ! Tcp.Register(self)
+      sender ! Tcp.Register(self)
+      val connection = context.actorOf(Props(new WriteAckSender(sender())), name = "electrum-sender")
       val request = version
       send(connection, makeRequest(request, "" + reqId))
       reqId = reqId + 1
