@@ -33,13 +33,6 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
 
-  // TODO: this will probably not be needed once segwit is merged into core
-  val protocolVersion = Protocol.PROTOCOL_VERSION
-
-  def tx2Hex(tx: Transaction): String = toHexString(Transaction.write(tx, protocolVersion))
-
-  def hex2tx(hex: String): Transaction = Transaction.read(hex, protocolVersion)
-
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
       .map(json => Some((json \ "confirmations").extractOrElse[Int](0)))
@@ -142,7 +135,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
-    publishTransaction(tx2Hex(tx))
+    publishTransaction(tx.toString())
 
   /**
     * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent
