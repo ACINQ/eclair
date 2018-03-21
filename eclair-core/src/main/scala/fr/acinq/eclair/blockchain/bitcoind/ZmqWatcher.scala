@@ -64,7 +64,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
-      log.debug(s"received blockid=${Try(block.blockId).getOrElse(BinaryData(""))}")
+      log.debug(s"received blockid=${Try(block.blockId).getOrElse(BinaryData.empty)}")
       nextTick.map(_.cancel()) // this may fail or succeed, worse case scenario we will have two ticks in a row (no big deal)
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row

@@ -70,7 +70,7 @@ object Announcements {
       nodeId2 = nodeId2,
       bitcoinKey1 = bitcoinKey1,
       bitcoinKey2 = bitcoinKey2,
-      features = BinaryData(""),
+      features = BinaryData.empty,
       chainHash = chainHash
     )
   }

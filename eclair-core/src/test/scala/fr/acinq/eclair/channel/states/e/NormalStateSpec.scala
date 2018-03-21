@@ -667,7 +667,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       bob2alice.forward(alice)
     }
   }
-  
+
   test("recv CommitSig (two htlcs received with same r)") { case (alice, bob, alice2bob, bob2alice, _, _, _) =>
     within(30 seconds) {
       val sender = TestProbe()

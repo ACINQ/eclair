@@ -151,11 +151,11 @@ class TestVectorsSpec extends FunSuite {
   )
 
   val htlcs = Seq(
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, BinaryData(""))),
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, BinaryData(""))),
-    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, BinaryData(""))),
-    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, BinaryData(""))),
-    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, BinaryData("")))
+    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Crypto.sha256(paymentPreimages(0)), 500, BinaryData.empty)),
+    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(1)), 501, BinaryData.empty)),
+    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(2000000).amount, Crypto.sha256(paymentPreimages(2)), 502, BinaryData.empty)),
+    DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(3000000).amount, Crypto.sha256(paymentPreimages(3)), 503, BinaryData.empty)),
+    DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(4000000).amount, Crypto.sha256(paymentPreimages(4)), 504, BinaryData.empty))
   )
   val htlcScripts = htlcs.map(htlc => htlc.direction match {
     case OUT => Scripts.htlcOffered(Local.payment_privkey.publicKey, Remote.payment_privkey.publicKey, Local.revocation_pubkey, Crypto.ripemd160(htlc.add.paymentHash))
