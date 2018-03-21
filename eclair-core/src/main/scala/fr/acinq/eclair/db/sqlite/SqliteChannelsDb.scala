@@ -11,7 +11,11 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
 
   import SqliteUtils._
 
+  val DB_NAME = "channels"
+  val CURRENT_VERSION = 0
+
   using(sqlite.createStatement()) { statement =>
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
   }
 
