@@ -54,7 +54,6 @@ class ThroughputSpec extends FunSuite {
 
       override def receive: Receive = ???
 
-      // TODO: store this map on file ?
       def run(h2r: Map[BinaryData, BinaryData]): Receive = {
         case ('add, tgt: ActorRef) =>
           val r = generateR()
