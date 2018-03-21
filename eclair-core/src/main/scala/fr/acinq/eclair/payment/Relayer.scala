@@ -4,6 +4,7 @@ import akka.actor.{Actor, ActorLogging, ActorRef, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx
+import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentFailed, PaymentSucceeded}
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, NodeParams, ShortChannelId}

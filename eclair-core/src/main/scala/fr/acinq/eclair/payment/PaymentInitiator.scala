@@ -2,6 +2,7 @@ package fr.acinq.eclair.payment
 
 import akka.actor.{Actor, ActorLogging, ActorRef, Props}
 import fr.acinq.bitcoin.Crypto.PublicKey
+import fr.acinq.eclair.payment.PaymentLifecycle.SendPayment
 
 /**
   * Created by PM on 29/08/2016.

@@ -4,6 +4,7 @@ import akka.actor.{Actor, ActorLogging, Props, Status}
 import fr.acinq.bitcoin.{BinaryData, Crypto, MilliSatoshi}
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC, Channel}
 import fr.acinq.eclair.db.Payment
+import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.wire._
 
 import scala.concurrent.duration._

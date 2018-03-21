@@ -56,7 +56,8 @@ case class NodeParams(keyManager: KeyManager,
                       channelExcludeDuration: FiniteDuration,
                       watcherType: WatcherType,
                       paymentRequestExpiry: FiniteDuration,
-                      maxPendingPaymentRequests: Int) {
+                      maxPendingPaymentRequests: Int,
+                      maxPaymentFee: Double) {
   val privateKey = keyManager.nodeKey.privateKey
   val nodeId = keyManager.nodeId
 }
@@ -166,6 +167,8 @@ object NodeParams {
       channelExcludeDuration = FiniteDuration(config.getDuration("channel-exclude-duration").getSeconds, TimeUnit.SECONDS),
       watcherType = watcherType,
       paymentRequestExpiry = FiniteDuration(config.getDuration("payment-request-expiry").getSeconds, TimeUnit.SECONDS),
-      maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"))
+      maxPendingPaymentRequests = config.getInt("max-pending-payment-requests"),
+      maxPaymentFee = config.getDouble("max-payment-fee")
+    )
   }
 }

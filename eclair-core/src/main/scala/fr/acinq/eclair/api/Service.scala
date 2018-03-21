@@ -18,7 +18,8 @@ import fr.acinq.bitcoin.{BinaryData, MilliSatoshi, Satoshi}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.io.Peer.{GetPeerInfo, PeerInfo}
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.payment.{PaymentRequest, PaymentResult, ReceivePayment, SendPayment, _}
+import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, PaymentResult, ReceivePayment, SendPayment}
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.ChannelDesc
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
 import fr.acinq.eclair.{Kit, ShortChannelId, feerateByte2Kw}
@@ -208,7 +209,7 @@ trait Service extends Logging {
                         // user manually sets the payment information
                         case JInt(amountMsat) :: JString(paymentHash) :: JString(nodeId) :: Nil =>
                           (Try(BinaryData(paymentHash)), Try(PublicKey(nodeId))) match {
-                            case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ? SendPayment(amountMsat.toLong, ph, pk)).mapTo[PaymentResult])
+                            case (Success(ph), Success(pk)) => completeRpcFuture(req.id, (paymentInitiator ? SendPayment(amountMsat.toLong, ph, pk, maxFeePct = nodeParams.maxPaymentFee)).mapTo[PaymentResult])
                             case (Failure(_), _) => reject(RpcValidationRejection(req.id, s"invalid payment hash '$paymentHash'"))
                             case _ => reject(RpcValidationRejection(req.id, s"invalid node id '$nodeId'"))
                           }
@@ -225,8 +226,8 @@ trait Service extends Logging {
                             logger.debug(s"api call for sending payment with amount_msat=$amount_msat")
                             // optional cltv expiry
                             val sendPayment = pr.minFinalCltvExpiry match {
-                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId)
-                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry)
+                              case None => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, maxFeePct = nodeParams.maxPaymentFee)
+                              case Some(minFinalCltvExpiry) => SendPayment(amount_msat, pr.paymentHash, pr.nodeId, assistedRoutes = Nil, minFinalCltvExpiry, maxFeePct = nodeParams.maxPaymentFee)
                             }
                             completeRpcFuture(req.id, (paymentInitiator ? sendPayment).mapTo[PaymentResult])
                           case _ => reject(RpcValidationRejection(req.id, s"payment request is not valid"))

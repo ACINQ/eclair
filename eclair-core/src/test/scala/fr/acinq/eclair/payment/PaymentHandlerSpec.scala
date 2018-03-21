@@ -7,6 +7,7 @@ import fr.acinq.bitcoin.{MilliSatoshi, Satoshi}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.TestConstants.Alice
 import fr.acinq.eclair.channel.{CMD_FAIL_HTLC, CMD_FULFILL_HTLC}
+import fr.acinq.eclair.payment.PaymentLifecycle.{CheckPayment, ReceivePayment}
 import fr.acinq.eclair.wire.{FinalExpiryTooSoon, UpdateAddHtlc}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuiteLike

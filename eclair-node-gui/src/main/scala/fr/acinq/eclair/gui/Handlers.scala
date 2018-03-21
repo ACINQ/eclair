@@ -8,6 +8,7 @@ import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
 

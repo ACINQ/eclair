@@ -1,12 +1,16 @@
 package fr.acinq.eclair.payment
 
+import java.text.NumberFormat
+import java.util.Locale
+
 import akka.actor.{ActorRef, FSM, Props, Status}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, MilliSatoshi}
 import fr.acinq.eclair._
 import fr.acinq.eclair.channel.{AddHtlcFailed, CMD_ADD_HTLC, Channel, Register}
-import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
 import fr.acinq.eclair.crypto.Sphinx.{ErrorPacket, Packet}
+import fr.acinq.eclair.crypto.{Sphinx, TransportHandler}
+import fr.acinq.eclair.payment.PaymentLifecycle._
 import fr.acinq.eclair.payment.PaymentRequest.ExtraHop
 import fr.acinq.eclair.router._
 import fr.acinq.eclair.wire._
@@ -14,40 +18,10 @@ import scodec.Attempt
 
 import scala.util.{Failure, Success}
 
-// @formatter:off
-case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String)
-/**
-  * @param finalCltvExpiry by default we choose finalCltvExpiry = Channel.MIN_CLTV_EXPIRY + 1 to not have our htlc fail when a new block has just been found
-  */
-case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY + 1, maxAttempts: Int = 5)
-case class CheckPayment(paymentHash: BinaryData)
-
-sealed trait PaymentResult
-case class PaymentSucceeded(amountMsat: Long, paymentHash: BinaryData, paymentPreimage: BinaryData, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
-sealed trait PaymentFailure
-case class LocalFailure(t: Throwable) extends PaymentFailure
-case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
-case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
-case class PaymentFailed(paymentHash: BinaryData, failures: Seq[PaymentFailure]) extends PaymentResult
-
-sealed trait Data
-case object WaitingForRequest extends Data
-case class WaitingForRoute(sender: ActorRef, c: SendPayment, failures: Seq[PaymentFailure]) extends Data
-case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[Hop]) extends Data
-
-sealed trait State
-case object WAITING_FOR_REQUEST extends State
-case object WAITING_FOR_ROUTE extends State
-case object WAITING_FOR_PAYMENT_COMPLETE extends State
-
-// @formatter:on
-
 /**
   * Created by PM on 26/08/2016.
   */
-class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[State, Data] {
-
-  import PaymentLifecycle._
+class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) extends FSM[PaymentLifecycle.State, PaymentLifecycle.Data] {
 
   startWith(WAITING_FOR_REQUEST, WaitingForRequest)
 
@@ -63,8 +37,15 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
       val firstHop = hops.head
       val finalExpiry = Globals.blockCount.get().toInt + c.finalCltvExpiry.toInt
       val (cmd, sharedSecrets) = buildCommand(c.amountMsat, finalExpiry, c.paymentHash, hops)
-      register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
-      goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
+      val feePct = (cmd.amountMsat - c.amountMsat) / c.amountMsat.toDouble // c.amountMsat is required to be > 0, have to convert to double, otherwise will be rounded
+      if (feePct > c.maxFeePct) {
+        log.info(s"cheapest route found is too expensive: feePct=$feePct maxFeePct=${c.maxFeePct}")
+        reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(RouteTooExpensive(feePct, c.maxFeePct))))
+        stop(FSM.Normal)
+      } else {
+        register ! Register.ForwardShortId(firstHop.lastUpdate.shortChannelId, cmd)
+        goto(WAITING_FOR_PAYMENT_COMPLETE) using WaitingForComplete(s, c, cmd, failures, sharedSecrets, ignoreNodes, ignoreChannels, hops)
+      }
 
     case Event(Status.Failure(t), WaitingForRoute(s, c, failures)) =>
       reply(s, PaymentFailed(c.paymentHash, failures = failures :+ LocalFailure(t)))
@@ -182,6 +163,42 @@ class PaymentLifecycle(sourceNodeId: PublicKey, router: ActorRef, register: Acto
 object PaymentLifecycle {
 
   def props(sourceNodeId: PublicKey, router: ActorRef, register: ActorRef) = Props(classOf[PaymentLifecycle], sourceNodeId, router, register)
+
+  // @formatter:off
+  case class ReceivePayment(amountMsat_opt: Option[MilliSatoshi], description: String)
+  /**
+    * @param finalCltvExpiry by default we choose finalCltvExpiry = Channel.MIN_CLTV_EXPIRY + 1 to not have our htlc fail when a new block has just been found
+    * @param maxFeePct set by default to 3% as a safety measure (even if a route is found, if fee is higher than that payment won't be attempted)
+    */
+  case class SendPayment(amountMsat: Long, paymentHash: BinaryData, targetNodeId: PublicKey, assistedRoutes: Seq[Seq[ExtraHop]] = Nil, finalCltvExpiry: Long = Channel.MIN_CLTV_EXPIRY + 1, maxAttempts: Int = 5, maxFeePct: Double = 0.03) {
+    require(amountMsat > 0, s"amountMsat must be > 0")
+  }
+  case class CheckPayment(paymentHash: BinaryData)
+
+  sealed trait PaymentResult
+  case class PaymentSucceeded(amountMsat: Long, paymentHash: BinaryData, paymentPreimage: BinaryData, route: Seq[Hop]) extends PaymentResult // note: the amount includes fees
+  sealed trait PaymentFailure
+  case class LocalFailure(t: Throwable) extends PaymentFailure
+  case class RemoteFailure(route: Seq[Hop], e: ErrorPacket) extends PaymentFailure
+  case class UnreadableRemoteFailure(route: Seq[Hop]) extends PaymentFailure
+  case class PaymentFailed(paymentHash: BinaryData, failures: Seq[PaymentFailure]) extends PaymentResult
+
+  sealed trait Data
+  case object WaitingForRequest extends Data
+  case class WaitingForRoute(sender: ActorRef, c: SendPayment, failures: Seq[PaymentFailure]) extends Data
+  case class WaitingForComplete(sender: ActorRef, c: SendPayment, cmd: CMD_ADD_HTLC, failures: Seq[PaymentFailure], sharedSecrets: Seq[(BinaryData, PublicKey)], ignoreNodes: Set[PublicKey], ignoreChannels: Set[ChannelDesc], hops: Seq[Hop]) extends Data
+
+  sealed trait State
+  case object WAITING_FOR_REQUEST extends State
+  case object WAITING_FOR_ROUTE extends State
+  case object WAITING_FOR_PAYMENT_COMPLETE extends State
+
+  val percentageFormatter = NumberFormat.getPercentInstance(Locale.US) // force US locale to always get "fee=0.272% max=0.1%" (otherwise depending on locale it can be "fee=0,272 % max=0,1 %")
+  percentageFormatter.setMaximumFractionDigits(3)
+  case class RouteTooExpensive(feePct: Double, maxFeePct: Double) extends RuntimeException(s"cheapest route found is too expensive: fee=${percentageFormatter.format(feePct)} max=${percentageFormatter.format(maxFeePct)}")
+
+  // @formatter:on
+
 
   def buildOnion(nodes: Seq[PublicKey], payloads: Seq[PerHopPayload], associatedData: BinaryData): Sphinx.PacketAndSecrets = {
     require(nodes.size == payloads.size)
