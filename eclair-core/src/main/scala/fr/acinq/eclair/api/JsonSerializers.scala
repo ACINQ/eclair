@@ -82,11 +82,11 @@ class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](fo
 }))
 
 class OutPointSerializer extends CustomSerializer[OutPoint](format => ({ null }, {
-  case x: OutPoint => JString(s"${x.hash}:${x.index}")
+  case x: OutPoint => JString(s"${x.txid}:${x.index}")
 }))
 
 class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ null }, {
-  case x: OutPoint => s"${x.hash}:${x.index}"
+  case x: OutPoint => s"${x.txid}:${x.index}"
 }))
 
 class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {
