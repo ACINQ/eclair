@@ -79,5 +79,17 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
       }
   }
 
+  def sendAll(address: String, feeRatePerKw: Long): Future[(Transaction, Satoshi)] = {
+    val publicKeyScript = Base58Check.decode(address) match {
+      case (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) => Script.pay2pkh(pubKeyHash)
+      case (Base58.Prefix.ScriptAddressTestnet, scriptHash) => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+    }
+    (wallet ? SendAll(Script.write(publicKeyScript), feeRatePerKw))
+      .mapTo[SendAllResponse]
+      .map {
+        case SendAllResponse(tx, fee) => (tx, fee)
+      }
+  }
+
   override def rollback(tx: Transaction): Future[Boolean] = (wallet ? CancelTransaction(tx)).map(_ => true)
 }
