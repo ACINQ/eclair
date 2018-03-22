@@ -21,12 +21,12 @@ import java.net.InetSocketAddress
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 import fr.acinq.eclair.wire.Color
-import org.json4s.JsonAST.{JNull, JString}
+import org.json4s.JsonAST.{JInt, JNull, JString}
 import org.json4s.{CustomKeySerializer, CustomSerializer}
 
 /**
@@ -35,6 +35,10 @@ import org.json4s.{CustomKeySerializer, CustomSerializer}
   */
 class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ null }, {
   case x: BinaryData => JString(x.toString())
+}))
+
+class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
+  case x: UInt64 => JInt(x.toBigInt)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
