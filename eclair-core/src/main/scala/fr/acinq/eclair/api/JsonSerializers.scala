@@ -81,11 +81,11 @@ class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](fo
   case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
 }))
 
-class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({
-  case x: String =>
-    val Array(k, v) = x.split(":")
-    OutPoint(BinaryData(k), v.toLong)
-}, {
+class OutPointSerializer extends CustomSerializer[OutPoint](format => ({ null }, {
+  case x: OutPoint => JString(s"${x.hash}:${x.index}")
+}))
+
+class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ null }, {
   case x: OutPoint => s"${x.hash}:${x.index}"
 }))
 
