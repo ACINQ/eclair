@@ -80,7 +80,8 @@ object TestConstants {
       channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      maxPendingPaymentRequests = 10000000)
+      maxPendingPaymentRequests = 10000000,
+      maxPaymentFee = 0.03)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,
@@ -133,7 +134,8 @@ object TestConstants {
       channelExcludeDuration = 5 seconds,
       watcherType = BITCOIND,
       paymentRequestExpiry = 1 hour,
-      maxPendingPaymentRequests = 10000000)
+      maxPendingPaymentRequests = 10000000,
+      maxPaymentFee = 0.03)
 
     def channelParams = Peer.makeChannelParams(
       nodeParams = nodeParams,

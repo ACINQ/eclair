@@ -34,7 +34,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Peer.Disconnect
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.payment.{State => _, _}
+import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, Kit, Setup}

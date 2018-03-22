@@ -24,6 +24,7 @@ import fr.acinq.bitcoin.MilliSatoshi
 import fr.acinq.eclair._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.io.{NodeURI, Peer}
+import fr.acinq.eclair.payment.PaymentLifecycle.{PaymentResult, ReceivePayment, SendPayment}
 import fr.acinq.eclair.payment._
 import grizzled.slf4j.Logging
 
@@ -84,15 +85,15 @@ class Handlers(fKit: Future[Kit])(implicit ec: ExecutionContext = ExecutionConte
       .orElse(req.amount.map(_.amount))
       .getOrElse(throw new RuntimeException("you need to manually specify an amount for this payment request"))
     logger.info(s"sending $amountMsat to ${req.paymentHash} @ ${req.nodeId}")
-    val sendPayment = req.minFinalCltvExpiry match {
-      case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo)
-      case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry)
-    }
-    // completed payment will be handled from GUIUpdater by listening to PaymentSucceeded/PaymentFailed events
     (for {
       kit <- fKit
+      sendPayment = req.minFinalCltvExpiry match {
+        case None => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, maxFeePct = kit.nodeParams.maxPaymentFee)
+        case Some(minFinalCltvExpiry) => SendPayment(amountMsat, req.paymentHash, req.nodeId, req.routingInfo, finalCltvExpiry = minFinalCltvExpiry)
+      }
       res <- (kit.paymentInitiator ? sendPayment).mapTo[PaymentResult]
     } yield res).recover {
+      // completed payment will be handled by the GUIUpdater by listening to PaymentSucceeded/PaymentFailed events
       case _: AskTimeoutException =>
         logger.info("sending payment is taking a long time, notifications will not be shown")
       case t =>

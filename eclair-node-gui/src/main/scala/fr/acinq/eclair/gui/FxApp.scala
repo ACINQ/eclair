@@ -17,6 +17,7 @@
 package fr.acinq.eclair.gui
 
 import java.io.File
+
 import javafx.application.Preloader.ErrorNotification
 import javafx.application.{Application, Platform}
 import javafx.event.EventHandler
@@ -24,14 +25,14 @@ import javafx.fxml.FXMLLoader
 import javafx.scene.image.Image
 import javafx.scene.{Parent, Scene}
 import javafx.stage.{Popup, Screen, Stage, WindowEvent}
-
 import akka.actor.{Props, SupervisorStrategy}
 import fr.acinq.eclair._
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor._
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.ElectrumEvent
 import fr.acinq.eclair.channel.ChannelEvent
 import fr.acinq.eclair.gui.controllers.{MainController, NotificationsController}
-import fr.acinq.eclair.payment.{PaymentEvent, PaymentResult}
+import fr.acinq.eclair.payment.PaymentEvent
+import fr.acinq.eclair.payment.PaymentLifecycle.PaymentResult
 import fr.acinq.eclair.router.NetworkEvent
 import grizzled.slf4j.Logging
 
