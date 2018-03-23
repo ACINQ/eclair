@@ -147,6 +147,8 @@ java -Declair.datadir=/tmp/node1 -jar eclair-node-gui-<version>-<commit_id>.jar
   allupdates   | nodeId                                                                                 | list all channels updates for this nodeId
   receive      | description                                                                            | generate a payment request without a required amount (can be useful for donations)
   receive      | amountMsat, description                                                                | generate a payment request for a given amount
+  checkinvoice | paymentRequest                                                                         | returns node, amount and payment hash in an invoice/paymentRequest
+  findroute    | paymentRequest|nodeId                                                                  | given a payment request or nodeID checks if there is a valid payment route returns JSON with attempts, nodes and channels of route
   send         | amountMsat, paymentHash, nodeId                                                        | send a payment to a lightning node
   send         | paymentRequest                                                                         | send a payment to a lightning node using a BOLT11 payment request
   send         | paymentRequest, amountMsat                                                             | send a payment to a lightning node using a BOLT11 payment request and a custom amount
