@@ -11,7 +11,7 @@ import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
 
   val DB_NAME = "pending_relay"
-  val CURRENT_VERSION = 0
+  val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed

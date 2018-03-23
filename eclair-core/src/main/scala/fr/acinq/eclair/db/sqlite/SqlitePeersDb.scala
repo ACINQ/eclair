@@ -13,7 +13,7 @@ import scodec.bits.BitVector
 class SqlitePeersDb(sqlite: Connection) extends PeersDb {
 
   val DB_NAME = "peers"
-  val CURRENT_VERSION = 0
+  val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed

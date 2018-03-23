@@ -22,7 +22,7 @@ import scala.collection.immutable.Queue
 class SqlitePaymentsDb(sqlite: Connection) extends PaymentsDb with Logging {
 
   val DB_NAME = "payments"
-  val CURRENT_VERSION = 0
+  val CURRENT_VERSION = 1
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
