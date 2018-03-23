@@ -89,7 +89,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
 
   test("01-offer1") { case (ref, res) => assert(ref === res) }
   test("02-offer2") { case (ref, res) => assert(ref === res) }
-  //test("03-fulfill1") { case (ref, res) => assert(ref === res) } TODO: check
+  //test("03-fulfill1") { case (ref, res) => assert(ref === res) }
   // test("04-two-commits-onedir") { case (ref, res) => assert(ref === res) } DOES NOT PASS : we now automatically sign back when we receive a revocation and have acked changes
   // test("05-two-commits-in-flight") { case (ref, res) => assert(ref === res)} DOES NOT PASS : cannot send two commit in a row (without having first revocation)
   test("10-offers-crossover") { case (ref, res) => assert(ref === res) }
