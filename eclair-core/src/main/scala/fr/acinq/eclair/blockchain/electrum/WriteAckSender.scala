@@ -60,7 +60,7 @@ class WriteAckSender(connection: ActorRef) extends Actor with ActorLogging {
 
   override def unhandled(message: Any): Unit = message match {
     case _: Tcp.ConnectionClosed => context stop self
-    case _: Terminated => context stop self
+    case Terminated(_) => context stop self
     case _ => log.warning(s"unhandled message $message")
   }
 

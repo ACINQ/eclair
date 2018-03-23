@@ -30,7 +30,7 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, ElectrumDisconnected}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumDisconnected, ElectrumReady}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
 import fr.acinq.eclair.payment.PaymentLifecycle.{LocalFailure, PaymentFailed, PaymentSucceeded, RemoteFailure}
@@ -237,7 +237,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug("ZMQ connection DOWN")
       runInGuiThread(() => mainController.showBlockerModal("Bitcoin Core"))
 
-    case ElectrumConnected =>
+    case _: ElectrumReady =>
       log.debug("Electrum connection UP")
       runInGuiThread(() => mainController.hideBlockerModal)
 
