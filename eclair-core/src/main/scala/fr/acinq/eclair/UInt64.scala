@@ -29,6 +29,8 @@ case class UInt64(private val underlying: BigInt) extends Ordered[UInt64] {
 
   def toByteArray: Array[Byte] = underlying.toByteArray.takeRight(8)
 
+  def toBigInt: BigInt = underlying
+
   override def toString: String = underlying.toString
 }
 

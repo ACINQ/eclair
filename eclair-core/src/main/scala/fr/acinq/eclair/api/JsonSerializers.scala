@@ -21,12 +21,12 @@ import java.net.InetSocketAddress
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
-import fr.acinq.eclair.ShortChannelId
+import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
-import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
+import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire.Color
-import org.json4s.JsonAST.{JNull, JString}
+import org.json4s.JsonAST.{JInt, JNull, JObject, JString}
 import org.json4s.{CustomKeySerializer, CustomSerializer}
 
 /**
@@ -35,6 +35,10 @@ import org.json4s.{CustomKeySerializer, CustomSerializer}
   */
 class BinaryDataSerializer extends CustomSerializer[BinaryData](format => ({ null }, {
   case x: BinaryData => JString(x.toString())
+}))
+
+class UInt64Serializer extends CustomSerializer[UInt64](format => ({ null }, {
+  case x: UInt64 => JInt(x.toBigInt)
 }))
 
 class ShortChannelIdSerializer extends CustomSerializer[ShortChannelId](format => ({ null }, {
@@ -77,12 +81,16 @@ class InetSocketAddressSerializer extends CustomSerializer[InetSocketAddress](fo
   case address: InetSocketAddress => JString(HostAndPort.fromParts(address.getHostString, address.getPort).toString)
 }))
 
-class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({
-  case x: String =>
-    val Array(k, v) = x.split(":")
-    OutPoint(BinaryData(k), v.toLong)
-}, {
-  case x: OutPoint => s"${x.hash}:${x.index}"
+class OutPointSerializer extends CustomSerializer[OutPoint](format => ({ null }, {
+  case x: OutPoint => JString(s"${x.txid}:${x.index}")
+}))
+
+class OutPointKeySerializer extends CustomKeySerializer[OutPoint](format => ({ null }, {
+  case x: OutPoint => s"${x.txid}:${x.index}"
+}))
+
+class InputInfoSerializer extends CustomSerializer[InputInfo](format => ({ null }, {
+  case x: InputInfo => JObject(("outPoint", JString(s"${x.outPoint.txid}:${x.outPoint.index}")), ("amountSatoshis", JInt(x.txOut.amount.amount)))
 }))
 
 class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {
