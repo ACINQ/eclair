@@ -162,6 +162,20 @@ class ElectrumWalletBasicSpec extends FunSuite {
     }
   }
 
+  test("spend all our balance") {
+    val state1 = addFunds(state, state.accountKeys(0), 1 btc)
+    val state2 = addFunds(state1, state1.accountKeys(1), 2 btc)
+    val state3 = addFunds(state2, state2.changeKeys(0), 0.5 btc)
+    assert(state3.utxos.length == 3)
+    assert(state3.balance == (Satoshi(350000000),Satoshi(0)))
+
+    val (tx, fee) = state3.spendAll(Script.pay2wpkh(BinaryData("01" * 20)), feeRatePerKw)
+    val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
+    assert(received == Satoshi(0))
+    assert(fee == fee1)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
+  }
+
   test("fuzzy test") {
     val random = new Random()
     (0 to 10) foreach { _ =>
