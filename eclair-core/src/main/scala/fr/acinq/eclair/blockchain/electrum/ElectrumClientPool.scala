@@ -29,9 +29,9 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.duration._
 import scala.util.Random
 
-class ElectrumMultiClient(serverAddresses: Set[InetSocketAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumMultiClient.State, ElectrumMultiClient.Data] {
+class ElectrumClientPool(serverAddresses: Set[InetSocketAddress])(implicit val ec: ExecutionContext) extends Actor with FSM[ElectrumClientPool.State, ElectrumClientPool.Data] {
 
-  import ElectrumMultiClient._
+  import ElectrumClientPool._
 
   val statusListeners = collection.mutable.HashSet.empty[ActorRef]
   val addresses = collection.mutable.Map.empty[ActorRef, InetSocketAddress]
@@ -155,7 +155,7 @@ class ElectrumMultiClient(serverAddresses: Set[InetSocketAddress])(implicit val 
   }
 }
 
-object ElectrumMultiClient {
+object ElectrumClientPool {
 
   val MAX_CONNECTION_COUNT = 3
 

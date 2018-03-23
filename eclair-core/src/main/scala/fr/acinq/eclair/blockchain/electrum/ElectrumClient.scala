@@ -53,14 +53,13 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
   self ! Tcp.Connect(serverAddress, options = socketOptions)
 
   // we need to regularly send a ping in order not to get disconnected
-  val versionTrigger = context.system.scheduler.schedule(15 seconds, 15 seconds, self, version)
+  val versionTrigger = context.system.scheduler.schedule(30 seconds, 30 seconds, self, version)
 
   override def unhandled(message: Any): Unit = {
     message match {
       case _: Tcp.ConnectionClosed =>
         log.info(s"connection to $serverAddress closed")
         statusListeners.map(_ ! ElectrumDisconnected)
-        versionTrigger.cancel()
         context stop self
 
       case Terminated(deadActor) =>
@@ -79,6 +78,11 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
     }
   }
 
+
+  override def postStop(): Unit = {
+    versionTrigger.cancel()
+    super.postStop()
+  }
 
   def send(connection: ActorRef, request: JsonRPCRequest): Unit = {
     import org.json4s.JsonDSL._
@@ -99,7 +103,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
   }
 
   /**
-    * send en electrum request to the server
+    * send an electrum request to the server
     * @param connection connection to the electrumx server
     * @param request electrum request
     * @return the request id used to send the request
@@ -128,7 +132,6 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
     case AddStatusListener(actor) => statusListeners += actor
 
     case Tcp.CommandFailed(Tcp.Connect(remoteAddress, _, _, _, _)) =>
-      versionTrigger.cancel()
       context stop self
   }
 
@@ -149,38 +152,22 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
     case Tcp.Received(data) =>
       val response = parseResponse(new String(data.toArray)).right.get
       val header = parseHeader(response.result)
-      val blockchain = Blockchain.buildFromFirstHeader(header, Some(keepHeaders))
-      log.debug(s"connected, tip = ${header.block_hash} $header, request last headers")
-      val requests = (header.block_height - 1 to Math.max(0, header.block_height - keepHeaders) by -1).map(height => GetHeader(height.toInt))
-      val requestMap = requests.map(request => {
-        val requestId = send(connection, request)
-        requestId -> (request, self)
-      }).toMap
-      context become connected(connection, remote, blockchain, "", requestMap)
+      log.debug(s"connected, tip = ${header.block_hash} $header")
+      statusListeners.map(_ ! ElectrumReady(header))
+      context become connected(connection, remote, header, "", Map())
 
     case AddStatusListener(actor) => statusListeners += actor
   }
 
-  def connected(connection: ActorRef, remoteAddress: InetSocketAddress, blockchain: Blockchain, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
+  def connected(connection: ActorRef, remoteAddress: InetSocketAddress, tip: Header, buffer: String, requests: Map[String, (Request, ActorRef)]): Receive = {
     case AddStatusListener(actor) =>
       statusListeners += actor
-      if (blockchain.bestChain.length >= keepHeaders - 1) {
-        actor ! ElectrumReady(blockchain.tip.header)
-      }
+      actor ! ElectrumReady(tip)
 
     case HeaderSubscription(actor) =>
       headerSubscriptions += actor
-      if (blockchain.bestChain.length >= keepHeaders - 1) {
-        actor ! HeaderSubscriptionResponse(blockchain.tip.header)
-      }
+      actor ! HeaderSubscriptionResponse(tip)
       context watch actor
-
-    case GetHeaderResponse(header) =>
-      val blockchain1 = blockchain.addBlockHeader(header)
-      if (blockchain1.bestChain.length == keepHeaders - 1) {
-        statusListeners.foreach(_  ! ElectrumReady(blockchain1.tip.header))
-      }
-      context become connected(connection, remoteAddress, blockchain1, buffer, requests)
 
     case request: Request =>
       val curReqId = send(connection, request)
@@ -193,7 +180,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
           context watch actor
         case _ => ()
       }
-      context become connected(connection, remoteAddress, blockchain, buffer, requests + (curReqId -> (request, sender())))
+      context become connected(connection, remoteAddress, tip, buffer, requests + (curReqId -> (request, sender())))
 
     case Tcp.Received(data) =>
       val buffer1 = buffer + new String(data.toArray)
@@ -202,7 +189,7 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
         case chunks => (chunks.dropRight(1), chunks.last)
       }
       jsons.map(parseResponse(_)).map(self ! _)
-      context become connected(connection, remoteAddress, blockchain, buffer2, requests)
+      context become connected(connection, remoteAddress, tip, buffer2, requests)
 
     case Right(json: JsonRPCResponse) =>
       requests.get(json.id) match {
@@ -213,17 +200,17 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
         case None =>
           log.warning(s"could not find requestor for reqId=${json.id} response=$json")
       }
-      context become connected(connection, remoteAddress, blockchain, buffer, requests - json.id)
+      context become connected(connection, remoteAddress, tip, buffer, requests - json.id)
 
-    case Left(response: HeaderSubscriptionResponse) => if (blockchain.bestChain.length >= keepHeaders - 1) headerSubscriptions.map(_ ! response)
+    case Left(response: HeaderSubscriptionResponse) => headerSubscriptions.map(_ ! response)
 
-    case Left(response: AddressSubscriptionResponse) => if (blockchain.bestChain.length >= keepHeaders - 1) addressSubscriptions.get(response.address).map(listeners => listeners.map(_ ! response))
+    case Left(response: AddressSubscriptionResponse) => addressSubscriptions.get(response.address).map(listeners => listeners.map(_ ! response))
 
-    case Left(response: ScriptHashSubscriptionResponse) => if (blockchain.bestChain.length >= keepHeaders - 1) scriptHashSubscriptions.get(response.scriptHash).map(listeners => listeners.map(_ ! response))
+    case Left(response: ScriptHashSubscriptionResponse) => scriptHashSubscriptions.get(response.scriptHash).map(listeners => listeners.map(_ ! response))
 
     case HeaderSubscriptionResponse(newtip) =>
       log.info(s"new tip $newtip")
-      context become connected(connection, remoteAddress, blockchain.addBlockHeader(newtip), buffer, requests)
+      context become connected(connection, remoteAddress, newtip, buffer, requests)
   }
 }
 

@@ -16,6 +16,8 @@
 
 package fr.acinq.eclair.blockchain.electrum
 
+import java.net.InetSocketAddress
+
 import akka.actor.{ActorRef, ActorSystem, Props}
 import akka.testkit.{TestKit, TestProbe}
 import fr.acinq.bitcoin.{BinaryData, Crypto, Transaction}
@@ -24,8 +26,8 @@ import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.{BeforeAndAfterAll, FunSuiteLike}
 
-import scala.concurrent.duration._
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.duration._
 
 @RunWith(classOf[JUnitRunner])
 class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike with Logging with BeforeAndAfterAll {
@@ -38,10 +40,7 @@ class ElectrumClientSpec extends TestKit(ActorSystem("test")) with FunSuiteLike 
   val scriptHash: BinaryData = Crypto.sha256(referenceTx.txOut(0).publicKeyScript).reverse
 
   override protected def beforeAll(): Unit = {
-    val stream = classOf[ElectrumClientSpec].getResourceAsStream("/electrum/servers_testnet.json")
-    val addresses = ElectrumMultiClient.readServerAddresses(stream)
-    stream.close()
-    client = system.actorOf(Props(new ElectrumClient(addresses.head)), "electrum-client")
+    client = system.actorOf(Props(new ElectrumClient(new InetSocketAddress("testnet.qtornado.com", 51001))), "electrum-client")
   }
 
   override protected def afterAll(): Unit = {
