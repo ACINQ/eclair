@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.integration
 
 import java.io.{File, PrintWriter}
@@ -18,7 +34,8 @@ import fr.acinq.eclair.channel._
 import fr.acinq.eclair.crypto.Sphinx.ErrorPacket
 import fr.acinq.eclair.io.Peer.Disconnect
 import fr.acinq.eclair.io.{NodeURI, Peer}
-import fr.acinq.eclair.payment.{State => _, _}
+import fr.acinq.eclair.payment.PaymentLifecycle.{State => _, _}
+import fr.acinq.eclair.payment.PaymentRequest
 import fr.acinq.eclair.router.{Announcements, AnnouncementsBatchValidationSpec}
 import fr.acinq.eclair.wire._
 import fr.acinq.eclair.{Globals, Kit, Setup}

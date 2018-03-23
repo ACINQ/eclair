@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.blockchain.electrum
 
 import fr.acinq.bitcoin.Crypto.PrivateKey
@@ -144,6 +160,20 @@ class ElectrumWalletBasicSpec extends FunSuite {
       val actualFeeRate = Transactions.fee2rate(fee, tx1.weight())
       assert(isFeerateOk(actualFeeRate, feeRatePerKw / 10))
     }
+  }
+
+  test("spend all our balance") {
+    val state1 = addFunds(state, state.accountKeys(0), 1 btc)
+    val state2 = addFunds(state1, state1.accountKeys(1), 2 btc)
+    val state3 = addFunds(state2, state2.changeKeys(0), 0.5 btc)
+    assert(state3.utxos.length == 3)
+    assert(state3.balance == (Satoshi(350000000),Satoshi(0)))
+
+    val (tx, fee) = state3.spendAll(Script.pay2wpkh(BinaryData("01" * 20)), feeRatePerKw)
+    val Some((received, sent, Some(fee1))) = state3.computeTransactionDelta(tx)
+    assert(received == Satoshi(0))
+    assert(fee == fee1)
+    assert(tx.txOut.map(_.amount).sum + fee == state3.balance._1 + state3.balance._2)
   }
 
   test("fuzzy test") {

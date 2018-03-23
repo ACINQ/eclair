@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.blockchain.bitcoind
 
 import java.util.concurrent.Executors
@@ -48,7 +64,7 @@ class ZmqWatcher(client: ExtendedBitcoinClient)(implicit ec: ExecutionContext = 
 
     case NewBlock(block) =>
       // using a Try because in tests we generate fake blocks
-      log.debug(s"received blockid=${Try(block.blockId).getOrElse(BinaryData(""))}")
+      log.debug(s"received blockid=${Try(block.blockId).getOrElse(BinaryData.empty)}")
       nextTick.map(_.cancel()) // this may fail or succeed, worse case scenario we will have two ticks in a row (no big deal)
       log.debug(s"scheduling a new task to check on tx confirmations")
       // we do this to avoid herd effects in testing when generating a lots of blocks in a row

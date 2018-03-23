@@ -1,22 +1,39 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.gui
 
 import java.time.LocalDateTime
 import java.util.function.Predicate
+
 import javafx.application.Platform
 import javafx.event.{ActionEvent, EventHandler}
 import javafx.fxml.FXMLLoader
 import javafx.scene.control.Alert.AlertType
 import javafx.scene.control.{Alert, ButtonType}
 import javafx.scene.layout.VBox
-
 import akka.actor.{Actor, ActorLogging, ActorRef, Terminated}
 import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin._
 import fr.acinq.eclair.CoinUtils
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor.{ZMQConnected, ZMQDisconnected}
-import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumConnected, ElectrumDisconnected}
+import fr.acinq.eclair.blockchain.electrum.ElectrumClient.{ElectrumDisconnected, ElectrumReady}
 import fr.acinq.eclair.channel._
 import fr.acinq.eclair.gui.controllers._
+import fr.acinq.eclair.payment.PaymentLifecycle.{LocalFailure, PaymentFailed, PaymentSucceeded, RemoteFailure}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.{NORMAL => _, _}
 import fr.acinq.eclair.wire.NodeAnnouncement
@@ -220,7 +237,7 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       log.debug("ZMQ connection DOWN")
       runInGuiThread(() => mainController.showBlockerModal("Bitcoin Core"))
 
-    case ElectrumConnected =>
+    case _: ElectrumReady =>
       log.debug("Electrum connection UP")
       runInGuiThread(() => mainController.hideBlockerModal)
 

@@ -27,11 +27,11 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ## Installation
 
-:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha10](https://github.com/ACINQ/eclair/blob/v0.2-alpha10/README.md#installation)**.
+:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha11](https://github.com/ACINQ/eclair/blob/v0.2-alpha11/README.md#installation)**.
 
 ### Configuring Bitcoin Core
 
-Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. This means that on Windows you will need Bitcoin Core 0.14+.
+Eclair needs a _synchronized_, _segwit-ready_, **_zeromq-enabled_**, _wallet-enabled_, _non-pruning_, _tx-indexing_ [Bitcoin Core](https://github.com/bitcoin/bitcoin) node. This means that on Windows you will need Bitcoin Core 0.14+. We highly recommend that you use Bitcoin Core 0.16 and will soon drop support for older versions. 
 
 Run bitcoind with the following minimal `bitcoin.conf`:
 ```

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair
 
 import java.io.File
@@ -15,7 +31,7 @@ import fr.acinq.eclair.api.{GetInfoResponse, Service}
 import fr.acinq.eclair.blockchain.bitcoind.rpc.{BasicBitcoinJsonRPCClient, BatchingBitcoinJsonRPCClient, ExtendedBitcoinClient}
 import fr.acinq.eclair.blockchain.bitcoind.zmq.ZMQActor
 import fr.acinq.eclair.blockchain.bitcoind.{BitcoinCoreWallet, ZmqWatcher}
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
+import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
@@ -102,8 +118,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
         case "regtest" => "/electrum/servers_regtest.json"
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
-      val addresses = ElectrumClient.readServerAddresses(stream)
-      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+      val addresses = ElectrumClientPool.readServerAddresses(stream)
+      val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
       Electrum(electrumClient)
   }
 
@@ -181,6 +197,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         val api = new Service {
+
+          override def scheduler = system.scheduler
+
           override val password = {
             val p = config.getString("api.password")
             if (p.isEmpty) throw EmptyAPIPasswordException else p

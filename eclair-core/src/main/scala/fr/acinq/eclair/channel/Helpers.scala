@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.channel
 
 import akka.event.LoggingAdapter
@@ -96,8 +112,7 @@ object Helpers {
   }
 
   def makeAnnouncementSignatures(nodeParams: NodeParams, commitments: Commitments, shortChannelId: ShortChannelId) = {
-    // TODO: empty features
-    val features = BinaryData("")
+    val features = BinaryData.empty // empty features for now
     val (localNodeSig, localBitcoinSig) = nodeParams.keyManager.signChannelAnnouncement(commitments.localParams.channelKeyPath, nodeParams.chainHash, shortChannelId, commitments.remoteParams.nodeId, commitments.remoteParams.fundingPubKey, features)
     AnnouncementSignatures(commitments.channelId, shortChannelId, localNodeSig, localBitcoinSig)
   }
@@ -281,7 +296,6 @@ object Helpers {
       // all htlc output to us are delayed, so we need to claim them as soon as the delay is over
       val htlcDelayedTxes = htlcTxes.flatMap {
         txinfo: TransactionWithInputInfo => generateTx("claim-delayed-output")(Try {
-          // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
           val claimDelayed = Transactions.makeClaimDelayedOutputTx(
             txinfo.tx,
             Satoshi(localParams.dustLimitSatoshis),
@@ -438,13 +452,12 @@ object Helpers {
 
           // then we punish them by stealing their main output
           val mainPenaltyTx = generateTx("main-penalty")(Try {
-            // TODO: we should use the current fee rate, not the initial fee rate that we get from localParams
             val txinfo = Transactions.makeMainPenaltyTx(tx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.defaultFinalScriptPubKey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, feeratePerKwPenalty)
             val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
             Transactions.addSigs(txinfo, sig)
           })
 
-          // TODO: we don't claim htlcs outputs yet
+          // TODO: we don't claim htlcs outputs yet for revoked transactions
 
           // OPTIONAL: let's check transactions are actually spendable
           //val txes = mainDelayedRevokedTx :: Nil
@@ -496,7 +509,6 @@ object Helpers {
             // let's just pretend we received the preimage from the counterparty and build a fulfill message
             (add, UpdateFulfillHtlc(add.channelId, add.id, paymentPreimage))
         }
-        // TODO: should we handle local htlcs here as well? currently timed out htlcs that we sent will never have an answer
       }
     }
 
@@ -620,7 +632,7 @@ object Helpers {
         val isCommitTx = revokedCommitPublished.commitTx.txid == tx.txid
         // does the tx spend an output of the local commitment tx?
         val spendsTheCommitTx = revokedCommitPublished.commitTx.txid == outPoint.txid
-        // TODO: we don't currently spend/steal htlc transactions
+        // TODO: we don't claim htlcs outputs yet for revoked transactions
         isCommitTx || spendsTheCommitTx
       }
       // then we add the relevant outpoints to the map keeping track of which txid spends which outpoint
@@ -677,7 +689,7 @@ object Helpers {
       // are there remaining spendable outputs from the commitment tx?
       val commitOutputsSpendableByUs = (revokedCommitPublished.claimMainOutputTx.toSeq ++ revokedCommitPublished.mainPenaltyTx)
         .flatMap(_.txIn.map(_.outPoint)).toSet -- revokedCommitPublished.irrevocablySpent.keys
-      // TODO: we don't currently spend htlc transactions
+      // TODO: we don't claim htlcs outputs yet for revoked transactions
       isCommitTxConfirmed && commitOutputsSpendableByUs.isEmpty
     }
 
