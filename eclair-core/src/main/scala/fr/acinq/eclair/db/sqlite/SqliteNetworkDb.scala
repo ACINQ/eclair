@@ -30,7 +30,11 @@ class SqliteNetworkDb(sqlite: Connection) extends NetworkDb {
 
   import SqliteUtils._
 
+  val DB_NAME = "network"
+  val CURRENT_VERSION = 1
+
   using(sqlite.createStatement()) { statement =>
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS nodes (node_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS channels (short_channel_id INTEGER NOT NULL PRIMARY KEY, txid STRING NOT NULL, data BLOB NOT NULL, capacity_sat INTEGER NOT NULL)")

@@ -58,7 +58,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
 
 
   test("wait until wallet is ready") {
-    sender.send(wallet, ElectrumClient.ElectrumReady)
+    sender.send(wallet, ElectrumClient.ElectrumReady(header1))
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header1))
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
     assert(listener.expectMsgType[WalletReady].timestamp == header1.timestamp)
@@ -77,7 +77,7 @@ class ElectrumWalletSimulatedClientSpec extends TestKit(ActorSystem("test")) wit
     awaitCond(wallet.stateName == ElectrumWallet.DISCONNECTED)
 
     // reconnect wallet
-    sender.send(wallet, ElectrumClient.ElectrumReady)
+    sender.send(wallet, ElectrumClient.ElectrumReady(header3))
     sender.send(wallet, ElectrumClient.HeaderSubscriptionResponse(header3))
     awaitCond(wallet.stateName == ElectrumWallet.RUNNING)
 

@@ -21,12 +21,16 @@ import java.sql.Connection
 import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.Command
 import fr.acinq.eclair.db.PendingRelayDb
-import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, using}
+import fr.acinq.eclair.db.sqlite.SqliteUtils.{codecSequence, getVersion, using}
 import fr.acinq.eclair.wire.CommandCodecs.cmdCodec
 
 class SqlitePendingRelayDb(sqlite: Connection) extends PendingRelayDb {
 
+  val DB_NAME = "pending_relay"
+  val CURRENT_VERSION = 1
+
   using(sqlite.createStatement()) { statement =>
+    require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     // note: should we use a foreign key to local_channels table here?
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS pending_relay (channel_id BLOB NOT NULL, htlc_id INTEGER NOT NULL, data BLOB NOT NULL, PRIMARY KEY(channel_id, htlc_id))")
   }

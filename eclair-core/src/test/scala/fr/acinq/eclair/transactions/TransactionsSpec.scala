@@ -63,10 +63,10 @@ class TransactionsSpec extends FunSuite {
   test("compute fees") {
     // see BOLT #3 specs
     val htlcs = Set(
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData(""))),
-      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData(""))),
-      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData(""))),
-      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData("")))
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(5000000).amount, Hash.Zeroes, 552, BinaryData.empty)),
+      DirectedHtlc(OUT, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(1000000).amount, Hash.Zeroes, 553, BinaryData.empty)),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(7000000).amount, Hash.Zeroes, 550, BinaryData.empty)),
+      DirectedHtlc(IN, UpdateAddHtlc("00" * 32, 0, MilliSatoshi(800000).amount, Hash.Zeroes, 551, BinaryData.empty))
     )
     val spec = CommitmentSpec(htlcs, feeratePerKw = 5000, toLocalMsat = 0, toRemoteMsat = 0)
     val fee = Transactions.commitTxFee(Satoshi(546), spec)
@@ -122,7 +122,7 @@ class TransactionsSpec extends FunSuite {
       // ClaimHtlcSuccessTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = BinaryData("42" * 32)
-      val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, sha256(paymentPreimage), expiry = 400144, BinaryData(""))
+      val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, sha256(paymentPreimage), expiry = 400144, BinaryData.empty)
       val pubKeyScript = write(pay2wsh(htlcOffered(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash))))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimHtlcSuccessTx = makeClaimHtlcSuccessTx(commitTx, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
@@ -135,7 +135,7 @@ class TransactionsSpec extends FunSuite {
       // ClaimHtlcTimeoutTx
       // first we create a fake commitTx tx, containing only the output that will be spent by the ClaimHtlcSuccessTx
       val paymentPreimage = BinaryData("42" * 32)
-      val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, sha256(paymentPreimage), expiry = 400144, BinaryData(""))
+      val htlc = UpdateAddHtlc("00" * 32, 0, Satoshi(20000).amount * 1000, sha256(paymentPreimage), expiry = 400144, BinaryData.empty)
       val pubKeyScript = write(pay2wsh(htlcReceived(localHtlcPriv.publicKey, remoteHtlcPriv.publicKey, localRevocationPriv.publicKey, ripemd160(htlc.paymentHash), htlc.expiry)))
       val commitTx = Transaction(version = 0, txIn = Nil, txOut = TxOut(Satoshi(htlc.amountMsat / 1000), pubKeyScript) :: Nil, lockTime = 0)
       val claimClaimHtlcTimeoutTx = makeClaimHtlcTimeoutTx(commitTx, localDustLimit, remoteHtlcPriv.publicKey, localHtlcPriv.publicKey, localRevocationPriv.publicKey, finalPubKeyScript, htlc, feeratePerKw)
@@ -163,14 +163,14 @@ class TransactionsSpec extends FunSuite {
 
     // htlc1 and htlc2 are regular IN/OUT htlcs
     val paymentPreimage1 = BinaryData("11" * 32)
-    val htlc1 = UpdateAddHtlc("00" * 32, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, sha256(paymentPreimage1), 300, BinaryData(""))
+    val htlc1 = UpdateAddHtlc("00" * 32, 0, millibtc2satoshi(MilliBtc(100)).amount * 1000, sha256(paymentPreimage1), 300, BinaryData.empty)
     val paymentPreimage2 = BinaryData("22" * 32)
-    val htlc2 = UpdateAddHtlc("00" * 32, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage2), 300, BinaryData(""))
+    val htlc2 = UpdateAddHtlc("00" * 32, 1, millibtc2satoshi(MilliBtc(200)).amount * 1000, sha256(paymentPreimage2), 300, BinaryData.empty)
     // htlc3 and htlc4 are dust htlcs IN/OUT htlcs, with an amount large enough to be included in the commit tx, but too small to be claimed at 2nd stage
     val paymentPreimage3 = BinaryData("33" * 32)
-    val htlc3 = UpdateAddHtlc("00" * 32, 2, (localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).amount * 1000, sha256(paymentPreimage3), 300, BinaryData(""))
+    val htlc3 = UpdateAddHtlc("00" * 32, 2, (localDustLimit + weight2fee(feeratePerKw, htlcTimeoutWeight)).amount * 1000, sha256(paymentPreimage3), 300, BinaryData.empty)
     val paymentPreimage4 = BinaryData("44" * 32)
-    val htlc4 = UpdateAddHtlc("00" * 32, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).amount * 1000, sha256(paymentPreimage4), 300, BinaryData(""))
+    val htlc4 = UpdateAddHtlc("00" * 32, 3, (localDustLimit + weight2fee(feeratePerKw, htlcSuccessWeight)).amount * 1000, sha256(paymentPreimage4), 300, BinaryData.empty)
     val spec = CommitmentSpec(
       htlcs = Set(
         DirectedHtlc(OUT, htlc1),
