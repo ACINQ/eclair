@@ -223,29 +223,23 @@ trait Service extends Logging {
                       }
 
                       case "checkinvoice" => req.params match {
-                        case JString(paymentRequest) :: Nil  => Try(PaymentRequest.read(paymentRequest)) match {
-                          case Success(pr) => {
-                            completeRpc(req.id,pr)
-                          }
-                          case Failure(f) => reject(RpcValidationRejection(req.id, s"Payment request is not valid - could not parse: "+f.toString()))
+                        case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
+                          case Success(pr) => completeRpc(req.id,pr)
+                          case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getMessage}"))
                         }
                         case _ => reject(UnknownParamsRejection(req.id, "[payment_request]"))
                       }
 
                       case "findroute" => req.params match {
-                        case JString(nodeId) :: Nil if nodeId.length()==66 =>
-                          Try(PublicKey(nodeId)) match {
-                            case Success(pk) =>  completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk)  ).mapTo[RouteResponse]  )
-                            case (Failure(_)) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash: '$nodeId'"))
-                          }
-
-                        case JString(paymentRequest) :: Nil  => Try(PaymentRequest.read(paymentRequest)) match {
-                          case pr@Success(PaymentRequest(_,_,_,_,_,_)) =>
-                            completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pr.get.nodeId)  ).mapTo[RouteResponse]  )
-                          case Failure(f) => reject(RpcValidationRejection(req.id, s"payment request is not valid: "+f.toString()))
+                        case JString(nodeId) :: Nil if nodeId.length() == 66 => Try(PublicKey(nodeId)) match {
+                          case Success(pk) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pk)).mapTo[RouteResponse])
+                          case Failure(_) => reject(RpcValidationRejection(req.id, s"invalid nodeId hash '$nodeId'"))
                         }
-                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request|nodeId]"))
-
+                        case JString(paymentRequest) :: Nil => Try(PaymentRequest.read(paymentRequest)) match {
+                          case Success(pr) => completeRpcFuture(req.id, (router ? RouteRequest(appKit.nodeParams.nodeId, pr.nodeId)).mapTo[RouteResponse])
+                          case Failure(t) => reject(RpcValidationRejection(req.id, s"invalid payment request ${t.getLocalizedMessage}"))
+                        }
+                        case _ => reject(UnknownParamsRejection(req.id, "[payment_request] or [nodeId]"))
                       }
 
                       case "send"         => req.params match {
