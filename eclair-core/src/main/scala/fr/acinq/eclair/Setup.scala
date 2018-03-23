@@ -197,6 +197,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       _ <- if (config.getBoolean("api.enabled")) {
         logger.info(s"json-rpc api enabled on port=${config.getInt("api.port")}")
         val api = new Service {
+
+          override def scheduler = system.scheduler
+
           override val password = {
             val p = config.getString("api.password")
             if (p.isEmpty) throw EmptyAPIPasswordException else p
