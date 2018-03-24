@@ -124,8 +124,9 @@ class ElectrumClient(serverAddress: InetSocketAddress)(implicit val ec: Executio
 
     case Tcp.Connected(remote, _) =>
       log.info(s"connected to $remote")
-      sender ! Tcp.Register(self)
-      val connection = context.actorOf(Props(new WriteAckSender(sender())), name = "electrum-sender")
+      val conn = sender()
+      conn ! Tcp.Register(self)
+      val connection = context.actorOf(Props(new WriteAckSender(conn)), name = "electrum-sender")
       send(connection, version)
       context become waitingForVersion(connection, remote)
 
