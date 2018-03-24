@@ -24,9 +24,10 @@ import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
 import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
+import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
 import fr.acinq.eclair.wire.Color
-import org.json4s.JsonAST.{JInt, JNull, JObject, JString}
+import org.json4s.JsonAST.{JArray, JInt, JNull, JObject, JString}
 import org.json4s.{CustomKeySerializer, CustomSerializer}
 
 /**
@@ -95,4 +96,13 @@ class InputInfoSerializer extends CustomSerializer[InputInfo](format => ({ null 
 
 class ColorSerializer extends CustomSerializer[Color](format => ({ null }, {
   case c: Color => JString(c.toString)
+}))
+
+class RouteResponseSerializer extends CustomSerializer[RouteResponse](format => ({ null }, {
+  case route: RouteResponse =>
+    val nodeIds = route.hops match {
+      case rest :+ last => rest.map(_.nodeId) :+ last.nodeId :+ last.nextNodeId
+      case Nil => Nil
+    }
+    JArray(nodeIds.toList.map(n => JString(n.toString)))
 }))
