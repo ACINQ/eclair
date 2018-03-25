@@ -45,3 +45,6 @@ case class ChannelStateChanged(channel: ActorRef, peer: ActorRef, remoteNodeId: 
 case class ChannelSignatureSent(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
 
 case class ChannelSignatureReceived(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
+
+case class ChannelFundingSigned(channel: ActorRef, Commitments: Commitments) extends ChannelEvent
+

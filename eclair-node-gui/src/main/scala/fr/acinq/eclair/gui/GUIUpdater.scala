@@ -133,6 +133,10 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(channel)
       runInGuiThread(() => updateBalance(channelPaneController, commitments))
 
+    case ChannelFundingSigned(channel, commitments) if m.contains(channel) =>
+      val channelPaneController = m(channel)
+      runInGuiThread(() => channelPaneController.txId.setText(commitments.commitInput.outPoint.txid.toString()))
+
     case Terminated(actor) if m.contains(actor) =>
       val channelPaneController = m(actor)
       log.debug(s"channel=${channelPaneController.channelId.getText} to be removed from gui")
