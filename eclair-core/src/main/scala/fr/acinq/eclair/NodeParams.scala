@@ -123,13 +123,15 @@ object NodeParams {
       case invalid => throw new RuntimeException(s"invalid chain '$invalid'")
     }
 
-    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")
+    val chaindir = new File(datadir, chain)
+
+    val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
     val peersDb = new SqlitePeersDb(sqlite)
     val pendingRelayDb = new SqlitePendingRelayDb(sqlite)
     val paymentsDb = new SqlitePaymentsDb(sqlite)
 
-    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "network.sqlite")}")
+    val sqliteNetwork = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "network.sqlite")}")
     val networkDb = new SqliteNetworkDb(sqliteNetwork)
 
     val color = BinaryData(config.getString("node-color"))
