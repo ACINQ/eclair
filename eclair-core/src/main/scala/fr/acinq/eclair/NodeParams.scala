@@ -124,6 +124,7 @@ object NodeParams {
     }
 
     val chaindir = new File(datadir, chain)
+    chaindir.mkdir()
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(chaindir, "eclair.sqlite")}")
     val channelsDb = new SqliteChannelsDb(sqlite)
