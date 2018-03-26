@@ -60,14 +60,7 @@ package object eclair {
   def feerateByte2Kw(feeratePerByte: Long): Long = feeratePerByte * 1024 / 4
 
 
-  /**
-    *
-    * @param address bitcoin Base58 address
-    * @return true if the address is a segwit address i.e. a p2sh-of-p2wpkh address.
-    *         We approximate this be returning true if the address is a p2sh address, there is no
-    *         way to tell what the script is.
-    */
-  def isSegwitAddress(address: String) : Boolean = address.startsWith("2") || address.startsWith("3")
+  def isPay2PubkeyHash(address: String) : Boolean = address.startsWith("1") || address.startsWith("m") || address.startsWith("n")
 
   /**
     * Tests whether the binary data is composed solely of printable ASCII characters (see BOLT 1)
