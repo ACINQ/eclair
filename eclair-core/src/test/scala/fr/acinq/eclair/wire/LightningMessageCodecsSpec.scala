@@ -82,6 +82,12 @@ class LightningMessageCodecsSpec extends FunSuite {
       val isa2 = socketaddress.decode(bin).require.value
       assert(isa === isa2)
     }
+    {
+      // decoding ipv4 addressed mapped as ipv6
+      val bad = hex"02 0000 0000 0000 0000 0000 ffff A8 01 2A 10 87".toBitVector
+      val isa = socketaddress.decode(bad).require.value
+    }
+
   }
 
   test("encode/decode with signature codec") {

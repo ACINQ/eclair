@@ -28,11 +28,18 @@ import scodec.bits.{BitVector, ByteVector}
 import scodec.codecs._
 import scodec.{Attempt, Codec, Err}
 
+import scala.util.{Failure, Success, Try}
+
 
 /**
   * Created by PM on 15/11/2016.
   */
 object LightningMessageCodecs {
+
+  def attemptFromTry[T](f: => T): Attempt[T] = Try(f) match {
+    case Success(t) => Attempt.successful(t)
+    case Failure(t) => Attempt.failure(Err(s"deserialization error: ${t.getMessage}"))
+  }
 
   // this codec can be safely used for values < 2^63 and will fail otherwise
   // (for something smarter see https://github.com/yzernik/bitcoin-scodec/blob/master/src/main/scala/io/github/yzernik/bitcoinscodec/structures/UInt64.scala)
@@ -48,7 +55,7 @@ object LightningMessageCodecs {
 
   def ipv4address: Codec[Inet4Address] = bytes(4).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet4Address], a => ByteVector(a.getAddress))
 
-  def ipv6address: Codec[Inet6Address] = bytes(16).xmap(b => InetAddress.getByAddress(b.toArray).asInstanceOf[Inet6Address], a => ByteVector(a.getAddress))
+  def ipv6address: Codec[Inet6Address] = bytes(16).exmap(b => attemptFromTry(InetAddress.getByAddress(b.toArray).asInstanceOf[Inet6Address]), a => attemptFromTry(ByteVector(a.getAddress)))
 
   def socketaddress: Codec[InetSocketAddress] =
     (discriminated[InetAddress].by(uint8)
