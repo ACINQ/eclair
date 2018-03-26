@@ -110,17 +110,21 @@ object NodeParams {
     }
   }
 
-  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
-
-    datadir.mkdirs()
-
-    val chain = config.getString("chain")
-    val chainHash = chain match {
+  def makeChainHash(chain: String): BinaryData = {
+    chain match {
       case "test" => Block.TestnetGenesisBlock.hash
       case "regtest" => Block.RegtestGenesisBlock.hash
       case "mainnet" => Block.LivenetGenesisBlock.hash
       case invalid => throw new RuntimeException(s"invalid chain '$invalid'")
     }
+  }
+
+  def makeNodeParams(datadir: File, config: Config, keyManager: KeyManager): NodeParams = {
+
+    datadir.mkdirs()
+
+    val chain = config.getString("chain")
+    val chainHash = makeChainHash(chain)
 
     val chaindir = new File(datadir, chain)
     chaindir.mkdir()
