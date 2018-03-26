@@ -116,6 +116,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       val addressesFile = chain match {
         case "test" => "/electrum/servers_testnet.json"
         case "regtest" => "/electrum/servers_regtest.json"
+        case "mainnet" => "/electrum/servers_mainnet.json"
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
       val addresses = ElectrumClientPool.readServerAddresses(stream)
@@ -156,8 +157,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
       case Electrum(electrumClient) =>
-        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+        new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")
