@@ -119,7 +119,8 @@ object NodeParams {
     val chainHash = chain match {
       case "test" => Block.TestnetGenesisBlock.hash
       case "regtest" => Block.RegtestGenesisBlock.hash
-      case _ => throw new RuntimeException("only regtest and testnet are supported for now")
+      case "mainnet" => Block.LivenetGenesisBlock.hash
+      case invalid => throw new RuntimeException(s"invalid chain '$invalid'")
     }
 
     val sqlite = DriverManager.getConnection(s"jdbc:sqlite:${new File(datadir, "eclair.sqlite")}")

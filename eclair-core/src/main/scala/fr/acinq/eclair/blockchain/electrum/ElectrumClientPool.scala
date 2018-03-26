@@ -22,6 +22,7 @@ import java.net.InetSocketAddress
 import akka.actor.{Actor, ActorRef, FSM, Props, Terminated}
 import fr.acinq.eclair.Globals
 import fr.acinq.eclair.blockchain.CurrentBlockCount
+import org.json4s
 import org.json4s.JsonAST.{JObject, JString}
 import org.json4s.jackson.JsonMethods
 
@@ -161,16 +162,17 @@ object ElectrumClientPool {
 
   def readServerAddresses(stream: InputStream): Set[InetSocketAddress] = try {
     val JObject(values) = JsonMethods.parse(stream)
-    val addresses = values.map {
+    val addresses = values.flatMap {
       case (name, fields) =>
-        val JString(port) = fields \ "t"
-        new InetSocketAddress(name, port.toInt)
+        fields \ "t" match {
+          case JString(port) => Some(new InetSocketAddress(name, port.toInt))
+          case _ => None // we only support raw TCP (not SSL) connection to electrum servers for now
+        }
     }
     addresses.toSet
   } finally {
     stream.close()
   }
-
 
   // @formatter:off
   sealed trait State
