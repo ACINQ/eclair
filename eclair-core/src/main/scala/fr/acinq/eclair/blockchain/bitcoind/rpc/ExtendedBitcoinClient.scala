@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.blockchain.bitcoind.rpc
 
 import fr.acinq.bitcoin._
@@ -16,13 +32,6 @@ import scala.util.Try
 class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
 
   implicit val formats = org.json4s.DefaultFormats
-
-  // TODO: this will probably not be needed once segwit is merged into core
-  val protocolVersion = Protocol.PROTOCOL_VERSION
-
-  def tx2Hex(tx: Transaction): String = toHexString(Transaction.write(tx, protocolVersion))
-
-  def hex2tx(hex: String): Transaction = Transaction.read(hex, protocolVersion)
 
   def getTxConfirmations(txId: String)(implicit ec: ExecutionContext): Future[Option[Int]] =
     rpcClient.invoke("getrawtransaction", txId, 1) // we choose verbose output to get the number of confirmations
@@ -126,7 +135,7 @@ class ExtendedBitcoinClient(val rpcClient: BitcoinJsonRPCClient) {
     }
 
   def publishTransaction(tx: Transaction)(implicit ec: ExecutionContext): Future[String] =
-    publishTransaction(tx2Hex(tx))
+    publishTransaction(tx.toString())
 
   /**
     * We need this to compute absolute timeouts expressed in number of blocks (where getBlockCount would be equivalent

@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair.interop.rustytests
 
 import java.io.File
@@ -73,7 +89,7 @@ class RustyTestsSpec extends TestKit(ActorSystem("test")) with Matchers with fix
 
   test("01-offer1") { case (ref, res) => assert(ref === res) }
   test("02-offer2") { case (ref, res) => assert(ref === res) }
-  //test("03-fulfill1") { case (ref, res) => assert(ref === res) } TODO: check
+  //test("03-fulfill1") { case (ref, res) => assert(ref === res) }
   // test("04-two-commits-onedir") { case (ref, res) => assert(ref === res) } DOES NOT PASS : we now automatically sign back when we receive a revocation and have acked changes
   // test("05-two-commits-in-flight") { case (ref, res) => assert(ref === res)} DOES NOT PASS : cannot send two commit in a row (without having first revocation)
   test("10-offers-crossover") { case (ref, res) => assert(ref === res) }

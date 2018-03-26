@@ -1,3 +1,19 @@
+/*
+ * Copyright 2018 ACINQ SAS
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package fr.acinq.eclair
 
 import java.io.File
@@ -7,7 +23,7 @@ import akka.util.Timeout
 import com.typesafe.config.{Config, ConfigFactory}
 import fr.acinq.bitcoin.{BinaryData, Block}
 import fr.acinq.eclair.NodeParams.ELECTRUM
-import fr.acinq.eclair.blockchain.electrum.{ElectrumClient, ElectrumEclairWallet, ElectrumWallet, ElectrumWatcher}
+import fr.acinq.eclair.blockchain.electrum._
 import fr.acinq.eclair.blockchain.fee.{ConstantFeeProvider, _}
 import fr.acinq.eclair.blockchain.{EclairWallet, _}
 import fr.acinq.eclair.channel.Register
@@ -61,8 +77,8 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
           case "regtest" => "/electrum/servers_regtest.json"
         }
         val stream = classOf[Setup].getResourceAsStream(addressesFile)
-        val addresses = ElectrumClient.readServerAddresses(stream)
-        val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClient(addresses)), "electrum-client", SupervisorStrategy.Resume))
+        val addresses = ElectrumClientPool.readServerAddresses(stream)
+        val electrumClient = system.actorOf(SimpleSupervisor.props(Props(new ElectrumClientPool(addresses)), "electrum-client", SupervisorStrategy.Resume))
         Electrum(electrumClient)
       case _ => ???
     }
@@ -144,7 +160,6 @@ case class Kit(nodeParams: NodeParams,
                switchboard: ActorRef,
                paymentInitiator: ActorRef,
                wallet: EclairWallet)
-
 
 
 case object BitcoinWalletDisabledException extends RuntimeException("bitcoind must have wallet support enabled")
