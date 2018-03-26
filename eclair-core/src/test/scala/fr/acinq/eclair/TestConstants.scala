@@ -39,7 +39,7 @@ object TestConstants {
 
   object Alice {
     val seed = BinaryData("01" * 32)
-    val keyManager = new LocalKeyManager(seed)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
@@ -93,7 +93,7 @@ object TestConstants {
 
   object Bob {
     val seed = BinaryData("02" * 32)
-    val keyManager = new LocalKeyManager(seed)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 

@@ -63,9 +63,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
-  val keyManager = new LocalKeyManager(seed)
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
   val chain = config.getString("chain")
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
