@@ -91,6 +91,7 @@ object Transactions {
   val claimHtlcSuccessWeight = 570
   val claimHtlcTimeoutWeight = 544
   val mainPenaltyWeight = 483
+  val htlcPenaltyWeight = 577 // based on spending an HTLC-Success output (would be 571 with HTLC-Timeout)
 
   def weight2fee(feeratePerKw: Long, weight: Int) = Satoshi((feeratePerKw * weight) / 1000)
 
@@ -327,7 +328,30 @@ object Transactions {
       lockTime = 0))
   }
 
-  def makeHtlcPenaltyTx(commitTx: Transaction, localDustLimit: Satoshi): HtlcPenaltyTx = ???
+  /**
+    * We already have the redeemScript, no need to build it
+    * @param commitTx
+    * @param redeemScript
+    * @param localDustLimit
+    * @param localFinalScriptPubKey
+    * @param feeratePerKw
+    * @return
+    */
+  def makeHtlcPenaltyTx(commitTx: Transaction, redeemScript: BinaryData, localDustLimit: Satoshi, localFinalScriptPubKey: BinaryData, feeratePerKw: Long): HtlcPenaltyTx = {
+    val fee = weight2fee(feeratePerKw, htlcPenaltyWeight)
+    val pubkeyScript = write(pay2wsh(redeemScript))
+    val outputIndex = findPubKeyScriptIndex(commitTx, pubkeyScript)
+    val input = InputInfo(OutPoint(commitTx, outputIndex), commitTx.txOut(outputIndex), redeemScript)
+    val amount = input.txOut.amount - fee
+    if (amount < localDustLimit) {
+      throw AmountBelowDustLimit
+    }
+    HtlcPenaltyTx(input, Transaction(
+      version = 2,
+      txIn = TxIn(input.outPoint, Array.emptyByteArray, 0xffffffffL) :: Nil,
+      txOut = TxOut(amount, localFinalScriptPubKey) :: Nil,
+      lockTime = 0))
+  }
 
   def makeClosingTx(commitTxInput: InputInfo, localScriptPubKey: BinaryData, remoteScriptPubKey: BinaryData, localIsFunder: Boolean, dustLimit: Satoshi, closingFee: Satoshi, spec: CommitmentSpec): ClosingTx = {
     require(spec.htlcs.isEmpty, "there shouldn't be any pending htlcs")
@@ -382,9 +406,14 @@ object Transactions {
     commitTx.copy(tx = commitTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(claimMainDelayedRevokedTx: MainPenaltyTx, revocationSig: BinaryData): MainPenaltyTx = {
-    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimMainDelayedRevokedTx.input.redeemScript)
-    claimMainDelayedRevokedTx.copy(tx = claimMainDelayedRevokedTx.tx.updateWitness(0, witness))
+  def addSigs(mainPenaltyTx: MainPenaltyTx, revocationSig: BinaryData): MainPenaltyTx = {
+    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, mainPenaltyTx.input.redeemScript)
+    mainPenaltyTx.copy(tx = mainPenaltyTx.tx.updateWitness(0, witness))
+  }
+
+  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: BinaryData, revocationPubkey: BinaryData): HtlcPenaltyTx = {
+    val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, htlcPenaltyTx.input.redeemScript)
+    htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
   }
 
   def addSigs(htlcSuccessTx: HtlcSuccessTx, localSig: BinaryData, remoteSig: BinaryData, paymentPreimage: BinaryData): HtlcSuccessTx = {

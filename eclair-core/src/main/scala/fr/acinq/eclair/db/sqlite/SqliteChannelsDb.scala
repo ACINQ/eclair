@@ -32,7 +32,9 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
 
   using(sqlite.createStatement()) { statement =>
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
+    statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_scripts (channel_id BLOB NOT NULL, script_hash BLOB NOT NULL, script BLOB NOT NULL, PRIMARY KEY(channel_id, script_hash), FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
@@ -56,6 +58,11 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       statement.executeUpdate()
     }
 
+    using(sqlite.prepareStatement("DELETE FROM htlc_scripts WHERE channel_id=?")) { statement =>
+      statement.setBytes(1, channelId)
+      statement.executeUpdate()
+    }
+
     using(sqlite.prepareStatement("DELETE FROM local_channels WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       statement.executeUpdate()
@@ -66,6 +73,29 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     using(sqlite.createStatement) { statement =>
       val rs = statement.executeQuery("SELECT data FROM local_channels")
       codecSequence(rs, stateDataCodec)
+    }
+  }
+
+  override def addOrUpdateHtlcScript(channelId: BinaryData, scriptHash: BinaryData, script: BinaryData): Unit = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_scripts VALUES (?, ?, ?)")) { statement =>
+      statement.setBytes(1, channelId)
+      statement.setBytes(2, scriptHash)
+      statement.setBytes(3, script)
+      statement.executeUpdate()
+    }
+  }
+
+  override def getHtlcScript(channelId: BinaryData, scriptHash: BinaryData): Option[BinaryData] = {
+    using(sqlite.prepareStatement("SELECT script FROM htlc_scripts WHERE channel_id=? AND script_hash=?")) { statement =>
+      statement.setBytes(1, channelId)
+      statement.setBytes(2, scriptHash)
+      val rs = statement.executeQuery
+      if (rs.next()) {
+        Option(rs.getBytes("script"))
+      } else {
+        None
+      }
+
     }
   }
 }

@@ -29,6 +29,7 @@ import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, LocalKeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
@@ -605,12 +606,20 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
-            case Success((commitments1, commit)) =>
+            case Success((commitments1, commit, htlcTxs)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect {
                 case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
                 case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
+              }
+              // TODO: be smarter and only consider commitments1.localChanges.signed and commitments1.remoteChanges.signed
+              htlcTxs.map {
+                case tx: TransactionWithInputInfo =>
+                  val pubKeyScript = tx.input.txOut.publicKeyScript
+                  val redeemScript = tx.input.redeemScript
+                  log.info(s"adding $pubKeyScript -> $redeemScript in htlcs db")
+                  nodeParams.channelsDb.addOrUpdateHtlcScript(d.channelId, pubKeyScript, redeemScript)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
@@ -914,7 +923,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
-            case Success((commitments1, commit)) =>
+            case Success((commitments1, commit, _)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect {
                 case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
@@ -1131,7 +1140,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         log.warning(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
         relayer ! ForwardFulfill(fulfill, origin, htlc)
       }
-      stay
+      val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
+          val (rev1, tx_opt) = Closing.spendDelayedHtlcTxOutputs(keyManager, d.commitments, rev, tx)
+          tx_opt.foreach(blockchain ! PublishAsap(_))
+          rev1
+      }
+      stay using d.copy(revokedCommitPublished = revokedCommitPublished1)
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
@@ -1617,13 +1631,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def doPublish(localCommitPublished: LocalCommitPublished) = {
     import localCommitPublished._
 
-    val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTx
+    val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTx
+    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTxs
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
@@ -1696,7 +1710,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
-    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx) match {
+    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.channelsDb) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         val exc = FundingTxSpent(d.channelId, tx)
@@ -1720,17 +1734,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
     import revokedCommitPublished._
 
-    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs ++ htlcPenaltyTxs
+    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx ++ htlcPenaltyTxs
+    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
-    val watchSpentQueue = mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs
+    val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

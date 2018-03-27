@@ -217,8 +217,7 @@ object ChannelCodecs extends Logging {
     ("commitTx" | txCodec) ::
       ("claimMainOutputTx" | optional(bool, txCodec)) ::
       ("mainPenaltyTx" | optional(bool, txCodec)) ::
-      ("claimHtlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
-      ("htlcTimeoutTxs" | listOfN(uint16, txCodec)) ::
+      ("claimHtlcDelayedTxs" | listOfN(uint16, txCodec)) ::
       ("htlcPenaltyTxs" | listOfN(uint16, txCodec)) ::
       ("spent" | spentMapCodec)).as[RevokedCommitPublished]
 

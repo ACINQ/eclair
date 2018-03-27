@@ -27,4 +27,8 @@ trait ChannelsDb {
 
   def listChannels(): Seq[HasCommitments]
 
+  def addOrUpdateHtlcScript(channelId: BinaryData, scriptHash: BinaryData, script: BinaryData)
+
+  def getHtlcScript(channelId: BinaryData, scriptHash: BinaryData): Option[BinaryData]
+
 }

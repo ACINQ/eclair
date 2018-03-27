@@ -362,7 +362,7 @@ object Commitments {
 
   def revocationHash(seed: BinaryData, index: Long): BinaryData = Crypto.sha256(revocationPreimage(seed, index))
 
-  def sendCommit(commitments: Commitments, keyManager: KeyManager): (Commitments, CommitSig) = {
+  def sendCommit(commitments: Commitments, keyManager: KeyManager): (Commitments, CommitSig, Seq[TransactionWithInputInfo]) = {
     import commitments._
     commitments.remoteNextCommitInfo match {
       case Right(_) if !localHasChanges(commitments) =>
@@ -387,7 +387,7 @@ object Commitments {
           remoteNextCommitInfo = Left(WaitingForRevocation(RemoteCommit(remoteCommit.index + 1, spec, remoteCommitTx.tx.txid, remoteNextPerCommitmentPoint), commitSig, commitments.localCommit.index)),
           localChanges = localChanges.copy(proposed = Nil, signed = localChanges.proposed),
           remoteChanges = remoteChanges.copy(acked = Nil, signed = remoteChanges.acked))
-        (commitments1, commitSig)
+        (commitments1, commitSig, htlcTimeoutTxs ++ htlcSuccessTxs)
       case Left(_) =>
         throw CannotSignBeforeRevocation(commitments.channelId)
     }

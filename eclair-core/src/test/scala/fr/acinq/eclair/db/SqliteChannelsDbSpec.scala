@@ -18,10 +18,12 @@ package fr.acinq.eclair.db
 
 import java.sql.DriverManager
 
+import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.db.sqlite.{SqliteChannelsDb, SqlitePendingRelayDb}
 import org.junit.runner.RunWith
 import org.scalatest.FunSuite
 import org.scalatest.junit.JUnitRunner
+import org.sqlite.SQLiteException
 
 @RunWith(classOf[JUnitRunner])
 class SqliteChannelsDbSpec extends FunSuite {
@@ -41,10 +43,20 @@ class SqliteChannelsDbSpec extends FunSuite {
 
     val channel = ChannelStateSpec.normal
 
+    val script = BinaryData("42" * 300)
+    val scriptHash = BinaryData("11" * 32)
+
+    intercept[SQLiteException](db.addOrUpdateHtlcScript(channel.channelId, scriptHash, script)) // no related channel
+
     assert(db.listChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
     db.addOrUpdateChannel(channel)
     assert(db.listChannels() === List(channel))
+
+    assert(db.getHtlcScript(channel.channelId, scriptHash) == None)
+    db.addOrUpdateHtlcScript(channel.channelId, scriptHash, script)
+    assert(db.getHtlcScript(channel.channelId, scriptHash) == Some(script))
+
     db.removeChannel(channel.channelId)
     assert(db.listChannels() === Nil)
   }
