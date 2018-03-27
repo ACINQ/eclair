@@ -581,7 +581,7 @@ class ShutdownStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val initialState = alice.stateData.asInstanceOf[DATA_SHUTDOWN]
       val event = CurrentFeerates(FeeratesPerKw.single(20000))
       sender.send(alice, event)
-      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.block_1))
+      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.blocks_2))
     }
   }
 

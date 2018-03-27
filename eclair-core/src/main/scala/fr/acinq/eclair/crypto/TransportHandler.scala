@@ -25,12 +25,14 @@ import fr.acinq.bitcoin.Crypto.PublicKey
 import fr.acinq.bitcoin.{BinaryData, Protocol}
 import fr.acinq.eclair.crypto.Noise._
 import fr.acinq.eclair.wire.{ChannelAnnouncement, ChannelUpdate, NodeAnnouncement}
+import scodec.Attempt.Successful
 import scodec.bits.BitVector
 import scodec.{Attempt, Codec, DecodeResult}
 
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
 import scala.reflect.ClassTag
+import scala.util.{Failure, Success, Try}
 
 /**
   * see BOLT #8
@@ -71,12 +73,14 @@ class TransportHandler[T: ClassTag](keyPair: KeyPair, rs: Option[BinaryData], co
 
   def sendToListener(listener: ActorRef, plaintextMessages: Seq[BinaryData]): Map[T, Int] = {
     var m: Map[T, Int] = Map()
-    plaintextMessages.foreach(plaintext => codec.decode(BitVector(plaintext.data)) match {
-      case Attempt.Successful(DecodeResult(message, _)) =>
+    plaintextMessages.foreach(plaintext => Try(codec.decode(BitVector(plaintext.data))) match {
+      case Success(Attempt.Successful(DecodeResult(message, _))) =>
         listener ! message
         m += (message -> (m.getOrElse(message, 0) + 1))
-      case Attempt.Failure(err) =>
+      case Success(Attempt.Failure(err)) =>
         log.error(s"cannot deserialize $plaintext: $err")
+      case Failure(t) =>
+        log.error(s"cannot deserialize $plaintext: ${t.getMessage}")
     })
     m
   }
