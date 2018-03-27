@@ -58,8 +58,8 @@ object Channel {
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
 
-  // this is defined in BOLT 11
-  val MIN_CLTV_EXPIRY = 9L
+  // this is defined in BOLT 7
+  val MIN_CLTV_EXPIRY = 7L
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
   case object TickRefreshChannelUpdate
