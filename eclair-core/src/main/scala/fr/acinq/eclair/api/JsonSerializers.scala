@@ -21,13 +21,13 @@ import java.net.InetSocketAddress
 import com.google.common.net.HostAndPort
 import fr.acinq.bitcoin.Crypto.{Point, PrivateKey, PublicKey, Scalar}
 import fr.acinq.bitcoin.{BinaryData, OutPoint, Transaction}
-import fr.acinq.eclair.{ShortChannelId, UInt64}
 import fr.acinq.eclair.channel.State
 import fr.acinq.eclair.crypto.ShaChain
 import fr.acinq.eclair.router.RouteResponse
 import fr.acinq.eclair.transactions.Transactions.{InputInfo, TransactionWithInputInfo}
-import fr.acinq.eclair.wire.Color
-import org.json4s.JsonAST.{JArray, JInt, JNull, JObject, JString}
+import fr.acinq.eclair.wire.{Color, FailureMessage}
+import fr.acinq.eclair.{ShortChannelId, UInt64}
+import org.json4s.JsonAST._
 import org.json4s.{CustomKeySerializer, CustomSerializer}
 
 /**
@@ -105,4 +105,13 @@ class RouteResponseSerializer extends CustomSerializer[RouteResponse](format => 
       case Nil => Nil
     }
     JArray(nodeIds.toList.map(n => JString(n.toString)))
+}))
+
+class ThrowableSerializer extends CustomSerializer[Throwable](format => ({ null }, {
+  case t: Throwable if t.getMessage != null => JString(t.getMessage)
+  case t: Throwable => JString(t.getClass.getSimpleName)
+}))
+
+class FailureMessageSerializer extends CustomSerializer[FailureMessage](format => ({ null }, {
+  case m: FailureMessage => JString(m.message)
 }))
