@@ -46,7 +46,7 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
   val INTEGRATION_TMP_DIR = s"${System.getProperty("buildDirectory")}/bitcoinj-${UUID.randomUUID().toString}"
   logger.info(s"using tmp dir: $INTEGRATION_TMP_DIR")
 
-  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoind")
+  val PATH_BITCOIND = new File(System.getProperty("buildDirectory"), "bitcoin-0.16.0/bin/bitcoind")
   val PATH_BITCOIND_DATADIR = new File(INTEGRATION_TMP_DIR, "datadir-bitcoin")
 
   var bitcoind: Process = null
@@ -79,9 +79,6 @@ class BitcoinCoreWalletSpec extends TestKit(ActorSystem("test")) with FunSuiteLi
     sender.send(bitcoincli, BitcoinReq("stop"))
     sender.expectMsgType[JValue]
     bitcoind.exitValue()
-    //    logger.warn(s"starting bitcoin-qt")
-    //    val PATH_BITCOINQT = new File(System.getProperty("buildDirectory"), "bitcoin-0.14.0/bin/bitcoin-qt").toPath
-    //    bitcoind = s"$PATH_BITCOINQT -datadir=$PATH_BITCOIND_DATADIR".run()
   }
 
   test("wait bitcoind ready") {

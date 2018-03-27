@@ -103,9 +103,10 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       } yield (progress, chainHash, bitcoinVersion, unspentAddresses)
       // blocking sanity checks
       val (progress, chainHash, bitcoinVersion, unspentAddresses) = Await.result(future, 10 seconds)
+      assert(bitcoinVersion.startsWith("16"), "Eclair requires Bitcoin Core 0.16.0 or higher")
       assert(chainHash == nodeParams.chainHash, s"chainHash mismatch (conf=${nodeParams.chainHash} != bitcoind=$chainHash)")
-      if (chainHash == Block.TestnetGenesisBlock.hash) {
-        assert(unspentAddresses.forall(isSegwitAddress), "In testnet mode, make sure that all your UTXOs are p2sh-of-p2wpkh (check out our README for more details)")
+      if (chainHash != Block.RegtestGenesisBlock.hash) {
+        assert(unspentAddresses.forall(address => !isPay2PubkeyHash(address)), "Make sure that all your UTXOS are segwit UTXOS and not p2pkh (check out our README for more details)")
       }
       assert(progress > 0.99, "bitcoind should be synchronized")
       // TODO: add a check on bitcoin version?
