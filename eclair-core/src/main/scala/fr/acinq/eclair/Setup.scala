@@ -141,7 +141,7 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>
         Globals.feeratesPerByte.set(feerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
+        Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
         system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
         logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
     })
