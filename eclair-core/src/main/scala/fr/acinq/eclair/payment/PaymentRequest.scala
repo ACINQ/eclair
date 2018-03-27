@@ -225,8 +225,8 @@ object PaymentRequest {
     }
 
     def fromBech32Address(address: String): FallbackAddressTag = {
-      val (prefix, hash) = Bech32.decodeWitnessAddress(address)
-      FallbackAddressTag(prefix, hash)
+      val (_, version, hash) = Bech32.decodeWitnessAddress(address)
+      FallbackAddressTag(version, hash)
     }
   }
 
