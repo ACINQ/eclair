@@ -121,9 +121,16 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
       val channelPaneController = m(channel)
       runInGuiThread(() => channelPaneController.channelId.setText(s"$channelId"))
 
-    case ChannelStateChanged(channel, _, _, _, currentState, _) if m.contains(channel) =>
+    case ChannelStateChanged(channel, _, _, _, currentState, currentData) if m.contains(channel) =>
       val channelPaneController = m(channel)
       runInGuiThread { () =>
+
+        (currentState, currentData) match {
+          case (WAIT_FOR_FUNDING_CONFIRMED, d: HasCommitments) =>
+            channelPaneController.txId.setText(d.commitments.commitInput.outPoint.txid.toString())
+          case _ => {}
+        }
+
         channelPaneController.close.setVisible(STATE_MUTUAL_CLOSE.contains(currentState))
         channelPaneController.forceclose.setVisible(STATE_FORCE_CLOSE.contains(currentState))
         channelPaneController.state.setText(currentState.toString)
@@ -132,10 +139,6 @@ class GUIUpdater(mainController: MainController) extends Actor with ActorLogging
     case ChannelSignatureReceived(channel, commitments) if m.contains(channel) =>
       val channelPaneController = m(channel)
       runInGuiThread(() => updateBalance(channelPaneController, commitments))
-
-    case ChannelFundingSigned(channel, commitments) if m.contains(channel) =>
-      val channelPaneController = m(channel)
-      runInGuiThread(() => channelPaneController.txId.setText(commitments.commitInput.outPoint.txid.toString()))
 
     case Terminated(actor) if m.contains(actor) =>
       val channelPaneController = m(actor)
