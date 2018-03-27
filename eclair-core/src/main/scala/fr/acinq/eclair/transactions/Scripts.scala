@@ -264,9 +264,10 @@ object Scripts {
     ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
 
   /**
-    * Spends an HTLC output using a revocation sig. Htlc script can be htlcOfferedScript or htlcReceivedScript
+    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
+    * for having published a revoked transaction
     */
-  def witnessHtlcWithRevocationSig(revocationSig: BinaryData, revocationPubkey: BinaryData, htlcScript: BinaryData) =
-    ScriptWitness(revocationSig :: revocationPubkey :: htlcScript :: Nil)
+  def witnessHtlcWithRevocationSig(revocationSig: BinaryData, revocationPubkey: PublicKey, htlcScript: BinaryData) =
+    ScriptWitness(revocationSig :: revocationPubkey.toBin :: htlcScript :: Nil)
 
 }

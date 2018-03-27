@@ -629,6 +629,9 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
 
   test("punish a node that has published a revoked commit tx") {
     val sender = TestProbe()
+    val listener = TestProbe()
+    // we use this to get commitments
+    nodes("F5").system.eventStream.subscribe(listener.ref, classOf[ChannelSignatureReceived])
     // first we make sure we are in sync with current blockchain height
     sender.send(bitcoincli, BitcoinReq("getblockcount"))
     val currentBlockCount = sender.expectMsgType[JValue](10 seconds).extract[Long]
@@ -640,17 +643,6 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sendReq = SendPayment(300000000L, pr.paymentHash, nodes("F5").nodeParams.nodeId)
     sender.send(nodes("A").paymentInitiator, sendReq)
     sender.expectMsgType[PaymentSucceeded]
-    // then we find the id of F's only channel
-    sender.send(nodes("F5").register, 'channels)
-    val channelId = sender.expectMsgType[Map[BinaryData, ActorRef]].head._1
-    // we then wait for F to have a main output
-    awaitCond({
-      sender.send(nodes("F5").register, Forward(channelId, CMD_GETSTATEDATA))
-      sender.expectMsgType[DATA_NORMAL].commitments.localCommit.index == 2
-    }, max = 5 seconds)
-    // and we use it to get its current commitment tx
-    sender.send(nodes("F5").register, Forward(channelId, CMD_GETSTATEDATA))
-    val localCommitTxF = sender.expectMsgType[DATA_NORMAL].commitments.localCommit.publishableTxs
     // we now send some more money to F so that it creates a new commitment tx
     val amountMsat1 = MilliSatoshi(100000000L)
     sender.send(nodes("F5").paymentHandler, ReceivePayment(Some(amountMsat1), "1 coffee"))
@@ -658,6 +650,11 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     val sendReq1 = SendPayment(100000000L, pr1.paymentHash, nodes("F5").nodeParams.nodeId)
     sender.send(nodes("A").paymentInitiator, sendReq1)
     sender.expectMsgType[PaymentSucceeded]
+    // F5 must have received exactly 4 signatures
+    val commitmentsF = for (_ <- 0 until 4) yield listener.expectMsgType[ChannelSignatureReceived].commitments
+    listener.expectNoMsg(1 second)
+    // this also allows us to get the channel id
+    val channelId = commitmentsF.head.channelId
     // we also retrieve C's default final address
     sender.send(nodes("C").register, Forward(channelId, CMD_GETSTATEDATA))
     val finalAddressC = scriptPubKeyToAddress(sender.expectMsgType[DATA_NORMAL].commitments.localParams.defaultFinalScriptPubKey)
@@ -665,15 +662,17 @@ class IntegrationSpec extends TestKit(ActorSystem("test")) with FunSuiteLike wit
     sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
     val res = sender.expectMsgType[JValue](10 seconds)
     val previouslyReceivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
-    // then we publish F's previous commit tx
-    sender.send(bitcoincli, BitcoinReq("sendrawtransaction", localCommitTxF.commitTx.tx.toString()))
+    // then we publish F's 3rd commitment (both parties have a main output and there is also a pending htlc)
+    val localCommitF = commitmentsF(2).localCommit.publishableTxs
+    assert(localCommitF.commitTx.tx.txOut.size == 3)
+    sender.send(bitcoincli, BitcoinReq("sendrawtransaction", localCommitF.commitTx.tx.toString()))
     sender.expectMsgType[JValue](10000 seconds)
-    // at this point C should have 2 recv transactions: its previous main output and the one it took from F as a punishment
+    // at this point C should have 3 recv transactions: its previous main output, and F's main and htlc output (taken as punishment)
     awaitCond({
       sender.send(bitcoincli, BitcoinReq("listreceivedbyaddress", 0))
       val res = sender.expectMsgType[JValue](10 seconds)
       val receivedByC = res.filter(_ \ "address" == JString(finalAddressC)).flatMap(_ \ "txids" \\ classOf[JString])
-      (receivedByC diff previouslyReceivedByC).size == 2
+      (receivedByC diff previouslyReceivedByC).size == 3
     }, max = 30 seconds, interval = 1 second)
     // this will remove the channel
     awaitAnnouncements(nodes.filter(_._1 == "A"), 4, 5, 12)

@@ -38,23 +38,23 @@ import scala.concurrent.duration._
 @RunWith(classOf[JUnitRunner])
 class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
 
-  type FixtureParam = Tuple8[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe, TestProbe, List[Transaction]]
+  type FixtureParam = Tuple8[TestFSMRef[State, Data, Channel], TestFSMRef[State, Data, Channel], TestProbe, TestProbe, TestProbe, TestProbe, TestProbe, List[PublishableTxs]]
 
   override def withFixture(test: OneArgTest) = {
     val setup = init()
     import setup._
     within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
-      val bobCommitTxes: List[Transaction] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
+      val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
         val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
         crossSign(alice, bob, alice2bob, bob2alice)
         relayer.expectMsgType[ForwardAdd]
-        val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+        val bobCommitTx1 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
         fulfillHtlc(htlc.id, r, bob, alice, bob2alice, alice2bob)
         relayer.expectMsgType[ForwardFulfill]
         crossSign(bob, alice, bob2alice, alice2bob)
         relayer.expectMsgType[CommandBuffer.CommandAck]
-        val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
+        val bobCommitTx2 = bob.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs
         bobCommitTx1 :: bobCommitTx2 :: Nil
       }).flatten
 
@@ -191,7 +191,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_HTLC_SPENT") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
+  test("recv BITCOIN_OUTPUT_SPENT") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, relayer, _) =>
     within(30 seconds) {
       // alice sends an htlc to bob
       val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
@@ -229,20 +229,31 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     }
   }
 
-  test("recv BITCOIN_TX_CONFIRMED (local commit)") { case (alice, _, _, _, alice2blockchain, _, _, _) =>
+  test("recv BITCOIN_TX_CONFIRMED (local commit)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, _, _, _) =>
     within(30 seconds) {
+      // alice sends an htlc to bob
+      val (ra1, htlca1) = addHtlc(50000000, alice, bob, alice2bob, bob2alice)
+      crossSign(alice, bob, alice2bob, bob2alice)
       // an error occurs and alice publishes her commit tx
       val aliceCommitTx = alice.stateData.asInstanceOf[DATA_NORMAL].commitments.localCommit.publishableTxs.commitTx.tx
-      alice ! Error("00" * 32, "oops".getBytes())
-      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx))
-      val claimMainDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx
-      alice2blockchain.expectMsgType[WatchConfirmed].txId == aliceCommitTx.txid
+      alice ! Error("00" * 32, "oops".getBytes)
+      alice2blockchain.expectMsg(PublishAsap(aliceCommitTx)) // commit tx
+      val claimMainDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // main-delayed-output
+      val htlcTimeoutTx = alice2blockchain.expectMsgType[PublishAsap].tx // htlc-timeout
+      val claimDelayedTx = alice2blockchain.expectMsgType[PublishAsap].tx // claim-delayed-output
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event === BITCOIN_TX_CONFIRMED(aliceCommitTx))
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event.isInstanceOf[BITCOIN_TX_CONFIRMED]) // main-delayed-output
+      assert(alice2blockchain.expectMsgType[WatchConfirmed].event.isInstanceOf[BITCOIN_TX_CONFIRMED]) // claim-delayed-output
+      assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT)
       awaitCond(alice.stateName == CLOSING)
-      assert(alice.stateData.asInstanceOf[DATA_CLOSING].localCommitPublished.isDefined)
+      val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
+      assert(initialState.localCommitPublished.isDefined)
 
       // actual test starts here
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(aliceCommitTx), 0, 0)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainDelayedTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(htlcTimeoutTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimDelayedTx), 0, 0)
       awaitCond(alice.stateName == CLOSED)
     }
   }
@@ -252,7 +263,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
-      val bobCommitTx = bobCommitTxes.last
+      val bobCommitTx = bobCommitTxes.last.commitTx.tx
       assert(bobCommitTx.txOut.size == 2) // two main outputs
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
 
@@ -269,7 +280,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes his last current commit tx, the one it had when entering NEGOTIATING state
-      val bobCommitTx = bobCommitTxes.last
+      val bobCommitTx = bobCommitTxes.last.commitTx.tx
       assert(bobCommitTx.txOut.size == 2) // two main outputs
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTx)
       val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx
@@ -333,7 +344,7 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       val initialState = alice.stateData.asInstanceOf[DATA_CLOSING]
       // bob publishes one of his revoked txes
-      val bobRevokedTx = bobCommitTxes.head
+      val bobRevokedTx = bobCommitTxes.head.commitTx.tx
       alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
 
       // alice publishes and watches the penalty tx
@@ -342,8 +353,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2blockchain.expectMsgType[PublishAsap] // htlc-penalty
       alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
       alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+      alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
       alice2blockchain.expectNoMsg(1 second)
 
       awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
@@ -355,38 +366,71 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
     within(30 seconds) {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       // bob publishes multiple revoked txes (last one isn't revoked)
-      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(0))
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(0).commitTx.tx)
       // alice publishes and watches the penalty tx
       alice2blockchain.expectMsgType[PublishAsap] // claim-main
       alice2blockchain.expectMsgType[PublishAsap] // main-penalty
       alice2blockchain.expectMsgType[PublishAsap] // htlc-penalty
       alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
       alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+      alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
       alice2blockchain.expectNoMsg(1 second)
 
-      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(1))
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(1).commitTx.tx)
       // alice publishes and watches the penalty tx
       alice2blockchain.expectMsgType[PublishAsap] // claim-main
       alice2blockchain.expectMsgType[PublishAsap] // main-penalty
       alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
       alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
-      alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchSpent] // main-penalty
       alice2blockchain.expectNoMsg(1 second)
 
-      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(2))
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobCommitTxes(2).commitTx.tx)
       // alice publishes and watches the penalty tx
       alice2blockchain.expectMsgType[PublishAsap] // claim-main
       alice2blockchain.expectMsgType[PublishAsap] // main-penalty
       alice2blockchain.expectMsgType[PublishAsap] // htlc-penalty
       alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
       alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
-      alice2blockchain.expectMsgType[WatchSpent]
-      alice2blockchain.expectMsgType[WatchSpent]
+      alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+      alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
       alice2blockchain.expectNoMsg(1 second)
 
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 3)
+    }
+  }
+
+  test("recv BITCOIN_OUTPUT_SPENT (one revoked tx, counterparty published HtlcSuccess tx)") { case (alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, _, bobCommitTxes) =>
+    within(30 seconds) {
+      mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
+      // bob publishes one of his revoked txes
+      val bobRevokedTx = bobCommitTxes.head
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx.commitTx.tx)
+      // alice publishes and watches the penalty tx
+      val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx // claim-main
+      val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx // main-penalty
+      val htlcPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx // htlc-penalty
+      alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
+      alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
+      alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+      alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
+      alice2blockchain.expectNoMsg(1 second)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.commitTx == bobRevokedTx.commitTx.tx)
+
+      // actual test starts here
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobRevokedTx.commitTx.tx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(mainPenaltyTx), 0, 0)
+      alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, htlcPenaltyTx) // we published this
+      alice2blockchain.expectMsgType[WatchConfirmed] // htlc-penalty
+      val bobHtlcSuccessTx = bobRevokedTx.htlcTxsAndSigs.head.txinfo.tx
+      alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, bobHtlcSuccessTx) // bob published his HtlcSuccess tx
+      alice2blockchain.expectMsgType[WatchConfirmed] // htlc-success
+      val claimHtlcDelayedPenaltyTxs = alice2blockchain.expectMsgType[PublishAsap].tx // we publish a tx spending the output of bob's HtlcSuccess tx
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobHtlcSuccessTx), 0, 0) // bob won
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimHtlcDelayedPenaltyTxs), 0, 0) // bob won
+      awaitCond(alice.stateName == CLOSED)
     }
   }
 
@@ -395,18 +439,20 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       mutualClose(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain)
       // bob publishes one of his revoked txes
       val bobRevokedTx = bobCommitTxes.head
-      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx)
+      alice ! WatchEventSpent(BITCOIN_FUNDING_SPENT, bobRevokedTx.commitTx.tx)
       // alice publishes and watches the penalty tx
       val claimMainTx = alice2blockchain.expectMsgType[PublishAsap].tx // claim-main
       val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx // main-penalty
       val htlcPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx // htlc-penalty
       alice2blockchain.expectMsgType[WatchConfirmed] // revoked commit
       alice2blockchain.expectMsgType[WatchConfirmed] // claim-main
-      alice2blockchain.expectMsgType[WatchSpent]
-      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.commitTx == bobRevokedTx)
+      alice2blockchain.expectMsgType[WatchSpent] // main-penalty
+      alice2blockchain.expectMsgType[WatchSpent] // htlc-penalty
+      alice2blockchain.expectNoMsg(1 second)
+      awaitCond(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.head.commitTx == bobRevokedTx.commitTx.tx)
 
       // actual test starts here
-      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobRevokedTx), 0, 0)
+      alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(bobRevokedTx.commitTx.tx), 0, 0)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(claimMainTx), 0, 0)
       alice ! WatchEventConfirmed(BITCOIN_TX_CONFIRMED(mainPenaltyTx), 0, 0)
       alice ! WatchEventSpent(BITCOIN_OUTPUT_SPENT, htlcPenaltyTx)

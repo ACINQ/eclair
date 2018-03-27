@@ -77,10 +77,10 @@ object Transactions {
     *   - [[ClaimP2WPKHOutputTx]] spends to-local output of [[CommitTx]]
     *   - [[MainPenaltyTx]] spends remote main output using the per-commitment secret
     *   - [[HtlcSuccessTx]] spends htlc-sent outputs of [[CommitTx]] for which they have the preimage (published by remote)
-    *     - [[HtlcPenaltyTx]] spends [[HtlcSuccessTx]] using the per-commitment secret
-    *   - [[ClaimHtlcTimeoutTx]] spends htlc-sent outputs of [[CommitTx]] after a timeout
-    *   - [[HtlcTimeoutTx]] spends htlc-received outputs of [[CommitTx]] after a timeout (published by local or remote)
-    *     - [[HtlcPenaltyTx]] spends [[HtlcTimeoutTx]] using the per-commitment secret
+    *     - [[ClaimDelayedOutputTx]] spends [[HtlcSuccessTx]] using the revocation secret (published by local)
+    *   - [[HtlcTimeoutTx]] spends htlc-received outputs of [[CommitTx]] after a timeout (published by remote)
+    *     - [[ClaimDelayedOutputTx]] spends [[HtlcTimeoutTx]] using the revocation secret (published by local)
+    *   - [[HtlcPenaltyTx]] spends competes with [[HtlcSuccessTx]] and [[HtlcTimeoutTx]] for the same outputs (published by local)
     */
 
   val commitWeight = 724
@@ -330,12 +330,6 @@ object Transactions {
 
   /**
     * We already have the redeemScript, no need to build it
-    * @param commitTx
-    * @param redeemScript
-    * @param localDustLimit
-    * @param localFinalScriptPubKey
-    * @param feeratePerKw
-    * @return
     */
   def makeHtlcPenaltyTx(commitTx: Transaction, redeemScript: BinaryData, localDustLimit: Satoshi, localFinalScriptPubKey: BinaryData, feeratePerKw: Long): HtlcPenaltyTx = {
     val fee = weight2fee(feeratePerKw, htlcPenaltyWeight)
@@ -388,14 +382,6 @@ object Transactions {
     Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, amount, SIGVERSION_WITNESS_V0, key)
   }
 
-  // when the amount is not specified, we used the legacy (pre-segwit) signature scheme
-  // this is only used to spend the to-remote output of a commit tx, which is the only non-segwit output
-  // that we use
-  // TODO: change this if the decide to use P2WPKH in the to-remote output
-  def sign(tx: Transaction, inputIndex: Int, redeemScript: BinaryData, key: PrivateKey): BinaryData = {
-    Transaction.signInput(tx, inputIndex, redeemScript, SIGHASH_ALL, Satoshi(0), SIGVERSION_BASE, key)
-  }
-
   def sign(txinfo: TransactionWithInputInfo, key: PrivateKey): BinaryData = {
     require(txinfo.tx.txIn.lengthCompare(1) == 0, "only one input allowed")
     sign(txinfo.tx, inputIndex = 0, txinfo.input.redeemScript, txinfo.input.txOut.amount, key)
@@ -411,7 +397,7 @@ object Transactions {
     mainPenaltyTx.copy(tx = mainPenaltyTx.tx.updateWitness(0, witness))
   }
 
-  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: BinaryData, revocationPubkey: BinaryData): HtlcPenaltyTx = {
+  def addSigs(htlcPenaltyTx: HtlcPenaltyTx, revocationSig: BinaryData, revocationPubkey: PublicKey): HtlcPenaltyTx = {
     val witness = Scripts.witnessHtlcWithRevocationSig(revocationSig, revocationPubkey, htlcPenaltyTx.input.redeemScript)
     htlcPenaltyTx.copy(tx = htlcPenaltyTx.tx.updateWitness(0, witness))
   }
@@ -443,6 +429,11 @@ object Transactions {
 
   def addSigs(claimHtlcDelayed: ClaimDelayedOutputTx, localSig: BinaryData): ClaimDelayedOutputTx = {
     val witness = witnessToLocalDelayedAfterDelay(localSig, claimHtlcDelayed.input.redeemScript)
+    claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
+  }
+
+  def addSigsRev(claimHtlcDelayed: ClaimDelayedOutputTx, revocationSig: BinaryData): ClaimDelayedOutputTx = {
+    val witness = Scripts.witnessToLocalDelayedWithRevocationSig(revocationSig, claimHtlcDelayed.input.redeemScript)
     claimHtlcDelayed.copy(tx = claimHtlcDelayed.tx.updateWitness(0, witness))
   }
 

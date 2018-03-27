@@ -1133,7 +1133,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
+      log.info(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
       extracted map { case (htlc, fulfill) =>
         val origin = d.commitments.originChannels(fulfill.id)
@@ -1141,11 +1141,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
         relayer ! ForwardFulfill(fulfill, origin, htlc)
       }
       val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
-          val (rev1, tx_opt) = Closing.spendDelayedHtlcTxOutputs(keyManager, d.commitments, rev, tx)
-          tx_opt.foreach(blockchain ! PublishAsap(_))
+          val (rev1, tx_opt) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx)
+          tx_opt.foreach(claimTx => blockchain ! PublishAsap(claimTx))
+          tx_opt.foreach(claimTx => blockchain ! WatchSpent(self, tx, claimTx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
           rev1
       }
-      stay using d.copy(revokedCommitPublished = revokedCommitPublished1)
+      stay using store(d.copy(revokedCommitPublished = revokedCommitPublished1))
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
@@ -1734,7 +1735,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
     import revokedCommitPublished._
 
-    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs
+    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
@@ -1744,7 +1745,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
-    val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs
+    val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
