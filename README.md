@@ -28,8 +28,6 @@ Please see the latest [release note](https://github.com/ACINQ/eclair/releases) f
 
 ## Installation
 
-:warning: **Those are valid for the most up-to-date, unreleased, version of eclair. Here are the [instructions for Eclair 0.2-alpha11](https://github.com/ACINQ/eclair/blob/v0.2-alpha11/README.md#installation)**.
-
 ### Configuring Bitcoin Core
 
 :warning: Eclair requires Bitcoin Core 0.16.0 or higher. If you are upgrading an existing wallet, you need to create a new address and send all your funds to that address.
