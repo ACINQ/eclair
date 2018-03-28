@@ -614,7 +614,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
               }
               // TODO: be smarter and only consider commitments1.localChanges.signed and commitments1.remoteChanges.signed
-              htlcTxs.map {
+              htlcTxs.foreach {
                 case tx: TransactionWithInputInfo =>
                   val pubKeyScript = tx.input.txOut.publicKeyScript
                   val redeemScript = tx.input.redeemScript
@@ -1745,7 +1745,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
-    val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs
+    val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 
