@@ -112,8 +112,8 @@ object NodeParams {
 
   def makeChainHash(chain: String): BinaryData = {
     chain match {
-      case "test" => Block.TestnetGenesisBlock.hash
       case "regtest" => Block.RegtestGenesisBlock.hash
+      case "testnet" => Block.TestnetGenesisBlock.hash
       case "mainnet" => Block.LivenetGenesisBlock.hash
       case invalid => throw new RuntimeException(s"invalid chain '$invalid'")
     }

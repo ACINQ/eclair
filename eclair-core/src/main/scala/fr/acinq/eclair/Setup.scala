@@ -114,10 +114,10 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addressesFile = chain match {
-        case "test" => "/electrum/servers_testnet.json"
-        case "regtest" => "/electrum/servers_regtest.json"
-        case "mainnet" => "/electrum/servers_mainnet.json"
+      val addressesFile = nodeParams.chainHash match {
+        case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+        case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+        case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
       val addresses = ElectrumClientPool.readServerAddresses(stream)
@@ -133,8 +133,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     Globals.feeratesPerByte.set(defaultFeerates)
     Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    val feeProvider = (chain, bitcoin) match {
-      case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
+    val feeProvider = (nodeParams.chainHash, bitcoin) match {
+      case (Block.RegtestGenesisBlock.hash, _) => new ConstantFeeProvider(defaultFeerates)
       case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
       case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
