@@ -22,6 +22,9 @@ import fr.acinq.bitcoin.BinaryData
 import fr.acinq.eclair.channel.HasCommitments
 import fr.acinq.eclair.db.ChannelsDb
 import fr.acinq.eclair.wire.ChannelCodecs.stateDataCodec
+import scodec.bits.BitVector
+
+import scala.collection.immutable.Queue
 
 class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
 
@@ -34,7 +37,8 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     require(getVersion(statement, DB_NAME, CURRENT_VERSION) == CURRENT_VERSION) // there is only one version currently deployed
     statement.execute("PRAGMA foreign_keys = ON")
     statement.executeUpdate("CREATE TABLE IF NOT EXISTS local_channels (channel_id BLOB NOT NULL PRIMARY KEY, data BLOB NOT NULL)")
-    statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_scripts (channel_id BLOB NOT NULL, script_hash BLOB NOT NULL, script BLOB NOT NULL, PRIMARY KEY(channel_id, script_hash), FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+    statement.executeUpdate("CREATE TABLE IF NOT EXISTS htlc_infos (channel_id BLOB NOT NULL, commitment_number BLOB NOT NULL, payment_hash BLOB NOT NULL, cltv_expiry INTEGER NOT NULL, FOREIGN KEY(channel_id) REFERENCES local_channels(channel_id))")
+    statement.executeUpdate("CREATE INDEX IF NOT EXISTS htlc_infos_idx ON htlc_infos(channel_id, commitment_number)")
   }
 
   override def addOrUpdateChannel(state: HasCommitments): Unit = {
@@ -58,7 +62,7 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
       statement.executeUpdate()
     }
 
-    using(sqlite.prepareStatement("DELETE FROM htlc_scripts WHERE channel_id=?")) { statement =>
+    using(sqlite.prepareStatement("DELETE FROM htlc_infos WHERE channel_id=?")) { statement =>
       statement.setBytes(1, channelId)
       statement.executeUpdate()
     }
@@ -76,26 +80,26 @@ class SqliteChannelsDb(sqlite: Connection) extends ChannelsDb {
     }
   }
 
-  override def addOrUpdateHtlcScript(channelId: BinaryData, scriptHash: BinaryData, script: BinaryData): Unit = {
-    using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_scripts VALUES (?, ?, ?)")) { statement =>
+  def addOrUpdateHtlcInfo(channelId: BinaryData, commitmentNumber: Long, paymentHash: BinaryData, cltvExpiry: Long): Unit = {
+    using(sqlite.prepareStatement("INSERT OR IGNORE INTO htlc_infos VALUES (?, ?, ?, ?)")) { statement =>
       statement.setBytes(1, channelId)
-      statement.setBytes(2, scriptHash)
-      statement.setBytes(3, script)
+      statement.setLong(2, commitmentNumber)
+      statement.setBytes(3, paymentHash)
+      statement.setLong(4, cltvExpiry)
       statement.executeUpdate()
     }
   }
 
-  override def getHtlcScript(channelId: BinaryData, scriptHash: BinaryData): Option[BinaryData] = {
-    using(sqlite.prepareStatement("SELECT script FROM htlc_scripts WHERE channel_id=? AND script_hash=?")) { statement =>
+  def listHtlcHtlcInfos(channelId: BinaryData, commitmentNumber: Long): Seq[(BinaryData, Long)] = {
+    using(sqlite.prepareStatement("SELECT payment_hash, cltv_expiry FROM htlc_infos WHERE channel_id=? AND commitment_number=?")) { statement =>
       statement.setBytes(1, channelId)
-      statement.setBytes(2, scriptHash)
+      statement.setLong(2, commitmentNumber)
       val rs = statement.executeQuery
-      if (rs.next()) {
-        Option(rs.getBytes("script"))
-      } else {
-        None
+      var q: Queue[(BinaryData, Long)] = Queue()
+      while (rs.next()) {
+        q = q :+ (BinaryData(rs.getBytes("payment_hash")), rs.getLong("cltv_expiry"))
       }
-
+      q
     }
   }
 }

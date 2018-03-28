@@ -43,7 +43,8 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
   override def withFixture(test: OneArgTest) = {
     val setup = init()
     import setup._
-    within(30 seconds) {
+
+    val bobCommitTxes = within(30 seconds) {
       reachNormal(alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer)
       val bobCommitTxes: List[PublishableTxs] = (for (amt <- List(100000000, 200000000, 300000000)) yield {
         val (r, htlc) = addHtlc(amt, alice, bob, alice2bob, bob2alice)
@@ -69,9 +70,9 @@ class ClosingStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       // - revoked commit
       // and we want to be able to test the different scenarii.
       // Hence the NORMAL->CLOSING transition will occur in the individual tests.
-
-      test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer, bobCommitTxes))
+      bobCommitTxes
     }
+    test((alice, bob, alice2bob, bob2alice, alice2blockchain, bob2blockchain, relayer, bobCommitTxes))
   }
 
   def mutualClose(alice: TestFSMRef[State, Data, Channel],

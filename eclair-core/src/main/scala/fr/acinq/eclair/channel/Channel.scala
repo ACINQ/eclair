@@ -614,12 +614,12 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
               }
               // TODO: be smarter and only consider commitments1.localChanges.signed and commitments1.remoteChanges.signed
-              htlcTxs.foreach {
-                case tx: TransactionWithInputInfo =>
-                  val pubKeyScript = tx.input.txOut.publicKeyScript
-                  val redeemScript = tx.input.redeemScript
-                  log.info(s"adding $pubKeyScript -> $redeemScript in htlcs db")
-                  nodeParams.channelsDb.addOrUpdateHtlcScript(d.channelId, pubKeyScript, redeemScript)
+              val nextRemoteCommit = commitments1.remoteNextCommitInfo.left.get.nextRemoteCommit
+              val nextCommitNumber = nextRemoteCommit.index
+              nextRemoteCommit.spec.htlcs collect {
+                case DirectedHtlc(_, u) =>
+                  log.info(s"adding paymentHash=${u.paymentHash} cltvExpiry=${u.expiry} to htlcs db for commitNumber=$nextCommitNumber")
+                  nodeParams.channelsDb.addOrUpdateHtlcInfo(d.channelId, nextCommitNumber, u.paymentHash, u.expiry)
               }
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit

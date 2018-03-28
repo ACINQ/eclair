@@ -428,6 +428,8 @@ object Helpers {
           val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
           val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
           val localPubkey = Generators.derivePubKey(keyManager.paymentPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
+          val localHtlcPubkey = Generators.derivePubKey(keyManager.htlcPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
+          val remoteHtlcPubkey = Generators.derivePubKey(remoteParams.htlcBasepoint, remotePerCommitmentPoint)
 
           // no need to use a high fee rate for our main output (we are the only one who can spend it)
           val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
@@ -448,15 +450,25 @@ object Helpers {
             Transactions.addSigs(txinfo, sig)
           })
 
+          // we retrieve the informations needed to rebuild htlc scripts
+          val htlcInfos = db.listHtlcHtlcInfos(commitments.channelId, txnumber)
+          log.info(s"got htlcs=${htlcInfos.size} for txnumber=$txnumber")
+          val htlcsRedeemScripts = (
+              htlcInfos.map { case (paymentHash, cltvExpiry) => Scripts.htlcReceived(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash), cltvExpiry) } ++
+              htlcInfos.map { case (paymentHash, _) => Scripts.htlcOffered(remoteHtlcPubkey, localHtlcPubkey, remoteRevocationPubkey, Crypto.ripemd160(paymentHash)) }
+              )
+            .map(redeemScript => (Script.write(pay2wsh(redeemScript)) -> Script.write(redeemScript)))
+            .toMap
+
           // and finally we steal the htlc outputs
-          val htlcPenaltyTxs = tx.txOut.map(txOut => db.getHtlcScript(commitments.channelId, txOut.publicKeyScript)).collect {
-            case Some(htlcRedeemScript) =>
-              generateTx("htlc-penalty")(Try {
-                val txinfo = Transactions.makeHtlcPenaltyTx(tx, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
-                val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
-                Transactions.addSigs(txinfo, sig, remoteRevocationPubkey)
-              })
-          }.flatten.toList
+          val htlcPenaltyTxs = tx.txOut.collect { case txOut if htlcsRedeemScripts.contains(txOut.publicKeyScript) =>
+            val htlcRedeemScript = htlcsRedeemScripts(txOut.publicKeyScript)
+            generateTx("htlc-penalty")(Try {
+              val txinfo = Transactions.makeHtlcPenaltyTx(tx, htlcRedeemScript, Satoshi(localParams.dustLimitSatoshis), localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
+              val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
+              Transactions.addSigs(txinfo, sig, remoteRevocationPubkey)
+            })
+          }.toList.flatten
 
           RevokedCommitPublished(
             commitTx = tx,
@@ -501,7 +513,7 @@ object Helpers {
           .flatMap { remotePerCommitmentSecret =>
             val remotePerCommitmentPoint = remotePerCommitmentSecret.toPoint
             val remoteDelayedPaymentPubkey = Generators.derivePubKey(remoteParams.delayedPaymentBasepoint, remotePerCommitmentPoint)
-            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentSecret.toPoint)
+            val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remotePerCommitmentPoint)
 
             // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
             val feeratePerKwPenalty = Globals.feeratesPerKw.get.block_1

@@ -43,22 +43,28 @@ class SqliteChannelsDbSpec extends FunSuite {
 
     val channel = ChannelStateSpec.normal
 
-    val script = BinaryData("42" * 300)
-    val scriptHash = BinaryData("11" * 32)
+    val commitNumber = 42
+    val paymentHash1 = BinaryData("42" * 300)
+    val cltvExpiry1 = 123
+    val paymentHash2 = BinaryData("43" * 300)
+    val cltvExpiry2 = 656
 
-    intercept[SQLiteException](db.addOrUpdateHtlcScript(channel.channelId, scriptHash, script)) // no related channel
+    intercept[SQLiteException](db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)) // no related channel
 
     assert(db.listChannels().toSet === Set.empty)
     db.addOrUpdateChannel(channel)
     db.addOrUpdateChannel(channel)
     assert(db.listChannels() === List(channel))
 
-    assert(db.getHtlcScript(channel.channelId, scriptHash) == None)
-    db.addOrUpdateHtlcScript(channel.channelId, scriptHash, script)
-    assert(db.getHtlcScript(channel.channelId, scriptHash) == Some(script))
+    assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == Nil)
+    db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash1, cltvExpiry1)
+    db.addOrUpdateHtlcInfo(channel.channelId, commitNumber, paymentHash2, cltvExpiry2)
+    assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == List((paymentHash1, cltvExpiry1), (paymentHash2, cltvExpiry2)))
+    assert(db.listHtlcHtlcInfos(channel.channelId, 43).toList == Nil)
 
     db.removeChannel(channel.channelId)
     assert(db.listChannels() === Nil)
+    assert(db.listHtlcHtlcInfos(channel.channelId, commitNumber).toList == Nil)
   }
 
 }
