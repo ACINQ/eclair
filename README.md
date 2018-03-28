@@ -82,7 +82,7 @@ Eclair reads its configuration file, and write its logs, to `~/.eclair` by defau
 To change your node's configuration, create a file named `eclair.conf` in `~/.eclair`. Here's an example configuration file:
 
 ```
-eclair.chain=test
+eclair.chain=testnet
 eclair.node-alias=eclair
 eclair.node-color=49daaa
 ```
@@ -91,7 +91,7 @@ Here are some of the most common options:
 
 name                         | description                                                                           | default value
 -----------------------------|---------------------------------------------------------------------------------------|--------------
- eclair.chain                | Which blockchain to use: *regtest*, *test* or *mainnet*                               | test
+ eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet*                            | testnet
  eclair.server.port          | Lightning TCP port                                                                    | 9735
  eclair.api.enabled          | Enable/disable the API                                                                | false. By default the API is disabled. If you want to enable it, you must set a password.
  eclair.api.port             | API HTTP port                                                                         | 8080
