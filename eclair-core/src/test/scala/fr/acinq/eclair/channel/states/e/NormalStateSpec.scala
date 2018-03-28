@@ -1736,18 +1736,25 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       alice2bob.expectMsgType[Error]
 
       val mainTx = alice2blockchain.expectMsgType[PublishAsap].tx
-      val penaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val mainPenaltyTx = alice2blockchain.expectMsgType[PublishAsap].tx
+      val htlcPenaltyTxs = for (i <- 0 until 4) yield alice2blockchain.expectMsgType[PublishAsap].tx
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(revokedTx))
       assert(alice2blockchain.expectMsgType[WatchConfirmed].event == BITCOIN_TX_CONFIRMED(mainTx))
       assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT) // main-penalty
+      htlcPenaltyTxs.foreach(htlcPenaltyTx => assert(alice2blockchain.expectMsgType[WatchSpent].event === BITCOIN_OUTPUT_SPENT))
       alice2blockchain.expectNoMsg(1 second)
 
       Transaction.correctlySpends(mainTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
-      Transaction.correctlySpends(penaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      Transaction.correctlySpends(mainPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
+      htlcPenaltyTxs.foreach(htlcPenaltyTx => Transaction.correctlySpends(htlcPenaltyTx, Seq(revokedTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS))
 
       // two main outputs are 760 000 and 200 000
       assert(mainTx.txOut(0).amount == Satoshi(741510))
-      assert(penaltyTx.txOut(0).amount == Satoshi(195170))
+      assert(mainPenaltyTx.txOut(0).amount == Satoshi(195170))
+      assert(htlcPenaltyTxs(0).txOut(0).amount == Satoshi(4230))
+      assert(htlcPenaltyTxs(1).txOut(0).amount == Satoshi(4230))
+      assert(htlcPenaltyTxs(2).txOut(0).amount == Satoshi(4230))
+      assert(htlcPenaltyTxs(3).txOut(0).amount == Satoshi(4230))
 
       awaitCond(alice.stateName == CLOSING)
       assert(alice.stateData.asInstanceOf[DATA_CLOSING].revokedCommitPublished.size == 1)
@@ -1819,7 +1826,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       assert(localCommitPublished.commitTx == aliceCommitTx)
       assert(localCommitPublished.htlcSuccessTxs.size == 1)
       assert(localCommitPublished.htlcTimeoutTxs.size == 2)
-      assert(localCommitPublished.claimHtlcDelayedTx.size == 3)
+      assert(localCommitPublished.claimHtlcDelayedTxs.size == 3)
     }
   }
 
