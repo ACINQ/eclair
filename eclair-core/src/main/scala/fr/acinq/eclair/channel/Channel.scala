@@ -606,7 +606,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
-            case Success((commitments1, commit, htlcTxs)) =>
+            case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect {
                 case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
@@ -923,7 +923,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
           stay
         case Right(_) =>
           Try(Commitments.sendCommit(d.commitments, keyManager)) match {
-            case Success((commitments1, commit, _)) =>
+            case Success((commitments1, commit)) =>
               log.debug(s"sending a new sig, spec:\n${Commitments.specs2String(commitments1)}")
               commitments1.localChanges.signed.collect {
                 case u: UpdateFulfillHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
