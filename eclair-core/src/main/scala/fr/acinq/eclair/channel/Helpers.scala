@@ -510,9 +510,9 @@ object Helpers {
             val feeratePerKwPenalty = Globals.feeratesPerKw.get.block_1
 
             generateTx("claim-htlc-delayed-penalty")(Try {
-              val txinfo = Transactions.makeClaimDelayedOutputTx(htlcTx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
+              val txinfo = Transactions.makeClaimDelayedOutputPenaltyTx(htlcTx, Satoshi(localParams.dustLimitSatoshis), remoteRevocationPubkey, localParams.toSelfDelay, remoteDelayedPaymentPubkey, localParams.defaultFinalScriptPubKey, feeratePerKwPenalty)
               val sig = keyManager.sign(txinfo, keyManager.revocationPoint(localParams.channelKeyPath), remotePerCommitmentSecret)
-              val signedTx = Transactions.addSigsRev(txinfo, sig)
+              val signedTx = Transactions.addSigs(txinfo, sig)
               // we need to make sure that the tx is indeed valid
               Transaction.correctlySpends(signedTx.tx, Seq(htlcTx), ScriptFlags.STANDARD_SCRIPT_VERIFY_FLAGS)
               signedTx
