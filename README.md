@@ -6,16 +6,17 @@
 
 **Eclair** (french for Lightning) is a scala implementation of the Lightning Network. It can run with or without a GUI, and a JSON-RPC API is also available.
 
-This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning] and [lnd].
+This software follows the [Lightning Network Specifications (BOLTs)](https://github.com/lightningnetwork/lightning-rfc). Other implementations include [c-lightning](https://github.com/ElementsProject/lightning) and [lnd](https://github.com/LightningNetwork/lnd).
  
  ---
  
- :construction: Both the BOLTs and Eclair itself are a work in progress. Expect things to break/change!
+ :construction: Both the BOLTs and Eclair itself are still a work in progress. Expect things to break/change!
  
- :warning: Eclair currently only runs on regtest or testnet.
+ :rotating_light: If you intend to run Eclair on mainnet:
+ - Keep in mind that it is beta-quality software and **don't put too much money** in it
+ - Eclair's JSON-RPC API should **NOT** be accessible from the outside world (similarly to Bitcoin Core API)
+ - Specific [configuration instructions for mainnet](#mainnet-usage) are provided below (by default Eclair runs on testnet)
  
- :rotating_light: We had reports of Eclair being tested on various segwit-enabled blockchains. Keep in mind that Eclair is still alpha quality software, by using it with actual coins you are putting your funds at risk!
-
 ---
 
 ## Lightning Network Specification Compliance
@@ -81,7 +82,7 @@ Eclair reads its configuration file, and write its logs, to `~/.eclair` by defau
 To change your node's configuration, create a file named `eclair.conf` in `~/.eclair`. Here's an example configuration file:
 
 ```
-eclair.server.port=9735
+eclair.chain=testnet
 eclair.node-alias=eclair
 eclair.node-color=49daaa
 ```
@@ -90,6 +91,7 @@ Here are some of the most common options:
 
 name                         | description                                                                           | default value
 -----------------------------|---------------------------------------------------------------------------------------|--------------
+ eclair.chain                | Which blockchain to use: *regtest*, *testnet* or *mainnet*                            | testnet
  eclair.server.port          | Lightning TCP port                                                                    | 9735
  eclair.api.enabled          | Enable/disable the API                                                                | false. By default the API is disabled. If you want to enable it, you must set a password.
  eclair.api.port             | API HTTP port                                                                         | 8080
@@ -166,12 +168,34 @@ If you want to persist the data directory, you can make the volume to your host 
 docker run -ti --rm -v "/path_on_host:/data" -e "JAVA_OPTS=-Declair.printToConsole" acinq\eclair
 ```
 
+## Mainnet usage
+
+Following are the minimum configuration files you need to use for Bitcoin Core and Eclair.
+
+### Bitcoin Core configuration
+
+```
+testnet=0
+server=1
+rpcuser=<your-rpc-user-here>
+rpcpassword=<your-rpc-password-here>
+txindex=1
+zmqpubrawblock=tcp://127.0.0.1:29000
+zmqpubrawtx=tcp://127.0.0.1:29000
+addresstype=p2sh-segwit
+```
+
+### Eclair configuration
+
+```
+eclair.chain=mainnet
+eclair.bitcoind.rpcport=8332
+eclair.bitcoind.rpcuser=<your-bitcoin-core-rpc-user-here>
+eclair.bitcoind.rpcpassword=<your-bitcoin-core-rpc-passsword-here>
+```
+
 
 ## Resources
 - [1] [The Bitcoin Lightning Network: Scalable Off-Chain Instant Payments](https://lightning.network/lightning-network-paper.pdf) by Joseph Poon and Thaddeus Dryja
 - [2] [Reaching The Ground With Lightning](https://github.com/ElementsProject/lightning/raw/master/doc/deployable-lightning.pdf) by Rusty Russell
 - [3] [Lightning Network Explorer](https://explorer.acinq.co) - Explore testnet LN nodes you can connect to
-
-[c-lightning]: https://github.com/ElementsProject/lightning
-[lnd]: https://github.com/LightningNetwork/lnd
-

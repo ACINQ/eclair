@@ -326,7 +326,7 @@ object Commitments {
       throw FundeeCannotSendUpdateFee(commitments.channelId)
     }
 
-    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
+    val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
     if (Helpers.isFeeDiffTooHigh(fee.feeratePerKw, localFeeratePerKw, maxFeerateMismatch)) {
       throw FeerateTooDifferent(commitments.channelId, localFeeratePerKw = localFeeratePerKw, remoteFeeratePerKw = fee.feeratePerKw)
     }

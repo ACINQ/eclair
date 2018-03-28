@@ -18,7 +18,7 @@ package fr.acinq.eclair.blockchain.electrum
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.pattern.ask
-import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, OP_EQUAL, OP_HASH160, OP_PUSHDATA, Satoshi, Script, Transaction, TxOut}
+import fr.acinq.bitcoin.{Base58, Base58Check, BinaryData, Block, OP_EQUAL, OP_HASH160, OP_PUSHDATA, Satoshi, Script, Transaction, TxOut}
 import fr.acinq.eclair.blockchain.electrum.ElectrumClient.BroadcastTransaction
 import fr.acinq.eclair.blockchain.electrum.ElectrumWallet._
 import fr.acinq.eclair.blockchain.{EclairWallet, MakeFundingTxResponse}
@@ -26,7 +26,7 @@ import grizzled.slf4j.Logging
 
 import scala.concurrent.{ExecutionContext, Future}
 
-class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet with Logging {
+class ElectrumEclairWallet(val wallet: ActorRef, chainHash: BinaryData)(implicit system: ActorSystem, ec: ExecutionContext, timeout: akka.util.Timeout) extends EclairWallet with Logging {
 
   override def getBalance = (wallet ? GetBalance).mapTo[GetBalanceResponse].map(balance => balance.confirmed + balance.unconfirmed)
 
@@ -63,8 +63,11 @@ class ElectrumEclairWallet(val wallet: ActorRef)(implicit system: ActorSystem, e
 
   def sendPayment(amount: Satoshi, address: String, feeRatePerKw: Long): Future[String] = {
     val publicKeyScript = Base58Check.decode(address) match {
-      case (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) => Script.pay2pkh(pubKeyHash)
-      case (Base58.Prefix.ScriptAddressTestnet, scriptHash) => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case (Base58.Prefix.PubkeyAddressTestnet, pubKeyHash) if chainHash == Block.RegtestGenesisBlock.hash || chainHash == Block.TestnetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
+      case (Base58.Prefix.PubkeyAddress, pubKeyHash) if chainHash == Block.LivenetGenesisBlock.hash => Script.pay2pkh(pubKeyHash)
+      case (Base58.Prefix.ScriptAddressTestnet, scriptHash) if chainHash == Block.RegtestGenesisBlock.hash || chainHash == Block.TestnetGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case (Base58.Prefix.ScriptAddress, scriptHash) if chainHash == Block.LivenetGenesisBlock.hash => OP_HASH160 :: OP_PUSHDATA(scriptHash) :: OP_EQUAL :: Nil
+      case _ => throw new RuntimeException("payment address does not match our blockchain")
     }
     val tx = Transaction(version = 2, txIn = Nil, txOut = TxOut(amount, publicKeyScript) :: Nil, lockTime = 0)
 

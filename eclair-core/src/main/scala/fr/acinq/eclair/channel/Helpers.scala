@@ -61,7 +61,7 @@ object Helpers {
     if (nodeParams.chainHash != open.chainHash) throw InvalidChainHash(open.temporaryChannelId, local = nodeParams.chainHash, remote = open.chainHash)
     if (open.fundingSatoshis < Channel.MIN_FUNDING_SATOSHIS || open.fundingSatoshis >= Channel.MAX_FUNDING_SATOSHIS) throw InvalidFundingAmount(open.temporaryChannelId, open.fundingSatoshis, Channel.MIN_FUNDING_SATOSHIS, Channel.MAX_FUNDING_SATOSHIS)
     if (open.pushMsat > 1000 * open.fundingSatoshis) throw InvalidPushAmount(open.temporaryChannelId, open.pushMsat, 1000 * open.fundingSatoshis)
-    val localFeeratePerKw = Globals.feeratesPerKw.get.block_1
+    val localFeeratePerKw = Globals.feeratesPerKw.get.blocks_2
     if (isFeeDiffTooHigh(open.feeratePerKw, localFeeratePerKw, nodeParams.maxFeerateMismatch)) throw FeerateTooDifferent(open.temporaryChannelId, localFeeratePerKw, open.feeratePerKw)
     // only enforce dust limit check on mainnet
     if (nodeParams.chainHash == Block.LivenetGenesisBlock.hash) {
@@ -122,7 +122,9 @@ object Helpers {
     import scala.concurrent.duration._
     val finalAddress = Await.result(wallet.getFinalAddress, 40 seconds)
     val finalScriptPubKey = Base58Check.decode(finalAddress) match {
+      case (Base58.Prefix.PubkeyAddress, hash) => Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
       case (Base58.Prefix.PubkeyAddressTestnet, hash) => Script.write(OP_DUP :: OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUALVERIFY :: OP_CHECKSIG :: Nil)
+      case (Base58.Prefix.ScriptAddress, hash) => Script.write(OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUAL :: Nil)
       case (Base58.Prefix.ScriptAddressTestnet, hash) => Script.write(OP_HASH160 :: OP_PUSHDATA(hash) :: OP_EQUAL :: Nil)
     }
     finalScriptPubKey
@@ -339,7 +341,7 @@ object Helpers {
       val remoteRevocationPubkey = Generators.revocationPubKey(keyManager.revocationPoint(localParams.channelKeyPath).publicKey, remoteCommit.remotePerCommitmentPoint)
 
       // we need to use a rather high fee for htlc-claim because we compete with the counterparty
-      val feeratePerKwHtlc = Globals.feeratesPerKw.get.block_1
+      val feeratePerKwHtlc = Globals.feeratesPerKw.get.blocks_2
 
       // those are the preimages to existing received htlcs
       val preimages = commitments.localChanges.all.collect { case u: UpdateFulfillHtlc => u.paymentPreimage }
@@ -434,7 +436,7 @@ object Helpers {
           // no need to use a high fee rate for our main output (we are the only one who can spend it)
           val feeratePerKwMain = Globals.feeratesPerKw.get.blocks_6
           // we need to use a high fee here for punishment txes because after a delay they can be spent by the counterparty
-          val feeratePerKwPenalty = Globals.feeratesPerKw.get.block_1
+          val feeratePerKwPenalty = Globals.feeratesPerKw.get.blocks_2
 
           // first we will claim our main output right away
           val mainTx = generateTx("claim-p2wpkh-output")(Try {

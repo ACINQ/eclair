@@ -1541,7 +1541,7 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       val initialState = alice.stateData.asInstanceOf[DATA_NORMAL]
       val event = CurrentFeerates(FeeratesPerKw.single(20000))
       sender.send(alice, event)
-      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.block_1))
+      alice2bob.expectMsg(UpdateFee(initialState.commitments.channelId, event.feeratesPerKw.blocks_2))
     }
   }
 
@@ -1892,10 +1892,12 @@ class NormalStateSpec extends TestkitBaseClass with StateTestsHelperMethods {
       import initialState.commitments.localParams
       import initialState.commitments.remoteParams
       val channelAnn = Announcements.makeChannelAnnouncement(Alice.nodeParams.chainHash, annSigsA.shortChannelId, Alice.nodeParams.nodeId, remoteParams.nodeId, Alice.keyManager.fundingPublicKey(localParams.channelKeyPath).publicKey, remoteParams.fundingPubKey, annSigsA.nodeSignature, annSigsB.nodeSignature, annSigsA.bitcoinSignature, annSigsB.bitcoinSignature)
-      val channelUpdate = Announcements.makeChannelUpdate(Alice.nodeParams.chainHash, Alice.nodeParams.privateKey, remoteParams.nodeId, annSigsA.shortChannelId, Alice.nodeParams.expiryDeltaBlocks, Bob.nodeParams.htlcMinimumMsat, Alice.nodeParams.feeBaseMsat, Alice.nodeParams.feeProportionalMillionth)
       // actual test starts here
       bob2alice.forward(alice)
-      awaitCond(alice.stateData.asInstanceOf[DATA_NORMAL] == initialState.copy(shortChannelId = annSigsA.shortChannelId, buried = true, channelAnnouncement = Some(channelAnn), channelUpdate = channelUpdate))
+      awaitCond({
+        val normal = alice.stateData.asInstanceOf[DATA_NORMAL]
+        normal.shortChannelId == annSigsA.shortChannelId && normal.buried && normal.channelAnnouncement == Some(channelAnn) && normal.channelUpdate.shortChannelId == annSigsA.shortChannelId
+      })
       assert(relayer.expectMsgType[LocalChannelUpdate].channelAnnouncement_opt === Some(channelAnn))
     }
   }
