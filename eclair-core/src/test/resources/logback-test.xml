@@ -43,6 +43,7 @@
     </appender-->
 
     <!--logger name="fr.acinq.eclair.channel" level="DEBUG"/-->
+    <logger name="fr.acinq.eclair.router" level="WARN"/>
 
     <root level="INFO">
         <!--appender-ref ref="FILE"/>
