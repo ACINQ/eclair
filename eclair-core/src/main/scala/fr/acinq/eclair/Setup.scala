@@ -72,9 +72,10 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     val bitcoin = nodeParams.watcherType match {
       case ELECTRUM =>
         logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-        val addressesFile = chain match {
-          case "test" => "/electrum/servers_testnet.json"
-          case "regtest" => "/electrum/servers_regtest.json"
+        val addressesFile = nodeParams.chainHash match {
+          case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+          case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+          case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
         }
         val stream = classOf[Setup].getResourceAsStream(addressesFile)
         val addresses = ElectrumClientPool.readServerAddresses(stream)
