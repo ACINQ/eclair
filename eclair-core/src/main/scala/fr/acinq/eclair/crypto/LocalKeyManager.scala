@@ -19,19 +19,26 @@ package fr.acinq.eclair.crypto
 import com.google.common.cache.{CacheBuilder, CacheLoader, LoadingCache}
 import fr.acinq.bitcoin.Crypto.{Point, PublicKey, Scalar}
 import fr.acinq.bitcoin.DeterministicWallet.{derivePrivateKey, _}
-import fr.acinq.bitcoin.{BinaryData, Crypto, DeterministicWallet}
+import fr.acinq.bitcoin.{BinaryData, Block, Crypto, DeterministicWallet}
 import fr.acinq.eclair.ShortChannelId
 import fr.acinq.eclair.router.Announcements
 import fr.acinq.eclair.transactions.Transactions
 import fr.acinq.eclair.transactions.Transactions.TransactionWithInputInfo
 
 object LocalKeyManager {
-  val channelKeyBasePath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
+  def channelKeyBasePath(chainHash: BinaryData) = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(1) :: Nil
+    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(1) :: Nil
+  }
+
 
   // WARNING: if you change this path, you will change your node id even if the seed remains the same!!!
   // Note that the node path and the above channel path are on different branches so even if the
   // node key is compromised there is no way to retrieve the wallet keys
-  val nodeKeyBasePath = DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
+  def nodeKeyBasePath(chainHash: BinaryData) = chainHash match {
+    case Block.RegtestGenesisBlock.hash | Block.TestnetGenesisBlock.hash => DeterministicWallet.hardened(46) :: DeterministicWallet.hardened(0) :: Nil
+    case Block.LivenetGenesisBlock.hash => DeterministicWallet.hardened(47) :: DeterministicWallet.hardened(0) :: Nil
+  }
 }
 
 /**
@@ -40,10 +47,10 @@ object LocalKeyManager {
   *
   * @param seed seed from which keys will be derived
   */
-class LocalKeyManager(seed: BinaryData) extends KeyManager {
+class LocalKeyManager(seed: BinaryData, chainHash: BinaryData) extends KeyManager {
   private val master = DeterministicWallet.generate(seed)
 
-  override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath)
+  override val nodeKey = DeterministicWallet.derivePrivateKey(master, LocalKeyManager.nodeKeyBasePath(chainHash))
   override val nodeId = nodeKey.publicKey
 
   private val privateKeys: LoadingCache[KeyPath, ExtendedPrivateKey] = CacheBuilder.newBuilder()
@@ -58,7 +65,7 @@ class LocalKeyManager(seed: BinaryData) extends KeyManager {
     override def load(keyPath: KeyPath): ExtendedPublicKey = publicKey(privateKeys.get(keyPath))
   })
 
-  private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): List[Long] = (LocalKeyManager.channelKeyBasePath ++ channelKeyPath.path) :+ index
+  private def internalKeyPath(channelKeyPath: DeterministicWallet.KeyPath, index: Long): List[Long] = (LocalKeyManager.channelKeyBasePath(chainHash) ++ channelKeyPath.path) :+ index
 
   private def fundingPrivateKey(channelKeyPath: DeterministicWallet.KeyPath) = privateKeys.get(internalKeyPath(channelKeyPath, hardened(0)))
 

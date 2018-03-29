@@ -263,4 +263,11 @@ object Scripts {
   def witnessClaimHtlcTimeoutFromCommitTx(localSig: BinaryData, htlcReceivedScript: BinaryData) =
     ScriptWitness(localSig :: BinaryData.empty :: htlcReceivedScript :: Nil)
 
+  /**
+    * This witness script spends (steals) a [[htlcOffered]] or [[htlcReceived]] output using a revocation key as a punishment
+    * for having published a revoked transaction
+    */
+  def witnessHtlcWithRevocationSig(revocationSig: BinaryData, revocationPubkey: PublicKey, htlcScript: BinaryData) =
+    ScriptWitness(revocationSig :: revocationPubkey.toBin :: htlcScript :: Nil)
+
 }

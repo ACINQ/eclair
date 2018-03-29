@@ -30,6 +30,7 @@ import fr.acinq.eclair.channel.Helpers.{Closing, Funding}
 import fr.acinq.eclair.crypto.{Generators, LocalKeyManager, ShaChain, Sphinx}
 import fr.acinq.eclair.payment._
 import fr.acinq.eclair.router.Announcements
+import fr.acinq.eclair.transactions.Transactions.{HtlcSuccessTx, HtlcTimeoutTx, TransactionWithInputInfo}
 import fr.acinq.eclair.transactions._
 import fr.acinq.eclair.wire.{ChannelReestablish, _}
 
@@ -59,8 +60,8 @@ object Channel {
   // we won't exchange more than this many signatures when negotiating the closing fee
   val MAX_NEGOTIATION_ITERATIONS = 20
 
-  // this is defined in BOLT 11
-  val MIN_CLTV_EXPIRY = 9L
+  // this is defined in BOLT 7
+  val MIN_CLTV_EXPIRY = 7L
   val MAX_CLTV_EXPIRY = 7 * 144L // one week
 
   case object TickRefreshChannelUpdate
@@ -613,6 +614,8 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
                 case u: UpdateFailHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
                 case u: UpdateFailMalformedHtlc => relayer ! CommandBuffer.CommandAck(u.channelId, u.id)
               }
+              // On Android we don't store htlc informations, because since wallet is spend only a revoked transaction is
+              // always in our favor and we don't need to steal the htlcs
               context.system.eventStream.publish(ChannelSignatureSent(self, commitments1))
               handleCommandSuccess(sender, store(d.copy(commitments = commitments1))) sending commit
             case Failure(cause) => handleCommandError(cause, c)
@@ -745,7 +748,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
 
     case Event(c@CurrentFeerates(feeratesPerKw), d: DATA_NORMAL) =>
-      val networkFeeratePerKw = feeratesPerKw.block_1
+      val networkFeeratePerKw = feeratesPerKw.blocks_2
       d.commitments.localParams.isFunder match {
         case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
           self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -990,7 +993,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       handleLocalError(HtlcTimedout(d.channelId), d, Some(c))
 
     case Event(c@CurrentFeerates(feerates), d: DATA_SHUTDOWN) =>
-      val networkFeeratePerKw = feerates.block_1
+      val networkFeeratePerKw = feerates.blocks_2
       d.commitments.localParams.isFunder match {
         case true if Helpers.shouldUpdateFee(d.commitments.localCommit.spec.feeratePerKw, networkFeeratePerKw, nodeParams.updateFeeMinDiffRatio) =>
           self ! CMD_UPDATE_FEE(networkFeeratePerKw, commit = true)
@@ -1125,14 +1128,20 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
       // when a remote or local commitment tx containing outgoing htlcs is published on the network,
       // we watch it in order to extract payment preimage if funds are pulled by the counterparty
       // we can then use these preimages to fulfill origin htlcs
-      log.warning(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
+      log.info(s"processing BITCOIN_OUTPUT_SPENT with txid=${tx.txid} tx=$tx")
       val extracted = Closing.extractPreimages(d.commitments.localCommit, tx)
       extracted map { case (htlc, fulfill) =>
         val origin = d.commitments.originChannels(fulfill.id)
         log.warning(s"fulfilling htlc #${fulfill.id} paymentHash=${sha256(fulfill.paymentPreimage)} origin=$origin")
         relayer ! ForwardFulfill(fulfill, origin, htlc)
       }
-      stay
+      val revokedCommitPublished1 = d.revokedCommitPublished.map { rev =>
+          val (rev1, tx_opt) = Closing.claimRevokedHtlcTxOutputs(keyManager, d.commitments, rev, tx)
+          tx_opt.foreach(claimTx => blockchain ! PublishAsap(claimTx))
+          tx_opt.foreach(claimTx => blockchain ! WatchSpent(self, tx, claimTx.txIn.head.outPoint.index.toInt, BITCOIN_OUTPUT_SPENT))
+          rev1
+      }
+      stay using store(d.copy(revokedCommitPublished = revokedCommitPublished1))
 
     case Event(WatchEventConfirmed(BITCOIN_TX_CONFIRMED(tx), _, _), d: DATA_CLOSING) =>
       log.info(s"txid=${tx.txid} has reached mindepth, updating closing state")
@@ -1626,13 +1635,13 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def doPublish(localCommitPublished: LocalCommitPublished) = {
     import localCommitPublished._
 
-    val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTx
+    val publishQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ htlcSuccessTxs ++ htlcTimeoutTxs ++ claimHtlcDelayedTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTx
+    val watchConfirmedQueue = List(commitTx) ++ claimMainDelayedOutputTx ++ claimHtlcDelayedTxs
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
@@ -1705,7 +1714,7 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def handleRemoteSpentOther(tx: Transaction, d: HasCommitments) = {
     log.warning(s"funding tx spent in txid=${tx.txid}")
 
-    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx) match {
+    Helpers.Closing.claimRevokedRemoteCommitTxOutputs(keyManager, d.commitments, tx, nodeParams.channelsDb) match {
       case Some(revokedCommitPublished) =>
         log.warning(s"txid=${tx.txid} was a revoked commitment, publishing the penalty tx")
         val exc = FundingTxSpent(d.channelId, tx)
@@ -1729,17 +1738,17 @@ class Channel(val nodeParams: NodeParams, wallet: EclairWallet, remoteNodeId: Pu
   def doPublish(revokedCommitPublished: RevokedCommitPublished) = {
     import revokedCommitPublished._
 
-    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs ++ htlcPenaltyTxs
+    val publishQueue = claimMainOutputTx ++ mainPenaltyTx ++ htlcPenaltyTxs ++ claimHtlcDelayedPenaltyTxs
     publishIfNeeded(publishQueue, irrevocablySpent)
 
     // we watch:
     // - the commitment tx itself, so that we can handle the case where we don't have any outputs
     // - 'final txes' that send funds to our wallet and that spend outputs that only us control
-    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx ++ htlcPenaltyTxs
+    val watchConfirmedQueue = List(commitTx) ++ claimMainOutputTx
     watchConfirmedIfNeeded(watchConfirmedQueue, irrevocablySpent)
 
     // we watch outputs of the commitment tx that both parties may spend
-    val watchSpentQueue = mainPenaltyTx ++ claimHtlcTimeoutTxs ++ htlcTimeoutTxs
+    val watchSpentQueue = mainPenaltyTx ++ htlcPenaltyTxs
     watchSpentIfNeeded(commitTx, watchSpentQueue, irrevocablySpent)
   }
 

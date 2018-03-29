@@ -55,9 +55,9 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
-  val keyManager = new LocalKeyManager(seed)
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
   val chain = config.getString("chain")
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
 
   logger.info(s"nodeid=${nodeParams.nodeId} alias=${nodeParams.alias}")
   logger.info(s"using chain=$chain chainHash=${nodeParams.chainHash}")
@@ -87,14 +87,14 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     Globals.feeratesPerByte.set(defaultFeerates)
     Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    val feeProvider = (chain, bitcoin) match {
-      case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
+    val feeProvider = (nodeParams.chainHash, bitcoin) match {
+      case (Block.RegtestGenesisBlock.hash, _) => new ConstantFeeProvider(defaultFeerates)
       case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>
         Globals.feeratesPerByte.set(feerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
+        Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
         system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
         logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
     })
@@ -108,8 +108,8 @@ class Setup(datadir: File, wallet_opt: Option[EclairWallet] = None, overrideDefa
     val wallet = bitcoin match {
       case _ if wallet_opt.isDefined => wallet_opt.get
       case Electrum(electrumClient) =>
-        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+        new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
       case _ => ???
     }
 
