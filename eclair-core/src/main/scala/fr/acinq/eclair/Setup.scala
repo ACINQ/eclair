@@ -63,9 +63,9 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
 
   val config = NodeParams.loadConfiguration(datadir, overrideDefaults)
   val seed = seed_opt.getOrElse(NodeParams.getSeed(datadir))
-  val keyManager = new LocalKeyManager(seed)
-  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
   val chain = config.getString("chain")
+  val keyManager = new LocalKeyManager(seed, NodeParams.makeChainHash(chain))
+  val nodeParams = NodeParams.makeNodeParams(datadir, config, keyManager)
 
   // early checks
   DBCompatChecker.checkDBCompatibility(nodeParams)
@@ -114,9 +114,10 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
       Bitcoind(bitcoinClient)
     case ELECTRUM =>
       logger.warn("EXPERIMENTAL ELECTRUM MODE ENABLED!!!")
-      val addressesFile = chain match {
-        case "test" => "/electrum/servers_testnet.json"
-        case "regtest" => "/electrum/servers_regtest.json"
+      val addressesFile = nodeParams.chainHash match {
+        case Block.RegtestGenesisBlock.hash => "/electrum/servers_regtest.json"
+        case Block.TestnetGenesisBlock.hash => "/electrum/servers_testnet.json"
+        case Block.LivenetGenesisBlock.hash => "/electrum/servers_mainnet.json"
       }
       val stream = classOf[Setup].getResourceAsStream(addressesFile)
       val addresses = ElectrumClientPool.readServerAddresses(stream)
@@ -132,15 +133,15 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     Globals.feeratesPerByte.set(defaultFeerates)
     Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
     logger.info(s"initial feeratesPerByte=${Globals.feeratesPerByte.get()}")
-    val feeProvider = (chain, bitcoin) match {
-      case ("regtest", _) => new ConstantFeeProvider(defaultFeerates)
+    val feeProvider = (nodeParams.chainHash, bitcoin) match {
+      case (Block.RegtestGenesisBlock.hash, _) => new ConstantFeeProvider(defaultFeerates)
       case (_, Bitcoind(bitcoinClient)) => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new BitcoinCoreFeeProvider(bitcoinClient, defaultFeerates) :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
       case _ => new FallbackFeeProvider(new BitgoFeeProvider(nodeParams.chainHash) :: new EarnDotComFeeProvider() :: new ConstantFeeProvider(defaultFeerates) :: Nil) // order matters!
     }
     system.scheduler.schedule(0 seconds, 10 minutes)(feeProvider.getFeerates.map {
       case feerates: FeeratesPerByte =>
         Globals.feeratesPerByte.set(feerates)
-        Globals.feeratesPerKw.set(FeeratesPerKw(defaultFeerates))
+        Globals.feeratesPerKw.set(FeeratesPerKw(feerates))
         system.eventStream.publish(CurrentFeerates(Globals.feeratesPerKw.get))
         logger.info(s"current feeratesPerByte=${Globals.feeratesPerByte.get()}")
     })
@@ -157,8 +158,8 @@ class Setup(datadir: File, overrideDefaults: Config = ConfigFactory.empty(), act
     val wallet = bitcoin match {
       case Bitcoind(bitcoinClient) => new BitcoinCoreWallet(bitcoinClient)
       case Electrum(electrumClient) =>
-        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(Block.TestnetGenesisBlock.hash)), "electrum-wallet")
-        new ElectrumEclairWallet(electrumWallet)
+        val electrumWallet = system.actorOf(ElectrumWallet.props(seed, electrumClient, ElectrumWallet.WalletParameters(nodeParams.chainHash)), "electrum-wallet")
+        new ElectrumEclairWallet(electrumWallet, nodeParams.chainHash)
     }
     wallet.getFinalAddress.map {
       case address => logger.info(s"initial wallet address=$address")

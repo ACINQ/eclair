@@ -38,10 +38,10 @@ class ElectrumWalletBasicSpec extends FunSuite {
   val minimumFee = Satoshi(2000)
 
   val master = DeterministicWallet.generate(BinaryData("01" * 32))
-  val accountMaster = accountKey(master)
+  val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
   val accountIndex = 0
 
-  val changeMaster = changeKey(master)
+  val changeMaster = changeKey(master, Block.RegtestGenesisBlock.hash)
   val changeIndex = 0
 
   val firstAccountKeys = (0 until 10).map(i => derivePrivateKey(accountMaster, i)).toVector
@@ -78,7 +78,7 @@ class ElectrumWalletBasicSpec extends FunSuite {
   test("compute addresses") {
     val priv = PrivateKey.fromBase58("cRumXueoZHjhGXrZWeFoEBkeDHu2m8dW5qtFBCqSAt4LDR2Hnd8Q", Base58.Prefix.SecretKeyTestnet)
     assert(Base58Check.encode(Base58.Prefix.PubkeyAddressTestnet, priv.publicKey.hash160) == "ms93boMGZZjvjciujPJgDAqeR86EKBf9MC")
-    assert(segwitAddress(priv) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
+    assert(segwitAddress(priv, Block.RegtestGenesisBlock.hash) == "2MscvqgGXMTYJNAY3owdUtgWJaxPUjH38Cx")
   }
 
   test("implement BIP49") {
@@ -86,9 +86,9 @@ class ElectrumWalletBasicSpec extends FunSuite {
     val seed = MnemonicCode.toSeed(mnemonics, "")
     val master = DeterministicWallet.generate(seed)
 
-    val accountMaster = accountKey(master)
+    val accountMaster = accountKey(master, Block.RegtestGenesisBlock.hash)
     val firstKey = derivePrivateKey(accountMaster, 0)
-    assert(segwitAddress(firstKey) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
+    assert(segwitAddress(firstKey, Block.RegtestGenesisBlock.hash) === "2MxJejujQJRRJdbfTKNQQ94YCnxJwRaE7yo")
   }
 
   test("complete transactions (enough funds)") {

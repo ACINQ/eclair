@@ -39,7 +39,7 @@ object TestConstants {
 
   object Alice {
     val seed = BinaryData("01" * 32)
-    val keyManager = new LocalKeyManager(seed)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
@@ -70,7 +70,6 @@ object TestConstants {
       pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       routerBroadcastInterval = 60 seconds,
-      routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.5,
       updateFeeMinDiffRatio = 0.1,
@@ -94,7 +93,7 @@ object TestConstants {
 
   object Bob {
     val seed = BinaryData("02" * 32)
-    val keyManager = new LocalKeyManager(seed)
+    val keyManager = new LocalKeyManager(seed, Block.RegtestGenesisBlock.hash)
 
     def sqlite = DriverManager.getConnection("jdbc:sqlite::memory:")
 
@@ -124,7 +123,6 @@ object TestConstants {
       pendingRelayDb = new SqlitePendingRelayDb(sqlite),
       paymentsDb = new SqlitePaymentsDb(sqlite),
       routerBroadcastInterval = 60 seconds,
-      routerValidateInterval = 2 seconds,
       pingInterval = 30 seconds,
       maxFeerateMismatch = 1.0,
       updateFeeMinDiffRatio = 0.1,

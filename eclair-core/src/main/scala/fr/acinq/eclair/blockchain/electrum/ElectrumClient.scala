@@ -294,6 +294,7 @@ object ElectrumClient {
 
     val RegtestGenesisHeader = makeHeader(0, Block.RegtestGenesisBlock.header)
     val TestnetGenesisHeader = makeHeader(0, Block.TestnetGenesisBlock.header)
+    val LivenetGenesisHeader = makeHeader(0, Block.LivenetGenesisBlock.header)
   }
 
   case class TransactionHistory(history: Seq[TransactionHistoryItem]) extends Response
